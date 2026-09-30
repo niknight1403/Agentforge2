@@ -5,11 +5,19 @@ import { db, now } from './db.mjs';
 import { FREE_ROUTE_CATALOG } from './routes.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject } from './agents.mjs';
+import { resumePendingVillas } from './resume.mjs';
 import { bus } from './events.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
 const PUBLIC_DIR = resolve(process.cwd(), 'server/public');
+
+/* --------------------------- Protokoll --------------------------- */
+// Ausgabe auf stdout/stderr. Im Daemon-Betrieb (scripts/daemon.sh) wird die
+// Ausgabe in server/data/hub.log umgeleitet, damit sie einheitlich an einer
+// Stelle landet und nicht doppelt geschrieben wird.
+const log = (...a) => console.log(new Date().toISOString(), '[villaforge]', ...a);
+const logError = (...a) => console.error(new Date().toISOString(), '[villaforge]', ...a);
 
 /* --------------------------- Seed --------------------------- */
 if (db.prepare('SELECT COUNT(*) c FROM routes').get().c === 0) {
@@ -171,7 +179,8 @@ async function api(req, res, url) {
     orchestrate(id, {
       concurrency: Number(b.concurrency) || 4,
       maxTasks: Number(b.maxTasks) || 500,
-      adaptive: b.adaptive !== false
+      adaptive: b.adaptive !== false,
+      maxRounds: Number(b.maxRounds) || 6
     }).catch(() => {});
     return json(res, 202, { ok: true, started: true });
   }
@@ -240,7 +249,32 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`[villaforge] Hub laeuft auf http://${HOST}:${PORT}`);
-  console.log(`[villaforge] UI:      http://localhost:${PORT}/`);
-  console.log(`[villaforge] Health:  http://localhost:${PORT}/api/health`);
+  log(`Hub laeuft auf http://${HOST}:${PORT}`);
+  log(`UI:      http://localhost:${PORT}/`);
+  log(`Health:  http://localhost:${PORT}/api/health`);
+
+  // Nach einem Neustart unterbrochene Laeufe fortsetzen (nur wenn erlaubt).
+  if (process.env.VF_RESUME !== '0') {
+    try { resumePendingVillas(); } catch (err) { logError('Wiederaufnahme fehlgeschlagen:', err.message || err); }
+  }
 });
+
+/* --------------------------- Daemon-Betrieb --------------------------- */
+// Ein Fehler in einem einzelnen Aufruf darf den Daemon nicht beenden.
+process.on('unhandledRejection', (err) => logError('Unbehandelte Ablehnung:', err?.message || err));
+process.on('uncaughtException', (err) => logError('Unbehandelte Ausnahme:', err?.message || err));
+
+let shuttingDown = false;
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log(`${sig} empfangen, fahre herunter ...`);
+    server.close(() => {
+      log('Server geschlossen.');
+      process.exit(0);
+    });
+    // Notbremse, falls Verbindungen nicht schliessen.
+    setTimeout(() => process.exit(0), 5000).unref();
+  });
+}

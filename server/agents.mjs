@@ -574,15 +574,23 @@ export function stopVilla(villaId) {
   return true;
 }
 
-export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, adaptive = true } = {}) {
+export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, adaptive = true, maxRounds = 6 } = {}) {
   if (running.get(villaId)) return;
   const job = { stop: false, processed: 0, concurrency: Math.max(1, Math.min(Number(concurrency) || 4, 12)) };
   running.set(villaId, job);
-  db.prepare('UPDATE villas SET status = ?, updated_at = ? WHERE id = ?').run('RUNNING', now(), villaId);
+  // Verwaiste Aufgaben aus einem abgebrochenen Lauf zurueck auf PENDING setzen.
+  // Beim Start eines Laufs kann keine Aufgabe legitim auf RUNNING stehen: dieser
+  // Prozess hat noch keine gestartet. Solche Eintraege stammen aus einem Absturz
+  // und wuerden sonst nie wieder aufgegriffen.
+  const orphans = db.prepare("UPDATE tasks SET status = 'PENDING', updated_at = ? WHERE villa_id = ? AND status = 'RUNNING'").run(now(), villaId);
+  if (orphans.changes > 0) {
+    console.log(`[villaforge] ${orphans.changes} verwaiste Aufgabe(n) in Villa ${villaId} wieder aufgenommen.`);
+  }
+  // Rundenstand auf 0 setzen: die Obergrenze gilt je Lauf, nicht ueber Laeufe hinweg.
+  db.prepare('UPDATE villas SET status = ?, auto_rounds = 0, updated_at = ? WHERE id = ?').run('RUNNING', now(), villaId);
   emit('villa', { villaId, status: 'RUNNING', concurrency: job.concurrency });
 
   try {
-    let idleRounds = 0;
     while (job.processed < maxTasks) {
       if (job.stop) break;
 
@@ -592,16 +600,18 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
       const tasks = openTasks(villaId);
 
       // Alles erledigt: der Deep Agent prueft und ergaenzt fehlende Aufgaben.
+      // Die Runden sind gedeckelt und liegen in der Villa, damit ein Neustart
+      // nicht wieder bei null beginnt und der Lauf garantiert endet.
       if (!tasks.length) {
-        if (adaptive && idleRounds < 2) {
-          idleRounds++;
+        const rounds = Number(villa.auto_rounds || 0);
+        if (adaptive && rounds < maxRounds) {
+          db.prepare('UPDATE villas SET auto_rounds = auto_rounds + 1, updated_at = ? WHERE id = ?').run(now(), villaId);
           const added = await reviewAndExpand(villaId);
-          emit('progress', { villaId, processed: job.processed, open: 0, added });
+          emit('progress', { villaId, processed: job.processed, open: 0, added, round: rounds + 1, maxRounds });
           if (added > 0) continue;
         }
         break;
       }
-      idleRounds = 0;
 
       // Rollenpassende Aufgaben zuerst, damit Agenten nicht fachfremd arbeiten.
       tasks.sort((a, b) => (guessRole(a) === guessRole(b) ? a.priority - b.priority : 0));

@@ -132,5 +132,11 @@ function ensureColumn(table, column, definition) {
 }
 ensureColumn('villas', 'source_path', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('villas', 'mode', "TEXT NOT NULL DEFAULT 'BUILD'");
+// Zaehlt die selbstheilenden Runden eines Laufs. Wird beim Start eines Laufs
+// zurueckgesetzt, damit die Begrenzung pro Lauf gilt und nicht pro Datenbank.
+ensureColumn('villas', 'auto_rounds', 'INTEGER NOT NULL DEFAULT 0');
+// Sperrzeit einer Route nach einem Fehler (Zeitstempel). Verhindert, dass jeder
+// Aufruf erneut in dieselbe tote Route laeuft.
+ensureColumn('routes', 'cooldown_until', 'INTEGER NOT NULL DEFAULT 0');
 
 export const now = () => Date.now();

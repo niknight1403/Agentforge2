@@ -42,6 +42,26 @@ function recordRoute(id, ok) {
   ).run(ok ? 'OK' : 'ERROR', ok ? 1 : 0, ok ? 0 : 1, now(), id);
 }
 
+/**
+ * Legt eine fehlgeschlagene Route voruebergehend still.
+ * Nach mehreren Fehlern waechst die Sperrzeit, damit der Rotator nicht bei
+ * jedem Aufruf erneut in dieselbe tote Route laeuft.
+ */
+const COOLDOWN_MS = 60_000;
+function coolDown(route) {
+  if (!route.id) return;
+  const fails = Number(route.fail || 0) + 1;
+  const until = now() + Math.min(COOLDOWN_MS * fails, 10 * 60_000);
+  db.prepare('UPDATE routes SET cooldown_until = ? WHERE id = ?').run(until, route.id);
+}
+
+/** Routen, die gerade nicht gesperrt sind. */
+function isUsable(route) {
+  if (route.provider === 'offline') return true;
+  if (Number(route.cooldown_until || 0) > now()) return false;
+  return !!resolveKey(route.key_env);
+}
+
 async function callOpenAiCompatible(route, messages, opts) {
   const key = resolveKey(route.key_env);
   const headers = { 'Content-Type': 'application/json' };
@@ -161,7 +181,9 @@ export async function chat(messages, opts = {}) {
   const strategy = opts.strategy || 'ROTATE';
   const order = [];
   if (routes.length) {
-    let pool = routes.filter((r) => r.provider === 'offline' || resolveKey(r.key_env));
+    // Zuerst alle nutzbaren Routen; ist keine uebrig, wird trotzdem jede
+    // probiert, damit ein einzelner Fehler den Lauf nicht zum Erliegen bringt.
+    let pool = routes.filter(isUsable);
     if (!pool.length) pool = routes;
     pool = [...pool].sort((a, b) => (strategy === 'ROTATE'
       ? (a.priority - b.priority) || ((a.last_used || 0) - (b.last_used || 0))
@@ -181,6 +203,7 @@ export async function chat(messages, opts = {}) {
       return out;
     } catch (err) {
       recordRoute(route.id, false);
+      coolDown(route);
       lastErr = err;
       if (opts.onFailover) opts.onFailover(route.name, String(err.message || err));
     }

@@ -31,6 +31,25 @@ Danach im Browser öffnen: `http://localhost:12000/`
 Der Server benötigt **keine** externen Abhängigkeiten (`npm install` entfällt). Er nutzt die
 in Node 22+ enthaltenen Module `node:sqlite`, `fetch` und `EventEmitter`.
 
+### Hintergrundbetrieb (Daemon)
+
+Damit die Entwicklung weiterläuft, wenn das Terminal geschlossen wird:
+
+```bash
+bash scripts/daemon.sh start     # startet im Hintergrund, schreibt server/data/hub.log
+bash scripts/daemon.sh status    # PID und Health
+bash scripts/daemon.sh logs      # Log verfolgen
+bash scripts/daemon.sh stop      # sauber beenden (SIGTERM)
+```
+
+PID liegt in `server/data/hub.pid`, Log in `server/data/hub.log`.
+
+**Wiederaufnahme:** Beim Start prüft der Hub, ob eine Villa noch auf `RUNNING` steht. Das
+kann nur passieren, wenn der Prozess abgebrochen wurde. Solche Läufe werden automatisch
+fortgesetzt, sofern die Autonomie der Villa nicht abgeschaltet ist (`autonomy = 0`).
+Aufgaben, die beim Abbruch auf `RUNNING` standen, werden wieder auf `PENDING` gesetzt und
+erneut ausgeführt. Abschalten mit `VF_RESUME=0`.
+
 ## Funktionsumfang
 
 - **Villa anlegen**: Idee eingeben, Deep Agent erzeugen, Plan ableiten, Agentenpool aufbauen.
@@ -42,7 +61,9 @@ in Node 22+ enthaltenen Module `node:sqlite`, `fetch` und `EventEmitter`.
 - **Autonome Ausführung**: `POST /api/villas/:id/orchestrate` arbeitet offene Aufgaben
   parallel ab (Standard 4 gleichzeitig) und führt passende Aufgaben der Rolle zuerst aus.
 - **Selbstheilende Planung**: Sind alle Aufgaben erledigt, prüft der Deep Agent den
-  Gesamtstand und legt fehlende Aufgaben nach (höchstens zwei Runden).
+  Gesamtstand und legt fehlende Aufgaben nach. Die Zahl der Runden ist begrenzt
+  (`maxRounds`, Standard 6) und wird in der Villa gespeichert, damit der Lauf garantiert
+  endet und ein Neustart nicht wieder bei null beginnt.
 - **Gedächtnis**: Einträge mit Art (`FACT`, `DECISION`, `ARTIFACT`, `LESSON`, `IDEA`,
   `CONSTRAINT`) und Wichtigkeit; fließen in jeden Agenten-Prompt ein.
 - **Werkzeuge**: `memory_write`, `memory_search`, `web_fetch`, `task_create`, `task_update`,
@@ -61,6 +82,8 @@ in Node 22+ enthaltenen Module `node:sqlite`, `fetch` und `EventEmitter`.
 - **Berichte**: Analyse- und Verifikationsberichte sind in App (Abschnitt „Berichte“) und
   Web-Oberfläche (Tab „Berichte“) einsehbar.
 - **LLM-Routen-Rotator**: Priorität plus Rotation, Failover bei Fehler, Statistik je Route.
+  Eine fehlgeschlagene Route wird für 60 Sekunden gesperrt (nach weiteren Fehlern länger,
+  höchstens 10 Minuten). Das verhindert, dass jeder Aufruf erneut in dieselbe tote Route läuft.
 - **Secrets**: API-Keys liegen nur serverseitig in der Datenbank und werden nie angezeigt.
 
 ## Kostenlose LLM-Routen (Katalog)
@@ -129,3 +152,19 @@ Hub – die App überträgt nur Ein- und Ausgaben und speichert keine API-Keys a
 - `web_fetch` akzeptiert ausschließlich `http`/`https`.
 - Die App bleibt privat: keine Telemetrie, kein externer Dienst außer den selbst
   konfigurierten LLM-Endpunkten.
+
+## Grenzen (bewusst nicht enthalten)
+
+Diese Punkte sind absichtlich nicht umgesetzt, weil sie dem Sicherheitsmodell
+widersprechen oder keinen Nutzen bringen:
+
+- **Keine unbegrenzte Autonomie.** Jeder Lauf ist durch `maxTasks` und `maxRounds`
+  begrenzt. Eine Schleife ohne Ende verbraucht nur Zeit und Kontingent.
+- **Kein Selbstnachladen von Abhängigkeiten.** `npm install`, `npx`, Inline-Code und
+  Shell-Verkettung sind gesperrt. Ein Agent, der sich selbst Werkzeuge nachlädt, hebelt
+  jede Kontrolle über den Rechner aus.
+- **Werkzeuge sind eine feste Whitelist** (`TOOL_SPECS`), kein selbst erweiterbarer Baum.
+  Neue Werkzeuge werden im Code ergänzt und geprüft, nicht zur Laufzeit erzeugt.
+- **Kein lokales Modell vorinstalliert.** Die Ollama-Route ist im Katalog vorhanden, aber
+  Ollama ist nicht installiert und kein Modell geladen. Ohne Key arbeitet der
+  regelbasierte Offline-Planer.
