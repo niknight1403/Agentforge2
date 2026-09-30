@@ -3,128 +3,32 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VillaForge – Deep-Agent Villa</title>
+  <meta name="theme-color" content="#070b18" />
+  <title>VillaForge · Control Center</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 </head>
 <body>
   <div class="aurora"></div>
   <header class="topbar">
-    <div class="brand">
-      <span class="logo">VF</span>
-      <div>
-        <h1>VillaForge</h1>
-        <p class="tagline">Deep-Agent Villa · bis zu 1000 Agenten · kostenloser LLM-Routen-Rotator</p>
-      </div>
-    </div>
-    <div class="status">
-      <span id="healthDot" class="dot"></span>
-      <span id="healthText">verbinde…</span>
-    </div>
+    <a class="brand" href="#top" aria-label="VillaForge Startseite"><span class="logo-mark">✦</span><span><strong>VillaForge</strong><small>CONTROL CENTER</small></span></a>
+    <nav class="topnav" aria-label="Hauptnavigation"><a class="active" href="#top">Übersicht</a><a href="#villaSection">Villen</a><a href="#routesSection">System</a></nav>
+    <div class="status"><span id="healthDot" class="dot"></span><span id="healthText">verbinde…</span></div>
   </header>
 
-  <main>
-    <section class="panel create">
-      <h2>Neue Villa &amp; Deep Agent erstellen</h2>
-      <p class="hint">Beschreibe deine Idee. Der Deep Agent plant sie, erzeugt einen Agentenpool und öffnet danach automatisch das Chat-Fenster.</p>
-      <div class="grid2">
-        <label>Titel der Villa
-          <input id="villaName" placeholder="z. B. Mein Produkt-Launch" />
-        </label>
-        <label>Anzahl Agenten (3–1000)
-          <input id="agentCount" type="number" min="3" max="1000" value="24" />
-        </label>
-      </div>
-      <label>Idee / Ziel
-        <textarea id="idea" rows="4" placeholder="Beschreibe die Idee möglichst konkret: Ziel, Zielgruppe, Funktionen, Rahmenbedingungen …"></textarea>
-      </label>
-      <label>Bestehende App analysieren (Pfad, optional)
-        <input id="sourcePath" placeholder="/pfad/zur/bestehenden/app" />
-      </label>
-      <p class="hint">Ohne Pfad wird neu gebaut. Mit Pfad lesen die Agenten den echten Code und entscheiden, ob ein sauberer Neubau oder eine Optimierung sinnvoller ist.</p>
-      <div class="actions">
-        <button id="createBtn" class="primary">Deep Agent starten</button>
-        <button id="refreshBtn" class="ghost">Aktualisieren</button>
-      </div>
-      <p id="createMsg" class="msg"></p>
-    </section>
+  <main id="top" class="dashboard">
+    <section class="hero panel-glass"><div><p class="eyebrow">DEEP-AGENT CONTROL CENTER</p><h1>Deine Idee.<br /><span>Deine Villa.</span></h1><p class="hero-copy">Ein fokussierter Entwicklungsraum für Planung, Chat und Umsetzung – mit genau den Informationen, die du gerade brauchst.</p><button id="heroCreateBtn" class="primary large">Neue Villa starten <span>→</span></button></div><div class="hero-orb" aria-hidden="true"><div class="orb-core">✦</div></div></section>
+    <section class="metric-grid" aria-label="Systemübersicht"><article class="metric-card"><span class="metric-icon purple">⌘</span><div><b id="metricVillas">0</b><small>Villen</small></div></article><article class="metric-card"><span class="metric-icon cyan">◈</span><div><b id="metricAgents">0</b><small>Agenten aktiv</small></div></article><article class="metric-card"><span class="metric-icon green">✓</span><div><b id="metricTasks">0%</b><small>Aufgabenfortschritt</small></div></article><article class="metric-card"><span class="metric-icon pink">⚡</span><div><b id="metricRoutes">0</b><small>LLM-Routen</small></div></article></section>
 
-    <section class="panel">
-      <h2>Villen</h2>
-      <div id="villaList" class="villa-list"><p class="hint">Noch keine Villa erstellt.</p></div>
-    </section>
+    <section id="createSection" class="panel-glass create-panel"><div class="section-heading"><div><p class="eyebrow">STARTER</p><h2>Eine neue Villa aufbauen</h2></div><span class="section-count">01</span></div><p class="hint">Beschreibe dein Ziel. Nach dem Erstellen öffnet sich automatisch der Chat-Entwicklungsraum mit Vorschlägen und dem Deep Agent.</p><div class="form-grid"><label>Titel der Villa<input id="villaName" placeholder="z. B. Mein Produkt-Launch" /></label><label>Agentenpool<input id="agentCount" type="number" min="3" max="1000" value="24" /></label></div><label>Idee / Ziel<textarea id="idea" rows="4" placeholder="Was soll gebaut, verbessert oder analysiert werden? Zielgruppe, Funktionen, Rahmenbedingungen …"></textarea></label><details class="advanced"><summary>Erweitert · bestehende App analysieren</summary><label>Quellpfad, optional<input id="sourcePath" placeholder="/pfad/zur/bestehenden/app" /></label></details><div class="actions"><button id="createBtn" class="primary">Villa erstellen <span>→</span></button><button id="refreshBtn" class="ghost">Aktualisieren</button></div><p id="createMsg" class="msg" role="status"></p></section>
 
-    <section class="panel" id="detailPanel" hidden>
-      <div class="detail-head">
-        <div>
-          <h2 id="dName">—</h2>
-          <p id="dIdea" class="hint"></p>
-        </div>
-        <div class="actions">
-          <button id="startBtn" class="primary">Entwicklung starten</button>
-          <button id="stopBtn" class="danger" hidden>Stoppen</button>
-          <button id="closeDetail" class="ghost">Schließen</button>
-        </div>
-      </div>
-      <div class="stats" id="dStats"></div>
+    <section id="villaSection" class="panel-glass"><div class="section-heading"><div><p class="eyebrow">WORKSPACE</p><h2>Deine Villen</h2></div><button id="openLatestBtn" class="ghost compact">Letzte öffnen</button></div><div id="villaList" class="villa-list"><p class="empty-state">Noch keine Villa erstellt.</p></div></section>
 
-      <div class="tabs">
-        <button class="tab active" data-tab="chat">Chat</button>
-        <button class="tab" data-tab="reports">Berichte</button>
-        <button class="tab" data-tab="tasks">Aufgaben</button>
-        <button class="tab" data-tab="agents">Agenten</button>
-        <button class="tab" data-tab="memory">Gedächtnis</button>
-        <button class="tab" data-tab="audit">Audit</button>
-      </div>
-
-      <div class="tabbody">
-        <div class="tabpane active" data-pane="chat">
-          <div id="chatLog" class="chat-log"></div>
-          <div class="chat-input">
-            <textarea id="chatMsg" rows="2" placeholder="Nachricht an den Deep Agent …"></textarea>
-            <button id="sendBtn" class="primary">Senden</button>
-          </div>
-        </div>
-        <div class="tabpane" data-pane="reports"><div id="reportList" class="list"></div></div>
-        <div class="tabpane" data-pane="tasks"><div id="taskList" class="list"></div></div>
-        <div class="tabpane" data-pane="agents"><div id="agentList" class="list"></div></div>
-        <div class="tabpane" data-pane="memory"><div id="memList" class="list"></div></div>
-        <div class="tabpane" data-pane="audit"><div id="auditList" class="list"></div></div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>LLM-Routen (kostenlose Anbindungen)</h2>
-      <p class="hint">Der Router rotiert automatisch über alle aktiven Routen und wechselt bei Fehlern (429/Timeout) auf die nächste. Keys werden nur serverseitig gespeichert und nie angezeigt.</p>
-      <div id="routeList" class="list"></div>
-      <details>
-        <summary>Neue Route hinzufügen</summary>
-        <div class="grid2">
-          <label>Name <input id="rName" placeholder="Mein Endpunkt" /></label>
-          <label>Provider <input id="rProvider" placeholder="openai-compatible" /></label>
-          <label>Base URL <input id="rUrl" placeholder="https://api.example.com/v1" /></label>
-          <label>Modell <input id="rModel" placeholder="model-name" /></label>
-          <label>Key-Umgebungsvariable <input id="rKeyEnv" placeholder="MY_API_KEY" /></label>
-          <label>Priorität <input id="rPrio" type="number" value="10" /></label>
-        </div>
-        <button id="addRouteBtn" class="primary">Route speichern</button>
-      </details>
-      <details>
-        <summary>API-Key hinterlegen</summary>
-        <div class="grid2">
-          <label>Name (z. B. GROQ_API_KEY) <input id="sName" placeholder="GROQ_API_KEY" /></label>
-          <label>Wert <input id="sValue" type="password" placeholder="wird verschlüsselt gespeichert" /></label>
-        </div>
-        <button id="addSecretBtn" class="primary">Key speichern</button>
-        <div id="secretList" class="list"></div>
-      </details>
-    </section>
+    <section id="routesSection" class="panel-glass system-section"><div class="section-heading"><div><p class="eyebrow">SYSTEM</p><h2>LLM-Routen &amp; Schlüssel</h2></div><span class="section-count">02</span></div><p class="hint">Der Router nutzt aktive Routen mit Failover. Schlüssel bleiben serverseitig und werden nie angezeigt.</p><div id="routeList" class="list"></div><details class="advanced"><summary>Neue Route hinzufügen</summary><div class="form-grid"><label>Name<input id="rName" placeholder="Mein Endpunkt" /></label><label>Provider<input id="rProvider" placeholder="openai-compatible" /></label><label>Base URL<input id="rUrl" placeholder="https://api.example.com/v1" /></label><label>Modell<input id="rModel" placeholder="model-name" /></label><label>Key-Variable<input id="rKeyEnv" placeholder="MY_API_KEY" /></label><label>Priorität<input id="rPrio" type="number" value="10" /></label></div><button id="addRouteBtn" class="primary">Route speichern</button></details><details class="advanced"><summary>API-Key hinterlegen</summary><div class="form-grid"><label>Name<input id="sName" placeholder="GROQ_API_KEY" /></label><label>Wert<input id="sValue" type="password" placeholder="wird sicher gespeichert" /></label></div><button id="addSecretBtn" class="primary">Key speichern</button><div id="secretList" class="list"></div></details></section>
   </main>
 
-  <footer>
-    <span>VillaForge · privat &amp; lokal · Tool-Ausführung wird auditiert</span>
-  </footer>
-
+  <section id="detailPanel" class="workspace-overlay" hidden aria-label="Villa Entwicklungsfenster"><div class="workspace-shell"><header class="workspace-header"><div class="workspace-title"><button id="closeDetail" class="icon-button" aria-label="Entwicklungsfenster schließen">←</button><div><p class="eyebrow">AKTIVER ENTWICKLUNGSRAUM</p><h2 id="dName">—</h2><p id="dIdea" class="workspace-idea"></p></div></div><div class="workspace-actions"><span id="workspaceStatus" class="status-pill">bereit</span><button id="startBtn" class="primary">Entwicklung starten</button><button id="stopBtn" class="danger" hidden>Stoppen</button></div></header><div class="workspace-body"><aside class="workspace-sidebar"><div class="sidebar-section"><p class="eyebrow">FORTSCHRITT</p><div id="dStats" class="stats"></div><div class="progress-track"><span id="progressBar"></span></div><p id="progressLabel" class="progress-label">0% abgeschlossen</p></div><div class="sidebar-section"><p class="eyebrow">VORSCHLÄGE</p><p class="suggestion-note">Starte direkt mit einem klaren nächsten Schritt.</p><div id="suggestionList" class="suggestion-list"></div></div><div class="sidebar-section sidebar-links"><button class="side-tab active" data-tab="chat"><span>◌</span> Chat &amp; Entwicklung</button><button class="side-tab" data-tab="tasks"><span>✓</span> Aufgaben <em id="taskCount">0</em></button><button class="side-tab" data-tab="agents"><span>◈</span> Agenten <em id="agentCountLabel">0</em></button><button class="side-tab" data-tab="reports"><span>▤</span> Berichte</button><button class="side-tab" data-tab="memory"><span>◇</span> Gedächtnis</button><button class="side-tab" data-tab="audit"><span>⌁</span> Audit</button></div></aside><section class="workspace-main"><div class="tabpane active" data-pane="chat"><div class="chat-heading"><div><p class="eyebrow">DEEP AGENT</p><h3>Gemeinsam entwickeln</h3></div><span class="live-dot">● live</span></div><div id="chatLog" class="chat-log"></div><div class="chat-input"><textarea id="chatMsg" rows="2" placeholder="Schreibe eine Anweisung oder frage nach dem nächsten Schritt …"></textarea><button id="sendBtn" class="send-button" aria-label="Nachricht senden">↑</button></div><p class="chat-help">Enter zum Senden · Shift+Enter für neue Zeile</p></div><div class="tabpane" data-pane="tasks"><div class="pane-heading"><h3>Aufgabenplan</h3><span class="pane-caption">Priorisiert vom Deep Agent</span></div><div id="taskList" class="list"></div></div><div class="tabpane" data-pane="agents"><div class="pane-heading"><h3>Agentenpool</h3><span class="pane-caption">Rollen und Status</span></div><div id="agentList" class="list"></div></div><div class="tabpane" data-pane="reports"><div class="pane-heading"><h3>Berichte</h3><span class="pane-caption">Analyse, Umsatz und Verifikation</span></div><div id="reportList" class="list"></div></div><div class="tabpane" data-pane="memory"><div class="pane-heading"><h3>Gedächtnis</h3><span class="pane-caption">Entscheidungen und Fakten</span></div><div id="memList" class="list"></div></div><div class="tabpane" data-pane="audit"><div class="pane-heading"><h3>Audit</h3><span class="pane-caption">Werkzeugaufrufe</span></div><div id="auditList" class="list"></div></div></section></div></div></section>
+  <footer>VillaForge · privat &amp; lokal · fokussierte Agenten-Entwicklung</footer>
   <script src="/app.js"></script>
 </body>
 </html>
