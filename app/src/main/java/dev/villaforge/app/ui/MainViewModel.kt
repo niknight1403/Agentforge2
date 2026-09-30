@@ -6,8 +6,12 @@ import androidx.lifecycle.viewModelScope
 import dev.villaforge.app.net.ChatMessage
 import dev.villaforge.app.net.HubClient
 import dev.villaforge.app.net.LlmRoute
+import dev.villaforge.app.net.SseClient
 import dev.villaforge.app.net.Villa
 import dev.villaforge.app.net.VillaDetail
+import dev.villaforge.app.net.VillaEvent
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +22,10 @@ data class UiState(
     val serverUrl: String = HubClient.DEFAULT_BASE,
     val online: Boolean = false,
     val healthText: String = "verbinde …",
+    /** SSE-Verbindung zum Hub aktiv (Live-Ereignisse fließen). */
+    val live: Boolean = false,
+    /** Letzte Live-Ereignisse (neueste zuerst, begrenzt). */
+    val events: List<VillaEvent> = emptyList(),
     val villas: List<Villa> = emptyList(),
     val detail: VillaDetail? = null,
     val messages: List<ChatMessage> = emptyList(),
@@ -33,8 +41,68 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(UiState(serverUrl = client.serverUrl))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
+    /** Live-Ereignisstrom des Hubs (SSE), mit automatischem Nachverbinden. */
+    private var sse: SseClient? = null
+
+    /** Debounce fuer SSE-getriebene Detail-Aktualisierung. */
+    private var liveRefreshJob: Job? = null
+
     init {
+        startEventStream()
         refreshAll()
+    }
+
+    override fun onCleared() {
+        sse?.stop()
+        sse = null
+        liveRefreshJob?.cancel()
+        super.onCleared()
+    }
+
+    /** Verbindet den SSE-Strom (neu), sofern noch nicht verbunden. */
+    private fun startEventStream() {
+        sse?.stop()
+        val stream = SseClient(
+            urlProvider = { client.baseUrl },
+            scope = viewModelScope,
+            onEvent = { event -> onLiveEvent(event) },
+            onConnectionChange = { connected ->
+                _state.update { it.copy(live = connected) }
+            }
+        )
+        sse = stream
+        stream.start()
+    }
+
+    /**
+     * Ein Live-Event ist eingetroffen: im Feed sammeln und, wenn es die
+     * aktuell offene Villa betrifft, deren Detail-Datensaetze kurz darauf
+     * frisch laden (debounced, damit ein Durchlauf mit vielen Events die
+     * API nicht flutet).
+     */
+    private fun onLiveEvent(event: VillaEvent) {
+        _state.update { it.copy(events = (listOf(event) + it.events).take(MAX_EVENTS)) }
+        val openVilla = _state.value.detail?.villa?.id
+        if (openVilla != null && (event.villaId == null || event.villaId == openVilla)) {
+            liveRefreshJob?.cancel()
+            liveRefreshJob = viewModelScope.launch {
+                delay(1_200)
+                refreshDetailSilently()
+            }
+        }
+    }
+
+    /** Wie refreshDetail(), aber ohne den busy-Indikator (im Hintergrund). */
+    private fun refreshDetailSilently() {
+        viewModelScope.launch {
+            try {
+                val detail = _state.value.detail ?: return@launch
+                val refreshed = client.villaDetail(detail.villa.id)
+                _state.update { it.copy(detail = refreshed) }
+            } catch (_: Exception) {
+                // Hintergrund-Aktualisierung darf nie abbrechen.
+            }
+        }
     }
 
     private fun run(block: suspend () -> Unit) {
@@ -67,6 +135,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun saveServerUrl(url: String) {
         client.baseUrl = url
         _state.update { it.copy(serverUrl = client.serverUrl) }
+        startEventStream() // SSE auf die neue Hub-Adresse umziehen
         refreshAll()
     }
 
@@ -163,4 +232,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun closeDetail() = _state.update { it.copy(detail = null, messages = emptyList()) }
 
     fun clearMessage() = _state.update { it.copy(message = "", error = null) }
+
+    companion object {
+        /** Maximal vorgehaltene Live-Ereignisse im Feed. */
+        const val MAX_EVENTS = 100
+    }
 }

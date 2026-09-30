@@ -64,11 +64,13 @@ import dev.villaforge.app.net.LlmRoute
 import dev.villaforge.app.net.Memory
 import dev.villaforge.app.net.Report
 import dev.villaforge.app.net.Task
+import dev.villaforge.app.net.VillaEvent
 import dev.villaforge.app.ui.theme.Aqua
 import dev.villaforge.app.ui.theme.Danger
 import dev.villaforge.app.ui.theme.Ink
 import dev.villaforge.app.ui.theme.Surface1
 import dev.villaforge.app.ui.theme.Surface2
+import dev.villaforge.app.ui.theme.TextMain
 import dev.villaforge.app.ui.theme.TextMuted
 import dev.villaforge.app.ui.theme.Violet
 import dev.villaforge.app.ui.theme.Warn
@@ -94,7 +96,11 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                 title = {
                     Column {
                         Text("VillaForge", fontWeight = FontWeight.Bold)
-                        Text(state.healthText, style = muted(), color = TextMuted)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(state.healthText, style = muted(), color = TextMuted)
+                            Spacer(Modifier.width(6.dp))
+                            LiveDot(state.live)
+                        }
                     }
                 },
                 navigationIcon = {
@@ -119,7 +125,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Surface1,
-                    titleContentColor = dev.villaforge.app.ui.theme.TextMain,
+                    titleContentColor = TextMain,
                     navigationIconContentColor = dev.villaforge.app.ui.theme.TextMain,
                     actionIconContentColor = dev.villaforge.app.ui.theme.TextMain
                 )
@@ -310,6 +316,13 @@ private fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () ->
             }
         }
 
+        val villaEvents = state.events.filter { it.villaId == detail.villa.id }
+        if (villaEvents.isNotEmpty()) {
+            Section("Live-Ereignisse" + if (state.live) " · verbunden" else "") {
+                villaEvents.take(20).forEach { event -> EventRow(event) }
+            }
+        }
+
         if (detail.reports.isNotEmpty()) {
             Section("Berichte") {
                 detail.reports.forEach { report -> ReportCard(report) }
@@ -434,6 +447,23 @@ private fun ChatScreen(state: UiState, viewModel: MainViewModel) {
         }
 
         HorizontalDivider(color = Surface2)
+
+        val villaId = state.detail?.villa?.id
+        val lastEvent = state.events.firstOrNull { it.villaId == villaId }
+        if (lastEvent != null) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Surface2)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LiveDot(state.live)
+                Spacer(Modifier.width(6.dp))
+                Text(lastEvent.text, style = muted(), color = TextMuted, modifier = Modifier.weight(1f))
+                Text(time(lastEvent.ts), style = muted(), color = TextMuted)
+            }
+        }
 
         Row(
             Modifier
@@ -641,6 +671,32 @@ private fun RowCard(title: String, subtitle: String, badge: String, trailing: (@
             Spacer(Modifier.height(4.dp))
             Text(subtitle, style = muted(), color = TextMuted)
         }
+    }
+}
+
+/** Kleiner Puls-Punkt: gruen verbunden, grau getrennt (SSE-Status). */
+@Composable
+private fun LiveDot(connected: Boolean) {
+    val color = if (connected) Aqua else TextMuted
+    Box(Modifier.size(8.dp).clip(CircleShape).background(color))
+}
+
+/** Eine Zeile im Live-Ereignis-Feed (SSE-Ticker). */
+@Composable
+private fun EventRow(event: VillaEvent) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Surface2)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(event.type, color = Aqua, style = muted(), fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.width(10.dp))
+        Text(event.text, style = muted(), modifier = Modifier.weight(1f), color = TextMain)
+        Spacer(Modifier.width(8.dp))
+        Text(time(event.ts), style = muted(), color = TextMuted)
     }
 }
 

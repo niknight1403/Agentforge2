@@ -13,7 +13,7 @@ das System immer lauffähig bleibt.
 | Teil | Pfad | Status |
 | --- | --- | --- |
 | VillaForge Hub (Server + Web-UI) | `server/` | fertig, lauffähig, getestet |
-| Android-App (Kotlin/Compose) | `app/` | Gerüst: Datenmodell, Datenbank, SecureStore, Berechtigungen |
+| Android-App (Kotlin/Compose) | `app/` | fertig: Villa-Ansicht, Deep-Agent-Chat, SSE-Live-Ereignisse |
 
 ## Hub starten
 
@@ -29,7 +29,11 @@ Danach im Browser öffnen: `http://localhost:12000/`
 - Ereignisstrom (SSE): `/api/events`
 
 Der Server benötigt **keine** externen Abhängigkeiten (`npm install` entfällt). Er nutzt die
-in Node 22+ enthaltenen Module `node:sqlite`, `fetch` und `EventEmitter`.
+Module `node:sqlite`, `fetch` und `EventEmitter`.
+
+> **Hinweis zu Node-Versionen:** Ab Node 23.4 läuft der Hub direkt. Unter Node 22.x ist
+> `node:sqlite` noch experimentell — starte dort mit
+> `node --experimental-sqlite server/server.mjs`.
 
 ### Hintergrundbetrieb (Daemon)
 
@@ -168,3 +172,32 @@ widersprechen oder keinen Nutzen bringen:
 - **Kein lokales Modell vorinstalliert.** Die Ollama-Route ist im Katalog vorhanden, aber
   Ollama ist nicht installiert und kein Modell geladen. Ohne Key arbeitet der
   regelbasierte Offline-Planer.
+
+## Android-App
+
+Kotlin/Compose-App gegen dieselbe Hub-API wie die Web-Oberfläche. Alle drei Bereiche
+sind fertig und live getestet (Villa-Ansicht, Deep-Agent-Chat, SSE):
+
+- **Villa-Ansicht** — Liste, Erstellen (inkl. Projektanalyse-Modus), Detail mit
+  Status, Aufgaben, Agenten, Gedächtnis und Berichten.
+- **Chat mit dem Deep Agent** — Verlauf je Root-Agent, Senden mit optimistischer
+  Anzeige, Antworten werden als Abschnitte/Listen aufbereitet gerendert
+  (Rich-Text-Parser für `##`/`-`/`1.`).
+- **SSE-Live-Ereignisse** — `GET /api/events` wird per eigener Event-Stream-Verbindung
+  gelesen (`net/SseClient.kt`): automatisches Nachverbinden mit Backoff
+  (1–15 s), Puls-Indikator in der Kopfzeile, Live-Ereignis-Feed in der Detail-Ansicht
+  und Ereignis-Ticker im Chat. Events für die offene Villa aktualisieren die Detaildaten
+  automatisch (debounced), ohne das 4-Sekunden-Polling ersetzen zu müssen.
+
+Hub-Adresse ist in den Einstellungen der App frei konfigurierbar (Standard ist der
+All-Hands-Runtime-Host). API-Keys werden nur an den Hub gesendet, nie auf dem Gerät
+gespeichert.
+
+### APK bauen
+
+```bash
+gradle :app:assembleDebug
+```
+
+oder automatisch über GitHub Actions (Workflow `.github/workflows/build-apk.yml`,
+Artefakt `villaforge-apk`). Aktueller Stand liegt als `VillaForge.apk` im Repo.
