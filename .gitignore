@@ -1,0 +1,18 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/app/build
+server/data/
+server/data/*.db
+server/data/*.db-*
+node_modules/
+
+# Uebertragungspaket fuer den manuellen Push
+*.bundle
