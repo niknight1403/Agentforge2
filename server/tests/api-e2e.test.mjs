@@ -113,6 +113,18 @@ test('Villa anlegen: 201 mit Plan und Agenten', async () => {
   villaId = data.villaId;
 });
 
+test('Stats: Zaehler und Laufzustand stimmen', async () => {
+  const r = await fetch(`${BASE}/api/stats`);
+  assert.equal(r.status, 200);
+  const st = await r.json();
+  assert.equal(st.version, '1.3.0');
+  assert.ok(st.uptimeSec >= 0);
+  assert.ok(Number.isInteger(st.villas) && st.villas >= 1, 'Villa-Zaehler fehlt');
+  assert.ok(st.tasks.total >= 1, 'Aufgaben-Zaehler fehlt');
+  assert.ok(Array.isArray(st.runningVillas), 'runningVillas muss Array sein');
+  assert.ok(st.limits && typeof st.limits.ratePerMinute === 'number');
+});
+
 test('Villa-Detail: Agenten, Aufgaben, Status', async () => {
   const res = await fetch(`${BASE}/api/villas/${villaId}`);
   assert.equal(res.status, 200);

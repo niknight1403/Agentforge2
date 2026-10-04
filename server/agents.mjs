@@ -565,6 +565,7 @@ async function verifyProject(villaId) {
 const running = new Map(); // villaId -> { stop, processed, concurrency }
 
 export function isRunning(villaId) { return !!running.get(villaId); }
+export function listRunning() { return [...running.keys()]; }
 
 export function stopVilla(villaId) {
   const job = running.get(villaId);

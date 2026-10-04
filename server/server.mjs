@@ -5,7 +5,7 @@ import { db, now } from './db.mjs';
 import { seedRoutes, syncCatalog } from './seed.mjs';
 import { validateRoute, validateSecret, validateVilla, validateMessage, validateOrchestrate } from './validate.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
-import { createVilla, runAgent, orchestrate, stopVilla, isRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject } from './agents.mjs';
+import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { bus } from './events.mjs';
 
@@ -128,6 +128,31 @@ async function api(req, res, url) {
   }
 
   // ---- Routen ----
+  if (p === '/api/stats' && m === 'GET') {
+    const one = (sql, ...args) => db.prepare(sql).get(...args);
+    const count = (table) => one(`SELECT COUNT(*) c FROM ${table}`).c;
+    return json(res, 200, {
+      version: '1.3.0',
+      ts: now(),
+      uptimeSec: Math.round(process.uptime()),
+      villas: count('villas'),
+      agents: count('agents'),
+      tasks: {
+        total: count('tasks'),
+        open: one("SELECT COUNT(*) c FROM tasks WHERE status IN ('PENDING','READY','RUNNING','REVIEW')").c
+      },
+      memories: count('memories'),
+      audit: count('audit'),
+      messages: count('messages'),
+      runningVillas: listRunning(),
+      limits: {
+        ratePerMinute: RATE_LIMIT,
+        tokenProtected: !!API_TOKEN
+      },
+      rssBytes: process.memoryUsage().rss
+    });
+  }
+
   if (p === '/api/routes' && m === 'GET') {
     const rows = db.prepare('SELECT * FROM routes ORDER BY priority ASC, id ASC').all();
     return json(res, 200, rows.map((r) => ({ ...r, hasKey: r.provider === 'offline' || !!resolveKey(r.key_env) })));
