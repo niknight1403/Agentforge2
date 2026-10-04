@@ -420,6 +420,16 @@ async function api(req, res, url) {
       : db.prepare('SELECT * FROM tasks WHERE villa_id = ? ORDER BY priority ASC, id ASC LIMIT ?').all(id, limit);
     return json(res, 200, rows);
   }
+  // Audit-Protokoll mit Pagination — die Detailansicht bleibt bei den letzten 200 fix.
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'audit' && parts.length === 4 && m === 'GET') {
+    const id = Number(parts[2]);
+    if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 100, 1), 500);
+    const offset = Math.max(Number(url.searchParams.get('offset')) || 0, 0);
+    const entries = db.prepare('SELECT * FROM audit WHERE villa_id = ? ORDER BY id DESC LIMIT ? OFFSET ?').all(id, limit, offset);
+    const total = db.prepare('SELECT COUNT(*) AS c FROM audit WHERE villa_id = ?').get(id).c;
+    return json(res, 200, { villaId: id, total, limit, offset, entries });
+  }
   // Einzelne Aufgabe bearbeiten: Status, Prioritaet, Ergebnis.
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'tasks' && parts[4] && m === 'PATCH') {
     const id = Number(parts[2]);
