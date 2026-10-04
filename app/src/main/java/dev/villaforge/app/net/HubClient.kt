@@ -288,6 +288,14 @@ class HubClient(context: Context) {
         execute("POST", "/api/villas/$villaId/stop", JSONObject())
     }
 
+    suspend fun deleteVilla(villaId: Long) {
+        execute("DELETE", "/api/villas/$villaId")
+    }
+
+    /** Kompletter JSON-Export der Villa (Villa, Agenten, Aufgaben, Berichte …). */
+    suspend fun exportVilla(villaId: Long): String =
+        execute("GET", "/api/villas/$villaId/export")
+
     suspend fun routes(): List<LlmRoute> {
         val arr = JSONArray(execute("GET", "/api/routes"))
         return (0 until arr.length()).map { i ->

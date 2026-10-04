@@ -217,6 +217,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(detail = refreshed) }
     }
 
+    /** Loescht die offene Villa mitsamt allen Daten und kehrt zur Liste zurueck. */
+    fun delete() = run {
+        val detail = _state.value.detail ?: return@run
+        client.deleteVilla(detail.villa.id)
+        val villas = client.villas()
+        _state.update { it.copy(detail = null, messages = emptyList(), villas = villas, message = "Villa gelöscht") }
+    }
+
+    /** Exportiert die offene Villa als JSON-Text (zum Teilen/Speichern). */
+    fun export(onReady: (String) -> Unit) = run {
+        val detail = _state.value.detail ?: return@run
+        val json = client.exportVilla(detail.villa.id)
+        onReady(json)
+        _state.update { it.copy(message = "Export bereit") }
+    }
+
     /** Aktualisiert den Stand waehrend eines laufenden Durchlaufs. */
     fun refreshDetail() = run {
         val detail = _state.value.detail ?: return@run

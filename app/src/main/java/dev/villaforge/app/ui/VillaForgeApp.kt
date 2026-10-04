@@ -25,10 +25,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,6 +46,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -151,7 +155,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     viewModel.openVilla(id)
                     screen = Screen.CHAT
                 }
-                Screen.DETAIL -> DetailScreen(state, viewModel, onChat = { screen = Screen.CHAT })
+                Screen.DETAIL -> DetailScreen(state, viewModel, onChat = { screen = Screen.CHAT }, onDeleted = { screen = Screen.LIST })
                 Screen.CHAT -> ChatScreen(state, viewModel)
                 Screen.SETTINGS -> SettingsScreen(state, viewModel)
             }
@@ -243,8 +247,9 @@ private fun CreateVillaScreen(state: UiState, viewModel: MainViewModel, onCreate
 /* ----------------------------- Detail ----------------------------- */
 
 @Composable
-private fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit) {
+private fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, onDeleted: () -> Unit) {
     val detail = state.detail ?: return
+    var showDelete by remember { mutableStateOf(false) }
 
     // Waehrend eines Durchlaufs den Fortschritt regelmaessig nachladen.
     LaunchedEffect(detail.villa.id, detail.running, detail.villa.status) {
@@ -314,6 +319,51 @@ private fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () ->
                 Icon(Icons.Filled.Refresh, contentDescription = null)
                 Spacer(Modifier.width(6.dp)); Text("Projekt erneut analysieren")
             }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        val context = LocalContext.current
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = {
+                    viewModel.export { json ->
+                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "application/json"
+                            putExtra(android.content.Intent.EXTRA_TEXT, json)
+                        }
+                        context.startActivity(android.content.Intent.createChooser(send, "Villa-Export"))
+                    }
+                },
+                enabled = !state.busy,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Filled.Share, contentDescription = null)
+                Spacer(Modifier.width(6.dp)); Text("Export")
+            }
+            if (!active) {
+                OutlinedButton(
+                    onClick = { showDelete = true },
+                    enabled = !state.busy,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.Delete, contentDescription = null)
+                    Spacer(Modifier.width(6.dp)); Text("Löschen")
+                }
+            }
+        }
+
+        if (showDelete) {
+            AlertDialog(
+                onDismissRequest = { showDelete = false },
+                title = { Text("Villa löschen?") },
+                text = { Text("\"${detail.villa.name}\" mitsamt Agenten, Aufgaben und Berichten endgültig löschen.") },
+                confirmButton = {
+                    TextButton(onClick = { showDelete = false; viewModel.delete(); onDeleted() }) { Text("Löschen") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDelete = false }) { Text("Abbrechen") }
+                }
+            )
         }
 
         val villaEvents = state.events.filter { it.villaId == detail.villa.id }
