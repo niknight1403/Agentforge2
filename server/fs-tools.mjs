@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, existsSync, realpathSync, lstatSync } from 'node:fs';
 import { join, relative, resolve, extname } from 'node:path';
 
 /**
@@ -25,11 +25,33 @@ const TEXT_EXT = new Set([
 
 /** Loest einen Pfad auf und erzwingt, dass er innerhalb der Wurzel liegt. */
 export function safePath(root, candidate) {
-  const rootAbs = resolve(root);
+  let rootAbs;
+  try {
+    rootAbs = realpathSync(resolve(root));
+  } catch {
+    return null; // Wurzel existiert nicht (oder ist ein kaputter Link).
+  }
   const target = resolve(rootAbs, String(candidate || '.').replace(/^\/+/, ''));
-  const rel = relative(rootAbs, target);
-  if (rel.startsWith('..') || (rel !== '' && resolve(rootAbs, rel) !== target)) return null;
-  return target;
+  // Symlink-Haertung: ein Link IM Projekt, der nach aussen zeigt, wuerde
+  // ohne Aufloesung als gueltiger relativer Pfad durchgehen. realpath
+  // loest die komplette Kette auf; unvollstaendige Pfade werden geprueft,
+  // sobald sie existieren.
+  let realTarget = target;
+  if (existsSync(target) || lstatExists(target)) {
+    try {
+      realTarget = realpathSync(target);
+    } catch {
+      return null; // haengender Link oder Link-Schleife (ELOOP): ablehnen.
+    }
+  }
+  const rel = relative(rootAbs, realTarget);
+  if (rel.startsWith('..') || (rel !== '' && resolve(rootAbs, rel) !== realTarget)) return null;
+  return realTarget;
+}
+
+/** true, wenn der Pfad als Eintrag existiert — auch wenn er ein haengender Link ist. */
+function lstatExists(p) {
+  try { lstatSync(p); return true; } catch { return false; }
 }
 
 export function isTextFile(path) {
@@ -108,6 +130,7 @@ export function readProjectFile(root, relPath, maxBytes = 40_000) {
   const full = safePath(root, relPath);
   if (!full || !existsSync(full)) return { ok: false, error: 'Datei nicht gefunden' };
   if (!statSync(full).isFile()) return { ok: false, error: 'Kein regulaerer Datei-Pfad' };
+  if (!isTextFile(full)) return { ok: false, error: 'Nur Textdateien koennen gelesen werden' };
   try {
     const text = readFileSync(full, 'utf8');
     return { ok: true, content: text.slice(0, maxBytes), truncated: text.length > maxBytes };
@@ -187,11 +210,14 @@ export function runCommand(root, binary, args = [], timeoutMs = 120_000) {
       env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV, CI: '1' }
     }, (err, stdout, stderr) => {
       const out = `${stdout || ''}${stderr || ''}`.trim();
+      const hint = err?.killed
+        ? `Zeitlimit ueberschritten (${timeoutMs} ms)`
+        : err ? String(err.message || err) : null;
       resolvePromise({
         ok: !err,
         code: err?.code ?? 0,
         output: out.slice(-6000),
-        error: err ? String(err.message || err).slice(0, 400) : null
+        error: hint ? hint.slice(0, 400) : null
       });
     });
   });
