@@ -138,9 +138,21 @@ und ohne echte Keys — Tests laufen vollstaendig im Offline-Planer.
   Villa auf `PAUSED` und es entstehen Reparaturaufgaben.
 - **Berichte**: Analyse- und Verifikationsberichte sind in App (Abschnitt „Berichte“) und
   Web-Oberfläche (Tab „Berichte“) einsehbar.
-- **Löschen und Export**: `DELETE /api/villas/:id` entfernt eine Villa mitsamt aller Daten
+- **Löschen, Export und Import**: `DELETE /api/villas/:id` entfernt eine Villa mitsamt aller Daten
   (409, solange der Lauf aktiv ist); `GET /api/villas/:id/export` liefert alles als
-  JSON-Datei. In Web-UI und Android-App per Knopf erreichbar.
+  JSON-Datei. `POST /api/villas/import` stellt so eine Datei als neue Villa wieder her
+  (neue IDs, übernommene Agenten/Aufgaben/Gedächtnis/Berichte/Nachrichten). In Web-UI und
+  Android-App per Knopf erreichbar.
+- **Bearbeiten**: `PATCH /api/villas/:id` ändert `name`, `idea` oder `mode` als Teil-Update;
+  Web-UI und Android-App bieten einen Bearbeiten-Dialog.
+- **Aufgaben verwalten**: `GET /api/villas/:id/tasks` mit `?status=`-Filter; `PATCH
+  /api/villas/:id/tasks/:taskId` setzt Status, Priorität oder Ergebnis (409, solange die
+  Aufgabe läuft). Der Aufgabenplan der Web-UI filtert nach Status.
+- **Backup und Wartung**: `GET /api/backup` liefert den kompletten Hub als JSON-Dump (jede
+  Villa direkt wieder importierbar); `POST /api/maintenance/prune` räumt Audit-Protokoll und
+  Nachrichten älter als `days` Tage weg — mit `dryRun` erst zählen.
+- **Dauerhaftes Protokoll**: `VF_LOG_FILE` schreibt jede Logzeile zusätzlich synchron in
+  eine Datei (Ordner wird angelegt; Schreibfehler beenden den Hub nie).
 - **Statistik**: `GET /api/stats` zählt Villen, Agenten, Aufgaben, Berichte, Erinnerungen
   und offene Läufe — App und Web-UI zeigen die Zahlen.
 - **SSE mit Replay**: Jedes Ereignis trägt eine `id`; verbindet sich ein Client mit
@@ -184,8 +196,14 @@ GET    /api/health
 GET    /api/stats                       Zaehler und Laufzustand
 GET    /api/villas                      ?limit=, ?offset= (Paginierung)
 DELETE /api/villas/:id                  Villa mitsamt Daten loeschen (409 bei laufendem Lauf)
+PATCH  /api/villas/:id                { name?, idea?, mode? } – Teil-Update
 GET    /api/villas/:id/export           kompletter JSON-Download
+POST   /api/villas/import             Export-JSON als neue Villa anlegen
 POST   /api/villas                    { name, idea, agentCount, sourcePath? }
+GET    /api/villas/:id/tasks          ?status=PENDING|RUNNING|DONE|FAILED|BLOCKED, ?limit=
+PATCH  /api/villas/:id/tasks/:taskId  { status?, priority?, result? } – 409, wenn die Aufgabe laeuft
+GET    /api/backup                    kompletter Hub-Dump (villas-Array ist importierbar)
+POST   /api/maintenance/prune         { days, dryRun? } – alte Protokolle aufraeumen
 GET    /api/villas/:id                Villa, Agenten, Aufgaben, Gedächtnis, Berichte, Audit
 POST   /api/villas/:id/source         { path } – Quellprojekt hinterlegen
 POST   /api/villas/:id/analyze        Projekt analysieren, Bericht + REBUILD/OPTIMIZE
