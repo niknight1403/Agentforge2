@@ -8,6 +8,16 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.6.0
+
+- `GET /api/villas/:id/audit` — Werkzeug-Protokoll mit Pagination (`limit`/`offset`)
+- Rate-Limit-Header `X-RateLimit-Limit/-Remaining/-Reset` auf schreibenden Anfragen
+- Statische Dateien mit ETag: `If-None-Match` liefert 304
+- Wartungslaufen schließen WAL-Checkpoint und `PRAGMA optimize` an
+- Web-UI: Hub-Backup als Datei, Wartungsaufruf mit Trockenlauf, Statistik-Leiste
+- Android: Aufgabenplan mit Statusfilter, Hub-Statistik in den Einstellungen
+- Vollständige API-Referenz unter `docs/API.md`
+
 ## Bestandteile
 
 | Teil | Pfad | Status |
@@ -191,6 +201,9 @@ Key hinterlegen – entweder als Umgebungsvariable beim Start oder in der Oberfl
 
 ## API-Kurzreferenz
 
+Vollständige Endpunkt-Referenz mit Beispielen: [docs/API.md](docs/API.md).
+
+
 ```
 GET    /api/health
 GET    /api/stats                       Zaehler und Laufzustand
@@ -205,6 +218,7 @@ PATCH  /api/villas/:id/tasks/:taskId  { status?, priority?, result? } – 409, w
 GET    /api/backup                    kompletter Hub-Dump (villas-Array ist importierbar)
 POST   /api/maintenance/prune         { days, dryRun? } – alte Protokolle aufraeumen
 GET    /api/villas/:id                Villa, Agenten, Aufgaben, Gedächtnis, Berichte, Audit
+GET    /api/villas/:id/audit           ?limit=, ?offset= – Werkzeug-Protokoll mit Pagination
 POST   /api/villas/:id/source         { path } – Quellprojekt hinterlegen
 POST   /api/villas/:id/analyze        Projekt analysieren, Bericht + REBUILD/OPTIMIZE
 GET    /api/villas/:id/reports        Analyse- und Verifikationsberichte
