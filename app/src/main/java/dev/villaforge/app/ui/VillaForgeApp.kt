@@ -36,6 +36,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -413,7 +414,27 @@ private fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () ->
                 detail.reports.forEach { report -> ReportCard(report) }
             }
         }
-        Section("Aufgaben") { detail.tasks.forEach { TaskRow(it) } }
+        Section("Aufgaben") {
+            var taskFilter by remember { mutableStateOf("") }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for ((label, value) in listOf(
+                    "Alle" to "", "Offen" to "PENDING", "Läuft" to "RUNNING",
+                    "Erledigt" to "DONE", "Fehler" to "FAILED", "Blockiert" to "BLOCKED"
+                )) {
+                    FilterChip(
+                        selected = taskFilter == value,
+                        onClick = { taskFilter = value },
+                        label = { Text(label) }
+                    )
+                }
+            }
+            val shownTasks = if (taskFilter.isEmpty()) detail.tasks else detail.tasks.filter { it.status == taskFilter }
+            if (shownTasks.isEmpty()) {
+                Text("Keine Aufgaben in dieser Ansicht.", style = MaterialTheme.typography.bodySmall)
+            } else {
+                shownTasks.forEach { TaskRow(it) }
+            }
+        }
         Section("Agenten") { detail.agents.take(60).forEach { AgentRow(it) } }
         Section("Gedächtnis") { detail.memories.take(40).forEach { MemoryRow(it) } }
     }
