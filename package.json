@@ -10,7 +10,8 @@
     "daemon": "bash scripts/daemon.sh start",
     "daemon:stop": "bash scripts/daemon.sh stop",
     "daemon:status": "bash scripts/daemon.sh status",
-    "test:llm": "node server/scripts/llm-smoke.mjs"
+    "test:llm": "node server/scripts/llm-smoke.mjs",
+    "test": "node --test server/tests/*.test.mjs"
   },
   "engines": {
     "node": ">=22"

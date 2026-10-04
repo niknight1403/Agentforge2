@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
-import { FREE_ROUTE_CATALOG } from './routes.mjs';
+import { seedRoutes } from './seed.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
@@ -20,15 +20,7 @@ const log = (...a) => console.log(new Date().toISOString(), '[villaforge]', ...a
 const logError = (...a) => console.error(new Date().toISOString(), '[villaforge]', ...a);
 
 /* --------------------------- Seed --------------------------- */
-if (db.prepare('SELECT COUNT(*) c FROM routes').get().c === 0) {
-  const ins = db.prepare(
-    'INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  );
-  for (const r of FREE_ROUTE_CATALOG) {
-    ins.run(r.name, r.provider, r.baseUrl, r.model, r.keyEnv, 1, 1, r.priority, 1, 'NEW', 0, 0, 0);
-  }
-  console.log('[villaforge] Routen-Katalog initialisiert:', FREE_ROUTE_CATALOG.length);
-}
+seedRoutes();
 
 /* --------------------------- Helpers --------------------------- */
 const MIME = {

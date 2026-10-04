@@ -20,10 +20,11 @@ export function enabledRoutes() {
 
 /** Waehlt die naechste Route: Prioritaet, dann gewichtete Rotation. */
 export function pickRoute(strategy = 'ROTATE') {
-  const routes = enabledRoutes().filter((r) => r.provider === 'offline' ? true : true);
-  const usable = routes.filter((r) => r.provider === 'offline' || resolveKey(r.key_env));
-  const pool = usable.length ? usable : routes;
-  if (!pool.length) return { ...OFFLINE_ROUTE, id: 0, provider: 'offline' };
+  // Nur Routen, die wirklich genutzt werden koennen: Offline immer, lokale
+  // Routen ohne Key-Pflicht ebenfalls, fremde nur mit hinterlegtem Key.
+  const usable = enabledRoutes().filter(isUsable);
+  if (!usable.length) return { ...OFFLINE_ROUTE, id: 0, provider: 'offline' };
+  const pool = usable;
 
   if (strategy === 'FALLBACK') return pool[0];
 
@@ -55,10 +56,14 @@ function coolDown(route) {
   db.prepare('UPDATE routes SET cooldown_until = ? WHERE id = ?').run(until, route.id);
 }
 
-/** Routen, die gerade nicht gesperrt sind. */
-function isUsable(route) {
+/**
+ * Routen, die gerade nutzbar sind: nicht gesperrt und mit Key versorgt.
+ * Routen ohne key_env (z. B. ein lokaler Ollama) brauchen keinen Key.
+ */
+export function isUsable(route) {
   if (route.provider === 'offline') return true;
   if (Number(route.cooldown_until || 0) > now()) return false;
+  if (!route.key_env) return true;
   return !!resolveKey(route.key_env);
 }
 
@@ -196,7 +201,10 @@ export async function chat(messages, opts = {}) {
   for (const route of order) {
     try {
       if (route.provider === 'offline') {
-        return offlineReply(messages, opts);
+        const out = offlineReply(messages, opts);
+        // Auch der Offline-Rettefall berichtet, warum echte Routen versagt haben.
+        if (lastErr) out.warning = String(lastErr.message || lastErr);
+        return out;
       }
       const out = await callOpenAiCompatible(route, messages, opts);
       recordRoute(route.id, true);

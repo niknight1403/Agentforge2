@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync, readdirSync, statSync, existsSync, readFileSy
 import { resolve, join } from 'node:path';
 import { projectSummary, searchProject, readProjectFile, runCommand, safePath } from './fs-tools.mjs';
 
-export const WORKSPACE = resolve(process.cwd(), 'server/data/workspace');
+export const WORKSPACE = resolve(process.env.VF_WORKSPACE || join(process.cwd(), 'server', 'data', 'workspace'));
 mkdirSync(WORKSPACE, { recursive: true });
 
 const ROLES = ['PLANNER', 'RESEARCHER', 'ARCHITECT', 'CODER', 'REVIEWER', 'TESTER', 'DOCUMENTER', 'CRITIC', 'INTEGRATOR', 'WORKER', 'BUSINESS', 'GROWTH'];
@@ -447,7 +447,7 @@ export function prettify(text) {
   }
   return s
     .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/^\s*[*+]\s+/gm, '• ')
+    .replace(/^\s*[*+-]\s+/gm, '• ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -720,7 +720,7 @@ async function executeTask(villaId, task) {
   emit('task', { villaId, taskId: task.id, agentId: agent.id, status: res.error ? 'FAILED' : 'DONE', title: task.title, answer: answer.slice(0, 500) });
 }
 
-function guessRole(task) {
+export function guessRole(task) {
   const t = `${task.title} ${task.description}`.toLowerCase();
   if (/plan|anforder|ziel/.test(t)) return 'PLANNER';
   if (/umsatz|monetar|preis|zahl|geschaeft|business|erlös|erloes|marge/.test(t)) return 'BUSINESS';
