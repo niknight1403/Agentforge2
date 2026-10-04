@@ -80,10 +80,37 @@ function serveStatic(req, res, pathname) {
 }
 
 /* --------------------------- API --------------------------- */
+/* ---------- Rate-Limit fuer schreibende Anfragen ---------- */
+// Ein einfaches prozesslocales Zeitfenster pro IP. GET bleibt frei, SSE sowieso.
+// VF_RATE_LIMIT=0 schaltet ab. Der Hub laeuft einzeln, daher reicht ein Map-Store.
+const RATE_LIMIT = Number(process.env.VF_RATE_LIMIT ?? 120);
+const rateHits = new Map();
+function rateAllow(ip) {
+  if (RATE_LIMIT <= 0) return true;
+  const nowMs = Date.now();
+  const recent = (rateHits.get(ip) || []).filter((t) => nowMs - t < 60_000);
+  if (recent.length >= RATE_LIMIT) {
+    rateHits.set(ip, recent);
+    return false;
+  }
+  recent.push(nowMs);
+  rateHits.set(ip, recent);
+  if (rateHits.size > 10_000) rateHits.clear(); // Grobdeckel gegen IP-Flooding
+  return true;
+}
+
 async function api(req, res, url) {
   const p = url.pathname;
   const m = req.method;
   const parts = p.split('/').filter(Boolean); // ['api', ...]
+
+  // Schreibende Anfragen rate-limitieren: ein Klient soll den Hub nicht mit
+  // Anlagen oder Laeufen fluten koennen. GET und SSE bleiben unberuehrt.
+  if (m !== 'GET' && p !== '/api/events' && !rateAllow(req.socket.remoteAddress || '?')) {
+    res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8', 'Retry-After': '60', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ error: 'Zu viele Anfragen — kurz durchatmen, dann gern wieder.' }));
+    return;
+  }
 
   // Schutz: gilt nur, wenn VF_TOKEN gesetzt ist; Health bleibt offen.
   // EventSource (SSE) kann keine Header senden — deshalb ist neben dem
