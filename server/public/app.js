@@ -45,7 +45,7 @@ function renderAll(data){ renderStats(data); renderReports(data.reports); render
 function renderStats(d){
   const done=d.tasks.filter(t=>t.status==='DONE').length, total=d.tasks.length, open=d.tasks.filter(t=>['PENDING','READY','RUNNING','REVIEW'].includes(t.status)).length;
   const pct=total?Math.round(done/total*100):0; const active=d.running||['RUNNING','STOPPING'].includes(d.villa.status);
-  $('#startBtn').hidden=active; $('#stopBtn').hidden=!active; $('#stopBtn').textContent=d.villa.status==='STOPPING'?'Stoppt …':'Stoppen'; $('#workspaceStatus').textContent=active?'Entwicklung läuft':statusLabel(d.villa.status); $('#workspaceStatus').className=`status-pill ${active?'RUNNING':''}`;
+  $('#startBtn').hidden=active; $('#startBtn').disabled=false; $('#stopBtn').hidden=!active; $('#stopBtn').textContent=d.villa.status==='STOPPING'?'Stoppt …':'Stoppen'; $('#workspaceStatus').textContent=active?'Entwicklung läuft':statusLabel(d.villa.status); $('#workspaceStatus').className=`status-pill ${active?'RUNNING':''}`;
   $('#dStats').innerHTML=`<div class="stat"><b>${statusLabel(d.villa.status)}</b>Status</div><div class="stat"><b>${d.agents.length}</b>Agenten</div><div class="stat"><b>${done}/${total}</b>erledigt</div><div class="stat"><b>${open}</b>offen</div>`;
   $('#progressBar').style.width=`${pct}%`; $('#progressLabel').textContent=`${pct}% abgeschlossen · ${open} nächste Schritte`; $('#taskCount').textContent=total; $('#agentCountLabel').textContent=d.agents.length; $('#metricAgents').textContent=d.agents.length; $('#metricTasks').textContent=`${pct}%`;
 }
@@ -73,7 +73,18 @@ async function addRoute(){await api('/api/routes',{method:'POST',body:{name:$('#
 async function loadSecrets(){const list=await api('/api/secrets');$('#secretList').innerHTML=Array.isArray(list)&&list.length?list.map(s=>`<div class="row"><b>${esc(s.name)}</b> <span class="badge RUNNING">gesetzt</span></div>`).join(''):'<p class="hint">Noch kein Key hinterlegt. Der Offline-Planer bleibt verfügbar.</p>';}
 async function addSecret(){const name=$('#sName').value.trim(),value=$('#sValue').value;if(!name||!value)return;await api('/api/secrets',{method:'POST',body:{name,value}});$('#sValue').value='';loadSecrets();loadRoutes();}
 function selectTab(tab){document.querySelectorAll('.side-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));document.querySelectorAll('.workspace-main .tabpane').forEach(p=>p.classList.toggle('active',p.dataset.pane===tab));}
-function connectEvents(){const es=new EventSource('/api/events');es.onmessage=()=>{loadVillas();if(currentVilla)refreshCurrent();};}
+function connectEvents(){
+  const es=new EventSource('/api/events');
+  // Nur Statusaenderungen loesen einen Refresh aus;Schwellwertereignisse
+  // (task/chat/tool) werden gebuendelt, damit ein Lauf die API nicht flutet.
+  let refreshTimer=null;
+  es.onmessage=(ev)=>{
+    let e={}; try{e=JSON.parse(ev.data)}catch{}
+    if(!['villa','progress','report'].includes(e.type)) return;
+    if(refreshTimer) return;
+    refreshTimer=setTimeout(()=>{refreshTimer=null;loadVillas();if(currentVilla)refreshCurrent();},900);
+  };
+}
 
 $('#createBtn').addEventListener('click',createVilla); $('#heroCreateBtn').addEventListener('click',()=>{ $('#createSection').scrollIntoView({behavior:'smooth'}); setTimeout(()=>$('#idea').focus(),350); }); $('#refreshBtn').addEventListener('click',loadVillas); $('#openLatestBtn').addEventListener('click',()=>latestVillas[0]&&openVilla(latestVillas[0].id)); $('#closeDetail').addEventListener('click',closeWorkspace); $('#startBtn').addEventListener('click',startDevelopment); $('#stopBtn').addEventListener('click',stopDevelopment); $('#sendBtn').addEventListener('click',sendChat); $('#chatMsg').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}); $('#addRouteBtn').addEventListener('click',addRoute); $('#addSecretBtn').addEventListener('click',addSecret); document.querySelectorAll('.side-tab').forEach(t=>t.addEventListener('click',()=>selectTab(t.dataset.tab))); document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#detailPanel').hidden)closeWorkspace();});
 checkHealth();loadVillas();loadRoutes();loadSecrets();connectEvents();setInterval(checkHealth,20000);
