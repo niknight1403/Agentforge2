@@ -138,17 +138,18 @@ function serveStatic(req, res, pathname) {
 const RATE_LIMIT = Number(process.env.VF_RATE_LIMIT ?? 120);
 const rateHits = new Map();
 function rateAllow(ip) {
-  if (RATE_LIMIT <= 0) return true;
+  if (RATE_LIMIT <= 0) return { ok: true, limit: 0, remaining: -1, reset: 0 };
   const nowMs = Date.now();
   const recent = (rateHits.get(ip) || []).filter((t) => nowMs - t < 60_000);
+  const reset = Math.max(1, Math.ceil(((recent[0] ?? nowMs) + 60_000 - nowMs) / 1000));
   if (recent.length >= RATE_LIMIT) {
     rateHits.set(ip, recent);
-    return false;
+    return { ok: false, limit: RATE_LIMIT, remaining: 0, reset };
   }
   recent.push(nowMs);
   rateHits.set(ip, recent);
   if (rateHits.size > 10_000) rateHits.clear(); // Grobdeckel gegen IP-Flooding
-  return true;
+  return { ok: true, limit: RATE_LIMIT, remaining: RATE_LIMIT - recent.length, reset };
 }
 
 async function api(req, res, url) {
@@ -158,10 +159,25 @@ async function api(req, res, url) {
 
   // Schreibende Anfragen rate-limitieren: ein Klient soll den Hub nicht mit
   // Anlagen oder Laeufen fluten koennen. GET und SSE bleiben unberuehrt.
-  if (m !== 'GET' && p !== '/api/events' && !rateAllow(req.socket.remoteAddress || '?')) {
-    res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8', 'Retry-After': '60', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify({ error: 'Zu viele Anfragen — kurz durchatmen, dann gern wieder.' }));
-    return;
+  if (m !== 'GET' && p !== '/api/events') {
+    const rate = rateAllow(req.socket.remoteAddress || '?');
+    if (!rate.ok) {
+      res.writeHead(429, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Retry-After': String(rate.reset),
+        'X-RateLimit-Limit': String(rate.limit),
+        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Reset': String(rate.reset),
+        'Cache-Control': 'no-store'
+      });
+      res.end(JSON.stringify({ error: 'Zu viele Anfragen — kurz durchatmen, dann gern wieder.' }));
+      return;
+    }
+    if (rate.limit > 0) {
+      res.setHeader('X-RateLimit-Limit', String(rate.limit));
+      res.setHeader('X-RateLimit-Remaining', String(rate.remaining));
+      res.setHeader('X-RateLimit-Reset', String(rate.reset));
+    }
   }
 
   // Schutz: gilt nur, wenn VF_TOKEN gesetzt ist; Health bleibt offen.

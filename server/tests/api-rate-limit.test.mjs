@@ -51,11 +51,21 @@ test('Schreibende Anfragen werden nach dem Limit mit 429 abgewiesen', async () =
     if (r.status === 429) {
       saw429 = true;
       assert.ok(r.headers.get('retry-after'), 'Retry-After fehlt');
+      assert.equal(r.headers.get('x-ratelimit-limit'), '5', 'Limit-Header am 429');
+      assert.equal(r.headers.get('x-ratelimit-remaining'), '0', 'Remaining-Header am 429');
+      assert.ok(Number(r.headers.get('x-ratelimit-reset')) >= 1, 'Reset-Header am 429');
       break;
     }
     assert.ok([400, 201].includes(r.status), `unerwartet: ${r.status}`);
+    assert.equal(r.headers.get('x-ratelimit-limit'), '5', 'Limit-Header am Erfolg');
+    assert.ok(Number(r.headers.get('x-ratelimit-remaining')) <= 5, 'Remaining-Header am Erfolg');
+    assert.ok(Number(r.headers.get('x-ratelimit-reset')) >= 1, 'Reset-Header am Erfolg');
   }
   assert.ok(saw429, 'Limit wurde nie erreicht — Deckel greift nicht');
+
+  // GET traegt keine Rate-Limit-Header (ist vom Limit ausgenommen).
+  const first = await fetch(`${BASE}/api/health`);
+  assert.equal(first.headers.get('x-ratelimit-limit'), null, 'GET bleibt frei von Limit-Headern');
 
   const get = await fetch(`${BASE}/api/health`);
   assert.equal(get.status, 200, 'GET wurde mit-limitiert');
