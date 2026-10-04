@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { readFileSync, existsSync, mkdirSync, openSync, writeSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, mkdirSync, openSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
 import util from 'node:util';
 import { extname, join, resolve } from 'node:path';
@@ -127,7 +127,15 @@ function serveStatic(req, res, pathname) {
     return res.end('Nicht gefunden');
   }
   const type = MIME[extname(file)] || 'application/octet-stream';
-  res.writeHead(200, { 'Content-Type': type });
+  // ETag aus Groesse und Aenderungszeit: klientenseitiges Caching per
+  // If-None-Match, 304 spart Transfer und Laufzeit.
+  const stat = statSync(file);
+  const etag = `"${stat.size}-${Math.floor(stat.mtimeMs)}"`;
+  if (req.headers['if-none-match'] === etag) {
+    res.writeHead(304, { ETag: etag });
+    return res.end();
+  }
+  res.writeHead(200, { 'Content-Type': type, ETag: etag });
   res.end(readFileSync(file));
 }
 
