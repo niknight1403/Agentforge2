@@ -8,6 +8,7 @@ import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { bus, emit, eventsSince } from './events.mjs';
+import { VERSION } from './version.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -153,7 +154,7 @@ async function api(req, res, url) {
   }
 
   if (p === '/api/health') {
-    return json(res, 200, { ok: true, ts: now(), routes: enabledRoutes().length, version: '1.3.0' });
+    return json(res, 200, { ok: true, ts: now(), routes: enabledRoutes().length, version: VERSION });
   }
 
   // ---- Routen ----
@@ -161,7 +162,7 @@ async function api(req, res, url) {
     const one = (sql, ...args) => db.prepare(sql).get(...args);
     const count = (table) => one(`SELECT COUNT(*) c FROM ${table}`).c;
     return json(res, 200, {
-      version: '1.3.0',
+      version: VERSION,
       ts: now(),
       uptimeSec: Math.round(process.uptime()),
       villas: count('villas'),
@@ -305,7 +306,7 @@ async function api(req, res, url) {
     const payload = {
       exported_at: now(),
       app: 'VillaForge',
-      version: '1.3.0',
+      version: VERSION,
       villa,
       agents: pick('agents'),
       tasks: pick('tasks'),

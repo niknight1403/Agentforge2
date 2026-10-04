@@ -117,7 +117,7 @@ test('Stats: Zaehler und Laufzustand stimmen', async () => {
   const r = await fetch(`${BASE}/api/stats`);
   assert.equal(r.status, 200);
   const st = await r.json();
-  assert.equal(st.version, '1.3.0');
+  assert.equal(st.version, '1.4.0');
   assert.ok(st.uptimeSec >= 0);
   assert.ok(Number.isInteger(st.villas) && st.villas >= 1, 'Villa-Zaehler fehlt');
   assert.ok(st.tasks.total >= 1, 'Aufgaben-Zaehler fehlt');

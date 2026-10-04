@@ -20,7 +20,10 @@ das System immer lauffähig bleibt.
 ```bash
 node server/server.mjs          # Standard-Port 12000
 PORT=12001 node server/server.mjs
+node server/server.mjs --check  # Konfiguration trocken prüfen, ohne Port zu belegen
 ```
+
+Ungültige Konfiguration (z. B. `PORT=abc`) bricht mit klarer Meldung und Exit 1 ab.
 
 Danach im Browser öffnen: `http://localhost:12000/`
 
@@ -135,6 +138,15 @@ und ohne echte Keys — Tests laufen vollstaendig im Offline-Planer.
   Villa auf `PAUSED` und es entstehen Reparaturaufgaben.
 - **Berichte**: Analyse- und Verifikationsberichte sind in App (Abschnitt „Berichte“) und
   Web-Oberfläche (Tab „Berichte“) einsehbar.
+- **Löschen und Export**: `DELETE /api/villas/:id` entfernt eine Villa mitsamt aller Daten
+  (409, solange der Lauf aktiv ist); `GET /api/villas/:id/export` liefert alles als
+  JSON-Datei. In Web-UI und Android-App per Knopf erreichbar.
+- **Statistik**: `GET /api/stats` zählt Villen, Agenten, Aufgaben, Berichte, Erinnerungen
+  und offene Läufe — App und Web-UI zeigen die Zahlen.
+- **SSE mit Replay**: Jedes Ereignis trägt eine `id`; verbindet sich ein Client mit
+  `Last-Event-ID` neu, liefert der Hub die letzten 200 verpassten Ereignisse nach.
+- **Sauberes Herunterfahren**: Bei SIGTERM/SIGINT werden laufende Villen gestoppt, der
+  Server geschlossen und Exit 0 geliefert.
 - **LLM-Routen-Rotator**: Priorität plus Rotation, Failover bei Fehler, Statistik je Route.
   Eine fehlgeschlagene Route wird für 60 Sekunden gesperrt (nach weiteren Fehlern länger,
   höchstens 10 Minuten). Das verhindert, dass jeder Aufruf erneut in dieselbe tote Route läuft.
@@ -169,7 +181,10 @@ Key hinterlegen – entweder als Umgebungsvariable beim Start oder in der Oberfl
 
 ```
 GET    /api/health
-GET    /api/villas
+GET    /api/stats                       Zaehler und Laufzustand
+GET    /api/villas                      ?limit=, ?offset= (Paginierung)
+DELETE /api/villas/:id                  Villa mitsamt Daten loeschen (409 bei laufendem Lauf)
+GET    /api/villas/:id/export           kompletter JSON-Download
 POST   /api/villas                    { name, idea, agentCount, sourcePath? }
 GET    /api/villas/:id                Villa, Agenten, Aufgaben, Gedächtnis, Berichte, Audit
 POST   /api/villas/:id/source         { path } – Quellprojekt hinterlegen
