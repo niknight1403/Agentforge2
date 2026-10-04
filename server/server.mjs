@@ -428,6 +428,7 @@ server.listen(PORT, HOST, () => {
   }
 });
 
+
 /* --------------------------- Daemon-Betrieb --------------------------- */
 // Ein Fehler in einem einzelnen Aufruf darf den Daemon nicht beenden.
 process.on('unhandledRejection', (err) => logError('Unbehandelte Ablehnung:', err?.message || err));
@@ -439,8 +440,12 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
     if (shuttingDown) return;
     shuttingDown = true;
     log(`${sig} empfangen, fahre herunter ...`);
+    for (const id of listRunning()) {
+      try { stopVilla(id); } catch { /* Villa konnte nicht gestoppt werden — weitermachen */ }
+      log(`Lauf der Villa ${id} gestoppt.`);
+    }
     server.close(() => {
-      log('Server geschlossen.');
+      log('Herunterfahren abgeschlossen.');
       process.exit(0);
     });
     // Notbremse, falls Verbindungen nicht schliessen.

@@ -49,3 +49,37 @@ test('--check meldet Konfiguration trocken und belegt keinen Port (Exit 0)', asy
   // Port 13000 darf nach --check wieder frei sein: kein Server laeuft.
   // (Gegenprobe via erneutem Spawn desselben Ports in Testreihenfolge hier.)
 });
+
+test('SIGTERM: Hub stoppt laufende Villen und beendet mit Exit 0', { timeout: 20000 }, async () => {
+  const PORT = 12902;
+  const DB = join(mkdtempSync(join(tmpdir(), 'vf-sigterm-')), 'hub.db');
+  const hub = spawn(NODE, [...FLAGS, 'server/server.mjs'], {
+    cwd: ROOT,
+    env: { ...process.env, VF_DB: DB, PORT: String(PORT), HOST: '127.0.0.1', VF_RESUME: '0' },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  let out = '';
+  hub.stdout.on('data', (d) => { out += d; });
+  hub.stderr.on('data', (d) => { out += d; });
+  const BASE = `http://127.0.0.1:${PORT}`;
+  for (let i = 0; i < 60; i++) {
+    try { const r = await fetch(`${BASE}/api/health`); if (r.ok) break; } catch {}
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  const cr = await fetch(`${BASE}/api/villas`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Shutdown-Villa', idea: 'SIGTERM-Test', agentCount: 4 })
+  });
+  assert.equal(cr.status, 201);
+  const villa = await cr.json();
+  await fetch(`${BASE}/api/villas/${villa.villaId}/orchestrate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ maxTasks: 5 })
+  });
+  const exitCode = await new Promise((resolve) => {
+    hub.on('exit', (code) => resolve(code));
+    setTimeout(() => { hub.kill('SIGKILL'); resolve('killed'); }, 8000);
+    hub.kill('SIGTERM');
+  });
+  assert.equal(exitCode, 0, `erwartet Exit 0, war ${exitCode} — Log: ${out}`);
+  assert.match(out, /fahre herunter/, 'Shutdown-Log fehlt');
+});
