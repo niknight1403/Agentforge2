@@ -7,7 +7,7 @@ import { validateRoute, validateSecret, validateVilla, validateMessage, validate
 import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
-import { bus } from './events.mjs';
+import { bus, emit } from './events.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -225,6 +225,19 @@ async function api(req, res, url) {
     const result = await createVilla(v.value);
     return json(res, 201, result);
   }
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'DELETE') {
+    const id = Number(parts[2]);
+    const villa = db.prepare('SELECT id FROM villas WHERE id = ?').get(id);
+    if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
+    if (isRunning(id)) return json(res, 409, { error: 'Villa laeuft gerade — erst stoppen, dann loeschen.' });
+    for (const t of ['tasks', 'agents', 'messages', 'memories', 'audit', 'sources', 'reports']) {
+      db.prepare(`DELETE FROM ${t} WHERE villa_id = ?`).run(id);
+    }
+    db.prepare('DELETE FROM villas WHERE id = ?').run(id);
+    emit('villa_deleted', { villaId: id });
+    return json(res, 200, { deleted: id });
+  }
+
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'GET') {
     const id = Number(parts[2]);
     const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);

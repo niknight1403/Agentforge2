@@ -229,6 +229,27 @@ test('Villa-Liste ist gedeckelt und seitbar', async () => {
   assert.equal(cap.headers.get('x-limit'), '200', 'Limit-Deckel greift nicht');
 });
 
+test('DELETE: Villa verschwindet sauber mitsamt Daten', async () => {
+  const cr = await fetch(`${BASE}/api/villas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Weg damit', idea: 'Loeschtest', agentCount: 4 })
+  });
+  assert.equal(cr.status, 201);
+  const villa = await cr.json();
+
+  const del = await fetch(`${BASE}/api/villas/${villa.villaId}`, { method: 'DELETE' });
+  assert.equal(del.status, 200);
+  assert.equal((await del.json()).deleted, villa.villaId);
+
+  const detail = await fetch(`${BASE}/api/villas/${villa.villaId}`);
+  assert.equal(detail.status, 404, 'geloeschte Villa ist noch abrufbar');
+
+  // Unbekannte ID: 404 statt 200.
+  const miss = await fetch(`${BASE}/api/villas/999999`, { method: 'DELETE' });
+  assert.equal(miss.status, 404);
+});
+
 test('Orchestrate: unsinnige Parameter werden mit 400 abgelehnt', async () => {
   const bad = await post(`/api/villas/${villaId}/orchestrate`, { concurrency: 999 });
   assert.equal(bad.status, 400);
