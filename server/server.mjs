@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
 import { seedRoutes } from './seed.mjs';
+import { validateRoute, validateSecret, validateVilla, validateMessage } from './validate.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
@@ -44,16 +45,27 @@ function readBody(req) {
     req.on('data', (c) => { raw += c; if (raw.length > 5_000_000) req.destroy(); });
     req.on('end', () => {
       if (!raw) return resolveP({});
-      try { resolveP(JSON.parse(raw)); } catch (e) { reject(e); }
+      try { resolveP(JSON.parse(raw)); } catch (e) { reject(Object.assign(e, { statusCode: 400, public: 'Body ist kein gueltiges JSON' })); }
     });
     req.on('error', reject);
   });
 }
 
 function serveStatic(req, res, pathname) {
-  const rel = pathname === '/' ? '/index.html' : pathname;
-  const file = join(PUBLIC_DIR, rel.replace(/\.\./g, ''));
-  if (!file.startsWith(PUBLIC_DIR) || !existsSync(file)) {
+  // Pfad dekodieren und normalisieren, bevor die Prefix-Pruefung laeuft.
+  let rel;
+  try {
+    rel = decodeURIComponent(pathname === '/' ? '/index.html' : pathname);
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'text/plain' });
+    return res.end('Ungueltiger Pfad');
+  }
+  if (rel.split('/').some((seg) => seg === '..' || seg.startsWith('.'))) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    return res.end('Nicht gefunden');
+  }
+  const file = resolve(PUBLIC_DIR, '.' + rel);
+  if (!file.startsWith(PUBLIC_DIR + '/') || !existsSync(file)) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     return res.end('Nicht gefunden');
   }
@@ -79,6 +91,9 @@ async function api(req, res, url) {
   }
   if (p === '/api/routes' && m === 'POST') {
     const b = await readBody(req);
+    const v = validateRoute(b);
+    if (!v.ok) return json(res, 400, { error: v.error });
+    const { name, baseUrl, model, keyEnv, priority } = v.value;
     const id = db.prepare(
       'INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
     ).run(b.name || 'Route', b.provider || 'openai-compatible', b.baseUrl || '', b.model || '', b.keyEnv || '', b.isFree ? 1 : 0, 1, Number(b.priority) || 10, 1, 'NEW', 0, 0, 0).lastInsertRowid;
@@ -101,9 +116,10 @@ async function api(req, res, url) {
   }
   if (p === '/api/secrets' && m === 'POST') {
     const b = await readBody(req);
-    if (!b.name) return json(res, 400, { error: 'name fehlt' });
+    const v = validateSecret(b);
+    if (!v.ok) return json(res, 400, { error: v.error });
     db.prepare('INSERT INTO secrets (name, value, updated_at) VALUES (?,?,?) ON CONFLICT(name) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at')
-      .run(String(b.name), String(b.value || ''), now());
+      .run(v.value.name, v.value.value, now());
     return json(res, 200, { ok: true });
   }
   if (parts[0] === 'api' && parts[1] === 'secrets' && parts[2] && m === 'DELETE') {
@@ -120,14 +136,9 @@ async function api(req, res, url) {
   }
   if (p === '/api/villas' && m === 'POST') {
     const b = await readBody(req);
-    if (!b.idea) return json(res, 400, { error: 'idea fehlt' });
-    const result = await createVilla({
-      name: b.name || 'Villa',
-      idea: b.idea,
-      agentCount: b.agentCount,
-      sourcePath: b.sourcePath || '',
-      mode: b.sourcePath ? (b.mode || 'ANALYZE') : 'BUILD'
-    });
+    const v = validateVilla(b);
+    if (!v.ok) return json(res, 400, { error: v.error });
+    const result = await createVilla(v.value);
     return json(res, 201, result);
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'GET') {
@@ -192,12 +203,14 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'chat' && m === 'POST') {
     const id = Number(parts[2]);
     const b = await readBody(req);
+    const vm = validateMessage(b);
+    if (!vm.ok) return json(res, 400, { error: vm.error });
     const agent = b.agentId
       ? db.prepare('SELECT * FROM agents WHERE id = ?').get(Number(b.agentId))
       : db.prepare('SELECT * FROM agents WHERE villa_id = ? AND is_root = 1').get(id);
     if (!agent) return json(res, 404, { error: 'Agent nicht gefunden' });
-    db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(id, agent.id, 'user', String(b.message || ''), now());
-    const res2 = await runAgent(agent, String(b.message || ''), { maxSteps: 6, villaId: id });
+    db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(id, agent.id, 'user', vm.value.message, now());
+    const res2 = await runAgent(agent, vm.value.message, { maxSteps: 6, villaId: id });
     const answer = res2.answer || res2.error || 'Keine Antwort.';
     db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(id, agent.id, 'assistant', answer, now());
     return json(res, 200, { agentId: agent.id, answer, route: res2.route, model: res2.model, trace: res2.trace, offline: res2.offline });
@@ -234,7 +247,12 @@ async function api(req, res, url) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   if (url.pathname.startsWith('/api/')) {
-    api(req, res, url).catch((err) => json(res, 500, { error: String(err.message || err) }));
+    api(req, res, url).catch((err) => {
+      const code = err.statusCode || 500;
+      const message = err.public || 'Interner Fehler';
+      if (code >= 500) logError('API-Fehler', url.pathname, String(err.message || err));
+      json(res, code, { error: message });
+    });
   } else {
     serveStatic(req, res, url.pathname);
   }
