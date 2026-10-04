@@ -225,6 +225,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(detail = null, messages = emptyList(), villas = villas, message = "Villa gelöscht") }
     }
 
+    /** Benennt die offene Villa um bzw. aktualisiert die Idee (PATCH). */
+    fun editVilla(name: String, idea: String) = run {
+        val detail = _state.value.detail ?: return@run
+        client.patchVilla(detail.villa.id, name, idea)
+        val refreshed = client.villaDetail(detail.villa.id)
+        _state.update { it.copy(detail = refreshed, message = "Villa aktualisiert") }
+    }
+
     /** Exportiert die offene Villa als JSON-Text (zum Teilen/Speichern). */
     fun export(onReady: (String) -> Unit) = run {
         val detail = _state.value.detail ?: return@run

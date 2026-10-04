@@ -292,6 +292,11 @@ class HubClient(context: Context) {
         execute("DELETE", "/api/villas/$villaId")
     }
 
+    /** Aktualisiert Name und Idee einer Villa (PATCH /api/villas/:id). */
+    suspend fun patchVilla(villaId: Long, name: String, idea: String) {
+        execute("PATCH", "/api/villas/$villaId", JSONObject().put("name", name).put("idea", idea))
+    }
+
     /** Kompletter JSON-Export der Villa (Villa, Agenten, Aufgaben, Berichte …). */
     suspend fun exportVilla(villaId: Long): String =
         execute("GET", "/api/villas/$villaId/export")

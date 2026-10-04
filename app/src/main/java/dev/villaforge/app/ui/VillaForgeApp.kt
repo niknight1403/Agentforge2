@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -250,6 +251,7 @@ private fun CreateVillaScreen(state: UiState, viewModel: MainViewModel, onCreate
 private fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, onDeleted: () -> Unit) {
     val detail = state.detail ?: return
     var showDelete by remember { mutableStateOf(false) }
+    var showEdit by remember { mutableStateOf(false) }
 
     // Waehrend eines Durchlaufs den Fortschritt regelmaessig nachladen.
     LaunchedEffect(detail.villa.id, detail.running, detail.villa.status) {
@@ -340,6 +342,14 @@ private fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () ->
                 Icon(Icons.Filled.Share, contentDescription = null)
                 Spacer(Modifier.width(6.dp)); Text("Export")
             }
+            OutlinedButton(
+                onClick = { showEdit = true },
+                enabled = !state.busy,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Filled.Edit, contentDescription = null)
+                Spacer(Modifier.width(6.dp)); Text("Bearbeiten")
+            }
             if (!active) {
                 OutlinedButton(
                     onClick = { showDelete = true },
@@ -362,6 +372,31 @@ private fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () ->
                 },
                 dismissButton = {
                     TextButton(onClick = { showDelete = false }) { Text("Abbrechen") }
+                }
+            )
+        }
+
+        if (showEdit) {
+            var editName by remember { mutableStateOf(detail.villa.name) }
+            var editIdea by remember { mutableStateOf(detail.villa.idea) }
+            AlertDialog(
+                onDismissRequest = { showEdit = false },
+                title = { Text("Villa bearbeiten") },
+                text = {
+                    Column {
+                        OutlinedTextField(value = editName, onValueChange = { editName = it }, label = { Text("Name") }, singleLine = true)
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(value = editIdea, onValueChange = { editIdea = it }, label = { Text("Idee") }, minLines = 2)
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { showEdit = false; viewModel.editVilla(editName.trim(), editIdea.trim()) },
+                        enabled = editName.isNotBlank() && editIdea.isNotBlank()
+                    ) { Text("Speichern") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEdit = false }) { Text("Abbrechen") }
                 }
             )
         }
