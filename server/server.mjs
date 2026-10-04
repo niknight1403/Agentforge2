@@ -86,8 +86,14 @@ async function api(req, res, url) {
   const parts = p.split('/').filter(Boolean); // ['api', ...]
 
   // Schutz: gilt nur, wenn VF_TOKEN gesetzt ist; Health bleibt offen.
-  if (API_TOKEN && p !== '/api/health' && (req.headers.authorization || '') !== `Bearer ${API_TOKEN}`) {
-    return json(res, 401, { error: 'Nicht autorisiert: Bearer-Token fehlt oder ist falsch' });
+  // EventSource (SSE) kann keine Header senden — deshalb ist neben dem
+  // Bearer-Header auch ?token= erlaubt, ausnahmsweise auch im Log unsichtbar.
+  if (API_TOKEN && p !== '/api/health') {
+    const header = (req.headers.authorization || '') === `Bearer ${API_TOKEN}`;
+    const query = url.searchParams.get('token') === API_TOKEN;
+    if (!header && !query) {
+      return json(res, 401, { error: 'Nicht autorisiert: Bearer-Token fehlt oder ist falsch' });
+    }
   }
 
   if (p === '/api/health') {

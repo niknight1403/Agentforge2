@@ -74,6 +74,19 @@ test('Richtiger Token gewaehrt Zugang', async () => {
   assert.ok(Array.isArray(list));
 });
 
+test('Query-Parameter ?token= ist gleichwertig zum Header (fuer EventSource)', async () => {
+  const ok = await fetch(`${BASE}/api/villas?token=${encodeURIComponent(TOKEN)}`);
+  assert.equal(ok.status, 200);
+  const wrong = await fetch(`${BASE}/api/villas?token=falsch`);
+  assert.equal(wrong.status, 401);
+  // SSE ueber Query-Token verbinden (so tut es die Weboberflaeche).
+  const sse = await fetch(`${BASE}/api/events?token=${encodeURIComponent(TOKEN)}`);
+  assert.equal(sse.status, 200);
+  sse.body.cancel();
+  const sseWrong = await fetch(`${BASE}/api/events?token=nope`);
+  assert.equal(sseWrong.status, 401);
+});
+
 test('Token erscheint nie im Server-Log', async () => {
   await fetch(`${BASE}/api/villas`, { headers: { Authorization: `Bearer ${TOKEN}` } }).catch(() => {});
   assert.ok(!sawLog.includes(TOKEN), 'Token wurde geloggt!');

@@ -1,6 +1,12 @@
 const $ = (s) => document.querySelector(s);
+// Optionaler Hub-Token (VF_TOKEN): wird in localStorage gehalten und als
+// Bearer-Header mitgeschickt. EventSource kann keine Header, dort laeuft
+// der Token als URL-Parameter.
+const getToken = () => localStorage.getItem('vf_token') || '';
+const setToken = (t) => { t ? localStorage.setItem('vf_token', t) : localStorage.removeItem('vf_token'); };
 const api = async (path, opts = {}) => {
-  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const headers = { 'Content-Type': 'application/json', ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}) };
+  const res = await fetch(path, { headers, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
   const text = await res.text();
   let data; try { data = JSON.parse(text); } catch { data = { error: text }; }
   if (!res.ok && !data.error) data.error = `HTTP ${res.status}`;
@@ -73,8 +79,10 @@ async function addRoute(){await api('/api/routes',{method:'POST',body:{name:$('#
 async function loadSecrets(){const list=await api('/api/secrets');$('#secretList').innerHTML=Array.isArray(list)&&list.length?list.map(s=>`<div class="row"><b>${esc(s.name)}</b> <span class="badge RUNNING">gesetzt</span></div>`).join(''):'<p class="hint">Noch kein Key hinterlegt. Der Offline-Planer bleibt verfügbar.</p>';}
 async function addSecret(){const name=$('#sName').value.trim(),value=$('#sValue').value;if(!name||!value)return;await api('/api/secrets',{method:'POST',body:{name,value}});$('#sValue').value='';loadSecrets();loadRoutes();}
 function selectTab(tab){document.querySelectorAll('.side-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));document.querySelectorAll('.workspace-main .tabpane').forEach(p=>p.classList.toggle('active',p.dataset.pane===tab));}
+function saveToken(){ setToken($('#tokenInput').value.trim()); $('#tokenInput').value=''; loadRoutes(); loadSecrets(); connectEvents(); checkHealth(); }
 function connectEvents(){
-  const es=new EventSource('/api/events');
+  const t=getToken();
+  const es=new EventSource(t ? `/api/events?token=${encodeURIComponent(t)}` : '/api/events');
   // Nur Statusaenderungen loesen einen Refresh aus;Schwellwertereignisse
   // (task/chat/tool) werden gebuendelt, damit ein Lauf die API nicht flutet.
   let refreshTimer=null;
@@ -86,5 +94,5 @@ function connectEvents(){
   };
 }
 
-$('#createBtn').addEventListener('click',createVilla); $('#heroCreateBtn').addEventListener('click',()=>{ $('#createSection').scrollIntoView({behavior:'smooth'}); setTimeout(()=>$('#idea').focus(),350); }); $('#refreshBtn').addEventListener('click',loadVillas); $('#openLatestBtn').addEventListener('click',()=>latestVillas[0]&&openVilla(latestVillas[0].id)); $('#closeDetail').addEventListener('click',closeWorkspace); $('#startBtn').addEventListener('click',startDevelopment); $('#stopBtn').addEventListener('click',stopDevelopment); $('#sendBtn').addEventListener('click',sendChat); $('#chatMsg').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}); $('#addRouteBtn').addEventListener('click',addRoute); $('#addSecretBtn').addEventListener('click',addSecret); document.querySelectorAll('.side-tab').forEach(t=>t.addEventListener('click',()=>selectTab(t.dataset.tab))); document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#detailPanel').hidden)closeWorkspace();});
+$('#createBtn').addEventListener('click',createVilla); $('#heroCreateBtn').addEventListener('click',()=>{ $('#createSection').scrollIntoView({behavior:'smooth'}); setTimeout(()=>$('#idea').focus(),350); }); $('#refreshBtn').addEventListener('click',loadVillas); $('#openLatestBtn').addEventListener('click',()=>latestVillas[0]&&openVilla(latestVillas[0].id)); $('#closeDetail').addEventListener('click',closeWorkspace); $('#startBtn').addEventListener('click',startDevelopment); $('#stopBtn').addEventListener('click',stopDevelopment); $('#sendBtn').addEventListener('click',sendChat); $('#chatMsg').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}); $('#addRouteBtn').addEventListener('click',addRoute); $('#addSecretBtn').addEventListener('click',addSecret); $('#saveTokenBtn').addEventListener('click',saveToken); document.querySelectorAll('.side-tab').forEach(t=>t.addEventListener('click',()=>selectTab(t.dataset.tab))); document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#detailPanel').hidden)closeWorkspace();});
 checkHealth();loadVillas();loadRoutes();loadSecrets();connectEvents();setInterval(checkHealth,20000);
