@@ -148,7 +148,23 @@ async function api(req, res, url) {
 
   // ---- Villas ----
   if (p === '/api/villas' && m === 'GET') {
-    return json(res, 200, db.prepare('SELECT * FROM villas ORDER BY created_at DESC').all());
+    // Deckel und Paginierung: ungebundene Listen waechsen unbrauchbar.
+    // Die Antwort bleibt ein Array (App und Web-UI parsen genau das);
+    // Gesamtzahl steht im X-Total-Count-Header, blaettern via ?limit=/?offset=.
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
+    const offset = Math.max(Number(url.searchParams.get('offset')) || 0, 0);
+    const rows = db.prepare('SELECT * FROM villas ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset);
+    const total = db.prepare('SELECT COUNT(*) c FROM villas').get().c;
+    const body = JSON.stringify(rows);
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Total-Count': String(total),
+      'X-Limit': String(limit),
+      'X-Offset': String(offset)
+    });
+    res.end(body);
+    return;
   }
   if (p === '/api/villas' && m === 'POST') {
     const b = await readBody(req);
@@ -163,8 +179,8 @@ async function api(req, res, url) {
     if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
     return json(res, 200, {
       villa,
-      agents: db.prepare('SELECT * FROM agents WHERE villa_id = ? ORDER BY is_root DESC, id ASC').all(id),
-      tasks: db.prepare('SELECT * FROM tasks WHERE villa_id = ? ORDER BY priority ASC, id ASC').all(id),
+      agents: db.prepare('SELECT * FROM agents WHERE villa_id = ? ORDER BY is_root DESC, id ASC LIMIT 500').all(id),
+      tasks: db.prepare('SELECT * FROM tasks WHERE villa_id = ? ORDER BY priority ASC, id ASC LIMIT 500').all(id),
       memories: db.prepare('SELECT * FROM memories WHERE villa_id = ? ORDER BY importance DESC, id DESC LIMIT 200').all(id),
       reports: db.prepare('SELECT id, villa_id, kind, title, content, created_at FROM reports WHERE villa_id = ? ORDER BY id DESC LIMIT 50').all(id),
       audit: db.prepare('SELECT * FROM audit WHERE villa_id = ? ORDER BY id DESC LIMIT 200').all(id),
@@ -214,7 +230,7 @@ async function api(req, res, url) {
     const id = Number(parts[2]);
     const agentId = Number(url.searchParams.get('agentId') || 0);
     const rows = agentId
-      ? db.prepare('SELECT * FROM messages WHERE villa_id = ? AND agent_id = ? ORDER BY id ASC').all(id, agentId)
+      ? db.prepare('SELECT * FROM (SELECT * FROM messages WHERE villa_id = ? AND agent_id = ? ORDER BY id DESC LIMIT 500) ORDER BY id ASC').all(id, agentId)
       : db.prepare('SELECT * FROM messages WHERE villa_id = ? ORDER BY id DESC LIMIT 200').all(id);
     return json(res, 200, rows);
   }

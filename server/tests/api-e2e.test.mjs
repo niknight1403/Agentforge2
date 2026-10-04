@@ -191,6 +191,32 @@ test('Orchestrierung: laeuft bis COMPLETED (Offline-Modus)', async () => {
   assert.ok(detail.tasks.length > 0);
 });
 
+test('Villa-Liste ist gedeckelt und seitbar', async () => {
+  // Zusaetzliche Villas ueber die echte API anlegen (Offline-Planer, schnell).
+  for (let i = 0; i < 12; i++) {
+    const r = await fetch(`${BASE}/api/villas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: `Liste ${i}`, idea: 'Paginierungstest', agentCount: 3 })
+    });
+    assert.equal(r.status, 201);
+  }
+  const all = await fetch(`${BASE}/api/villas`);
+  const arr = await all.json();
+  assert.ok(Array.isArray(arr), 'Antwort muss ein Array bleiben');
+  assert.ok(arr.length <= 50, 'Standard-Deckel 50 greift nicht');
+  assert.ok(all.headers.get('x-total-count') >= 13, 'X-Total-Count fehlt');
+
+  const small = await fetch(`${BASE}/api/villas?limit=3&offset=3`);
+  const page = await small.json();
+  assert.equal(page.length, 3);
+  assert.equal(small.headers.get('x-limit'), '3');
+  assert.equal(small.headers.get('x-offset'), '3');
+
+  const cap = await fetch(`${BASE}/api/villas?limit=9999`);
+  assert.equal(cap.headers.get('x-limit'), '200', 'Limit-Deckel greift nicht');
+});
+
 test('Orchestrate: unsinnige Parameter werden mit 400 abgelehnt', async () => {
   const bad = await post(`/api/villas/${villaId}/orchestrate`, { concurrency: 999 });
   assert.equal(bad.status, 400);
