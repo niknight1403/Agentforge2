@@ -158,6 +158,35 @@ async function api(req, res, url) {
   }
 
   // ---- Routen ----
+  // Kompletter Dump aller Villen als Backup: Elemente des villas-Arrays sind
+  // direkt per POST /api/villas/import wiederherstellbar.
+  if (p === '/api/backup' && m === 'GET') {
+    const pick = (table, villaId, limit) =>
+      db.prepare(`SELECT * FROM ${table} WHERE villa_id = ? ORDER BY id DESC LIMIT ?`).all(villaId, limit);
+    const rows = db.prepare('SELECT * FROM villas ORDER BY id ASC').all();
+    const villas = rows.map((villa) => ({
+      villa,
+      agents: pick('agents', villa.id, 500),
+      tasks: pick('tasks', villa.id, 2000),
+      memories: pick('memories', villa.id, 500),
+      reports: pick('reports', villa.id, 100),
+      messages: pick('messages', villa.id, 1000)
+    }));
+    const payload = JSON.stringify({
+      exported_at: now(),
+      app: 'VillaForge',
+      version: VERSION,
+      villaCount: villas.length,
+      villas
+    });
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': `attachment; filename="villaforge-backup-${new Date(now()).toISOString().slice(0, 10)}.json"`,
+      'Cache-Control': 'no-store'
+    });
+    res.end(payload);
+    return;
+  }
   if (p === '/api/stats' && m === 'GET') {
     const one = (sql, ...args) => db.prepare(sql).get(...args);
     const count = (table) => one(`SELECT COUNT(*) c FROM ${table}`).c;
