@@ -140,3 +140,20 @@ ensureColumn('villas', 'auto_rounds', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('routes', 'cooldown_until', 'INTEGER NOT NULL DEFAULT 0');
 
 export const now = () => Date.now();
+
+/**
+ * History-Rotation: Laeufe schreiben audit- und memory-Zeilen ohne Ende.
+ * Nach Abschluss eines Laufs wird pro Villa auf ein handhabbares Fenster
+ * gekuerzt — wichtige Erinnerungen (importance >= 8) ueberleben immer.
+ * Rueckgabe: Anzahl der geloeschten Zeilen (fuer Logging/Tests).
+ */
+export function pruneHistory(villaId, { keepAudit = 400, keepMemories = 300 } = {}) {
+  const audit = db.prepare(`
+    DELETE FROM audit WHERE villa_id = ? AND id NOT IN (
+      SELECT id FROM audit WHERE villa_id = ? ORDER BY id DESC LIMIT ?)`).run(villaId, villaId, keepAudit).changes;
+  const mem = db.prepare(`
+    DELETE FROM memories WHERE villa_id = ? AND id NOT IN (
+      SELECT id FROM memories WHERE villa_id = ?
+        ORDER BY (importance >= 8) DESC, importance DESC, id DESC LIMIT ?)`).run(villaId, villaId, keepMemories).changes;
+  return { audit, memories: mem };
+}

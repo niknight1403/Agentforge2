@@ -1,4 +1,4 @@
-import { db, now } from './db.mjs';
+import { db, now, pruneHistory } from './db.mjs';
 import { chat, derivePlan } from './llm.mjs';
 import { emit } from './events.mjs';
 import { mkdirSync, writeFileSync, readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
@@ -625,6 +625,9 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
       job.processed += batch.length;
       emit('progress', { villaId, processed: job.processed, open: openTasks(villaId).length });
     }
+
+    // History-Rotation: vollendete Laeufe kuerzen audit/memories auf Fenster.
+    const pruned = pruneHistory(villaId);
 
     const open = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status IN ('PENDING','READY','RUNNING','REVIEW')").get(villaId).c;
     let status = job.stop ? 'PAUSED' : (open === 0 ? 'COMPLETED' : 'PAUSED');
