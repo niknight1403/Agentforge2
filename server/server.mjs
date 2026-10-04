@@ -5,7 +5,7 @@ import { db, now } from './db.mjs';
 import { seedRoutes, syncCatalog } from './seed.mjs';
 import { validateRoute, validateSecret, validateVilla, validateMessage, validateOrchestrate } from './validate.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
-import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject } from './agents.mjs';
+import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject, importVilla } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { bus, emit, eventsSince } from './events.mjs';
 import { VERSION } from './version.mjs';
@@ -247,6 +247,12 @@ async function api(req, res, url) {
     });
     res.end(body);
     return;
+  }
+  if (p === '/api/villas/import' && m === 'POST') {
+    const b = await readBody(req);
+    const result = importVilla(b, { nameOverride: String(b?.name || '').trim() });
+    if (!result.ok) return json(res, 400, { error: result.error });
+    return json(res, 201, result);
   }
   if (p === '/api/villas' && m === 'POST') {
     const b = await readBody(req);

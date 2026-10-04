@@ -508,6 +508,135 @@ export async function createVilla({ name, idea, agentCount: wanted = 12, sourceP
 }
 
 /**
+ * Import einer Villa aus einem Export-JSON (GET /api/villas/:id/export).
+ * Alle Datensaetze bekommen neue IDs: Agenten zuerst (wegen parent_id),
+ * dann Aufgaben, Gedaechnis, Berichte und die letzten Nachrichten.
+ * Fuer jeden Datensatz gelten harte Obergrenzen, damit ein manipuliertes
+ * oder riesiges Exportfile den Hub nicht ueberlaeuft.
+ */
+const IMPORT_LIMITS = { agents: 500, tasks: 2000, memories: 500, reports: 100, messages: 1000 };
+
+export function importVilla(payload, { nameOverride = '' } = {}) {
+  if (!payload || typeof payload !== 'object' || !payload.villa || typeof payload.villa !== 'object') {
+    return { ok: false, error: 'Export-Format ungueltig: villa-Objekt fehlt (erwartet wird ein Export aus GET /api/villas/:id/export)' };
+  }
+  const idea = String(payload.villa.idea || '').trim();
+  if (!idea) return { ok: false, error: 'idea fehlt im Export' };
+  if (idea.length > 2000) return { ok: false, error: 'idea zu lang (max. 2000 Zeichen)' };
+  const name = String(nameOverride || payload.villa.name || 'Importierte Villa').trim().slice(0, 120) || 'Importierte Villa';
+  const maxAgents = Math.min(Math.max(Number(payload.villa.max_agents) || 1000, 3), 1000);
+
+  const lists = {};
+  for (const key of Object.keys(IMPORT_LIMITS)) {
+    const arr = Array.isArray(payload[key]) ? payload[key] : [];
+    lists[key] = arr.slice(0, IMPORT_LIMITS[key]);
+  }
+
+  const t = now();
+  const villaId = db.prepare(
+    "INSERT INTO villas (name, idea, status, max_agents, autonomy, source_path, mode, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)"
+  ).run(name, idea, 'CREATED', maxAgents, 1, String(payload.villa.source_path || '').slice(0, 1024), 'BUILD', t, t).lastInsertRowid;
+
+  // Agenten zuerst: neue IDs merken, parent_id und agent_id spaeter umsetzen.
+  const agentMap = new Map();
+  let rootSeen = false;
+  for (const a of lists.agents) {
+    if (!a || typeof a !== 'object' || !a.name) continue;
+    const isRoot = a.is_root ? 1 : 0;
+    if (isRoot && rootSeen) continue; // hoechstens ein Wurzel-Agent
+    if (isRoot) rootSeen = true;
+    const newId = insertAgent(
+      villaId,
+      String(a.name).slice(0, 120),
+      String(a.role || 'WORKER').slice(0, 40),
+      null,
+      isRoot
+    );
+    agentMap.set(Number(a.id), newId);
+    if (a.system_prompt) db.prepare('UPDATE agents SET system_prompt = ? WHERE id = ?').run(String(a.system_prompt).slice(0, 4000), newId);
+    if (a.autonomy_level != null) db.prepare('UPDATE agents SET autonomy_level = ? WHERE id = ?').run(Math.min(Math.max(Number(a.autonomy_level) || 3, 0), 5), newId);
+  }
+  if (!rootSeen) {
+    // Ohne Wurzel-Agent ist keine Villa bedienbar (Chat leitet an is_root).
+    const rootId = insertAgent(villaId, 'DeepAgent', 'ROOT', null, 1);
+    agentMap.set(0, rootId);
+  }
+
+  for (const task of lists.tasks) {
+    if (!task || typeof task !== 'object' || !task.title) continue;
+    const status = ['PENDING', 'RUNNING', 'DONE', 'FAILED', 'BLOCKED'].includes(task.status) ? task.status : 'PENDING';
+    db.prepare('INSERT INTO tasks (villa_id, agent_id, title, description, status, priority, result, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run(
+        villaId,
+        agentMap.get(Number(task.agent_id)) ?? null,
+        String(task.title).slice(0, 300),
+        String(task.description || '').slice(0, 4000),
+        status,
+        Math.min(Math.max(Number(task.priority) || 5, 1), 9),
+        String(task.result || '').slice(0, 20000),
+        Number(task.created_at) || t,
+        Number(task.updated_at) || t
+      );
+  }
+
+  for (const m of lists.memories) {
+    if (!m || typeof m !== 'object' || !m.title) continue;
+    db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
+      .run(
+        villaId,
+        agentMap.get(Number(m.agent_id)) ?? null,
+        ['villa', 'agent'].includes(m.scope) ? m.scope : 'villa',
+        String(m.kind || 'FACT').slice(0, 40),
+        String(m.title).slice(0, 300),
+        String(m.content || '').slice(0, 20000),
+        Math.min(Math.max(Number(m.importance) || 5, 1), 10),
+        Number(m.created_at) || t
+      );
+  }
+
+  for (const r of lists.reports) {
+    if (!r || typeof r !== 'object' || !r.title) continue;
+    db.prepare('INSERT INTO reports (villa_id, kind, title, content, data, created_at) VALUES (?,?,?,?,?,?)')
+      .run(
+        villaId,
+        String(r.kind || 'ANALYSIS').slice(0, 40),
+        String(r.title).slice(0, 300),
+        String(r.content || '').slice(0, 50000),
+        String(r.data || '').slice(0, 100000),
+        Number(r.created_at) || t
+      );
+  }
+
+  for (const msg of lists.messages) {
+    if (!msg || typeof msg !== 'object' || !msg.content) continue;
+    const agentId = agentMap.get(Number(msg.agent_id)) ?? agentMap.get(0);
+    if (agentId == null) continue;
+    db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, tool, created_at) VALUES (?,?,?,?,?,?)')
+      .run(
+        villaId,
+        agentId,
+        msg.role === 'user' ? 'user' : 'assistant',
+        String(msg.content).slice(0, 20000),
+        msg.tool ? String(msg.tool).slice(0, 80) : null,
+        Number(msg.created_at) || t
+      );
+  }
+
+  emit('villa_imported', { villaId, agents: agentMap.size, tasks: lists.tasks.length });
+  return {
+    ok: true,
+    villaId,
+    counts: {
+      agents: agentMap.size,
+      tasks: lists.tasks.length,
+      memories: lists.memories.length,
+      reports: lists.reports.length,
+      messages: lists.messages.length
+    }
+  };
+}
+
+/**
  * Verifikation: laeuft ein echtes Projekt vorliegt, werden die hinterlegten
  * Build- und Testbefehle ausgefuehrt. Das Ergebnis landet als Bericht und, bei
  * Fehlern, als neue Aufgabe in der Villa.
