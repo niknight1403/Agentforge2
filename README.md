@@ -54,6 +54,34 @@ fortgesetzt, sofern die Autonomie der Villa nicht abgeschaltet ist (`autonomy = 
 Aufgaben, die beim Abbruch auf `RUNNING` standen, werden wieder auf `PENDING` gesetzt und
 erneut ausgeführt. Abschalten mit `VF_RESUME=0`.
 
+### Optionaler API-Schutz (VF_TOKEN)
+
+Wird beim Start `VF_TOKEN=geheim` gesetzt, verlangt der Hub für alle `/api/*`-Endpunkte
+inklusive SSE den Header `Authorization: Bearer <Token>`. Nur `GET /api/health` bleibt
+offen (Ueberwachung). Ohne `VF_TOKEN` aendert sich nichts — die Weboberflaeche funktioniert
+dann ohne Token. Hinweis: die Android-App setzt aktuell keinen Bearer-Header; der Schutz
+richtet sich an Remote-Deployments mit eigenem Client.
+
+## Entwicklung & Tests
+
+```bash
+npm test               # 63 Unit- und Integrationstests (node:test, ohne Abhaengigkeiten)
+npm run check:secrets  # scannt den Quelltext auf committete API-Keys
+```
+
+Die Suite besteht aus vier Schichten:
+
+| Schicht | Datei | deckt ab |
+| --- | --- | --- |
+| Datenbank & Tools | `db.test.mjs`, `agents.test.mjs`, `fs-tools.test.mjs` | Schema, Seed, Werkzeuge, Audit |
+| LLM-Rotator | `llm.test.mjs` | Key-Aufloesung, Prioritaet/Rotation, Failover, Offline-Planer |
+| Validierung | `validate.test.mjs` | Eingabegrenzen aller POST-Endpunkte |
+| Integration | `api-e2e.test.mjs`, `api-auth.test.mjs` | echter Hub-Prozess ueber HTTP: Anlegen, Chat, SSE, Orchestrierung, VF_TOKEN |
+
+CI (`hub-tests.yml`) prueft Syntax, Secret-Scan und die komplette Suite bei jedem Push
+unter `server/**`; `build-apk.yml` baut die Android-APK. Alles ohne Fremd-Abhaengigkeiten
+und ohne echte Keys — Tests laufen vollstaendig im Offline-Planer.
+
 ## Funktionsumfang
 
 - **Villa anlegen**: Idee eingeben, Deep Agent erzeugen, Plan ableiten, Agentenpool aufbauen.
@@ -92,10 +120,25 @@ erneut ausgeführt. Abschalten mit `VF_RESUME=0`.
 
 ## Kostenlose LLM-Routen (Katalog)
 
-Vorkonfiguriert sind OpenAI-kompatible Endpunkte mit kostenlosem Kontingent:
-Groq, Cerebras, Google Gemini, OpenRouter (freie Modelle), Mistral, Together sowie
-lokales Ollama. Key-Namen: `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GEMINI_API_KEY`,
-`OPENROUTER_API_KEY`, `MISTRAL_API_KEY`, `TOGETHER_API_KEY`.
+Vorkonfiguriert sind OpenAI-kompatible Endpunkte mit kostenlosem Kontingent
+(Stand Oktober 2026, live verifiziert):
+
+| Prioritaet | Route | Modell | Key |
+| --- | --- | --- | --- |
+| 1 | Groq GPT-OSS 120B | `openai/gpt-oss-120b` | `GROQ_API_KEY` |
+| 2 | Groq GPT-OSS 20B | `openai/gpt-oss-20b` | `GROQ_API_KEY` |
+| 3 | Cerebras Llama 3.3 70B | `llama-3.3-70b` | `CEREBRAS_API_KEY` |
+| 4 | Gemini 2.0 Flash | `gemini-2.0-flash` | `GEMINI_API_KEY` |
+| 5 | OpenRouter Gemma 4 31B | `google/gemma-4-31b-it:free` | `OPENROUTER_API_KEY` |
+| 6 | Mistral Small | `mistral-small-latest` | `MISTRAL_API_KEY` |
+| 7 | Together Llama 3.3 (free) | `meta-llama/Llama-3.3-70B-Instruct-Turbo-Free` | `TOGETHER_API_KEY` |
+| 50 | Ollama lokal | beliebig | keiner (127.0.0.1:11434) |
+
+Hinweise: Bei Groq wurde `llama-3.3-70b-versatile` abgeschafft; der Katalog nutzt jetzt
+GPT-OSS (Reasoning-Modelle — der Hub nutzt den Gedankengang als Fallback, falls das
+Antwortbudget knapp ist). OpenRouter gewaehrt 50 Gratis-Requests pro Tag (Reset 02:00).
+Bei einem Katalog-Update haelt `syncCatalog()` bestehende Datenbanken automatisch auf
+dem neuen Modellstand; Nutzer-Einstellungen und Statistiken bleiben unberuehrt.
 
 Key hinterlegen – entweder als Umgebungsvariable beim Start oder in der Oberfläche unter
 „API-Key hinterlegen“. Es genügt **ein** Key; der Router nutzt alle aktiven Routen.
@@ -138,8 +181,9 @@ JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ANDROID_HOME=$HOME/android-sdk \
   $HOME/gradle-8.7/bin/gradle :app:assembleDebug
 ```
 
-neu gebaut. Die Hub-Adresse ist in der App unter Einstellungen änderbar; der Standardwert
-zeigt auf die Runtime-URL des Hubs. Die gesamte Agenten-, LLM- und Werkzeuglogik läuft im
+neu gebaut. Die Hub-Adresse ist in der App unter Einstellungen änderbar; der Standardwert ist
+`http://10.0.2.2:12000` (Emulator-Loopback zum Host-Rechner). Auf einem echten Gerät die
+LAN-Adresse des Hub-Rechners eintragen (z. B. `http://192.168.1.20:12000`). Die gesamte Agenten-, LLM- und Werkzeuglogik läuft im
 Hub – die App überträgt nur Ein- und Ausgaben und speichert keine API-Keys auf dem Gerät.
 
 ## Sicherheit
@@ -156,6 +200,12 @@ Hub – die App überträgt nur Ein- und Ausgaben und speichert keine API-Keys a
 - `web_fetch` akzeptiert ausschließlich `http`/`https`.
 - Die App bleibt privat: keine Telemetrie, kein externer Dienst außer den selbst
   konfigurierten LLM-Endpunkten.
+- Optionaler Bearer-Schutz über `VF_TOKEN` (siehe oben).
+- `scripts/check-secrets.mjs` verhindert in CI, dass versehentlich ein echter Key
+  committet wird (Muster fuer Groq, OpenRouter, OpenAI, Anthropic, Gemini, GitHub,
+  Slack, AWS, PEM-Blocks).
+- Die Testsuite ist hermetisch: eigene temporäre Datenbank je Prozess, LLM-Key-
+  Umgebungsvariablen werden im Testprozess entfernt.
 
 ## Grenzen (bewusst nicht enthalten)
 
