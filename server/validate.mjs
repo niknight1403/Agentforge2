@@ -58,6 +58,34 @@ export function validateVilla(body) {
   return { ok: true, value: { idea, name, agentCount: Math.round(agentCount) || 12, sourcePath, mode } };
 }
 
+/**
+ * Teil-Update einer Villa: nur die Felder, die im Body stehen, werden
+ * geaendert (name, idea, mode). Ein leerer Body ist erlaubt und aendert nichts.
+ */
+export function validateVillaPatch(body) {
+  if (!body || typeof body !== 'object') return { ok: false, error: 'Body fehlt' };
+  const out = {};
+  if (body.name != null) {
+    const name = String(body.name).trim().slice(0, 120);
+    if (!name) return { ok: false, error: 'name darf nicht leer sein' };
+    out.name = name;
+  }
+  if (body.idea != null) {
+    const idea = String(body.idea).trim();
+    if (!idea) return { ok: false, error: 'idea darf nicht leer sein' };
+    if (idea.length > 2000) return { ok: false, error: 'idea zu lang (max. 2000 Zeichen)' };
+    out.idea = idea;
+  }
+  if (body.mode != null) {
+    if (!['BUILD', 'ANALYZE'].includes(body.mode)) return { ok: false, error: 'mode muss BUILD oder ANALYZE sein' };
+    out.mode = body.mode;
+  }
+  if (Object.keys(body).some((k) => !['name', 'idea', 'mode'].includes(k))) {
+    return { ok: false, error: 'nur name, idea und mode sind aenderbar' };
+  }
+  return { ok: true, value: out };
+}
+
 export function validateMessage(body) {
   if (!body || typeof body !== 'object') return { ok: false, error: 'Body fehlt' };
   const message = String(body.message || '').trim();

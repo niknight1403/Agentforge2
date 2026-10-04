@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
 import { seedRoutes, syncCatalog } from './seed.mjs';
-import { validateRoute, validateSecret, validateVilla, validateMessage, validateOrchestrate } from './validate.mjs';
+import { validateRoute, validateSecret, validateVilla, validateVillaPatch, validateMessage, validateOrchestrate } from './validate.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject, importVilla } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
@@ -260,6 +260,21 @@ async function api(req, res, url) {
     if (!v.ok) return json(res, 400, { error: v.error });
     const result = await createVilla(v.value);
     return json(res, 201, result);
+  }
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'PATCH') {
+    const id = Number(parts[2]);
+    const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);
+    if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
+    const b = await readBody(req);
+    const v = validateVillaPatch(b);
+    if (!v.ok) return json(res, 400, { error: v.error });
+    const fields = Object.keys(v.value);
+    if (fields.length) {
+      const sets = fields.map((f) => `${f} = ?`).join(', ');
+      db.prepare(`UPDATE villas SET ${sets}, updated_at = ? WHERE id = ?`).run(...fields.map((f) => v.value[f]), now(), id);
+      emit('villa_updated', { villaId: id, fields });
+    }
+    return json(res, 200, { ok: true, villa: db.prepare('SELECT * FROM villas WHERE id = ?').get(id) });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'DELETE') {
     const id = Number(parts[2]);
