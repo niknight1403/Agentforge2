@@ -50,7 +50,7 @@ test('Gueltiger Import: neue Villa mit Agenten, Aufgaben, Gedaechtnis, Berichten
   const payload = {
     exported_at: 1700000000000,
     app: 'VillaForge',
-    version: '1.4.0',
+    version: '1.5.0',
     villa: { id: 42, name: 'Alte Villa', idea: 'Eine Test-Idee', status: 'COMPLETED', max_agents: 50, source_path: '' },
     agents: [
       { id: 10, name: 'DeepAgent', role: 'ROOT', is_root: 1, system_prompt: 'sei klug', autonomy_level: 5 },

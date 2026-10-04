@@ -11,6 +11,7 @@ import './_env.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { VERSION } from '../version.mjs';
 import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -117,7 +118,7 @@ test('Stats: Zaehler und Laufzustand stimmen', async () => {
   const r = await fetch(`${BASE}/api/stats`);
   assert.equal(r.status, 200);
   const st = await r.json();
-  assert.equal(st.version, '1.4.0');
+  assert.equal(st.version, VERSION, 'Stats meldet die zentrale Version');
   assert.ok(st.uptimeSec >= 0);
   assert.ok(Number.isInteger(st.villas) && st.villas >= 1, 'Villa-Zaehler fehlt');
   assert.ok(st.tasks.total >= 1, 'Aufgaben-Zaehler fehlt');
