@@ -124,7 +124,7 @@ async function api(req, res, url) {
   }
 
   if (p === '/api/health') {
-    return json(res, 200, { ok: true, ts: now(), routes: enabledRoutes().length, version: '1.2.0' });
+    return json(res, 200, { ok: true, ts: now(), routes: enabledRoutes().length, version: '1.3.0' });
   }
 
   // ---- Routen ----

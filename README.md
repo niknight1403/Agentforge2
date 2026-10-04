@@ -62,10 +62,32 @@ offen (Ueberwachung). Ohne `VF_TOKEN` aendert sich nichts — die Weboberflaeche
 dann ohne Token. Hinweis: die Android-App setzt aktuell keinen Bearer-Header; der Schutz
 richtet sich an Remote-Deployments mit eigenem Client.
 
+**Clients:** Web-UI und Android-App haben je ein Token-Feld (nur lokal gespeichert).
+Da EventSource keine Header senden kann, akzeptiert der Hub zusaetzlich `?token=` —
+`/api/health` bleibt ohne Token offen.
+
+## Grenzen & Hygiene
+
+- **Rate-Limit:** Schreibende Anfragen sind pro IP auf 120/Minute begrenzt
+  (`VF_RATE_LIMIT=0` schaltet ab). GET und SSE bleiben frei. Ueberschuessige
+  Anfragen erhalten `429` mit `Retry-After`.
+- **Paginierung:** `GET /api/villas` liefert standardmaessig 50 Eintraege
+  (max. 200 via `?limit=`), Blaettern via `?offset=`; Gesamtzahl im
+  `X-Total-Count`-Header. Villa-Detail (Agenten/Aufgaben) und Chat-Verlauf
+  sind auf 500 Eintraege gedeckelt.
+- **History-Rotation:** Nach jedem Lauf kuerzt der Hub pro Villa `audit` auf
+  die letzten 400 und `memories` auf 300 Eintraege; Erinnerungen mit
+  `importance >= 8` ueberleben immer.
+- **Orchestrierung:** `concurrency` 1–16, `maxTasks` 1–5000, `maxRounds` 1–20 —
+  unsinnige Werte werden mit `400` abgelehnt statt stillschweigend geklemmt.
+- **Pfad-Sicherheit:** `safePath` weist Symlinks ab, die aus dem Projektordner
+  herausfuehren (inklusive haengender Links und Link-Schleifen);
+  gelesen werden nur Textdateien.
+
 ## Entwicklung & Tests
 
 ```bash
-npm test               # 63 Unit- und Integrationstests (node:test, ohne Abhaengigkeiten)
+npm test               # 88 Unit- und Integrationstests (node:test, ohne Abhaengigkeiten)
 npm run check:secrets  # scannt den Quelltext auf committete API-Keys
 ```
 
