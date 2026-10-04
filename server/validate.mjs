@@ -86,6 +86,38 @@ export function validateVillaPatch(body) {
   return { ok: true, value: out };
 }
 
+/** Zulaessige Aufgaben-Status (Deckelungs- und Konfliktpruefung). */
+export const TASK_STATUSES = ['PENDING', 'RUNNING', 'DONE', 'FAILED', 'BLOCKED'];
+
+/**
+ * Teil-Update einer Aufgabe: status, priority und result sind aenderbar.
+ * Der Wechsel weg von RUNNING wird hier noch nicht geprueft — das macht
+ * die Route (409 solange der Hub die Aufgabe gerade ausfuehrt).
+ */
+export function validateTaskPatch(body) {
+  if (!body || typeof body !== 'object') return { ok: false, error: 'Body fehlt' };
+  if (!Object.keys(body).length) return { ok: false, error: 'keine Aenderung uebergeben (status, priority, result)' };
+  const out = {};
+  if (body.status != null) {
+    if (!TASK_STATUSES.includes(body.status)) {
+      return { ok: false, error: `status muss einer aus ${TASK_STATUSES.join(', ')} sein` };
+    }
+    out.status = body.status;
+  }
+  if (body.priority != null) {
+    const p = Number(body.priority);
+    if (!Number.isFinite(p) || p < 1 || p > 9) return { ok: false, error: 'priority muss zwischen 1 und 9 liegen' };
+    out.priority = Math.round(p);
+  }
+  if (body.result != null) {
+    out.result = String(body.result).slice(0, 20000);
+  }
+  if (Object.keys(body).some((k) => !['status', 'priority', 'result'].includes(k))) {
+    return { ok: false, error: 'nur status, priority und result sind aenderbar' };
+  }
+  return { ok: true, value: out };
+}
+
 export function validateMessage(body) {
   if (!body || typeof body !== 'object') return { ok: false, error: 'Body fehlt' };
   const message = String(body.message || '').trim();

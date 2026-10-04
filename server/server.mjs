@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
 import { seedRoutes, syncCatalog } from './seed.mjs';
-import { validateRoute, validateSecret, validateVilla, validateVillaPatch, validateMessage, validateOrchestrate } from './validate.mjs';
+import { validateRoute, validateSecret, validateVilla, validateVillaPatch, validateTaskPatch, TASK_STATUSES, validateMessage, validateOrchestrate } from './validate.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject, importVilla } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
@@ -344,6 +344,40 @@ async function api(req, res, url) {
     return;
   }
 
+  // Aufgaben einer Villa: filterbar nach Status, gedeckelt, sortiert nach Prioritaet.
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'tasks' && parts.length === 4 && m === 'GET') {
+    const id = Number(parts[2]);
+    if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
+    const status = String(url.searchParams.get('status') || '').toUpperCase();
+    if (status && !TASK_STATUSES.includes(status)) {
+      return json(res, 400, { error: `status muss einer aus ${TASK_STATUSES.join(', ')} sein` });
+    }
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 200, 1), 500);
+    const rows = status
+      ? db.prepare('SELECT * FROM tasks WHERE villa_id = ? AND status = ? ORDER BY priority ASC, id ASC LIMIT ?').all(id, status, limit)
+      : db.prepare('SELECT * FROM tasks WHERE villa_id = ? ORDER BY priority ASC, id ASC LIMIT ?').all(id, limit);
+    return json(res, 200, rows);
+  }
+  // Einzelne Aufgabe bearbeiten: Status, Prioritaet, Ergebnis.
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'tasks' && parts[4] && m === 'PATCH') {
+    const id = Number(parts[2]);
+    const taskId = Number(parts[4]);
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND villa_id = ?').get(taskId, id);
+    if (!task) return json(res, 404, { error: 'Aufgabe nicht gefunden' });
+    const b = await readBody(req);
+    const v = validateTaskPatch(b);
+    if (!v.ok) return json(res, 400, { error: v.error });
+    if (task.status === 'RUNNING' && v.value.status && v.value.status !== 'RUNNING') {
+      return json(res, 409, { error: 'Aufgabe laeuft gerade — erst beenden lassen oder die Villa stoppen.' });
+    }
+    const fields = Object.keys(v.value);
+    if (fields.length) {
+      const sets = fields.map((f) => `${f} = ?`).join(', ');
+      db.prepare(`UPDATE tasks SET ${sets}, updated_at = ? WHERE id = ?`).run(...fields.map((f) => v.value[f]), now(), taskId);
+      emit('task_updated', { villaId: id, taskId, fields });
+    }
+    return json(res, 200, { ok: true, task: db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) });
+  }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'reports' && m === 'GET') {
     const id = Number(parts[2]);
     return json(res, 200, db.prepare('SELECT * FROM reports WHERE villa_id = ? ORDER BY id DESC LIMIT 100').all(id));
