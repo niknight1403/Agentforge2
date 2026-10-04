@@ -91,8 +91,11 @@ async function callOpenAiCompatible(route, messages, opts) {
   }
   const data = await res.json();
   const choice = data.choices?.[0] ?? {};
+  // Reasoning-Modelle (z. B. gpt-oss) koennen bei kleinem Budget nur
+  // Gedankengang liefern: dann ist das besser als eine leere Antwort.
+  const content = choice.message?.content || choice.message?.reasoning || '';
   return {
-    content: choice.message?.content ?? '',
+    content,
     model: data.model ?? route.model,
     route: route.name,
     usage: data.usage ?? null

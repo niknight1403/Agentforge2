@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
-import { seedRoutes } from './seed.mjs';
+import { seedRoutes, syncCatalog } from './seed.mjs';
 import { validateRoute, validateSecret, validateVilla, validateMessage } from './validate.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject } from './agents.mjs';
@@ -25,6 +25,8 @@ const logError = (...a) => console.error(new Date().toISOString(), '[villaforge]
 
 /* --------------------------- Seed --------------------------- */
 seedRoutes();
+const updatedRoutes = syncCatalog();
+if (updatedRoutes) console.log(`[villaforge] ${updatedRoutes} Route(n) auf aktuellen Katalogstand gebracht.`);
 
 /* --------------------------- Helpers --------------------------- */
 const MIME = {

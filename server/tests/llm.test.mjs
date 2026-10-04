@@ -82,8 +82,8 @@ test('pickRoute: gesperrte Route wird uebergangen', () => {
   resetRoutes();
   setSecret('GROQ_API_KEY', 'a');
   setSecret('CEREBRAS_API_KEY', 'b');
-  db.prepare('UPDATE routes SET cooldown_until = ? WHERE provider = ?').run(now() + 60_000, 'groq');
-  // Ohne die Sperrung wuerde Groq (Prioritaet 1) gewinnen.
+  // Beide Groq-Routen sperren: dann muss Cerebras gewinnen.
+  db.prepare('UPDATE routes SET cooldown_until = ? WHERE provider LIKE ?').run(now() + 60_000, 'groq%');
   assert.equal(pickRoute().provider, 'cerebras');
 });
 

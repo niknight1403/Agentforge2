@@ -20,3 +20,23 @@ export function seedRoutes() {
   console.log('[villaforge] Routen-Katalog initialisiert:', FREE_ROUTE_CATALOG.length);
   return FREE_ROUTE_CATALOG.length;
 }
+
+/**
+ * Synchronisiert Modell- und URL-Aenderungen des Katalogs in bestehende
+ * Datenbanken. Statistiken (ok/fail) und Einstellungen des Nutzers
+ * (enabled, priority) bleiben unberuehrt; nur veraltete technische Felder
+ * werden auf den Katalogstand gebracht.
+ */
+export function syncCatalog() {
+  let changed = 0;
+  for (const r of FREE_ROUTE_CATALOG) {
+    const row = db.prepare('SELECT * FROM routes WHERE provider = ?').get(r.provider);
+    if (!row) continue;
+    if (row.model !== r.model || row.base_url !== r.baseUrl || row.name !== r.name) {
+      db.prepare('UPDATE routes SET name = ?, base_url = ?, model = ?, status = ? WHERE provider = ?')
+        .run(r.name, r.baseUrl, r.model, 'NEW', r.provider);
+      changed++;
+    }
+  }
+  return changed;
+}
