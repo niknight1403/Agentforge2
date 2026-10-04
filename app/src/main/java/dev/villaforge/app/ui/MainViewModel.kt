@@ -64,6 +64,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         sse?.stop()
         val stream = SseClient(
             urlProvider = { client.baseUrl },
+            tokenProvider = { client.apiToken },
             scope = viewModelScope,
             onEvent = { event -> onLiveEvent(event) },
             onConnectionChange = { connected ->
@@ -130,6 +131,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 routes = routes
             )
         }
+    }
+
+    /** Speichert den optionalen Hub-Token und verbindet SSE neu. */
+    fun saveApiToken(token: String) {
+        client.apiToken = token
+        startEventStream()
+        refreshAll()
     }
 
     fun saveServerUrl(url: String) {

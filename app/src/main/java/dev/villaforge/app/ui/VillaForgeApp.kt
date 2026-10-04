@@ -578,6 +578,7 @@ private fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
     var url by remember { mutableStateOf(state.serverUrl) }
     var keyName by remember { mutableStateOf("") }
     var keyValue by remember { mutableStateOf("") }
+    var token by remember { mutableStateOf("") }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -589,6 +590,25 @@ private fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
         Text("Hub-Adresse", fontWeight = FontWeight.Bold)
         OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("https://…") }, modifier = Modifier.fillMaxWidth())
         Button(onClick = { viewModel.saveServerUrl(url) }, modifier = Modifier.fillMaxWidth()) { Text("Verbinden") }
+
+        Spacer(Modifier.height(4.dp))
+        Text("Hub-Token (optional)", fontWeight = FontWeight.Bold)
+        Text(
+            "Nur nötig, wenn der Hub mit VF_TOKEN gestartet wurde. Wird nur im privaten App-Speicher gehalten.",
+            style = muted(), color = TextMuted
+        )
+        OutlinedTextField(
+            value = token,
+            onValueChange = { token = it },
+            label = { Text("Bearer-Token, leer = kein Schutz") },
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Button(
+            onClick = { viewModel.saveApiToken(token); token = "" },
+            enabled = token.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Token speichern") }
 
         Spacer(Modifier.height(8.dp))
         Text("API-Key hinterlegen", fontWeight = FontWeight.Bold)

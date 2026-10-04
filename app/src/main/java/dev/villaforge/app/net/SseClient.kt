@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit
  */
 class SseClient(
     private val urlProvider: () -> String,
+    private val tokenProvider: () -> String = { "" },
     private val scope: CoroutineScope,
     private val onEvent: (VillaEvent) -> Unit,
     private val onConnectionChange: (Boolean) -> Unit
@@ -81,8 +82,14 @@ class SseClient(
      * Rueckgabe normal nur bei Verbindungsabbruch; wirft bei Netzwerkfehlern.
      */
     private fun connect(handle: (VillaEvent) -> Unit) {
-        val url = urlProvider().trimEnd('/') + "/api/events"
-        val request = Request.Builder().url(url).header("Accept", "text/event-stream").build()
+        val base = urlProvider().trimEnd('/')
+        // Token per Query-Parameter: EventSource-artige Streams tragen keine Header.
+        val url = if (tokenProvider().isNotBlank())
+            "$base/api/events?token=${java.net.URLEncoder.encode(tokenProvider(), "UTF-8")}"
+        else "$base/api/events"
+        val builder = Request.Builder().url(url).header("Accept", "text/event-stream")
+        if (tokenProvider().isNotBlank()) builder.header("Authorization", "Bearer ${tokenProvider()}")
+        val request = builder.build()
         val call = http.newCall(request)
         activeCall = call
         try {

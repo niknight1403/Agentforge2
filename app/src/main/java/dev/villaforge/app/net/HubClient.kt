@@ -110,6 +110,14 @@ class HubClient(context: Context) {
             prefs.edit().putString(KEY_BASE, clean).apply()
         }
 
+    /** Optionaler Bearer-Token, falls der Hub mit VF_TOKEN laeuft. */
+    var apiToken: String
+        get() = prefs.getString(KEY_TOKEN, "") ?: ""
+        set(value) {
+            val clean = value.trim()
+            prefs.edit().putString(KEY_TOKEN, clean).apply()
+        }
+
     val serverUrl: String get() = baseUrl
 
     private fun url(path: String) = "${baseUrl.trimEnd('/')}$path"
@@ -117,6 +125,7 @@ class HubClient(context: Context) {
     private suspend fun execute(method: String, path: String, body: JSONObject? = null): String =
         withContext(Dispatchers.IO) {
             val builder = Request.Builder().url(url(path))
+            if (apiToken.isNotBlank()) builder.header("Authorization", "Bearer $apiToken")
             when (method) {
                 "GET" -> builder.get()
                 "POST" -> builder.post((body ?: JSONObject()).toString().toRequestBody(JSON))
@@ -311,6 +320,7 @@ class HubClient(context: Context) {
         // die Adresse in den App-Einstellungen auf die LAN-IP gesetzt.
         const val DEFAULT_BASE = "http://10.0.2.2:12000"
         private const val KEY_BASE = "base_url"
+        private const val KEY_TOKEN = "api_token"
         private val JSON = "application/json; charset=utf-8".toMediaType()
     }
 }
