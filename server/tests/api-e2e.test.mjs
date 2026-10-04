@@ -186,6 +186,49 @@ test('SSE: Live-Ereignisse treffen beim Client ein', async () => {
   assert.ok(seen.some((e) => e.type === 'villa'), 'villa-Event fehlt im SSE-Stream');
 });
 
+test('SSE-Replay: Last-Event-ID liefert verpasste Ereignisse nach', { timeout: 10000 }, async () => {
+  // Ereignis erzeugen, das kein verbundener Client sieht.
+  const v = await post(`/api/villas`, { name: 'Replay-Villa', idea: 'SSE-Replay-Test', agentCount: 4 });
+  const villa = await v.json();
+
+  const ac = new AbortController();
+  const stream = await fetch(`${BASE}/api/events`, { signal: ac.signal });
+  const reader = stream.body.getReader();
+  const readOne = async () => {
+    let buf = '';
+    for (;;) {
+      const { value } = await reader.read();
+      buf += Buffer.from(value).toString('utf8');
+      const m = buf.match(/^id: (\d+)\ndata: ([^\n]*)\n\n/m);
+      if (m) return { id: Number(m[1]), data: JSON.parse(m[2]) };
+    }
+  };
+  const first = await readOne();
+
+  // Zweites Ereignis, wieder ohne Client — danach Reconnect ab first.id.
+  const v2 = await post(`/api/villas`, { name: 'Nach-Reconnect', idea: 'SSE-Replay-Test 2', agentCount: 4 });
+  const villa2 = await v2.json();
+  const replayed = await fetch(`${BASE}/api/events`, { headers: { 'Last-Event-ID': String(first.id) } });
+  const replayReader = replayed.body.getReader();
+  let txt = '';
+  for (;;) {
+    const chunk = await Promise.race([
+      replayReader.read(),
+      new Promise((r) => setTimeout(() => r({ timeout: true }), 4000))
+    ]);
+    if (chunk.timeout) break;
+    if (chunk.done) break;
+    txt += Buffer.from(chunk.value).toString('utf8');
+    if (txt.includes(String(villa2.villaId))) break;
+  }
+  ac.abort();
+  replayReader.cancel().catch(() => {});
+
+  assert.ok(txt.includes(String(villa2.villaId)), 'verpasstes Ereignis wurde nicht nachgeliefert');
+  const ids = [...txt.matchAll(/^id: (\d+)/gm)].map((m) => Number(m[1]));
+  assert.ok(ids.length >= 1 && ids.every((x) => x > first.id), 'Replay darf nur neuere Events bringen');
+});
+
 test('Orchestrierung: laeuft bis COMPLETED (Offline-Modus)', async () => {
   // Der Lauf wurde im SSE-Test gestartet; auf Abschluss pollen.
   const deadline = Date.now() + 90000;

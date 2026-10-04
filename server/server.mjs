@@ -7,7 +7,7 @@ import { validateRoute, validateSecret, validateVilla, validateMessage, validate
 import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
-import { bus, emit } from './events.mjs';
+import { bus, emit, eventsSince } from './events.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -357,7 +357,12 @@ async function api(req, res, url) {
       Connection: 'keep-alive'
     });
     res.write('retry: 3000\n\n');
-    const onEvent = (e) => res.write(`data: ${JSON.stringify(e)}\n\n`);
+    // Replay nach Reconnect: EventSource sendet Last-Event-ID automatisch.
+    const lastId = Number(req.headers['last-event-id']) || 0;
+    for (const e of eventsSince(lastId)) {
+      res.write(`id: ${e.id}\ndata: ${JSON.stringify(e)}\n\n`);
+    }
+    const onEvent = (e) => res.write(`id: ${e.id}\ndata: ${JSON.stringify(e)}\n\n`);
     bus.on('event', onEvent);
     const ping = setInterval(() => res.write(': ping\n\n'), 15000);
     req.on('close', () => { clearInterval(ping); bus.off('event', onEvent); });
