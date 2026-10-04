@@ -11,7 +11,8 @@
     "daemon:stop": "bash scripts/daemon.sh stop",
     "daemon:status": "bash scripts/daemon.sh status",
     "test:llm": "node server/scripts/llm-smoke.mjs",
-    "test": "node --test server/tests/*.test.mjs"
+    "test": "node --test server/tests/*.test.mjs",
+    "check:secrets": "node scripts/check-secrets.mjs"
   },
   "engines": {
     "node": ">=22"

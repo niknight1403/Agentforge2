@@ -12,6 +12,9 @@ import { bus } from './events.mjs';
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
 const PUBLIC_DIR = resolve(process.cwd(), 'server/public');
+// Optionaler Bearer-Token: gesetzt via VF_TOKEN, aktiviert den Schutz
+// aller API-Endpunkte (Health bleibt offen, damit Ueberwachung klappt).
+const API_TOKEN = process.env.VF_TOKEN || '';
 
 /* --------------------------- Protokoll --------------------------- */
 // Ausgabe auf stdout/stderr. Im Daemon-Betrieb (scripts/daemon.sh) wird die
@@ -79,6 +82,11 @@ async function api(req, res, url) {
   const p = url.pathname;
   const m = req.method;
   const parts = p.split('/').filter(Boolean); // ['api', ...]
+
+  // Schutz: gilt nur, wenn VF_TOKEN gesetzt ist; Health bleibt offen.
+  if (API_TOKEN && p !== '/api/health' && (req.headers.authorization || '') !== `Bearer ${API_TOKEN}`) {
+    return json(res, 401, { error: 'Nicht autorisiert: Bearer-Token fehlt oder ist falsch' });
+  }
 
   if (p === '/api/health') {
     return json(res, 200, { ok: true, ts: now(), routes: enabledRoutes().length, version: '1.0.0' });
@@ -262,6 +270,7 @@ server.listen(PORT, HOST, () => {
   log(`Hub laeuft auf http://${HOST}:${PORT}`);
   log(`UI:      http://localhost:${PORT}/`);
   log(`Health:  http://localhost:${PORT}/api/health`);
+  if (API_TOKEN) log('API-Schutz aktiv (VF_TOKEN gesetzt).');
 
   // Nach einem Neustart unterbrochene Laeufe fortsetzen (nur wenn erlaubt).
   if (process.env.VF_RESUME !== '0') {

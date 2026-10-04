@@ -27,5 +27,8 @@ jobs:
           node --check server/llm.mjs
           node --check server/db.mjs
 
-      - name: Unit-Tests
+      - name: Secret-Scan
+        run: node scripts/check-secrets.mjs
+
+      - name: Unit- und Integrationstests
         run: node --test server/tests/*.test.mjs
