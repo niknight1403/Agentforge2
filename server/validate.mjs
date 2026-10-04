@@ -65,3 +65,39 @@ export function validateMessage(body) {
   if (message.length > 8000) return { ok: false, error: 'message zu lang (max. 8000 Zeichen)' };
   return { ok: true, value: { message } };
 }
+
+/**
+ * Grenzen fuer die Orchestrierung. Die clamps in orchestrate() sind die
+ * letzte Verteidigung; hier wird frueh und mit klarer Fehlermeldung
+ * abgelehnt, was das Budget eines Laufs sprengt.
+ */
+export function validateOrchestrate(body) {
+  if (body == null || typeof body !== 'object') return { ok: true, value: {} };
+  const out = {};
+  if (body.concurrency != null) {
+    const c = Number(body.concurrency);
+    if (!Number.isFinite(c) || c < 1 || c > 16) {
+      return { ok: false, error: 'concurrency muss zwischen 1 und 16 liegen' };
+    }
+    out.concurrency = Math.round(c);
+  }
+  if (body.maxTasks != null) {
+    const t = Number(body.maxTasks);
+    if (!Number.isFinite(t) || t < 1 || t > 5000) {
+      return { ok: false, error: 'maxTasks muss zwischen 1 und 5000 liegen' };
+    }
+    out.maxTasks = Math.round(t);
+  }
+  if (body.maxRounds != null) {
+    const r = Number(body.maxRounds);
+    if (!Number.isFinite(r) || r < 1 || r > 20) {
+      return { ok: false, error: 'maxRounds muss zwischen 1 und 20 liegen' };
+    }
+    out.maxRounds = Math.round(r);
+  }
+  if (body.adaptive != null && typeof body.adaptive !== 'boolean') {
+    return { ok: false, error: 'adaptive muss true oder false sein' };
+  }
+  if (body.adaptive != null) out.adaptive = body.adaptive;
+  return { ok: true, value: out };
+}

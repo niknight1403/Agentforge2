@@ -191,6 +191,13 @@ test('Orchestrierung: laeuft bis COMPLETED (Offline-Modus)', async () => {
   assert.ok(detail.tasks.length > 0);
 });
 
+test('Orchestrate: unsinnige Parameter werden mit 400 abgelehnt', async () => {
+  const bad = await post(`/api/villas/${villaId}/orchestrate`, { concurrency: 999 });
+  assert.equal(bad.status, 400);
+  const badRounds = await post(`/api/villas/${villaId}/orchestrate`, { maxRounds: 0 });
+  assert.equal(badRounds.status, 400);
+});
+
 test('Stop-Endpunkt und sauberes Herunterfahren', async () => {
   const res = await post(`/api/villas/${villaId}/stop`, {});
   assert.equal(res.status, 200);

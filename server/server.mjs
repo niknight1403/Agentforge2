@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
 import { seedRoutes, syncCatalog } from './seed.mjs';
-import { validateRoute, validateSecret, validateVilla, validateMessage } from './validate.mjs';
+import { validateRoute, validateSecret, validateVilla, validateMessage, validateOrchestrate } from './validate.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
@@ -189,11 +189,13 @@ async function api(req, res, url) {
     const id = Number(parts[2]);
     const b = await readBody(req).catch(() => ({}));
     if (isRunning(id)) return json(res, 202, { ok: true, alreadyRunning: true });
+    const check = validateOrchestrate(b);
+    if (!check.ok) return json(res, 400, { error: check.error });
     orchestrate(id, {
-      concurrency: Number(b.concurrency) || 4,
-      maxTasks: Number(b.maxTasks) || 500,
-      adaptive: b.adaptive !== false,
-      maxRounds: Number(b.maxRounds) || 6
+      concurrency: check.value.concurrency ?? 4,
+      maxTasks: check.value.maxTasks ?? 500,
+      adaptive: check.value.adaptive ?? true,
+      maxRounds: check.value.maxRounds ?? 6
     }).catch(() => {});
     return json(res, 202, { ok: true, started: true });
   }

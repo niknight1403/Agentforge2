@@ -1,7 +1,7 @@
 import './_env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateRoute, validateSecret, validateVilla, validateMessage } from '../validate.mjs';
+import { validateRoute, validateSecret, validateVilla, validateMessage, validateOrchestrate } from '../validate.mjs';
 
 test('validateRoute: gueltige Route durch, https erzwungen', () => {
   const ok = validateRoute({ name: 'Meine Route', baseUrl: 'https://api.example.com/v1/', model: 'modell-x', keyEnv: 'MY_KEY', priority: 3 });
@@ -64,4 +64,33 @@ test('validateMessage: Pflicht und Grenze', () => {
   assert.ok(!validateMessage({ message: '   ' }).ok, 'nur Leerzeichen');
   assert.ok(!validateMessage({ message: 'x'.repeat(9000) }).ok);
   assert.ok(validateMessage({ message: 'x'.repeat(7000) }).ok);
+});
+
+test('validateOrchestrate: Grenzen fuer Parallelitaet, Budget und Runden', () => {
+  assert.ok(validateOrchestrate({ concurrency: 4, maxTasks: 500, maxRounds: 6, adaptive: true }).ok);
+  assert.ok(validateOrchestrate({}).ok, 'leerer Body muss erlaubt sein');
+  assert.ok(validateOrchestrate(null).ok, 'kein Body muss erlaubt sein');
+
+  assert.ok(!validateOrchestrate({ concurrency: 0 }).ok, 'concurrency 0 unzulaessig');
+  assert.ok(!validateOrchestrate({ concurrency: 17 }).ok, 'concurrency > 16 unzulaessig');
+  assert.ok(!validateOrchestrate({ concurrency: 'vier' }).ok, 'concurrency muss numerisch sein');
+
+  assert.ok(!validateOrchestrate({ maxTasks: 0 }).ok);
+  assert.ok(!validateOrchestrate({ maxTasks: 5001 }).ok);
+  assert.ok(validateOrchestrate({ maxTasks: 5000 }).ok, 'Grenzwert 5000 muss durchgehen');
+
+  assert.ok(!validateOrchestrate({ maxRounds: 0 }).ok);
+  assert.ok(!validateOrchestrate({ maxRounds: 21 }).ok);
+  assert.ok(validateOrchestrate({ maxRounds: 20 }).ok, 'Grenzwert 20 muss durchgehen');
+
+  assert.ok(!validateOrchestrate({ adaptive: 'vielleicht' }).ok, 'adaptive muss boolean sein');
+  assert.ok(validateOrchestrate({ adaptive: false }).ok);
+});
+
+test('validateOrchestrate: rundet und liefert saubere Werte', () => {
+  const v = validateOrchestrate({ concurrency: 4.7, maxTasks: 100.9, maxRounds: 2.2, adaptive: true });
+  assert.ok(v.ok);
+  assert.equal(v.value.concurrency, 5);
+  assert.equal(v.value.maxTasks, 101);
+  assert.equal(v.value.maxRounds, 2);
 });
