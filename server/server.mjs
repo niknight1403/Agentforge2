@@ -268,6 +268,31 @@ async function api(req, res, url) {
     analyzeProject(id, root?.id).catch(() => {});
     return json(res, 202, { ok: true, started: true });
   }
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'export' && m === 'GET') {
+    const id = Number(parts[2]);
+    const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);
+    if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
+    const pick = (table, limit = 500) => db.prepare(`SELECT * FROM ${table} WHERE villa_id = ? ORDER BY id DESC LIMIT ?`).all(id, limit);
+    const payload = {
+      exported_at: now(),
+      app: 'VillaForge',
+      version: '1.3.0',
+      villa,
+      agents: pick('agents'),
+      tasks: pick('tasks'),
+      messages: pick('messages'),
+      memories: pick('memories'),
+      reports: pick('reports')
+    };
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': `attachment; filename="villa-${id}.json"`,
+      'Cache-Control': 'no-store'
+    });
+    res.end(JSON.stringify(payload));
+    return;
+  }
+
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'reports' && m === 'GET') {
     const id = Number(parts[2]);
     return json(res, 200, db.prepare('SELECT * FROM reports WHERE villa_id = ? ORDER BY id DESC LIMIT 100').all(id));

@@ -250,6 +250,21 @@ test('DELETE: Villa verschwindet sauber mitsamt Daten', async () => {
   assert.equal(miss.status, 404);
 });
 
+test('Export: kompletter JSON-Download der Villa', async () => {
+  const r = await fetch(`${BASE}/api/villas/${villaId}/export`);
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-disposition') || '', /attachment/, 'Download-Header fehlt');
+  const data = await r.json();
+  assert.equal(data.app, 'VillaForge');
+  assert.equal(data.villa.id, villaId);
+  assert.ok(Array.isArray(data.agents) && data.agents.length >= 1);
+  assert.ok(Array.isArray(data.tasks) && data.tasks.length >= 1);
+  assert.ok(data.exported_at, 'Zeitstempel fehlt');
+
+  const miss = await fetch(`${BASE}/api/villas/999999/export`);
+  assert.equal(miss.status, 404);
+});
+
 test('Orchestrate: unsinnige Parameter werden mit 400 abgelehnt', async () => {
   const bad = await post(`/api/villas/${villaId}/orchestrate`, { concurrency: 999 });
   assert.equal(bad.status, 400);
