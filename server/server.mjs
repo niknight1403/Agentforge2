@@ -11,10 +11,39 @@ import { bus, emit, eventsSince } from './events.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
+
 const PUBLIC_DIR = resolve(process.cwd(), 'server/public');
 // Optionaler Bearer-Token: gesetzt via VF_TOKEN, aktiviert den Schutz
 // aller API-Endpunkte (Health bleibt offen, damit Ueberwachung klappt).
 const API_TOKEN = process.env.VF_TOKEN || '';
+
+/* ------------------- Konfigurations-Check ------------------- */
+// Frueher, laut und mit klarer Fehlermeldung abbrechen statt mit
+// kaputter Konfiguration halb lauffaehig zu starten.
+function checkConfig() {
+  const errors = [];
+  if (process.env.PORT != null && (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535)) {
+    errors.push(`PORT muss zwischen 1 und 65535 liegen (ist: ${JSON.stringify(process.env.PORT)})`);
+  }
+  if (HOST && !/^[a-zA-Z0-9.:[\]-]+$/.test(HOST)) {
+    errors.push(`HOST sieht nicht nach Hostname/IP aus (ist: ${JSON.stringify(HOST)})`);
+  }
+  if (process.env.VF_RATE_LIMIT != null) {
+    const rl = Number(process.env.VF_RATE_LIMIT);
+    if (!Number.isInteger(rl) || rl < 0) {
+      errors.push(`VF_RATE_LIMIT muss 0 oder eine positive Ganzzahl sein (ist: ${JSON.stringify(process.env.VF_RATE_LIMIT)})`);
+    }
+  }
+  if (errors.length) {
+    for (const e of errors) console.error('[villaforge] Konfiguration ungueltig:', e);
+    process.exit(1);
+  }
+}
+checkConfig();
+if (process.argv.includes('--check')) {
+  console.log(`[villaforge] Konfiguration ok: Port ${PORT}, Host ${HOST}, Rate-Limit ${process.env.VF_RATE_LIMIT ?? 120}/min, Token-Schutz ${API_TOKEN ? 'an' : 'aus'}`);
+  process.exit(0);
+}
 
 /* --------------------------- Protokoll --------------------------- */
 // Ausgabe auf stdout/stderr. Im Daemon-Betrieb (scripts/daemon.sh) wird die
