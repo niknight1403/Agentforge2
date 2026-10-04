@@ -1,5 +1,7 @@
 import http from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, openSync, writeSync } from 'node:fs';
+import { dirname } from 'node:path';
+import util from 'node:util';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
 import { seedRoutes, syncCatalog } from './seed.mjs';
@@ -50,9 +52,28 @@ if (process.argv.includes('--check')) {
 /* --------------------------- Protokoll --------------------------- */
 // Ausgabe auf stdout/stderr. Im Daemon-Betrieb (scripts/daemon.sh) wird die
 // Ausgabe in server/data/hub.log umgeleitet, damit sie einheitlich an einer
-// Stelle landet und nicht doppelt geschrieben wird.
-const log = (...a) => console.log(new Date().toISOString(), '[villaforge]', ...a);
-const logError = (...a) => console.error(new Date().toISOString(), '[villaforge]', ...a);
+// Stelle landet und nicht doppelt geschrieben wird. Wer die Meldungen
+// zusaetzlich dauerhaft in einer Datei braucht, setzt VF_LOG_FILE: dann wird
+// jede Zeile synchron (reihenfolgestabil, auch beim Absturz) angehaengt.
+const LOG_FILE = String(process.env.VF_LOG_FILE || '').trim();
+let logFd = null;
+if (LOG_FILE) {
+  try {
+    mkdirSync(dirname(LOG_FILE), { recursive: true });
+    logFd = openSync(LOG_FILE, 'a');
+  } catch (e) {
+    console.error('[villaforge] VF_LOG_FILE nicht beschreibbar, nur Konsole:', e.message);
+  }
+}
+const writeLog = (stream, level, args) => {
+  const line = `${new Date().toISOString()} [villaforge] ${level} ${util.format(...args)}\n`;
+  stream.write(line);
+  if (logFd != null) {
+    try { writeSync(logFd, line); } catch { /* volles Laufwerk o. ae. darf den Hub nicht beenden */ }
+  }
+};
+const log = (...a) => writeLog(process.stdout, 'INFO', a);
+const logError = (...a) => writeLog(process.stderr, 'ERROR', a);
 
 /* --------------------------- Seed --------------------------- */
 seedRoutes();
@@ -290,6 +311,7 @@ async function api(req, res, url) {
     const b = await readBody(req);
     const result = importVilla(b, { nameOverride: String(b?.name || '').trim() });
     if (!result.ok) return json(res, 400, { error: result.error });
+    log('Villa importiert:', result.villaId);
     return json(res, 201, result);
   }
   if (p === '/api/villas' && m === 'POST') {
@@ -297,6 +319,7 @@ async function api(req, res, url) {
     const v = validateVilla(b);
     if (!v.ok) return json(res, 400, { error: v.error });
     const result = await createVilla(v.value);
+    log('Villa angelegt:', result.villaId, `"${v.value.name}"`);
     return json(res, 201, result);
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'PATCH') {
@@ -324,6 +347,7 @@ async function api(req, res, url) {
     }
     db.prepare('DELETE FROM villas WHERE id = ?').run(id);
     emit('villa_deleted', { villaId: id });
+    log('Villa geloescht:', id);
     return json(res, 200, { deleted: id });
   }
 
