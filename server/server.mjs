@@ -8,6 +8,7 @@ import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject, importVilla } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { bus, emit, eventsSince } from './events.mjs';
+import { pruneOldData } from './maintenance.mjs';
 import { VERSION } from './version.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
@@ -258,6 +259,14 @@ async function api(req, res, url) {
   if (p === '/api/tools' && m === 'GET') return json(res, 200, TOOL_SPECS);
 
   // ---- Villas ----
+  // Wartung: alte Protokolle und Chatverlaeufe aufraeumen.
+  if (p === '/api/maintenance/prune' && m === 'POST') {
+    const b = await readBody(req);
+    const result = pruneOldData({ days: b?.days, dryRun: b?.dryRun === true });
+    if (!result.ok) return json(res, 400, { error: result.error });
+    emit('maintenance', { dryRun: result.dryRun, deleted: result.deleted.total });
+    return json(res, 200, result);
+  }
   if (p === '/api/villas' && m === 'GET') {
     // Deckel und Paginierung: ungebundene Listen waechsen unbrauchbar.
     // Die Antwort bleibt ein Array (App und Web-UI parsen genau das);
