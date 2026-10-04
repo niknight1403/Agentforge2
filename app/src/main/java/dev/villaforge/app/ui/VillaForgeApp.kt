@@ -693,6 +693,22 @@ private fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
         state.error?.let { ErrorBanner(it) }
         if (state.message.isNotBlank()) Text(state.message, color = Aqua, style = muted())
 
+        state.stats?.let { s ->
+            Text("Hub-Statistik", fontWeight = FontWeight.Bold)
+            val tasksObj = s.optJSONObject("tasks")
+            Text(
+                listOf(
+                    "Villen ${s.optInt("villas")} · Agenten ${s.optInt("agents")}",
+                    "Aufgaben ${tasksObj?.optInt("total") ?: 0} (offen ${tasksObj?.optInt("open") ?: 0})",
+                    "Audit ${s.optInt("audit")} · Verläufe ${s.optInt("messages")}",
+                    "Laufzeit ${s.optLong("uptimeSec") / 60} min · Speicher ${s.optLong("rssBytes") / (1024 * 1024)} MB",
+                    if (s.optJSONArray("runningVillas")?.length() ?: 0 > 0) "Läuft gerade: ${s.optJSONArray("runningVillas")}" else "Kein Lauf aktiv"
+                ).joinToString("\n"),
+                style = muted(), color = TextMuted
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+
         Text("Hub-Adresse", fontWeight = FontWeight.Bold)
         OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("https://…") }, modifier = Modifier.fillMaxWidth())
         Button(onClick = { viewModel.saveServerUrl(url) }, modifier = Modifier.fillMaxWidth()) { Text("Verbinden") }

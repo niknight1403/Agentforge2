@@ -32,7 +32,9 @@ data class UiState(
     val routes: List<LlmRoute> = emptyList(),
     val busy: Boolean = false,
     val message: String = "",
-    val error: String? = null
+    val error: String? = null,
+    /** Hub-Statistik aus GET /api/stats, null bis geladen. */
+    val stats: org.json.JSONObject? = null
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -123,10 +125,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val health = client.health()
         val villas = client.villas()
         val routes = client.routes()
+        val hubStats = try { client.stats() } catch (e: Exception) { null }
         _state.update {
             it.copy(
                 online = true,
                 healthText = "Hub online · ${health.optInt("routes")} Routen · v${health.optString("version")}",
+                stats = hubStats,
                 villas = villas,
                 routes = routes
             )

@@ -141,6 +141,9 @@ class HubClient(context: Context) {
 
     suspend fun health(): JSONObject = JSONObject(execute("GET", "/api/health"))
 
+    /** Hub-Statistik (GET /api/stats): Zaehler, Laufzeit, laufende Villen. */
+    suspend fun stats(): JSONObject = JSONObject(execute("GET", "/api/stats"))
+
     suspend fun villas(): List<Villa> {
         val arr = JSONArray(execute("GET", "/api/villas"))
         return (0 until arr.length()).map { i ->
