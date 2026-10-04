@@ -36,6 +36,19 @@ test('Ungueltige days: Fehler mit Meldung', () => {
   }
 });
 
+test('Echter Lauf raeumt, checkpointed und optimiert', () => {
+  seed();
+  const before = db.prepare('SELECT COUNT(*) c FROM audit').get().c;
+  assert.ok(before >= 3);
+  const r = pruneOldData({ days: 30 });
+  assert.equal(r.ok, true);
+  assert.equal(r.dryRun, false);
+  assert.equal(r.optimized, true, 'Hausputz-Laufe (checkpoint/optimize) vermerkt');
+  assert.equal(r.deleted.audit, 2);
+  assert.equal(r.deleted.messages, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM audit').get().c, before - 2);
+});
+
 test('Trockenlauf zaehlt, loescht nichts', () => {
   seed();
   const r = pruneOldData({ days: 100, dryRun: true });

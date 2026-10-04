@@ -25,5 +25,13 @@ export function pruneOldData({ days, dryRun = false } = {}) {
     out.deleted[table] = count;
   }
   out.deleted.total = out.deleted.audit + out.deleted.messages;
+
+  // Nach dem Loeschen: SQLite-Hausputz — geloeschte Seiten zurueckgeben,
+  // Statistiken auffrischen und WAL in die DB zurückschreiben.
+  if (!dryRun) {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    db.exec('PRAGMA optimize;');
+  }
+  out.optimized = !dryRun;
   return out;
 }
