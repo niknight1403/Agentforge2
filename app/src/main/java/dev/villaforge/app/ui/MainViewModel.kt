@@ -221,6 +221,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(detail = refreshed) }
     }
 
+    /** Einzellne FAILED-Aufgabe zurueck in die Warteschlange und Lauf fortsetzen. */
+    fun retryTask(taskId: Long) = run {
+        val detail = _state.value.detail ?: return@run
+        client.retryTask(detail.villa.id, taskId)
+        _state.update { it.copy(message = "Aufgabe erneut gestartet") }
+        val refreshed = client.villaDetail(detail.villa.id)
+        _state.update { it.copy(detail = refreshed) }
+    }
+
+    /** Alle gescheiterten Aufgaben der Villa erneut starten. */
+    fun retryFailed() = run {
+        val detail = _state.value.detail ?: return@run
+        val res = client.retryFailed(detail.villa.id)
+        val n = res.optInt("requeued", 0)
+        _state.update { it.copy(message = if (n > 0) "$n Aufgabe(n) erneut gestartet" else "Keine fehlgeschlagenen Aufgaben") }
+        val refreshed = client.villaDetail(detail.villa.id)
+        _state.update { it.copy(detail = refreshed) }
+    }
+
     /** Loescht die offene Villa mitsamt allen Daten und kehrt zur Liste zurueck. */
     fun delete() = run {
         val detail = _state.value.detail ?: return@run

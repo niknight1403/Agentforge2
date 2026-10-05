@@ -323,6 +323,13 @@ private fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () ->
                 Spacer(Modifier.width(6.dp)); Text("Projekt erneut analysieren")
             }
         }
+        if (detail.tasks.any { it.status == "FAILED" }) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { viewModel.retryFailed() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
+                Spacer(Modifier.width(6.dp)); Text("Fehlgeschlagene Aufgaben erneut starten")
+            }
+        }
 
         Spacer(Modifier.height(8.dp))
         val context = LocalContext.current
@@ -432,7 +439,7 @@ private fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () ->
             if (shownTasks.isEmpty()) {
                 Text("Keine Aufgaben in dieser Ansicht.", style = MaterialTheme.typography.bodySmall)
             } else {
-                shownTasks.forEach { TaskRow(it) }
+                shownTasks.forEach { TaskRow(it) { taskId -> viewModel.retryTask(taskId) } }
             }
         }
         Section("Agenten") { detail.agents.take(60).forEach { AgentRow(it) } }
@@ -487,8 +494,15 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun TaskRow(task: Task) =
+private fun TaskRow(task: Task, onRetry: (Long) -> Unit = {}) {
     RowCard(task.title, task.description + if (task.result.isNotBlank()) "\n→ " + task.result.take(240) else "", task.status)
+    if (task.status == "FAILED") {
+        TextButton(onClick = { onRetry(task.id) }) {
+            Icon(Icons.Filled.Refresh, contentDescription = null)
+            Spacer(Modifier.width(4.dp)); Text("Aufgabe erneut starten")
+        }
+    }
+}
 
 @Composable
 private fun AgentRow(agent: Agent) =

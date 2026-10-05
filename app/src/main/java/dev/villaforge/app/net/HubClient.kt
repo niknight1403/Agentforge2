@@ -291,6 +291,14 @@ class HubClient(context: Context) {
         execute("POST", "/api/villas/$villaId/stop", JSONObject())
     }
 
+    /** Stellt eine gescheiterte Aufgabe zurueck in die Warteschlange (Sprint 54-Endpunkt). */
+    suspend fun retryTask(villaId: Long, taskId: Long): JSONObject =
+        JSONObject(execute("POST", "/api/villas/$villaId/tasks/$taskId/retry", JSONObject()))
+
+    /** Requeued alle FAILED-Aufgaben der Villa auf einmal. */
+    suspend fun retryFailed(villaId: Long): JSONObject =
+        JSONObject(execute("POST", "/api/villas/$villaId/retry-failed", JSONObject()))
+
     suspend fun deleteVilla(villaId: Long) {
         execute("DELETE", "/api/villas/$villaId")
     }
