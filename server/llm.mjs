@@ -64,6 +64,16 @@ function coolDown(route, rateLimited = false) {
 }
 
 /**
+ * Anzahl gerade nutzbarer ECHTER Routen (ohne Offline-Planer).
+ * Massstab fuer die adaptive Parallelitaet: wenn nur noch eine Route
+ * aus dem Cooldown kommt, bringen vier parallele Agenten nur 429er.
+ */
+export function readyRealRoutes() {
+  const usable = enabledRoutes().filter(isUsable);
+  return usable.filter((r) => r.provider !== 'offline' && r.priority < 50).length;
+}
+
+/**
  * Routen, die gerade nutzbar sind: nicht gesperrt und mit Key versorgt.
  * Routen ohne key_env (z. B. ein lokaler Ollama) brauchen keinen Key.
  */

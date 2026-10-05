@@ -1,5 +1,5 @@
 import { db, now, pruneHistory } from './db.mjs';
-import { chat, derivePlan } from './llm.mjs';
+import { chat, derivePlan, readyRealRoutes } from './llm.mjs';
 import { emit } from './events.mjs';
 import { mkdirSync, writeFileSync, readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
@@ -759,7 +759,13 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
       // Rollenpassende Aufgaben zuerst, damit Agenten nicht fachfremd arbeiten.
       tasks.sort((a, b) => (guessRole(a) === guessRole(b) ? a.priority - b.priority : 0));
 
-      const batch = tasks.slice(0, job.concurrency);
+      // Adaptive Batching: die Parallelitaet sinkt mit den bereitstehenden
+      // ECHTEN Routen. Nur Offline-Planer uebrig => Volldurchlauf (der ist
+      // nie rate-limited), eine Route uebrig => eine Aufgabe auf einmal.
+      const ready = readyRealRoutes();
+      const batchLimit = ready === 0 ? job.concurrency : Math.max(1, Math.min(job.concurrency, ready));
+      emit('batch', { villaId, concurrency: batchLimit, readyRoutes: ready });
+      const batch = tasks.slice(0, batchLimit);
       for (const task of batch) {
         db.prepare("UPDATE tasks SET status = 'RUNNING', updated_at = ? WHERE id = ?").run(now(), task.id);
       }
