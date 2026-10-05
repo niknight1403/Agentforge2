@@ -56,6 +56,56 @@ test('chat: 429 sperrt die Route nur kurz statt eskaliert', async () => {
   }
 });
 
+test('chat: gpt-oss Tool-400 bekommt einen sofortigen Einzelretry', async () => {
+  // Groqs gpt-oss ruft stochastisch ein internes Tool auf; Groq antwortet mit
+  // 400 "Tool choice is none, but model called a tool". Ein zweiter Versuch
+  // derselben Route loest es: kein Cooldown, kein Failover, kein Fehlerzaehler.
+  let calls = 0;
+  const srv = createServer((req, res) => {
+    calls++;
+    if (calls === 1) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'Tool choice is none, but model called a tool' } }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ model: 'mock', choices: [{ message: { content: 'Jetzt klappt es' } }], usage: {} }));
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    onlyGroq(`${base}/v1`);
+    const out = await chat([{ role: 'user', content: 'Hallo' }], { mode: 'chat' });
+    assert.equal(out.offline, undefined, 'Retry sollte Erfolg bringen, kein Offline');
+    assert.equal(out.content, 'Jetzt klappt es');
+    assert.equal(calls, 2, 'Genau zwei Anfragen erwartet (Erstversuch + Einzelretry)');
+    const row = db.prepare('SELECT * FROM routes WHERE provider = ?').get('groq');
+    assert.equal(row.fail, 0, 'Der Tool-400 darf nicht als Routenfehler zaehlen');
+    assert.equal(row.ok, 1, 'Erfolg wird gezaehlt');
+    assert.ok(!row.cooldown_until || Number(row.cooldown_until) <= now(), 'Kein Cooldown nach Einzelretry');
+  } finally {
+    srv.close();
+  }
+});
+
+test('chat: wiederholter Tool-400 failt normal (Retry nur einmal)', async () => {
+  const srv = createServer((req, res) => {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: 'Tool choice is none, but model called a tool' } }));
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    onlyGroq(`${base}/v1`);
+    const out = await chat([{ role: 'user', content: 'Hallo' }], { mode: 'chat' });
+    assert.equal(out.offline, true, 'Nach erneutem Tool-400 bleibt Offline-Fallback');
+    const row = db.prepare('SELECT * FROM routes WHERE provider = ?').get('groq');
+    assert.equal(row.fail, 1, 'Erst nach Wiederholung zaehlt der Fehler');
+  } finally {
+    srv.close();
+  }
+});
+
 test('chat: andere Fehler eskalieren weiterhin (60 s, 120 s, ...)', async () => {
   onlyGroq('http://127.0.0.1:9'); // garantierter toter Port
   await chat([{ role: 'user', content: 'Hallo' }], { mode: 'chat' });

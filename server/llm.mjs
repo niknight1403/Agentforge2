@@ -234,8 +234,21 @@ export async function chat(messages, opts = {}) {
       }
       const out = await callOpenAiCompatible(route, messages, opts);
       recordRoute(route.id, true);
+      route.__toolRetry = false;
       return out;
     } catch (err) {
+      // Groq gpt-oss ruft stochastisch (~1/3 am echten Agentenprompt) intern
+      // ein Tool auf, obwohl der Request keine Tools definiert – Groq antwortet
+      // mit 400 "Tool choice is none, but model called a tool". Das ist kein
+      // Route-Defekt und kein Kontingent: ein sofortiger zweiter Versuch
+      // derselben Route loest es fast immer auf. Kein Cooldown, keine
+      // Eskalation, kein Failover-Wirbel.
+      if (err.status === 400 && /tool choice is none/i.test(String(err.message)) && !route.__toolRetry) {
+        route.__toolRetry = true;
+        order.unshift(route);
+        console.warn(`[villaforge] gpt-oss Tool-400 auf ${route.name}, einmal sofort erneut versuchen`);
+        continue;
+      }
       recordRoute(route.id, false);
       coolDown(route, err.status === 429);
       // Betriebs-Sichtbarkeit: ein gescheiterter LLM-Anruf muss im Hub-Log
