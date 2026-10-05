@@ -359,6 +359,12 @@ test('Retry-Endpunkte: FAILED-Aufgaben zurueck in die Warteschlange', async () =
   const r1 = await post(`/api/villas/${villaId}/tasks/${taskId}/retry`, {});
   assert.equal(r1.status, 202);
   assert.equal((await r1.json()).requeued, true);
+  // Retry-Ereignisse landen im Audit-Protokoll (Nachvollziehbarkeit).
+  const log = await fetch(`${BASE}/api/villas/${villaId}/audit?limit=100`);
+  const auditBody = await log.json();
+  const entries = Array.isArray(auditBody) ? auditBody : (auditBody.entries || []);
+  assert.ok(entries.some((e) => e.tool === 'retry_task'), 'Einzel-Retry muss im Audit stehen');
+  assert.ok(JSON.stringify(entries).includes(String(taskId)), 'Audit muss die Task-Id nennen');
   await post(`/api/villas/${villaId}/stop`, {});
   const st1 = (await tasksOf()).find((t3) => t3.id === taskId)?.status;
   assert.ok(['PENDING', 'RUNNING', 'DONE'].includes(st1), `Status nach Retry unklar: ${st1}`);
@@ -373,6 +379,10 @@ test('Retry-Endpunkte: FAILED-Aufgaben zurueck in die Warteschlange', async () =
   assert.equal(r2.status, 202);
   const body2 = await r2.json();
   assert.ok(Number(body2.requeued) >= 1, 'retry-failed muss mindestens eine Aufgabe requeueen');
+  const log2 = await fetch(`${BASE}/api/villas/${villaId}/audit?limit=100`);
+  const ab2 = await log2.json();
+  const entries2 = Array.isArray(ab2) ? ab2 : (ab2.entries || []);
+  assert.ok(entries2.some((e) => e.tool === 'retry_failed'), 'Sammel-Retry muss im Audit stehen');
   await post(`/api/villas/${villaId}/stop`, {});
 });
 

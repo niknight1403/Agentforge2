@@ -514,6 +514,8 @@ async function api(req, res, url) {
     if (!task) return json(res, 404, { error: 'Aufgabe nicht gefunden' });
     if (task.status !== 'FAILED') return json(res, 409, { error: 'Nur FAILED-Aufgaben koennen erneut gestartet werden' });
     db.prepare("UPDATE tasks SET status = 'PENDING', result = '', updated_at = ? WHERE id = ?").run(now(), taskId);
+    db.prepare("INSERT INTO audit (ts, villa_id, agent_id, tool, args, result, allowed) VALUES (?,?,?,?,?,?,?)")
+      .run(now(), id, 0, 'retry_task', JSON.stringify({ taskId }), 'Aufgabe #' + taskId + ' zurueck in die Warteschlange', 1);
     emit('task_updated', { villaId: id, taskId, fields: ['status'] });
     if (isRunning(id)) return json(res, 202, { ok: true, requeued: true, alreadyRunning: true });
     orchestrate(id, { concurrency: 4, maxTasks: 500, adaptive: true, maxRounds: 6 }).catch(() => {});
@@ -526,7 +528,11 @@ async function api(req, res, url) {
     if (!info) return json(res, 404, { error: 'Villa nicht gefunden' });
     const n = db.prepare("UPDATE tasks SET status = 'PENDING', result = '', updated_at = ? WHERE villa_id = ? AND status = 'FAILED'")
       .run(now(), id).changes;
-    if (n) emit('tasks_requeued', { villaId: id, count: n });
+    if (n) {
+      db.prepare("INSERT INTO audit (ts, villa_id, agent_id, tool, args, result, allowed) VALUES (?,?,?,?,?,?,?)")
+        .run(now(), id, 0, 'retry_failed', JSON.stringify({ count: n }), n + ' gescheiterte Aufgabe(n) erneut gestartet', 1);
+      emit('tasks_requeued', { villaId: id, count: n });
+    }
     if (!n) return json(res, 200, { ok: true, requeued: 0, note: 'Keine FAILED-Aufgaben' });
     if (isRunning(id)) return json(res, 202, { ok: true, requeued: n, alreadyRunning: true });
     orchestrate(id, { concurrency: 4, maxTasks: 500, adaptive: true, maxRounds: 6 }).catch(() => {});
