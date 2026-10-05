@@ -7,6 +7,22 @@ Web-UI nutzen exakt diese Schnittstelle.
 > Kurzreferenz zum Scannen bleibt im README; hier stehen Formen,
 > Beispiele und Fehlercodes im Detail.
 
+## Gratis-Kontingente und Selbstheilung
+
+Gratis-LLM-Stufen arbeiten mit engen Token-Fenstern (Groq z. B. 8.000 TPM je
+Modell). Der Hub interpretiert erschöpfte Kontingente als Warte-Situation, nicht
+als Endfehler:
+
+| Situation | Verhalten |
+| --- | --- |
+| 429 von einem Anbieter | Route pausiert 45 s, danach neuer Versuch; keine Eskalation |
+| Alle Kontingente voll | Agentenschritt wartet `VF_RATE_WAIT_MS` (45 s) und wiederholt sich (max. 2x); Orchestrierung reiht offline gescheiterte Aufgaben wieder ein (max. 2x) und wartet zwischen Runden |
+| Trotzdem erfolglos | Aufgabe bleibt `FAILED`, Villa endet `PAUSED` (nie falsches `COMPLETED`) |
+| Kein Key konfiguriert | Bewusster Offline-Betrieb: Planer-Antworten, Aufgaben werden `DONE`, kein 401er-Proben |
+
+Scheitert eine Route, steht eine Zeile im Hub-Log:
+`[villaforge] Route fehlgeschlagen (<Name>): <Fehler>`.
+
 ## Konventionen
 
 - **Auth:** Ist `VF_TOKEN` gesetzt, verlangt jeder Endpunkt außer

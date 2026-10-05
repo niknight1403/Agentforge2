@@ -199,6 +199,30 @@ dem neuen Modellstand; Nutzer-Einstellungen und Statistiken bleiben unberuehrt.
 Key hinterlegen – entweder als Umgebungsvariable beim Start oder in der Oberfläche unter
 „API-Key hinterlegen“. Es genügt **ein** Key; der Router nutzt alle aktiven Routen.
 
+### Gratis-Betrieb und Kontingent-Selbstheilung
+
+Gratis-Stufen haben enge Token-Fenster (z. B. Groq: 8.000 Token pro Minute und
+Modell). Ein Agentenaufruf verbraucht grob 3.000-4.000 Token, also passen nur
+wenige Anrufe pro Minute ins Fenster. Der Hub behandelt das als NORMAL und nicht
+als Fehler:
+
+- **429 (Rate Limit)** sperrt die betroffene Route nur kurz (45 s) und eskaliert
+  nicht – das Fenster entleert sich, dann geht es weiter.
+- **Transienter Offline-Fall** (Keys vorhanden, aber alle Kontingente gerade
+  voll): Der Agentenlauf wartet und wiederholt den Schritt (zweimal), die
+  Orchestrierung schiebt offline gescheiterte Aufgaben zurück in die
+  Warteschlange (zwei Extraversuche) und pausiert kurz zwischen den Runden.
+  Erst danach bleibt die Aufgabe ehrlich `FAILED` und die Villa `PAUSED` statt
+  falschen Erfolg zu melden.
+- **Bewusster Offline-Betrieb** (gar kein Key konfiguriert): Aufgaben laufen
+  direkt über den lokalen Planer und werden `DONE` – der Hub probiert keine
+  toten 401er-Kaskaden ab. Auch das ist ein gültiger Modus.
+- `VF_RATE_WAIT_MS` (Standard 45000) steuert die Wartezeit zwischen den
+  Wiederholungen – für Tests niedrig setzbar.
+
+Route-Fehler landen im Hub-Log („Route fehlgeschlagen"), ein kippender Lauf ist
+damit von außen diagnostizierbar.
+
 ## API-Kurzreferenz
 
 Vollständige Endpunkt-Referenz mit Beispielen: [docs/API.md](docs/API.md).
