@@ -504,6 +504,34 @@ async function api(req, res, url) {
     }).catch(() => {});
     return json(res, 202, { ok: true, started: true });
   }
+  // Gescheiterte Aufgabe zurueck in die Warteschlange und den Lauf fortsetzen.
+  // Nach einem Offline-Durchhц╓nger (PAUSED mit FAILED-Aufgaben) ist das der
+  // eine Klick, der die Villa weiterlaufen laesst.
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'tasks' && parts[4] && parts[5] === 'retry' && m === 'POST') {
+    const id = Number(parts[2]);
+    const taskId = Number(parts[4]);
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND villa_id = ?').get(taskId, id);
+    if (!task) return json(res, 404, { error: 'Aufgabe nicht gefunden' });
+    if (task.status !== 'FAILED') return json(res, 409, { error: 'Nur FAILED-Aufgaben koennen erneut gestartet werden' });
+    db.prepare("UPDATE tasks SET status = 'PENDING', result = '', updated_at = ? WHERE id = ?").run(now(), taskId);
+    emit('task_updated', { villaId: id, taskId, fields: ['status'] });
+    if (isRunning(id)) return json(res, 202, { ok: true, requeued: true, alreadyRunning: true });
+    orchestrate(id, { concurrency: 4, maxTasks: 500, adaptive: true, maxRounds: 6 }).catch(() => {});
+    return json(res, 202, { ok: true, requeued: true, started: true });
+  }
+  // Alle gescheiterten Aufgaben der Villa auf einmal.
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'retry-failed' && m === 'POST') {
+    const id = Number(parts[2]);
+    const info = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);
+    if (!info) return json(res, 404, { error: 'Villa nicht gefunden' });
+    const n = db.prepare("UPDATE tasks SET status = 'PENDING', result = '', updated_at = ? WHERE villa_id = ? AND status = 'FAILED'")
+      .run(now(), id).changes;
+    if (n) emit('tasks_requeued', { villaId: id, count: n });
+    if (!n) return json(res, 200, { ok: true, requeued: 0, note: 'Keine FAILED-Aufgaben' });
+    if (isRunning(id)) return json(res, 202, { ok: true, requeued: n, alreadyRunning: true });
+    orchestrate(id, { concurrency: 4, maxTasks: 500, adaptive: true, maxRounds: 6 }).catch(() => {});
+    return json(res, 202, { ok: true, requeued: n, started: true });
+  }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'stop' && m === 'POST') {
     const id = Number(parts[2]);
     const stopped = stopVilla(id);
