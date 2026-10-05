@@ -55,3 +55,13 @@ test('app.js ist syntaktisch gultiges JavaScript', async () => {
   const { execFileSync } = await import('node:child_process');
   execFileSync(process.execPath, ['--check', `${pub}/app.js`]);
 });
+
+test('Web-UI: Retry-Steuerung fuer FAILED-Aufgaben', () => {
+  const html = readFileSync(`${pub}/index.html`, 'utf8');
+  const js = readFileSync(`${pub}/app.js`, 'utf8');
+  assert.ok(html.includes('id="retryFailedBar"'), 'Sammel-Retry-Button fehlt im HTML');
+  assert.ok(js.includes("$('#retryFailedBar').addEventListener"), 'Sammel-Button hat keinen Handler');
+  assert.ok(js.includes('data-retry='), 'Einzelaufgaben-Retry-Button fehlt im JS');
+  assert.ok(js.includes('/retry-failed'), 'retry-failed-Endpunkt wird nicht angesprochen');
+  assert.ok(js.includes('/tasks/'), 'Einzelaufgaben-Retry-Endpunkt fehlt');
+});
