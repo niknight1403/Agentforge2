@@ -52,7 +52,7 @@ function renderStats(d){
   const done=d.tasks.filter(t=>t.status==='DONE').length, total=d.tasks.length, open=d.tasks.filter(t=>['PENDING','READY','RUNNING','REVIEW'].includes(t.status)).length;
   const pct=total?Math.round(done/total*100):0; const active=d.running||['RUNNING','STOPPING'].includes(d.villa.status);
   $('#startBtn').hidden=active; $('#startBtn').disabled=false; $('#stopBtn').hidden=!active; $('#stopBtn').textContent=d.villa.status==='STOPPING'?'Stoppt …':'Stoppen'; $('#deleteBtn').hidden=active; $('#workspaceStatus').textContent=active?'Entwicklung läuft':statusLabel(d.villa.status); $('#workspaceStatus').className=`status-pill ${active?'RUNNING':''}`;
-  $('#dStats').innerHTML=`<div class="stat"><b>${statusLabel(d.villa.status)}</b>Status</div><div class="stat"><b>${d.agents.length}</b>Agenten</div><div class="stat"><b>${done}/${total}</b>erledigt</div><div class="stat"><b>${open}</b>offen</div>`;
+  const autoAt=Number(d.villa.auto_retry_at||0); const autoTile=autoAt&&d.villa.status==='PAUSED'?`<div class="stat"><b>~${new Date(autoAt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})} Uhr</b>Auto-Fortsetzung</div>`:''; $('#dStats').innerHTML=`<div class="stat"><b>${statusLabel(d.villa.status)}</b>Status</div><div class="stat"><b>${d.agents.length}</b>Agenten</div><div class="stat"><b>${done}/${total}</b>erledigt</div><div class="stat"><b>${open}</b>offen</div>${autoTile}`;
   $('#progressBar').style.width=`${pct}%`; $('#progressLabel').textContent=`${pct}% abgeschlossen · ${open} nächste Schritte`; $('#taskCount').textContent=total; $('#agentCountLabel').textContent=d.agents.length; $('#metricAgents').textContent=d.agents.length; $('#metricTasks').textContent=`${pct}%`;
 }
 function renderSuggestions(d){

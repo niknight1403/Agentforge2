@@ -8,6 +8,16 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.9.0
+
+- Auto-Resume: Scheitert ein Lauf nur an erschöpften Gratis-Kontingenten,
+  nimmt der Hub ihn eine Stunde später von selbst wieder auf — ohne Klick
+  und ohne externen Weckruf (Audit-Eintrag `auto_resume`, Web-UI-Kachel
+  „Auto-Fortsetzung ~HH:MM“)
+- `tasks.quota_blocked` trennt Kontingent-Fehler von echten Fehlschlägen;
+  nur reine 429-Restarts laufen automatisch, 401/403 bleiben rot
+- `villas.auto_retry_at` im Villa-Objekt der API
+
 ## Neu in 1.8.0
 
 - Adaptives Batching: die Lauf-Parallelität sinkt auf die Zahl wirklich

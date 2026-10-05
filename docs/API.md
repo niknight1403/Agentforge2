@@ -156,6 +156,16 @@ Lauf; `requeued: 0`, falls keine vorhanden sind. Beide Retry-Endpunkte
 schreiben Audit-Einträge (`tool: retry_task` mit Task-Id bzw.
 `retry_failed` mit Anzahl), damit Retries nachvollziehbar bleiben.
 
+### Auto-Resume nach Kontingent-Erschoepfung
+Scheitert ein Lauf ausschliesslich an erschöpften Gratis-Kontingenten
+(alle echten Routen antworten `429`, die Keys sind gültig), markiert der
+Hub die Aufgaben mit `quota_blocked: 1` und setzt am Villa-Objekt
+`auto_retry_at`. Eine Minute-Ticks prüft fällige Villen und setzt den
+Lauf **von selbst** fort (Audit: `auto_resume`), ohne dass jemand den
+Retry-Button drücken muss. Echte Fehler (`401/403`, inhaltliche
+Fehlschläge) bleiben FAILED und werden nie automatisch neu gestartet.
+Die Web-UI zeigt den geplanten Zeitpunkt als Kachel „Auto-Fortsetzung“.
+
 ### `GET /api/villas/:id/messages?agentId=`
 Chatverlauf, optional auf einen Agenten gefiltert.
 
