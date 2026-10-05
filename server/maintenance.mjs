@@ -7,7 +7,8 @@
  * Aufgaben, Agenten, Gedaechtnis und Berichte bleiben unberuehrt:
  * das ist Arbeitsinhalt, kein Protokoll.
  */
-import { db } from './db.mjs';
+import { db, now } from './db.mjs';
+import { emit } from './events.mjs';
 
 export function pruneOldData({ days, dryRun = false } = {}) {
   const d = Number(days);
@@ -33,5 +34,43 @@ export function pruneOldData({ days, dryRun = false } = {}) {
     db.exec('PRAGMA optimize;');
   }
   out.optimized = !dryRun;
+  return out;
+}
+
+/**
+ * Automatische Fortsetzung pausierter Laeufe, deren einzige Fehlerursache
+ * erschöpfte Gratis-Kontingente (429) waren. villas.auto_retry_at haelt den
+ * faelligen Zeitpunkt; hier setzt der Hub die Villa selbst wieder an —
+ * ohne Klick auf Retry und ohne externen Weckruf.
+ */
+export function autoResumeQuotaVillas({ orchestrate, isRunning } = {}) {
+  const due = db.prepare(
+    "SELECT id FROM villas WHERE status = 'PAUSED' AND auto_retry_at > 0 AND auto_retry_at <= ?"
+  ).all(now());
+  const out = { checked: due.length, resumed: [], cleared: [], skipped: [] };
+  for (const { id } of due) {
+    if (isRunning?.(id)) { out.skipped.push(id); continue; }
+    const blocked = db.prepare(
+      "SELECT id FROM tasks WHERE villa_id = ? AND status = 'FAILED' AND quota_blocked = 1"
+    ).all(id);
+    // Zwischenzeitlich von Hand behoben oder Aufgaben weg — Flag aufraeumen.
+    if (blocked.length === 0) {
+      db.prepare('UPDATE villas SET auto_retry_at = 0, updated_at = ? WHERE id = ?').run(now(), id);
+      out.cleared.push(id);
+      continue;
+    }
+    db.prepare(
+      "UPDATE tasks SET status = 'PENDING', result = '', quota_blocked = 0, updated_at = ? WHERE villa_id = ? AND status = 'FAILED' AND quota_blocked = 1"
+    ).run(now(), id);
+    db.prepare('UPDATE villas SET auto_retry_at = 0, updated_at = ? WHERE id = ?').run(now(), id);
+    db.prepare('INSERT INTO audit (ts, villa_id, agent_id, tool, args, result, allowed) VALUES (?,?,?,?,?,?,?)')
+      .run(now(), id, 0, 'auto_resume', JSON.stringify({ count: blocked.length }),
+        blocked.length + ' kontingent-blockierte Aufgabe(n) automatisch erneut gestartet', 1);
+    emit('tasks_requeued', { villaId: id, count: blocked.length, auto: true });
+    if (typeof orchestrate === 'function') {
+      orchestrate(id, { concurrency: 4, maxTasks: 500, adaptive: true, maxRounds: 6 }).catch(() => {});
+    }
+    out.resumed.push(id);
+  }
   return out;
 }

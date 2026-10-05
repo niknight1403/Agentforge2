@@ -141,6 +141,11 @@ ensureColumn('routes', 'cooldown_until', 'INTEGER NOT NULL DEFAULT 0');
 // Wie oft diese Aufgabe schon angelaufen ist (inkl. Selbstheilung und Retry).
 // FAILED mit Versuch 3 ist eine andere Geschichte als FAILED beim ersten Versuch.
 ensureColumn('tasks', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+// Kontingent-Erschoepfung als Fehlerursache: alle echten Routen antworteten
+// nur 429. Solche Aufgaben darf der Hub automatisch erneut anstossen.
+ensureColumn('tasks', 'quota_blocked', 'INTEGER NOT NULL DEFAULT 0');
+// Zeitstempel, zu dem der Hub einen pausierten Lauf selbst fortsetzt.
+ensureColumn('villas', 'auto_retry_at', 'INTEGER NOT NULL DEFAULT 0');
 
 export const now = () => Date.now();
 

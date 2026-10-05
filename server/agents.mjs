@@ -801,6 +801,9 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
 
     const open = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status IN ('PENDING','READY','RUNNING','REVIEW')").get(villaId).c;
     const failed = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status = 'FAILED'").get(villaId).c;
+    // Nur-429-Fehler brauchen keinen Klick: der Hub setzt den Lauf selbst
+    // fort, sobald das Tageslimit voraussichtlich wieder frei ist.
+    const quotaFailed = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status = 'FAILED' AND quota_blocked = 1").get(villaId).c;
     // COMPLETED nur, wenn wirklich alles durchgelaufen ist; gescheiterte
     // Aufgaben sind kein Erfolg, auch wenn nichts mehr offen steht.
     let status = job.stop ? 'PAUSED' : (open === 0 && failed === 0 ? 'COMPLETED' : 'PAUSED');
@@ -816,8 +819,9 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
       }
     }
 
-    db.prepare('UPDATE villas SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), villaId);
-    emit('villa', { villaId, status, processed: job.processed });
+    const autoRetryAt = status === 'PAUSED' && failed > 0 && quotaFailed === failed ? now() + AUTO_RETRY_MS : 0;
+    db.prepare('UPDATE villas SET status = ?, auto_retry_at = ?, updated_at = ? WHERE id = ?').run(status, autoRetryAt, now(), villaId);
+    emit('villa', { villaId, status, processed: job.processed, autoRetryAt });
   } catch (err) {
     db.prepare('UPDATE villas SET status = ?, updated_at = ? WHERE id = ?').run('FAILED', now(), villaId);
     emit('villa', { villaId, status: 'FAILED', error: String(err.message || err) });
@@ -853,6 +857,20 @@ async function reviewAndExpand(villaId) {
   }
   return created;
 }
+
+/**
+ * Reine Kontingent-Erschoepfung? Alle echten Routen haben nur mit 429
+ * geantwortet — der Schluessel ist gueltig, das Tageslimit ist leer.
+ * Kein inhaltlicher Fehlschlag: der Hub darf das automatisch neu anstossen.
+ */
+export function isQuotaOnlyFailure(res) {
+  const w = String(res?.warning || '');
+  return !!res?.offline && !res?.error && !res?.intentional && /HTTP 429/.test(w) && !/HTTP 40[13]/.test(w);
+}
+
+// Nach einem reinen Kontingent-Aus pausierter Lauf: der Hub wartet eine
+// Stunde und versucht es dann von selbst wieder (429er kosten nichts).
+export const AUTO_RETRY_MS = 60 * 60_000;
 
 async function executeTask(villaId, task) {
   const role = guessRole(task);
@@ -890,11 +908,12 @@ async function executeTask(villaId, task) {
   // ist keine erledigte Aufgabe — sie wuerde nur Plannertext als Ergebnis
   // vortaeschen. Stattdessen ehrlich FAILED und spaeter neu starten.
   const offline = !!res.offline && !res.error && !res.intentional;
+  const quotaBlocked = isQuotaOnlyFailure(res) ? 1 : 0;
   const answer = offline
     ? `${res.answer}\n\n(Hinweis: Aufgabe NICHT erledigt — kein Sprachmodell erreichbar, Offline-Planer hat geantwortet. Route erneut starten, wenn die Anbindung wieder frei ist.)`
     : (res.answer || res.error || 'Kein Ergebnis.');
   const status = res.error || offline ? 'FAILED' : 'DONE';
-  db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?').run(status, answer.slice(0, 4000), now(), task.id);
+  db.prepare('UPDATE tasks SET status = ?, quota_blocked = ?, result = ?, updated_at = ? WHERE id = ?').run(status, quotaBlocked, answer.slice(0, 4000), now(), task.id);
   db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(villaId, agent.id, 'assistant', answer.slice(0, 4000), now());
   if (!offline) {
     db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')

@@ -10,7 +10,7 @@ import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject, importVilla } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { bus, emit, eventsSince } from './events.mjs';
-import { pruneOldData } from './maintenance.mjs';
+import { pruneOldData, autoResumeQuotaVillas } from './maintenance.mjs';
 import { VERSION } from './version.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
@@ -513,7 +513,7 @@ async function api(req, res, url) {
     const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND villa_id = ?').get(taskId, id);
     if (!task) return json(res, 404, { error: 'Aufgabe nicht gefunden' });
     if (task.status !== 'FAILED') return json(res, 409, { error: 'Nur FAILED-Aufgaben koennen erneut gestartet werden' });
-    db.prepare("UPDATE tasks SET status = 'PENDING', result = '', updated_at = ? WHERE id = ?").run(now(), taskId);
+    db.prepare("UPDATE tasks SET status = 'PENDING', result = '', quota_blocked = 0, updated_at = ? WHERE id = ?").run(now(), taskId);
     db.prepare("INSERT INTO audit (ts, villa_id, agent_id, tool, args, result, allowed) VALUES (?,?,?,?,?,?,?)")
       .run(now(), id, 0, 'retry_task', JSON.stringify({ taskId }), 'Aufgabe #' + taskId + ' zurueck in die Warteschlange', 1);
     emit('task_updated', { villaId: id, taskId, fields: ['status'] });
@@ -526,7 +526,7 @@ async function api(req, res, url) {
     const id = Number(parts[2]);
     const info = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);
     if (!info) return json(res, 404, { error: 'Villa nicht gefunden' });
-    const n = db.prepare("UPDATE tasks SET status = 'PENDING', result = '', updated_at = ? WHERE villa_id = ? AND status = 'FAILED'")
+    const n = db.prepare("UPDATE tasks SET status = 'PENDING', result = '', quota_blocked = 0, updated_at = ? WHERE villa_id = ? AND status = 'FAILED'")
       .run(now(), id).changes;
     if (n) {
       db.prepare("INSERT INTO audit (ts, villa_id, agent_id, tool, args, result, allowed) VALUES (?,?,?,?,?,?,?)")
@@ -624,6 +624,16 @@ server.listen(PORT, HOST, () => {
   if (process.env.VF_RESUME !== '0') {
     try { resumePendingVillas(); } catch (err) { logError('Wiederaufnahme fehlgeschlagen:', err.message || err); }
   }
+
+  // Kontingent-Rueckkehr: pausierte Laeufe mit reinen 429-Fehlern einmal pro
+  // Minute pruefen und faellige selbst fortsetzen — ohne Klick, ohne Weckruf.
+  const autoResume = setInterval(() => {
+    try {
+      const out = autoResumeQuotaVillas({ orchestrate, isRunning });
+      for (const id of out.resumed) log(`Auto-Resume: Villa ${id} nach Kontingent-Erschoepfung erneut gestartet`);
+    } catch (err) { logError('Auto-Resume fehlgeschlagen:', err.message || err); }
+  }, 60_000);
+  autoResume.unref();
 });
 
 
