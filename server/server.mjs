@@ -250,6 +250,18 @@ async function api(req, res, url) {
       audit: count('audit'),
       messages: count('messages'),
       runningVillas: listRunning(),
+      routesHealth: (() => {
+        // Aggregierte Route-Gesundheit: ein Blick reicht, um zu sehen, ob
+        // Kontingente gerade drosseln oder alles ruhig laeuft.
+        const rows = db.prepare('SELECT name, ok, fail, cooldown_until, priority FROM routes ORDER BY priority ASC').all();
+        const cooling = rows.filter((r) => Number(r.cooldown_until || 0) > Date.now());
+        return {
+          ok: rows.reduce((a, r) => a + Number(r.ok || 0), 0),
+          fail: rows.reduce((a, r) => a + Number(r.fail || 0), 0),
+          cooling: cooling.map((r) => r.name),
+          configured: rows.filter((r) => r.priority < 50 && (r.key_env ? !!resolveKey(r.key_env) : true)).length
+        };
+      })(),
       limits: {
         ratePerMinute: RATE_LIMIT,
         tokenProtected: !!API_TOKEN

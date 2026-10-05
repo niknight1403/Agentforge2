@@ -124,6 +124,13 @@ test('Stats: Zaehler und Laufzustand stimmen', async () => {
   assert.ok(st.tasks.total >= 1, 'Aufgaben-Zaehler fehlt');
   assert.ok(Array.isArray(st.runningVillas), 'runningVillas muss Array sein');
   assert.ok(st.limits && typeof st.limits.ratePerMinute === 'number');
+  const rh = st.routesHealth;
+  assert.ok(rh, 'routesHealth fehlt in /api/stats');
+  assert.equal(typeof rh.ok, 'number');
+  assert.equal(typeof rh.fail, 'number');
+  assert.ok(Array.isArray(rh.cooling), 'cooling muss Array sein');
+  assert.equal(typeof rh.configured, 'number');
+  assert.ok(rh.configured >= 0, 'configured darf nicht negativ sein');
 });
 
 test('Villa-Detail: Agenten, Aufgaben, Status', async () => {
