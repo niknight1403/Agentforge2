@@ -49,7 +49,10 @@ Lebendigkeit ohne Token-Schutz.
 
 ### `GET /api/stats`
 Zähler und Laufzustand: `uptimeSec`, Tabellenzeilen (`villas`, `agents`,
-`tasks`, `audit`, …), `runningVillas`, `version`.
+`tasks`, `audit`, …), `runningVillas`, `version` und `routesHealth`:
+`{ ok, fail, cooling[], configured }` — Summe der LLM-Anrufe, die gerade
+drosselnden Routen (`cooldown[]`) und wie viele echte Routen einen
+funktionsfähigen Key haben.
 
 ### `GET /api/backup`
 Kompletter Hub-Dump als Download
@@ -136,6 +139,15 @@ Startet die Entwicklung, Antwort enthält `started: true`.
 
 ### `POST /api/villas/:id/stop`
 Stoppt einen laufenden Lauf (`409`, falls keiner läuft).
+
+### `POST /api/villas/:id/tasks/:taskId/retry`
+Stellt eine `FAILED`-Aufgabe zurück auf `PENDING` und setzt den
+Selbstheilungs-Lauf fort. `409` auf Nicht-FAILED-Aufgaben, `404` auf
+unbekannte Aufgaben. Antwort: `{ requeued, started | alreadyRunning }`.
+
+### `POST /api/villas/:id/retry-failed`
+Requeued alle `FAILED`-Aufgaben der Villa auf einmal und startet den
+Lauf; `requeued: 0`, falls keine vorhanden sind.
 
 ### `GET /api/villas/:id/messages?agentId=`
 Chatverlauf, optional auf einen Agenten gefiltert.
