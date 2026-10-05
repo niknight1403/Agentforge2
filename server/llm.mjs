@@ -84,7 +84,11 @@ async function callOpenAiCompatible(route, messages, opts) {
     temperature: opts.temperature ?? 0.6,
     max_tokens: opts.maxTokens ?? 2048
   };
-  if (opts.json) body.response_format = { type: 'json_object' };
+  // JSON-Modus nur, wo er verlaesslich funktioniert. Groqs gpt-oss-Modelle
+  // werfen im JSON-Modus haeufig HTTP 400 (json_validate_failed /
+  // tool_use_failed) und blockieren damit den ganzen Lauf; der ReAct-Loop
+  // parst die Antwort ohnehin selbst und wiederholt Nicht-JSON-Antworten.
+  if (opts.json && !/gpt-oss/.test(route.model)) body.response_format = { type: 'json_object' };
 
   const res = await fetch(`${route.base_url.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',

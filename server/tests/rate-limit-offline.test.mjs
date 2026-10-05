@@ -113,3 +113,61 @@ test('orchestrate: echte LLM-Antworten markieren Aufgaben weiterhin DONE', async
     srv.close();
   }
 });
+
+test('chat: gpt-oss laeuft ohne response_format, andere Modelle mit', async () => {
+  const seen = [];
+  const srv = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const parsed = JSON.parse(body);
+      seen.push({ model: parsed.model, json: !!parsed.response_format });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        id: 'x', object: 'chat.completion', model: parsed.model,
+        choices: [{ index: 0, message: { role: 'assistant', content: '{"final":"ok"}' }, finish_reason: 'stop' }]
+      }));
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    resetRoutes();
+    db.prepare('DELETE FROM secrets').run();
+    setSecret('GROQ_API_KEY', 'k');
+    db.prepare("UPDATE routes SET base_url = ?, model = 'openai/gpt-oss-120b' WHERE provider = 'groq'").run(`${base}/v1`,);
+    db.prepare('DELETE FROM routes WHERE provider != ?').run('groq');
+    await chat([{ role: 'user', content: 'Hallo' }], { json: true, mode: 'agent' });
+    assert.equal(seen.length, 1, 'Mock nicht aufgerufen');
+    assert.equal(seen[0].json, false, 'gpt-oss darf KEIN response_format erhalten');
+  } finally {
+    srv.close();
+  }
+
+  const srv2 = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const parsed = JSON.parse(body);
+      seen.push({ model: parsed.model, json: !!parsed.response_format });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        id: 'x', object: 'chat.completion', model: parsed.model,
+        choices: [{ index: 0, message: { role: 'assistant', content: '{"final":"ok"}' }, finish_reason: 'stop' }]
+      }));
+    });
+  });
+  await new Promise((r) => srv2.listen(0, '127.0.0.1', r));
+  const base2 = `http://127.0.0.1:${srv2.address().port}`;
+  try {
+    resetRoutes();
+    db.prepare('DELETE FROM secrets').run();
+    setSecret('GROQ_API_KEY', 'k');
+    db.prepare('DELETE FROM routes WHERE provider != ?').run('groq');
+    db.prepare("UPDATE routes SET base_url = ?, model = 'llama-3.3-70b' WHERE provider = 'groq'").run(`${base2}/v1`);
+    await chat([{ role: 'user', content: 'Hallo' }], { json: true, mode: 'agent' });
+    assert.equal(seen[1].json, true, 'Nicht-gpt-oss sollte response_format behalten');
+  } finally {
+    srv2.close();
+  }
+});
