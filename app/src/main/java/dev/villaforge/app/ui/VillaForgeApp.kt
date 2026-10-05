@@ -716,8 +716,16 @@ private fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
                     "Aufgaben ${tasksObj?.optInt("total") ?: 0} (offen ${tasksObj?.optInt("open") ?: 0})",
                     "Audit ${s.optInt("audit")} · Verläufe ${s.optInt("messages")}",
                     "Laufzeit ${s.optLong("uptimeSec") / 60} min · Speicher ${s.optLong("rssBytes") / (1024 * 1024)} MB",
-                    if (s.optJSONArray("runningVillas")?.length() ?: 0 > 0) "Läuft gerade: ${s.optJSONArray("runningVillas")}" else "Kein Lauf aktiv"
-                ).joinToString("\n"),
+                    if (s.optJSONArray("runningVillas")?.length() ?: 0 > 0) "Läuft gerade: ${s.optJSONArray("runningVillas")}" else "Kein Lauf aktiv",
+                    run {
+                        // Routen-Gesundheit: ok/fail kumulativ, Cooldown live.
+                        val rh = s.optJSONObject("routesHealth") ?: return@run null
+                        val cooling = rh.optJSONArray("cooling")
+                        val coolingNames = (0 until (cooling?.length() ?: 0)).mapNotNull { i -> cooling?.optString(i) }
+                        val base = "Routen ok ${rh.optInt("ok")} / fail ${rh.optInt("fail")} · konfiguriert ${rh.optInt("configured")}"
+                        if (coolingNames.isEmpty()) base else base + "\nIm Cooldown: " + coolingNames.joinToString(", ")
+                    }
+                ).filterNotNull().joinToString("\n"),
                 style = muted(), color = TextMuted
             )
             Spacer(Modifier.height(4.dp))
