@@ -110,6 +110,11 @@ mit `villaId` und übernommenen Zählern.
 ### `GET /api/villas/:id/tasks?status=&limit=`
 `status` aus `PENDING|RUNNING|DONE|FAILED|BLOCKED`, `limit` max 500.
 
+### `GET /api/villas/:id/tasks/:taskId` · Aufgabenfelder
+Jede Aufgabe trägt `attempts` — wie oft sie angelaufen ist, inklusive
+Selbstheilungsrunden und manueller Retries. Die Web-UI zeigt das ab dem
+zweiten Anlauf als `FAILED · Versuch N` im Status-Badge.
+
 ### `PATCH /api/villas/:id/tasks/:taskId`
 ```json
 { "status": "DONE", "priority": 2, "result": "fertig" }
@@ -147,7 +152,9 @@ unbekannte Aufgaben. Antwort: `{ requeued, started | alreadyRunning }`.
 
 ### `POST /api/villas/:id/retry-failed`
 Requeued alle `FAILED`-Aufgaben der Villa auf einmal und startet den
-Lauf; `requeued: 0`, falls keine vorhanden sind.
+Lauf; `requeued: 0`, falls keine vorhanden sind. Beide Retry-Endpunkte
+schreiben Audit-Einträge (`tool: retry_task` mit Task-Id bzw.
+`retry_failed` mit Anzahl), damit Retries nachvollziehbar bleiben.
 
 ### `GET /api/villas/:id/messages?agentId=`
 Chatverlauf, optional auf einen Agenten gefiltert.

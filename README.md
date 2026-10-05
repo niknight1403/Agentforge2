@@ -8,6 +8,20 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.8.0
+
+- Adaptives Batching: die Lauf-Parallelität sinkt auf die Zahl wirklich
+  einsatzbereiter LLM-Routen — eine Route übrig heißt eine Aufgabe gleichzeitig
+- Versuchszähler pro Aufgabe: `tasks.attempts` zählt jeden Anlauf (inkl.
+  Selbstheilung und Retry), die Web-UI zeigt „FAILED · Versuch N"
+- Web-UI: „Neu starten" an jeder fehlgeschlagenen Aufgabe plus Sammel-Button
+  „Fehlgeschlagene Aufgaben erneut starten" über dem Aufgabenplan
+- Retry-Endpunkte schreiben Audit-Einträge (`retry_task`/`retry_failed`)
+- Android: Routen-Gesundheit (ok/fail, konfigurierte Routen, Cooldown-Liste)
+  in der Hub-Statistik
+- LLM-Smoke-Test in CI: erschöpfte Gratis-Kontingente (429) gelten als bestanden,
+  wenn die Keys gültig sind; echte Key-/Konfigurationsfehler bleiben rot
+
 ## Neu in 1.7.0
 
 - Selbstheilung bei Groq-Tool-Fehlern: `Tool-400` (gpt-oss) wird einmal sofort wiederholt
