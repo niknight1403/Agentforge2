@@ -44,7 +44,7 @@ Scheitert eine Route, steht eine Zeile im Hub-Log:
 Lebendigkeit ohne Token-Schutz.
 
 ```json
-{ "ok": true, "ts": 1759600000000, "routes": 3, "version": "1.6.0" }
+{ "ok": true, "ts": 1759600000000, "routes": 3, "version": "1.7.0" }
 ```
 
 ### `GET /api/stats`

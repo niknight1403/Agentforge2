@@ -8,6 +8,15 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.7.0
+
+- Selbstheilung bei Groq-Tool-Fehlern: `Tool-400` (gpt-oss) wird einmal sofort wiederholt
+- Retry-Endpunkte: `POST /api/villas/:id/tasks/:taskId/retry` (Einzelaufgabe) und
+  `POST /api/villas/:id/retry-failed` (alle gescheiterten Aufgaben auf einmal)
+- `GET /api/stats` meldet `routesHealth` (ok/fail/cooling/configured)
+- Android: „Aufgabe erneut starten" an fehlgeschlagenen Aufgaben und
+  „Fehlgeschlagene Aufgaben erneut starten" in der Villa-Ansicht
+
 ## Neu in 1.6.0
 
 - `GET /api/villas/:id/audit` — Werkzeug-Protokoll mit Pagination (`limit`/`offset`)
