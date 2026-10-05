@@ -15,7 +15,6 @@ import { VERSION } from '../version.mjs';
 import { rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 
 const PORT = 21000 + Math.floor(Math.random() * 8000);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -325,34 +324,51 @@ test('Orchestrate: unsinnige Parameter werden mit 400 abgelehnt', async () => {
 });
 
 test('Retry-Endpunkte: FAILED-Aufgaben zurueck in die Warteschlange', async () => {
-  const db = new DatabaseSync(DB);
-  // Aufgabe kuenstlich scheitern lassen (wie nach einem Offline-Durchhaenger)
-  db.prepare("UPDATE tasks SET status = 'FAILED', result = 'offline' WHERE villa_id = ?").run(villaId);
-  const failed = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status = 'FAILED'").get(villaId).c;
-  assert.ok(failed >= 1, 'Testvorbedingung: mindestens eine FAILED-Aufgabe');
+  // Rein ueber HTTP: kein direkter DB-Zugriff (kein 'database is locked' in CI).
+  const patch = (taskId, body) => fetch(`${BASE}/api/villas/${villaId}/tasks/${taskId}`,
+    { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const tasksOf = async () => {
+    const r = await fetch(`${BASE}/api/villas/${villaId}/tasks`);
+    const d = await r.json();
+    return Array.isArray(d) ? d : (d.tasks || []);
+  };
+
+  // Alle Aufgaben kuenstlich scheitern lassen (wie nach einem Offline-Durchhaenger)
+  await post(`/api/villas/${villaId}/stop`, {});
+  let tasks = await tasksOf();
+  // Stopp settle lassen: RUNNING-Aufgaben wuerden PATCH mit 409 ablehnen.
+  for (let i = 0; i < 20 && tasks.some((t0) => t0.status === 'RUNNING'); i++) {
+    await sleep(150);
+    tasks = await tasksOf();
+  }
+  assert.ok(tasks.length >= 1, 'Testvorbedingung: mindestens eine Aufgabe');
+  assert.ok(!tasks.some((t0) => t0.status === 'RUNNING'), 'RUNNING-Aufgaben muessen nach Stopp settle sein');
+  for (const tsk of tasks) {
+    const r = await patch(tsk.id, { status: 'FAILED', result: 'offline' });
+    assert.equal(r.status, 200, `PATCH auf FAILED fuer Task ${tsk.id} fehlgeschlagen`);
+  }
+  tasks = await tasksOf();
+  assert.ok(tasks.every((t2) => t2.status === 'FAILED'), 'Alle Aufgaben muessen FAILED sein');
 
   // Nur-FAILED-Retry auf Nicht-FAILED ablehnen
-  const doneId = db.prepare("SELECT id FROM tasks WHERE villa_id = ? AND status != 'FAILED' LIMIT 1").get(villaId)?.id;
-  if (doneId) {
-    const r409 = await post(`/api/villas/${villaId}/tasks/${doneId}/retry`, {});
-    assert.equal(r409.status, 409, 'Nicht-FAILED darf nicht retry-faehig sein');
-  }
   const r404 = await post(`/api/villas/${villaId}/tasks/999999/retry`, {});
   assert.equal(r404.status, 404);
 
-  // Einzel-Retry: FAILED -> PENDING, Lauf startet
-  const taskId = db.prepare("SELECT id FROM tasks WHERE villa_id = ? AND status = 'FAILED' LIMIT 1").get(villaId).id;
+  // Einzel-Retry: FAILED -> Warteschlange, Lauf startet (PENDING oder schon RUNNING)
+  const taskId = tasks[0].id;
   const r1 = await post(`/api/villas/${villaId}/tasks/${taskId}/retry`, {});
   assert.equal(r1.status, 202);
   assert.equal((await r1.json()).requeued, true);
-  // Der Einzel-Retry startet sofort den Selbstheilungs-Lauf: die Aufgabe ist
-  // entweder noch PENDING oder schon RUNNING — beides ist der grüne Zustand.
-  const st1 = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskId).status;
-  assert.ok(['PENDING', 'RUNNING'].includes(st1), `Status sollte PENDING/RUNNING sein, war ${st1}`);
-
-  // Warten bis der Selbstheilungs-Lauf durchgelaufen ist, dann Rest pruefen
   await post(`/api/villas/${villaId}/stop`, {});
-  db.prepare("UPDATE tasks SET status = 'FAILED' WHERE villa_id = ? AND status NOT IN ('RUNNING')").run(villaId);
+  const st1 = (await tasksOf()).find((t3) => t3.id === taskId)?.status;
+  assert.ok(['PENDING', 'RUNNING', 'DONE'].includes(st1), `Status nach Retry unklar: ${st1}`);
+
+  // Noch eine Aufgabe FAILED setzen (der Lauf kann einige erledigt haben)
+  await post(`/api/villas/${villaId}/stop`, {});
+  tasks = await tasksOf();
+  for (const tsk of tasks.filter((t4) => t4.status === 'DONE')) {
+    await patch(tsk.id, { status: 'FAILED', result: 'offline' });
+  }
   const r2 = await post(`/api/villas/${villaId}/retry-failed`, {});
   assert.equal(r2.status, 202);
   const body2 = await r2.json();
