@@ -843,14 +843,23 @@ async function executeTask(villaId, task) {
 
   const res = await runAgent(agent, prompt, { maxSteps: 7, villaId });
 
-  const answer = res.answer || res.error || 'Kein Ergebnis.';
-  db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?').run(res.error ? 'FAILED' : 'DONE', answer.slice(0, 4000), now(), task.id);
+  // Offline-Rettefall: kein echtes Modell war erreichbar. So eine Antwort
+  // ist keine erledigte Aufgabe — sie wuerde nur Plannertext als Ergebnis
+  // vortaeschen. Stattdessen ehrlich FAILED und spaeter neu starten.
+  const offline = !!res.offline && !res.error;
+  const answer = offline
+    ? `${res.answer}\n\n(Hinweis: Aufgabe NICHT erledigt — kein Sprachmodell erreichbar, Offline-Planer hat geantwortet. Route erneut starten, wenn die Anbindung wieder frei ist.)`
+    : (res.answer || res.error || 'Kein Ergebnis.');
+  const status = res.error || offline ? 'FAILED' : 'DONE';
+  db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?').run(status, answer.slice(0, 4000), now(), task.id);
   db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(villaId, agent.id, 'assistant', answer.slice(0, 4000), now());
-  db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
-    .run(villaId, agent.id, 'villa', 'ARTIFACT', `Ergebnis: ${task.title}`, answer.slice(0, 2000), 6, now());
+  if (!offline) {
+    db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
+      .run(villaId, agent.id, 'villa', 'ARTIFACT', `Ergebnis: ${task.title}`, answer.slice(0, 2000), 6, now());
+  }
   db.prepare('UPDATE agents SET status = ?, last_active_at = ? WHERE id = ?').run('IDLE', now(), agent.id);
 
-  emit('task', { villaId, taskId: task.id, agentId: agent.id, status: res.error ? 'FAILED' : 'DONE', title: task.title, answer: answer.slice(0, 500) });
+  emit('task', { villaId, taskId: task.id, agentId: agent.id, status, offline, title: task.title, answer: answer.slice(0, 500) });
 }
 
 export function guessRole(task) {

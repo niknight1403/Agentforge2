@@ -49,8 +49,15 @@ function recordRoute(id, ok) {
  * jedem Aufruf erneut in dieselbe tote Route laeuft.
  */
 const COOLDOWN_MS = 60_000;
-function coolDown(route) {
+const RATE_LIMIT_COOLDOWN_MS = 30_000;
+function coolDown(route, rateLimited = false) {
   if (!route.id) return;
+  // 429 heisst "gleich wieder", nicht "kaputt": kurze Pause ohne Eskalation,
+  // damit ein Gratis-Tageslimit den Lauf nicht fuer Minuten lahmlegt.
+  if (rateLimited) {
+    db.prepare('UPDATE routes SET cooldown_until = ? WHERE id = ?').run(now() + RATE_LIMIT_COOLDOWN_MS, route.id);
+    return;
+  }
   const fails = Number(route.fail || 0) + 1;
   const until = now() + Math.min(COOLDOWN_MS * fails, 10 * 60_000);
   db.prepare('UPDATE routes SET cooldown_until = ? WHERE id = ?').run(until, route.id);
@@ -87,7 +94,9 @@ async function callOpenAiCompatible(route, messages, opts) {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status} ${text.slice(0, 200)}`);
+    const err = new Error(`HTTP ${res.status} ${text.slice(0, 200)}`);
+    err.status = res.status;
+    throw err;
   }
   const data = await res.json();
   const choice = data.choices?.[0] ?? {};
@@ -214,7 +223,7 @@ export async function chat(messages, opts = {}) {
       return out;
     } catch (err) {
       recordRoute(route.id, false);
-      coolDown(route);
+      coolDown(route, err.status === 429);
       lastErr = err;
       if (opts.onFailover) opts.onFailover(route.name, String(err.message || err));
     }
