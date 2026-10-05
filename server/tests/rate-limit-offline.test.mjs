@@ -42,7 +42,7 @@ test('chat: 429 sperrt die Route nur kurz statt eskaliert', async () => {
     let row = db.prepare('SELECT * FROM routes WHERE provider = ?').get('groq');
     assert.equal(row.fail, 1, 'Fehlerzaehler nicht erhoeht');
     const span1 = Number(row.cooldown_until) - now();
-    assert.ok(span1 > 20_000 && span1 <= 35_000, `429-Cooldown sollte ~30 s sein, war ${span1} ms`);
+    assert.ok(span1 > 35_000 && span1 <= 50_000, `429-Cooldown sollte ~45 s sein, war ${span1} ms`);
 
     // Zweiter 429 in derCooldown-Fenster darf NICHT eskalieren (frueher 60 s * 2).
     const out2 = await chat([{ role: 'user', content: 'Nochmal' }], { mode: 'chat' });
@@ -50,7 +50,7 @@ test('chat: 429 sperrt die Route nur kurz statt eskaliert', async () => {
     row = db.prepare('SELECT * FROM routes WHERE provider = ?').get('groq');
     assert.equal(row.fail, 2, 'Zweiter Fehler nicht gezaehlt');
     const span2 = Number(row.cooldown_until) - now();
-    assert.ok(span2 <= 35_000, `429 darf nicht eskalieren: ${span2} ms`);
+    assert.ok(span2 <= 50_000, `429 darf nicht eskalieren: ${span2} ms`);
   } finally {
     srv.close();
   }
@@ -65,14 +65,16 @@ test('chat: andere Fehler eskalieren weiterhin (60 s, 120 s, ...)', async () => 
 });
 
 test('orchestrate: Offline-Antworten markieren Aufgaben FAILED statt DONE', async () => {
-  // Keine Keys, alle Routen auf tote Ziele: chat() landet im Offline-Planer.
+  // Keys vorhanden, aber Route tot: transienter Offline-Fall, kein DONE.
+  process.env.VF_RATE_WAIT_MS = '1'; // Warte-Runden im Test abkuerzen
   resetRoutes();
   db.prepare('DELETE FROM routes WHERE provider != ?').run('groq');
   setSecret('GROQ_API_KEY', 'test-key');
   db.prepare('UPDATE routes SET base_url = ? WHERE provider = ?').run('http://127.0.0.1:9', 'groq');
 
   const { villaId } = await createVilla({ name: 'Offline-Villa', idea: 'Ein kleiner Tracker', agentCount: 3 });
-  await orchestrate(villaId, { concurrency: 2, maxTasks: 30, adaptive: false });
+  await orchestrate(villaId, { concurrency: 2, maxTasks: 90, adaptive: false });
+  delete process.env.VF_RATE_WAIT_MS;
 
   const tasks = db.prepare('SELECT * FROM tasks WHERE villa_id = ?').all(villaId);
   assert.ok(tasks.length >= 3, 'Keine Aufgaben angelegt');
@@ -82,6 +84,18 @@ test('orchestrate: Offline-Antworten markieren Aufgaben FAILED statt DONE', asyn
   }
   const artifacts = db.prepare("SELECT COUNT(*) c FROM memories WHERE villa_id = ? AND kind = 'ARTIFACT'").get(villaId).c;
   assert.equal(artifacts, 0, 'Offline-Planertext darf nicht als Artefakt gespeichert werden');
+});
+
+test('orchestrate: bewusster Offline-Betrieb ohne Keys bleibt DONE', async () => {
+  resetRoutes();
+  const { villaId } = await createVilla({ name: 'Planer-Villa', idea: 'Ein kleiner Tracker', agentCount: 3 });
+  await orchestrate(villaId, { concurrency: 2, maxTasks: 30, adaptive: false });
+  const tasks = db.prepare('SELECT * FROM tasks WHERE villa_id = ?').all(villaId);
+  assert.ok(tasks.length >= 3);
+  for (const t of tasks) {
+    assert.equal(t.status, 'DONE', `Aufgabe "${t.title}" sollte im Offline-Betrieb DONE sein`);
+    assert.doesNotMatch(String(t.result), /NICHT erledigt/);
+  }
 });
 
 test('orchestrate: echte LLM-Antworten markieren Aufgaben weiterhin DONE', async () => {

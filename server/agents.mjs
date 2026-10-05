@@ -385,12 +385,25 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, villaId = agen
   ];
 
   const trace = [];
+  // Gratis-Kontingente (z. B. Groq 8000 TPM) sind Minuten-Fenster: ist kein
+  // Modell erreichbar, ist Warten + Wiederholen die richtige Reaktion statt
+  // sofortigem Aufgabe. Zwei Warte-Runden pro Lauf, danach ehrlich offline.
+  // VF_RATE_WAIT_MS macht die Wartezeit in Tests steuerbar.
+  const RATE_WAIT_MS = Number(process.env.VF_RATE_WAIT_MS ?? 45_000);
+  let offlineRetries = 0;
   for (let step = 0; step < maxSteps; step++) {
     let out;
     try {
       out = await chat(history, { json: true, mode, context, temperature: 0.4, maxTokens: 1500 });
     } catch (err) {
       return { error: String(err.message || err), trace };
+    }
+    if (out.offline && !out.intentional && offlineRetries < 2) {
+      offlineRetries++;
+      trace.push({ step, note: 'Kein Sprachmodell erreichbar, warte 45 s und versuche den Schritt erneut.' });
+      await new Promise((r) => setTimeout(r, RATE_WAIT_MS));
+      step--; // gleicher Schritt, gleicher Stand: nur die Zeit soll vergehen
+      continue;
     }
     let parsed = null;
     try { parsed = JSON.parse(out.content); } catch { /* Freitext */ }
@@ -414,7 +427,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, villaId = agen
 
     const final = parsed?.final ?? out.content;
     trace.push({ step, final: true });
-    return { answer: prettify(String(final)), route: out.route, model: out.model, trace, offline: !!out.offline };
+    return { answer: prettify(String(final)), route: out.route, model: out.model, trace, offline: !!out.offline, intentional: !!out.intentional };
   }
   return { answer: 'Ich habe die maximale Schrittzahl erreicht. Bitte formuliere die Aufgabe kleiner oder starte die autonome Ausführung.', trace };
 }
@@ -706,7 +719,7 @@ export function stopVilla(villaId) {
 
 export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, adaptive = true, maxRounds = 6 } = {}) {
   if (running.get(villaId)) return;
-  const job = { stop: false, processed: 0, concurrency: Math.max(1, Math.min(Number(concurrency) || 4, 12)) };
+  const job = { stop: false, processed: 0, concurrency: Math.max(1, Math.min(Number(concurrency) || 4, 12)), retries: new Map() };
   running.set(villaId, job);
   // Verwaiste Aufgaben aus einem abgebrochenen Lauf zurueck auf PENDING setzen.
   // Beim Start eines Laufs kann keine Aufgabe legitim auf RUNNING stehen: dieser
@@ -753,6 +766,27 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
 
       await Promise.all(batch.map((task) => executeTask(villaId, task)));
       job.processed += batch.length;
+
+      // Offline gescheiterte Aufgaben gehoeren zurueck in die Warteschlange,
+      // nicht in den Friedhof: Rate-Limit-Fenster sind Minuten-Sache. Zwei
+      // Extraversuche je Aufgabe, danach bleibt es beim ehrlichen FAILED.
+      let requeued = 0;
+      for (const task of batch) {
+        const row = db.prepare('SELECT status, result FROM tasks WHERE id = ?').get(task.id);
+        if (row?.status === 'FAILED' && /Aufgabe NICHT erledigt/.test(String(row.result || ''))) {
+          const n = (job.retries.get(task.id) || 0) + 1;
+          if (n <= 2) {
+            job.retries.set(task.id, n);
+            db.prepare("UPDATE tasks SET status = 'PENDING', updated_at = ? WHERE id = ?").run(now(), task.id);
+            requeued++;
+          }
+        }
+      }
+      if (requeued > 0) {
+        emit('progress', { villaId, processed: job.processed, requeued, hint: 'Modell-Kontingent pausiert, Wiederholung nach Wartezeit' });
+        // TPM-Fenster entleeren lassen, bevor die naechste Runde anfaengt.
+        await new Promise((r) => setTimeout(r, Number(process.env.VF_RATE_WAIT_MS ?? 45_000) * 1.25));
+      }
       emit('progress', { villaId, processed: job.processed, open: openTasks(villaId).length });
     }
 
@@ -760,7 +794,10 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
     const pruned = pruneHistory(villaId);
 
     const open = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status IN ('PENDING','READY','RUNNING','REVIEW')").get(villaId).c;
-    let status = job.stop ? 'PAUSED' : (open === 0 ? 'COMPLETED' : 'PAUSED');
+    const failed = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status = 'FAILED'").get(villaId).c;
+    // COMPLETED nur, wenn wirklich alles durchgelaufen ist; gescheiterte
+    // Aufgaben sind kein Erfolg, auch wenn nichts mehr offen steht.
+    let status = job.stop ? 'PAUSED' : (open === 0 && failed === 0 ? 'COMPLETED' : 'PAUSED');
 
     // Bei fertigem Lauf das echte Projekt bauen und testen.
     if (status === 'COMPLETED' && adaptive) {
@@ -846,7 +883,7 @@ async function executeTask(villaId, task) {
   // Offline-Rettefall: kein echtes Modell war erreichbar. So eine Antwort
   // ist keine erledigte Aufgabe — sie wuerde nur Plannertext als Ergebnis
   // vortaeschen. Stattdessen ehrlich FAILED und spaeter neu starten.
-  const offline = !!res.offline && !res.error;
+  const offline = !!res.offline && !res.error && !res.intentional;
   const answer = offline
     ? `${res.answer}\n\n(Hinweis: Aufgabe NICHT erledigt — kein Sprachmodell erreichbar, Offline-Planer hat geantwortet. Route erneut starten, wenn die Anbindung wieder frei ist.)`
     : (res.answer || res.error || 'Kein Ergebnis.');

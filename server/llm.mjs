@@ -49,7 +49,7 @@ function recordRoute(id, ok) {
  * jedem Aufruf erneut in dieselbe tote Route laeuft.
  */
 const COOLDOWN_MS = 60_000;
-const RATE_LIMIT_COOLDOWN_MS = 30_000;
+const RATE_LIMIT_COOLDOWN_MS = 45_000;
 function coolDown(route, rateLimited = false) {
   if (!route.id) return;
   // 429 heisst "gleich wieder", nicht "kaputt": kurze Pause ohne Eskalation,
@@ -199,25 +199,35 @@ export function derivePlan(idea, agentCount = 12) {
  */
 export async function chat(messages, opts = {}) {
   const routes = enabledRoutes();
+  // Bewusster Offline-Betrieb (gar kein Zugang konfiguriert) ist ein
+  // gewollter Zustand; Keys vorhanden, aber gerade im Limit, ist transient.
+  // Nur echte Zaehler-Zugriffe (Keys) zaehlen als "konfiguriert": die
+  // schluessellose Ollama-Route ist kein Nachweis, dass ein LLM existiert.
+  const realConfigured = routes.some((r) => r.key_env && resolveKey(r.key_env));
   const strategy = opts.strategy || 'ROTATE';
+  // Zuerst alle nutzbaren Routen. Ist keine mehr nutzbar (z. B. gerade im
+  // Rate-Limit-Cooldown), werden Routen MIT Zugang erneut probiert, damit
+  // ein Fenster vorbeiziehen kann; schluessellose Routen bleiben immer
+  // dabei (lokale Verbindungen schlagen sofort fehl). Ohne jeden Zugang
+  // geht es direkt zum Planer: bewusster Offline-Betrieb ohne 401er-Kette.
+  let pool = routes.filter(isUsable);
+  if (!pool.length) pool = routes.filter((r) => !r.key_env || resolveKey(r.key_env));
   const order = [];
-  if (routes.length) {
-    // Zuerst alle nutzbaren Routen; ist keine uebrig, wird trotzdem jede
-    // probiert, damit ein einzelner Fehler den Lauf nicht zum Erliegen bringt.
-    let pool = routes.filter(isUsable);
-    if (!pool.length) pool = routes;
-    pool = [...pool].sort((a, b) => (strategy === 'ROTATE'
+  if (pool.length) {
+    order.push(...[...pool].sort((a, b) => (strategy === 'ROTATE'
       ? (a.priority - b.priority) || ((a.last_used || 0) - (b.last_used || 0))
-      : a.priority - b.priority));
-    order.push(...pool);
+      : a.priority - b.priority)));
+    order.push({ ...OFFLINE_ROUTE, id: 0 });
+  } else {
+    order.push({ ...OFFLINE_ROUTE, id: 0, intentional: true });
   }
-  order.push({ ...OFFLINE_ROUTE, id: 0 });
 
   let lastErr = null;
   for (const route of order) {
     try {
       if (route.provider === 'offline') {
         const out = offlineReply(messages, opts);
+        out.intentional = route.intentional !== undefined ? route.intentional : !realConfigured;
         // Auch der Offline-Rettefall berichtet, warum echte Routen versagt haben.
         if (lastErr) out.warning = String(lastErr.message || lastErr);
         return out;
@@ -228,12 +238,16 @@ export async function chat(messages, opts = {}) {
     } catch (err) {
       recordRoute(route.id, false);
       coolDown(route, err.status === 429);
+      // Betriebs-Sichtbarkeit: ein gescheiterter LLM-Anruf muss im Hub-Log
+      // sichtbar sein, sonst ist ein kippender Lauf nicht diagnostizierbar.
+      console.error(`[villaforge] Route fehlgeschlagen (${route.name}): ${String(err.message || err).slice(0, 240)}`);
       lastErr = err;
       if (opts.onFailover) opts.onFailover(route.name, String(err.message || err));
     }
   }
   // Letzter Ausweg: Offline, damit der Ablauf nie hart scheitert.
   const fallback = offlineReply(messages, opts);
+  fallback.intentional = !realConfigured;
   fallback.warning = lastErr ? String(lastErr.message || lastErr) : 'keine Route verfuegbar';
   return fallback;
 }
