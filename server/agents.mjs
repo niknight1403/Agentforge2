@@ -767,7 +767,7 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
       emit('batch', { villaId, concurrency: batchLimit, readyRoutes: ready });
       const batch = tasks.slice(0, batchLimit);
       for (const task of batch) {
-        db.prepare("UPDATE tasks SET status = 'RUNNING', updated_at = ? WHERE id = ?").run(now(), task.id);
+        db.prepare("UPDATE tasks SET status = 'RUNNING', attempts = attempts + 1, updated_at = ? WHERE id = ?").run(now(), task.id);
       }
 
       await Promise.all(batch.map((task) => executeTask(villaId, task)));

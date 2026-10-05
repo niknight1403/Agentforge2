@@ -354,6 +354,10 @@ test('Retry-Endpunkte: FAILED-Aufgaben zurueck in die Warteschlange', async () =
   const r404 = await post(`/api/villas/${villaId}/tasks/999999/retry`, {});
   assert.equal(r404.status, 404);
 
+  // attempts: jede vezweigte FAILED-Runde zaehlt als Versuch
+  const before = tasks.filter((t2) => t2.attempts !== undefined);
+  assert.ok(before.length >= 2, 'Aufgaben muessen ein attempts-Feld haben');
+  assert.ok(before.every((t2) => Number(t2.attempts) >= 1), 'Jede gelaufene Aufgabe braucht mindestens Versuch 1');
   // Einzel-Retry: FAILED -> Warteschlange, Lauf startet (PENDING oder schon RUNNING)
   const taskId = tasks[0].id;
   const r1 = await post(`/api/villas/${villaId}/tasks/${taskId}/retry`, {});
