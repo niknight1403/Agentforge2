@@ -94,6 +94,13 @@ CREATE TABLE IF NOT EXISTS secrets (
   updated_at INTEGER NOT NULL
 );
 
+-- Kontingent-Kuehlzustand einzelner Keys: bei 429/402 wird ein Key kurz
+-- stillgelegt und der Pool rotiert auf den naechsten (z. B. GROQ_API_KEY_2).
+CREATE TABLE IF NOT EXISTS key_cool (
+  name TEXT PRIMARY KEY,
+  until INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,

@@ -52,7 +52,9 @@ Zähler und Laufzustand: `uptimeSec`, Tabellenzeilen (`villas`, `agents`,
 `tasks`, `audit`, …), `runningVillas`, `version` und `routesHealth`:
 `{ ok, fail, cooling[], configured }` — Summe der LLM-Anrufe, die gerade
 drosselnden Routen (`cooldown[]`) und wie viele echte Routen einen
-funktionsfähigen Key haben.
+funktionsfähigen Key haben. Zusätzlich `keyPools[]`: je Key-Umgebungsname
+(`GROQ_API_KEY`, …) die hinterlegten Key-Namen (Basis + `_2`…`_12`) und wie
+viele davon gerade einsatzbereit sind — Werte erscheinen nie.
 
 ### `GET /api/backup`
 Kompletter Hub-Dump als Download

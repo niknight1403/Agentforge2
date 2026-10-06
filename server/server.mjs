@@ -6,7 +6,7 @@ import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
 import { seedRoutes, syncCatalog } from './seed.mjs';
 import { validateRoute, validateSecret, validateVilla, validateVillaPatch, validateTaskPatch, TASK_STATUSES, validateMessage, validateOrchestrate } from './validate.mjs';
-import { chat, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
+import { chat, enabledRoutes, resolveKey, keyStatus, keyPools } from './llm.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject, importVilla } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { bus, emit, eventsSince } from './events.mjs';
@@ -262,6 +262,7 @@ async function api(req, res, url) {
           configured: rows.filter((r) => r.priority < 50 && (r.key_env ? !!resolveKey(r.key_env) : true)).length
         };
       })(),
+      keyPools: keyPools(),
       limits: {
         ratePerMinute: RATE_LIMIT,
         tokenProtected: !!API_TOKEN

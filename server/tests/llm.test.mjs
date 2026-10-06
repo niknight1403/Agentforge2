@@ -138,3 +138,76 @@ test('enabledRoutes: nur aktivierte, nach Prioritaet sortiert', () => {
   const prios = list.map((r) => r.priority);
   assert.deepEqual(prios, [...prios].sort((a, b) => a - b));
 });
+
+/* ---------- Sprint 67: Key-Pool mit Kontingent-Rotation ---------- */
+import { resolveKeys, isKeyCooling, keyPools, coolKey } from '../llm.mjs';
+const realFetch = globalThis.fetch;
+
+test('resolveKeys: Basis zuerst, dann _2.._12 (Store vor Umgebung)', () => {
+  resetRoutes();
+  setSecret('VF_POOL_KEY', 'a');
+  process.env.VF_POOL_KEY_2 = 'b';
+  setSecret('VF_POOL_KEY_3', 'c');
+  const keys = resolveKeys('VF_POOL_KEY');
+  assert.deepEqual(keys.map((k) => k.value), ['a', 'b', 'c']);
+  assert.deepEqual(keys.map((k) => k.name), ['VF_POOL_KEY', 'VF_POOL_KEY_2', 'VF_POOL_KEY_3']);
+  assert.deepEqual(resolveKeys('VF_GIBT_ES_NICHT_XYZ'), []);
+  delete process.env.VF_POOL_KEY_2;
+});
+
+test('chat: 429 rotiert auf den Zweit-Key derselben Route', async () => {
+  resetRoutes();
+  db.prepare('DELETE FROM routes WHERE provider != ?').run('groq');
+  db.prepare('DELETE FROM key_cool').run();
+  setSecret('GROQ_API_KEY', 'key-a');
+  setSecret('GROQ_API_KEY_2', 'key-b');
+  const seen = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const auth = init.headers?.Authorization || '';
+    seen.push(auth);
+    if (auth.includes('key-a')) {
+      return new Response(JSON.stringify({ error: { message: 'daily quota exhausted' } }), { status: 429 });
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'ok-rotiert' } }] }), { status: 200 });
+  };
+  try {
+    const out = await chat([{ role: 'user', content: 'hallo' }]);
+    assert.equal(out.content, 'ok-rotiert');
+    assert.ok(seen.includes('Bearer key-b'), 'Zweit-Key wurde benutzt');
+    assert.ok(isKeyCooling('GROQ_API_KEY'), 'Erst-Key ist nach 429 im Kuehlzustand');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('chat: alle Pool-Keys im Limit -> Offline mit 429-Warnung', async () => {
+  resetRoutes();
+  db.prepare('DELETE FROM routes WHERE provider != ?').run('groq');
+  db.prepare('DELETE FROM key_cool').run();
+  setSecret('GROQ_API_KEY', 'key-a');
+  setSecret('GROQ_API_KEY_2', 'key-b');
+  globalThis.fetch = async () => new Response('{"error":{"message":"rate limit"}}', { status: 429 });
+  try {
+    const out = await chat([{ role: 'user', content: 'hallo' }]);
+    assert.ok(out.offline, 'Offline-Planer greift');
+    assert.match(String(out.warning || ''), /429/, 'Warnung nennt 429');
+    assert.equal(db.prepare('SELECT COUNT(*) c FROM key_cool').get().c, 2, 'beide Keys gekuehlt');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('keyPools: nur Namen nie Werte, ready zaehlt nicht-kuehlende Keys', () => {
+  resetRoutes();
+  setSecret('GROQ_API_KEY', 'geheim-a');
+  setSecret('GROQ_API_KEY_2', 'geheim-b');
+  db.prepare('DELETE FROM key_cool').run();
+  const pools = keyPools();
+  const groq = pools.find((p) => p.env === 'GROQ_API_KEY');
+  assert.ok(groq, 'Groq-Pool existiert');
+  assert.equal(groq.keys.length, 2);
+  assert.equal(groq.ready, 2);
+  assert.ok(!JSON.stringify(pools).includes('geheim-a'), 'Wert darf nicht erscheinen');
+  coolKey('GROQ_API_KEY');
+  assert.equal(keyPools().find((p) => p.env === 'GROQ_API_KEY').ready, 1);
+});

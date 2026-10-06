@@ -8,6 +8,15 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.10.0
+
+- Key-Pool mit Kontingent-Rotation: `GROQ_API_KEY`, `OPENROUTER_API_KEY`,
+  `GEMINI_API_KEY`, `CEREBRAS_API_KEY` akzeptieren nummerierte Zweit-Keys
+  (`_2` bis `_12`, Secrets-Store oder Umgebung). Bei 429/402 rotiert der
+  Anruf sofort auf den nächsten Key derselben Route, bevor die Route
+  pausiert — Gratis-Kontingente mehrerer Keys bündeln sich.
+- `GET /api/stats` meldet `keyPools[]` (Namen + `ready`-Zahl, nie Werte)
+
 ## Neu in 1.9.0
 
 - Auto-Resume: Scheitert ein Lauf nur an erschöpften Gratis-Kontingenten,

@@ -9,6 +9,50 @@ export function resolveKey(keyEnv) {
   return process.env[keyEnv] || '';
 }
 
+/**
+ * Key-Pool eines Namens: Basiswert zuerst, dann nummerierte Zweit-Keys
+ * (_2 bis _12), Store vor Umgebung. Rotation bei erschöpftem Kontingent.
+ */
+export function resolveKeys(keyEnv) {
+  if (!keyEnv) return [];
+  const names = [keyEnv, ...Array.from({ length: 11 }, (_, i) => `${keyEnv}_${i + 2}`)];
+  const out = [];
+  for (const name of names) {
+    const row = db.prepare('SELECT value FROM secrets WHERE name = ?').get(name);
+    const value = (row && row.value) || process.env[name] || '';
+    if (value) out.push({ name, value });
+  }
+  return out;
+}
+
+/** Ist ein einzelner Key gerade im Kontingent-Kuehlzustand? */
+export function isKeyCooling(name) {
+  if (!name) return false;
+  const row = db.prepare('SELECT until FROM key_cool WHERE name = ?').get(name);
+  return !!row && Number(row.until) > Date.now();
+}
+
+/** Legt einen Key nach 429/402 kurz still (gleiche Kurve wie Routen). */
+export function coolKey(name, ms = 45_000) {
+  if (!name) return;
+  db.prepare('INSERT INTO key_cool (name, until) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET until = excluded.until')
+    .run(name, now() + ms);
+}
+
+/** Sichtbarkeit: welche Key-Pools existieren und wie viele sind einsatzbereit. Nur Namen, nie Werte. */
+export function keyPools() {
+  const seen = new Set();
+  const pools = [];
+  for (const r of enabledRoutes()) {
+    if (!r.key_env || seen.has(r.key_env)) continue;
+    const keys = resolveKeys(r.key_env);
+    if (!keys.length) continue;
+    seen.add(r.key_env);
+    pools.push({ env: r.key_env, keys: keys.map((k) => k.name), ready: keys.filter((k) => !isKeyCooling(k.name)).length });
+  }
+  return pools;
+}
+
 export function keyStatus() {
   const rows = db.prepare('SELECT name FROM secrets').all().map((r) => r.name);
   return { stored: rows };
@@ -85,9 +129,29 @@ export function isUsable(route) {
 }
 
 async function callOpenAiCompatible(route, messages, opts) {
-  const key = resolveKey(route.key_env);
+  // Key-Pool: bei erschöpftem Kontingent (429/402) rotiert der Aufruf auf den
+  // nächsten hinterlegten Key derselben Route, bevor die Route kippt.
+  const keys = route.key_env ? resolveKeys(route.key_env) : [{ name: '', value: '' }];
+  const ready = keys.filter((k) => !isKeyCooling(k.name));
+  const order = ready.length ? ready : keys;
+  let quotaErr = null;
+  for (const k of order) {
+    const out = await fetchOnce(route, k, messages, opts);
+    if (out.ok) return out.data;
+    if ((out.status === 429 || out.status === 402) && k.name) {
+      coolKey(k.name);
+      quotaErr = out.err;
+      continue;
+    }
+    throw out.err;
+  }
+  throw quotaErr || new Error(`Route ${route.name}: kein verwendbarer Key`);
+}
+
+/** Ein einzelner Anruf mit genau einem Key. */
+async function fetchOnce(route, k, messages, opts) {
   const headers = { 'Content-Type': 'application/json' };
-  if (key) headers['Authorization'] = `Bearer ${key}`;
+  if (k.value) headers['Authorization'] = `Bearer ${k.value}`;
   const body = {
     model: route.model,
     messages,
@@ -99,30 +163,28 @@ async function callOpenAiCompatible(route, messages, opts) {
   // tool_use_failed) und blockieren damit den ganzen Lauf; der ReAct-Loop
   // parst die Antwort ohnehin selbst und wiederholt Nicht-JSON-Antworten.
   if (opts.json && !/gpt-oss/.test(route.model)) body.response_format = { type: 'json_object' };
-
-  const res = await fetch(`${route.base_url.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 60000)
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    const err = new Error(`HTTP ${res.status} ${text.slice(0, 200)}`);
-    err.status = res.status;
-    throw err;
+  try {
+    const res = await fetch(`${route.base_url.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 60000)
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      const err = new Error(`HTTP ${res.status} ${text.slice(0, 200)}`);
+      err.status = res.status;
+      return { ok: false, status: res.status, err };
+    }
+    const data = await res.json();
+    const choice = data.choices?.[0] ?? {};
+    // Reasoning-Modelle (z. B. gpt-oss) koennen bei kleinem Budget nur
+    // Gedankengang liefern: dann ist das besser als eine leere Antwort.
+    const content = choice.message?.content || choice.message?.reasoning || '';
+    return { ok: true, data: { content, model: data.model ?? route.model, route: route.name, usage: data.usage ?? null } };
+  } catch (e) {
+    return { ok: false, status: 0, err: e };
   }
-  const data = await res.json();
-  const choice = data.choices?.[0] ?? {};
-  // Reasoning-Modelle (z. B. gpt-oss) koennen bei kleinem Budget nur
-  // Gedankengang liefern: dann ist das besser als eine leere Antwort.
-  const content = choice.message?.content || choice.message?.reasoning || '';
-  return {
-    content,
-    model: data.model ?? route.model,
-    route: route.name,
-    usage: data.usage ?? null
-  };
 }
 
 function offlineReply(messages, opts) {
