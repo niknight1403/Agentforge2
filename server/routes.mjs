@@ -31,10 +31,11 @@ export const FREE_ROUTE_CATALOG = [
     priority: 3
   },
   {
-    name: 'Google Gemini 2.0 Flash (free tier)',
+    name: 'Google Gemini 3.8 Flash (free tier)',
     provider: 'gemini-openai',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-2.0-flash',
+    // 2.0/2.5-flash sind fuer neue Keys eingestellt (404), 3.8-flash aktiv.
+    model: 'gemini-3.8-flash',
     keyEnv: 'GEMINI_API_KEY',
     priority: 4
   },
