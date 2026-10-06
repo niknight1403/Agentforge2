@@ -1,0 +1,19 @@
+{
+  "ts": "2026-10-06T00:45:15.753Z",
+  "villa": {
+    "id": 2,
+    "name": "Agenten Villa",
+    "status": "RUNNING"
+  },
+  "tasks": {
+    "RUNNING": 4,
+    "PENDING": 8
+  },
+  "running": true,
+  "patches": {
+    "appliedThisCycle": [],
+    "failedThisCycle": [],
+    "pendingArtefacts": 0
+  },
+  "lastTestResult": "n/a"
+}
