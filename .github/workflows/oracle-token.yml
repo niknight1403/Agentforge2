@@ -3,14 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'diag oder bootstrap'
+        description: 'diag, bootstrap oder extern'
         default: 'diag'
         required: true
 
 jobs:
   ops:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - name: Setup
         env:
@@ -19,27 +19,26 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-      - name: Diagnose
+          SSH="ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@152.70.8.227"
+          echo "$SSH" > /tmp/sshcmd
+      - name: Diagnose (diag)
+        if: ${{ github.event.inputs.mode == 'diag' }}
         run: |
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@152.70.8.227 \
-            "echo '== cloud-init =='; sudo cloud-init status 2>&1 | head -2; \
-             echo '== /opt =='; ls -la /opt/ 2>&1 | head -8; \
-             echo '== cloud-init-output =='; sudo tail -n 15 /var/log/cloud-init-output.log 2>&1; \
-             echo '== Dienste =='; systemctl is-active villaforge ollama 2>&1; \
-             echo '== apt/lock =='; pgrep -a apt | head -3; pgrep -a dpkg | head -3; true"
-      - name: Bootstrap (nur wenn mode=bootstrap)
+          bash /tmp/sshcmd "echo '== cloud-init =='; sudo cloud-init status 2>&1 | head -2; echo '== /opt =='; ls /opt/villaforge 2>&1 | head -6; echo '== Dienste =='; systemctl is-active villaforge ollama 2>&1; echo '== Bootstrap-Log =='; sudo tail -n 8 /var/log/villaforge-bootstrap.log 2>&1; true"
+      - name: Bootstrap starten (detached)
         if: ${{ github.event.inputs.mode == 'bootstrap' }}
         env:
           ORACLE_BOOTSTRAP: ${{ secrets.ORACLE_BOOTSTRAP }}
         run: |
           printf '%s' "$ORACLE_BOOTSTRAP" > /tmp/boot.sh
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/boot.sh ubuntu@152.70.8.227:/tmp/boot.sh
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ubuntu@152.70.8.227 \
-            "chmod +x /tmp/boot.sh && sudo bash /tmp/boot.sh"
-      - name: Nachlauf-Check
-        if: ${{ github.event.inputs.mode == 'bootstrap' }}
+          bash /tmp/sshcmd "chmod +x /tmp/boot.sh && sudo setsid nohup bash /tmp/boot.sh >/dev/null 2>&1 < /dev/null & sleep 2; pgrep -af 'boot.sh' | head -2 || echo 'nicht gestartet'"
+          echo "Bootstrap laeuft jetzt abgekoppelt auf der Instanz"
+      - name: Extern-Check (extern)
+        if: ${{ github.event.inputs.mode == 'extern' }}
         run: |
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@152.70.8.227 \
-            "grep -E '^VF_TOKEN=' /opt/villaforge/hub.env; echo '---HEALTH---'; \
-             curl -s -m 8 http://127.0.0.1:12000/api/health; echo; \
-             echo '---LOG---'; sudo tail -n 20 /var/log/villaforge-bootstrap.log" || true
+          echo "== Hub von aussen =="
+          curl -s -m 10 http://152.70.8.227:12000/api/health || echo "Hub von aussen NICHT erreichbar (Ingress fehlt?)"
+          echo
+          echo "== Ollama-Route pruefen =="
+          curl -s -m 10 http://152.70.8.227:12000/api/health | head -c 400 || true
