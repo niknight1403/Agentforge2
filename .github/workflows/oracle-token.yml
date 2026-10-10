@@ -1,0 +1,17 @@
+name: Oracle Token Reader
+on:
+  workflow_dispatch:
+
+jobs:
+  read-token:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH auf Oracle-Instanz
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@152.70.8.227 \
+            "grep -E '^(VF_TOKEN|GITHUB_TOKEN)=' /opt/villaforge/hub.env; echo '---HEALTH---'; curl -s -m 8 http://127.0.0.1:12000/api/health; echo; echo '---MODELS---'; curl -s -m 8 http://127.0.0.1:11434/api/tags | head -c 300" || echo "SSH noch nicht bereit"
