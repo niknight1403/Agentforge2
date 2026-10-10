@@ -19,8 +19,8 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          SSH="ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@152.70.8.227"
-          echo "$SSH" > /tmp/sshcmd
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@152.70.8.227 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
       - name: Diagnose (diag)
         if: ${{ github.event.inputs.mode == 'diag' }}
         run: |
@@ -31,8 +31,8 @@ jobs:
           ORACLE_BOOTSTRAP: ${{ secrets.ORACLE_BOOTSTRAP }}
         run: |
           printf '%s' "$ORACLE_BOOTSTRAP" > /tmp/boot.sh
-          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/boot.sh ubuntu@152.70.8.227:/tmp/boot.sh
-          bash /tmp/sshcmd "chmod +x /tmp/boot.sh && sudo setsid nohup bash /tmp/boot.sh >/dev/null 2>&1 < /dev/null & sleep 2; pgrep -af 'boot.sh' | head -2 || echo 'nicht gestartet'"
+          scp -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -i ~/.ssh/oracle_key /tmp/boot.sh ubuntu@152.70.8.227:/tmp/boot.sh
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -i ~/.ssh/oracle_key ubuntu@152.70.8.227 "chmod +x /tmp/boot.sh && sudo setsid nohup bash /tmp/boot.sh >/dev/null 2>&1 < /dev/null & sleep 3; pgrep -af boot.sh | head -3; echo BOOTSTART-OK"
           echo "Bootstrap laeuft jetzt abgekoppelt auf der Instanz"
       - name: Routen-Check (routes)
         if: ${{ github.event.inputs.mode == 'routes' }}
