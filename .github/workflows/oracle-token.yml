@@ -34,6 +34,13 @@ jobs:
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/boot.sh ubuntu@152.70.8.227:/tmp/boot.sh
           bash /tmp/sshcmd "chmod +x /tmp/boot.sh && sudo setsid nohup bash /tmp/boot.sh >/dev/null 2>&1 < /dev/null & sleep 2; pgrep -af 'boot.sh' | head -2 || echo 'nicht gestartet'"
           echo "Bootstrap laeuft jetzt abgekoppelt auf der Instanz"
+      - name: Routen-Check (routes)
+        if: ${{ github.event.inputs.mode == 'routes' }}
+        run: |
+          bash /tmp/sshcmd "VF=\$(grep '^VF_TOKEN=' /opt/villaforge/hub.env | cut -d= -f2); \
+            curl -s -m 8 -H \"Authorization: Bearer \$VF\" http://127.0.0.1:12000/api/routes; \
+            echo; echo '---VILLAS---'; \
+            curl -s -m 8 -H \"Authorization: Bearer \$VF\" http://127.0.0.1:12000/api/villas | head -c 600; true"
       - name: Token lesen (token)
         if: ${{ github.event.inputs.mode == 'token' }}
         run: |
