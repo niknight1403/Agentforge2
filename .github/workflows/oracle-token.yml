@@ -76,7 +76,7 @@ jobs:
         run: |
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/mk-agi-villa.sh ubuntu@152.70.8.227:/tmp/mk-agi-villa.sh
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/agi-villa.json ubuntu@152.70.8.227:/tmp/agi-villa.json
-          bash /tmp/sshcmd "chmod +x /tmp/mk-agi-villa.sh && sudo bash /tmp/mk-agi-villa.sh /tmp 2>&1; true"
+          bash /tmp/sshcmd "chmod +x /tmp/mk-agi-villa.sh && rm -f /tmp/agi-status.txt && sudo setsid nohup bash /tmp/mk-agi-villa.sh >/tmp/agi-setup.log 2>&1 < /dev/null & echo Setup im Hintergrund gestartet"
 
       - name: Token lesen (token)
         if: ${{ github.event.inputs.mode == 'token' }}

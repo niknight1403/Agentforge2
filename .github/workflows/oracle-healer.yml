@@ -36,7 +36,7 @@ jobs:
             STATE="up"
             VER=$(echo "$HEALTH" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version","?"))' 2>/dev/null || echo "?")
             ROUTES=$(curl -s -m 60 -H "Authorization: Bearer $VF" http://152.70.8.227:12000/api/routes || true)
-            IDS=$(echo "$ROUTES" | python3 -c 'import json,sys; rs=json.load(sys.stdin); print(" ".join(str(r["id"]) for r in rs if "ollama" in r.get("base_url","").lower() and r.get("priority",0) < 40))' 2>/dev/null || true)
+            IDS=$(echo "$ROUTES" | python3 -c 'import json,sys; rs=json.load(sys.stdin); print(" ".join(str(r["id"]) for r in rs if ("ollama" in r.get("base_url","").lower() or "11434" in r.get("base_url","") or "ollama" in r.get("name","").lower()) and r.get("priority",0) < 40))' 2>/dev/null || true)
             if [ -n "$IDS" ]; then
               for ID in $IDS; do
                 curl -s -m 60 -X PATCH -H "Authorization: Bearer $VF" -H "Content-Type: application/json" -d '{"priority": 40}' "http://152.70.8.227:12000/api/routes/$ID" > /dev/null || true
