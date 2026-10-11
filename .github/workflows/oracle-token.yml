@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'diag, bootstrap, extern, routes, tune, apitune, agivilla, cybervilla, cmd, token oder sys'
+        description: 'diag, bootstrap, extern, routes, tune, apitune, agivilla, cybervilla, seed, cmd, token oder sys'
         default: 'diag'
         required: true
       command:
@@ -97,6 +97,76 @@ jobs:
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/mk-cybersarah-villa.sh ubuntu@92.5.177.159:/tmp/mk-cybersarah-villa.sh
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/cybersarah-villa.json ubuntu@92.5.177.159:/tmp/cybersarah-villa.json
           bash /tmp/sshcmd "chmod +x /tmp/mk-cybersarah-villa.sh && rm -f /tmp/cybersarah-status.txt && sudo setsid nohup bash /tmp/mk-cybersarah-villa.sh >/tmp/cybersarah-setup.log 2>&1 < /dev/null & echo Setup im Hintergrund gestartet"
+      - name: Hub seeden (seed)
+        if: ${{ github.event.inputs.mode == 'seed' }}
+        env:
+          VF_HUBENV: ${{ secrets.VF_HUBENV }}
+          VF_SYNCSRC: ${{ secrets.VF_SYNCSRC }}
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          printf '%s' "$VF_HUBENV" > /tmp/old-hub.env
+          printf '%s' "$VF_SYNCSRC" > /tmp/villa-sync.mjs
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/old-hub.env /tmp/villa-sync.mjs ubuntu@92.5.177.159:/tmp/
+          cat > /tmp/seed.sh <<'SEED'
+          set -e
+          DEST=/opt/villaforge
+          # 1) Login am lokalen Hub
+          TOK=$(curl -s -m 15 -X POST -H 'Content-Type: application/json' \
+            -d "{\"email\":\"$(sudo grep '^VF_ADMIN_EMAIL=' $DEST/hub.env | cut -d= -f2)\",\"password\":\"$(sudo grep '^VF_ADMIN_PASSWORD=' $DEST/hub.env | cut -d= -f2)\"}" \
+            http://127.0.0.1:12000/api/auth/login | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          [ -n "$TOK" ] || { echo LOGIN-FEHLGESCHLAGEN; exit 1; }
+          echo LOGIN-OK
+          # 2) LLM-Keys aus altem hub.env in Secrets-Store pflanzen
+          for NAME in GROQ_API_KEY GEMINI_API_KEY CEREBRAS_API_KEY MISTRAL_API_KEY TOGETHER_API_KEY OPENROUTER_API_KEY; do
+            VAL=$(grep "^${NAME}=" /tmp/old-hub.env | head -1 | cut -d= -f2-)
+            if [ -n "$VAL" ]; then
+              python3 - "$NAME" "$VAL" "$TOK" <<'PY'
+          import json, sys, urllib.request
+          name, val, tok = sys.argv[1], sys.argv[2], sys.argv[3]
+          req = urllib.request.Request('http://127.0.0.1:12000/api/secrets',
+              data=json.dumps({'name': name, 'value': val}).encode(), method='POST',
+              headers={'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'})
+          print('SECRET', name, 'gesetzt:', urllib.request.urlopen(req).status)
+          PY
+            else
+              echo "SECRET $NAME nicht im alten hub.env gefunden"
+            fi
+          done
+          # 3) Secrets-Store anzeigen (nur Namen)
+          curl -s -m 10 -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/secrets; echo
+          # 4) villa-sync.mjs installieren + Timer (10 Min)
+          sudo mv /tmp/villa-sync.mjs $DEST/villa-sync.mjs
+          sudo chmod 644 $DEST/villa-sync.mjs
+          sudo tee /etc/systemd/system/villaforge-sync.service >/dev/null <<UNIT2
+          [Unit]
+          Description=VillaForge AutoDev Sync
+          After=villaforge-hub.service network-online.target
+          [Service]
+          Type=oneshot
+          ExecStart=$(command -v node) $DEST/villa-sync.mjs
+          TimeoutStartSec=25min
+          UNIT2
+          sudo tee /etc/systemd/system/villaforge-sync.timer >/dev/null <<UNIT3
+          [Unit]
+          Description=VillaForge AutoDev Sync Takt
+          [Timer]
+          OnBootSec=3min
+          OnUnitActiveSec=10min
+          [Install]
+          WantedBy=timers.target
+          UNIT3
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now villaforge-sync.timer
+          systemctl is-active villaforge-sync.timer
+          # 5) Beide Villas orchestrieren (Rat aktiv)
+          for VID in $(curl -s -m 10 -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/villas | python3 -c 'import json,sys; print(" ".join(str(v["id"]) for v in json.load(sys.stdin)))'); do
+            echo "Orchestriere Villa #$VID:"; curl -s -m 20 -X POST -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/villas/$VID/orchestrate | head -c 120; echo
+          done
+          echo SEED-FERTIG
+          SEED
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/seed.sh ubuntu@92.5.177.159:/tmp/seed.sh
+          bash /tmp/sshcmd "bash /tmp/seed.sh"
       - name: Beliebiger SSH-Befehl (cmd)
         if: ${{ github.event.inputs.mode == 'cmd' }}
         run: |
