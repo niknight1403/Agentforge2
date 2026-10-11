@@ -1,0 +1,9 @@
+{
+  "checked_at": "2026-10-11T03:12:56.476690+00:00",
+  "hub": {
+    "state": "DOWN",
+    "error": "timed out"
+  },
+  "sync_age_min": 7,
+  "state": "DOWN"
+}
