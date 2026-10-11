@@ -41,6 +41,14 @@ jobs:
             curl -s -m 8 -H \"Authorization: Bearer \$VF\" http://127.0.0.1:12000/api/routes; \
             echo; echo '---VILLAS---'; \
             curl -s -m 8 -H \"Authorization: Bearer \$VF\" http://127.0.0.1:12000/api/villas | head -c 600; true"
+      - name: Route tunen (tune)
+        if: ${{ github.event.inputs.mode == 'tune' }}
+        run: |
+          bash /tmp/sshcmd "VF=\$(grep '^VF_TOKEN=' /opt/villaforge/hub.env | cut -d= -f2); \
+            for ID in \$(curl -s -m 8 -H \"Authorization: Bearer \$VF\" http://127.0.0.1:12000/api/routes | python3 -c 'import json,sys; print(\" \".join(str(r[\"id\"]) for r in json.load(sys.stdin) if \"ollama\" in r[\"base_url\"].lower()))'); do \
+              curl -s -m 8 -X PATCH -H \"Authorization: Bearer \$VF\" -H \"Content-Type: application/json\" -d \'{\"priority\": 40}\' http://127.0.0.1:12000/api/routes/\$ID; echo; done; \
+            echo '--- ROUTES NACH TUNING ---'; \
+            curl -s -m 8 -H \"Authorization: Bearer \$VF\" http://127.0.0.1:12000/api/routes | python3 -c 'import json,sys; [print(r[\"id\"], r[\"name\"], \"Prio\", r[\"priority\"]) for r in json.load(sys.stdin)]'; true"
       - name: Token lesen (token)
         if: ${{ github.event.inputs.mode == 'token' }}
         run: |
