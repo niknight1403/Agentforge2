@@ -84,6 +84,29 @@ jobs:
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/setup.sh ubuntu@152.70.8.227:/tmp/setup.sh
           bash /tmp/sshcmd "sudo bash /tmp/setup.sh"
 
+      - name: Korrekturen (fix)
+        if: ${{ github.event.inputs.mode == 'fix' }}
+        env:
+          VF_HUBTOKEN: ${{ secrets.VF_HUBTOKEN }}
+        run: |
+          TOK="$VF_HUBTOKEN"
+          ORACLE=http://152.70.8.227:12000
+          NEW=http://167.233.118.190:12000
+          echo "== Neue VPS-Villa stoppen =="
+          curl -s -m 15 -X POST -H "Authorization: Bearer $TOK" $NEW/api/villas/1/stop; echo
+          echo "== Ollama-Routen prio 5 =="
+          curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+            -d '{\"name\":\"Ollama-Oracle\",\"baseUrl\":\"http://127.0.0.1:11434/v1\",\"model\":\"qwen2.5-coder:7b\",\"keyEnv\":\"\",\"priority\":5}' \
+            $ORACLE/api/routes; echo
+          curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+            -d '{\"name\":\"Ollama-Oracle-2 (llama)\",\"baseUrl\":\"http://127.0.0.1:11434/v1\",\"model\":\"llama3.1:8b\",\"keyEnv\":\"\",\"priority\":5}' \
+            $ORACLE/api/routes; echo
+          echo "== Kontrolle Routen =="
+          curl -s -H "Authorization: Bearer $TOK" $ORACLE/api/routes | python3 -c "import json,sys; [print(r['id'], r['name'][:40], 'prio', r['priority'], 'key', r['hasKey']) for r in json.load(sys.stdin)]"
+          echo "== Kontrolle Villen =="
+          curl -s -H "Authorization: Bearer $TOK" $ORACLE/api/villas | head -c 300; echo
+          curl -s -H "Authorization: Bearer $TOK" $NEW/api/villas | head -c 300; echo
+          echo FIX-FERTIG
       - name: Villa-Import und Start (api)
         if: ${{ github.event.inputs.mode == 'api' }}
         env:
