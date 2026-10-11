@@ -122,7 +122,7 @@ jobs:
             $ORACLE/api/routes
           echo
           echo "== 5) villas.json + Start =="
-          bash /tmp/sshcmd "sudo bash -c 'echo \"[{\\\"id\\\":$ID,\\\"repo\\\":\\\"/opt/villaforge/workspace/cybersarah-control-center\\\",\\\"testMs\\\":900000}]\" > /opt/villaforge/villas.json; echo $ID > /opt/villaforge/villa.id; cat /opt/villaforge/villas.json'"
+          bash /tmp/sshcmd "sudo bash -c 'echo \"[{\\\"id\\\":$ID,\\\"repo\\\":\\\"/opt/villaforge/workspace/cybersarah-control-center\\\",\\\"testMs\\\":900000}]\" > /opt/villaforge/villas.json; echo $ID > /opt/villaforge/villa.id; cat /opt/villaforge/villas.json; echo; du -sh /opt/villaforge/workspace/cybersarah-control-center/node_modules 2>&1 | tail -1; ls /opt/villaforge/workspace/cybersarah-control-center/package.json'"
           curl -s -X PATCH -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{"status":"RUNNING"}' $ORACLE/api/villas/$ID
           echo
           curl -s -X POST -H "Authorization: Bearer $TOK" $ORACLE/api/villas/$ID/orchestrate
