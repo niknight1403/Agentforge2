@@ -1,0 +1,135 @@
+name: Oracle Rebuild
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'files oder api'
+        default: 'files'
+        required: true
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Setup
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@152.70.8.227 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+
+      - name: Dateien und Dienste (files)
+        if: ${{ github.event.inputs.mode == 'files' }}
+        env:
+          VF_HUBENV: ${{ secrets.VF_HUBENV }}
+          VF_SYNCSRC: ${{ secrets.VF_SYNCSRC }}
+        run: |
+          printf '%s' "$VF_HUBENV" > /tmp/hub.env
+          printf '%s' "$VF_SYNCSRC" > /tmp/villa-sync.mjs
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/hub.env /tmp/villa-sync.mjs ubuntu@152.70.8.227:/tmp/
+          cat > /tmp/setup.sh <<'SETUP'
+          set -e
+          DEST=/opt/villaforge
+          mkdir -p $DEST/workspace
+          mv /tmp/hub.env $DEST/hub.env && chmod 600 $DEST/hub.env
+          mv /tmp/villa-sync.mjs $DEST/villa-sync.mjs
+          GT=$(grep ^GITHUB_TOKEN= $DEST/hub.env | cut -d= -f2)
+          if [ ! -d $DEST/server ]; then
+            VFSRC=$(mktemp -d)
+            git clone -q https://x-access-token:${GT}@github.com/niknight1403/Agentforge2.git $VFSRC
+            (cd $VFSRC && git archive origin/main server | tar -x -C $DEST)
+          fi
+          REPO=$DEST/workspace/cybersarah-control-center
+          if [ ! -d $REPO/.git ]; then
+            git clone -q https://x-access-token:${GT}@github.com/niknight1403/CyberSarah-Control-Center.git $REPO
+          fi
+          git -C $REPO config user.email villa@villaforge.local
+          git -C $REPO config user.name "CyberSarah Villa"
+          if [ ! -d $REPO/node_modules ] || [ ! -f $REPO/node_modules/.package-lock.json ]; then
+            (cd $REPO && npm install --no-audit --no-fund >/tmp/npm.log 2>&1) || tail -n 20 /tmp/npm.log
+          fi
+          cat > /etc/systemd/system/villaforge-sync.service <<UNIT2
+          [Unit]
+          Description=VillaForge AutoDev Sync
+          After=villaforge.service network-online.target
+          [Service]
+          Type=oneshot
+          ExecStart=$(command -v node) $DEST/villa-sync.mjs
+          TimeoutStartSec=25min
+          UNIT2
+          cat > /etc/systemd/system/villaforge-sync.timer <<UNIT3
+          [Unit]
+          Description=VillaForge AutoDev Sync Takt
+          [Timer]
+          OnBootSec=3min
+          OnUnitActiveSec=10min
+          [Install]
+          WantedBy=timers.target
+          UNIT3
+          systemctl daemon-reload
+          systemctl restart villaforge
+          OK=0
+          for i in $(seq 1 60); do
+            curl -sf -m 2 http://127.0.0.1:12000/api/health >/dev/null 2>&1 && OK=1 && break
+            sleep 2
+          done
+          if [ "$OK" = 1 ]; then echo HUB-LOKAL-OK; else echo HUB-NICHT-DA; systemctl status villaforge --no-pager -l | head -20; exit 1; fi
+          systemctl enable --now villaforge-sync.timer
+          echo FILES-FERTIG
+          SETUP
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/setup.sh ubuntu@152.70.8.227:/tmp/setup.sh
+          bash /tmp/sshcmd "sudo bash /tmp/setup.sh"
+
+      - name: Villa-Import und Start (api)
+        if: ${{ github.event.inputs.mode == 'api' }}
+        env:
+          VF_HUBTOKEN: ${{ secrets.VF_HUBTOKEN }}
+        run: |
+          TOK="$VF_HUBTOKEN"
+          ORACLE=http://152.70.8.227:12000
+          NEW=http://167.233.118.190:12000
+          echo "== 1) Neue VPS pausieren =="
+          curl -s -m 15 -X PATCH -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{"status":"PAUSED"}' $NEW/api/villas/1 || echo PAUSE-VPS-FEHLER
+          echo
+          echo "== 2) Backup ziehen =="
+          curl -sf -m 60 -H "Authorization: Bearer $TOK" $NEW/api/backup -o /tmp/backup.json && echo BACKUP-OK || { echo BACKUP-FEHLER; exit 1; }
+          echo "== 3) Villa importieren =="
+          VID=$(python3 - <<'PY'
+          import json, urllib.request, os
+          tok = os.environ['VF_HUBTOKEN']
+          data = json.load(open('/tmp/backup.json'))
+          last = None
+          for el in data.get('villas', []):
+              body = json.dumps(el).encode()
+              req = urllib.request.Request('http://152.70.8.227:12000/api/villas/import', data=body, method='POST',
+                  headers={'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'})
+              r = urllib.request.urlopen(req)
+              res = json.load(r)
+              last = res.get('villaId')
+              print('importiert villa', el.get('villa', {}).get('name'), '-> id', last)
+          open('/tmp/vid', 'w').write(str(last))
+          PY
+          )
+          ID=$(cat /tmp/vid)
+          echo "Neue Villa-ID: $ID"
+          echo "== 4) Ollama-Route prio 5 =="
+          curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+            -d '{"name":"Ollama-Oracle","base_url":"http://127.0.0.1:11434/v1","key_env":"","model":"qwen2.5-coder:7b","priority":5}' \
+            $ORACLE/api/routes
+          echo
+          echo "== 5) villas.json + Start =="
+          bash /tmp/sshcmd "sudo bash -c 'echo \"[{\\\"id\\\":$ID,\\\"repo\\\":\\\"/opt/villaforge/workspace/cybersarah-control-center\\\",\\\"testMs\\\":900000}]\" > /opt/villaforge/villas.json; echo $ID > /opt/villaforge/villa.id; cat /opt/villaforge/villas.json'"
+          curl -s -X PATCH -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{"status":"RUNNING"}' $ORACLE/api/villas/$ID
+          echo
+          curl -s -X POST -H "Authorization: Bearer $TOK" $ORACLE/api/villas/$ID/orchestrate
+          echo
+          echo "== 6) Kontrolle =="
+          curl -s -H "Authorization: Bearer $TOK" $ORACLE/api/routes | head -c 600
+          echo
+          curl -s -H "Authorization: Bearer $TOK" $ORACLE/api/stats | head -c 400
+          echo
+          echo API-FERTIG
