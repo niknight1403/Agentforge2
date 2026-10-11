@@ -50,9 +50,17 @@ else
   echo "Keine Ollama-Route gefunden (oder bereits getuned)." | tee -a "$STATUS_FILE"
 fi
 
-# --- Werkzeuge ---
-sudo apt-get update -qq >/dev/null 2>&1 || true
-sudo apt-get install -y -qq python3-venv python3-pip >/dev/null 2>&1 || true
+# --- Werkzeuge (Sprint-Fix: python3-venv MUSS sitzen, sonst bricht alles spaeter stumm) ---
+sudo apt-get update -qq >>"$STATUS_FILE" 2>&1 || true
+if ! python3 -c "import ensurepip" >/dev/null 2>&1; then
+  echo "python3-venv/ensurepip fehlt — Installation (sichtbar im Status):" | tee -a "$STATUS_FILE"
+  if ! sudo apt-get install -y -qq python3-venv python3-pip >>"$STATUS_FILE" 2>&1; then
+    echo "apt -qq fehlgeschlagen, Wiederholung mit voller Ausgabe:" | tee -a "$STATUS_FILE"
+    sudo apt-get install -y python3-venv python3-pip >>"$STATUS_FILE" 2>&1 || true
+  fi
+  python3 -c "import ensurepip" >/dev/null 2>&1 \
+    || echo "WARNUNG: ensurepip weiterhin fehlend — venv-Fallback mit get-pip aktiv." | tee -a "$STATUS_FILE"
+fi
 
 # --- Repo klonen / aktualisieren ---
 mkdir -p "$WS"
@@ -67,8 +75,25 @@ git -C "$REPO" config user.name "AGI Agenten Villa"
 # --- venv + Abhaengigkeiten (requirements enthaelt pytest) ---
 cd "$REPO"
 if [ ! -x venv/bin/pip ]; then rm -rf venv; fi
-[ -x venv/bin/python ] || python3 -m venv venv 2>&1 | tee -a "$STATUS_FILE" || { echo "FEHLER: venv" | tee -a "$STATUS_FILE"; exit 1; }
-./venv/bin/pip install -q -r agent-loop/requirements.txt 2>&1 | tail -3 | tee -a "$STATUS_FILE" || echo "(pip-Wiederholung)" | tee -a "$STATUS_FILE" && ./venv/bin/pip install -q -r agent-loop/requirements.txt 2>/dev/null || true
+if [ ! -x venv/bin/python ]; then
+  if ! python3 -m venv venv >>"$STATUS_FILE" 2>&1; then
+    echo "venv mit ensurepip fehlgeschlagen — Fallback: --without-pip + get-pip" | tee -a "$STATUS_FILE"
+    rm -rf venv
+    python3 -m venv --without-pip venv >>"$STATUS_FILE" 2>&1 \
+      || { echo "FEHLER: venv" | tee -a "$STATUS_FILE"; exit 1; }
+    curl -fsS https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py \
+      && ./venv/bin/python /tmp/get-pip.py -q >>"$STATUS_FILE" 2>&1 \
+      || echo "WARNUNG: get-pip fehlgeschlagen — pip nicht verfuegbar." | tee -a "$STATUS_FILE"
+  fi
+fi
+if [ -x venv/bin/pip ]; then
+  if ! ./venv/bin/pip install -q -r agent-loop/requirements.txt >>"$STATUS_FILE" 2>&1; then
+    echo "(pip-Wiederholung mit voller Ausgabe)" | tee -a "$STATUS_FILE"
+    ./venv/bin/pip install -r agent-loop/requirements.txt >>"$STATUS_FILE" 2>&1 || true
+  fi
+else
+  echo "FEHLER: pip im venv fehlt — Abhaengigkeiten nicht installierbar." | tee -a "$STATUS_FILE"
+fi
 
 # --- npm-Bruecke fuer den Sync (villa-sync ruft 'npm test') ---
 if [ ! -f package.json ]; then
