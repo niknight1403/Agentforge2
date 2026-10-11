@@ -4,6 +4,9 @@ on:
     - cron: '*/30 * * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   watch:
     runs-on: ubuntu-latest

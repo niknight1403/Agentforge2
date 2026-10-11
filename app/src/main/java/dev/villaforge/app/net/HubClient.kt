@@ -350,7 +350,7 @@ class HubClient(context: Context) {
         // Vorgabe: Hub auf dem Entwickler-Rechner, aus dem Android-Emulator
         // erreichbar (10.0.2.2 = Loopback des Hosts). Auf echten Geraeten wird
         // die Adresse in den App-Einstellungen auf die LAN-IP gesetzt.
-        const val DEFAULT_BASE = "http://10.0.2.2:12000"
+        const val DEFAULT_BASE = "http://152.70.8.227:12000"
         private const val KEY_BASE = "base_url"
         private const val KEY_TOKEN = "api_token"
         private val JSON = "application/json; charset=utf-8".toMediaType()
