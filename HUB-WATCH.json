@@ -1,9 +1,9 @@
 {
-  "checked_at": "2026-10-11T14:44:38.228678+00:00",
+  "checked_at": "2026-10-11T14:46:43.204509+00:00",
   "hub": {
     "state": "DOWN",
     "error": "HTTP Error 404: Not Found"
   },
-  "sync_age_min": 88,
+  "sync_age_min": 91,
   "state": "DOWN"
 }
