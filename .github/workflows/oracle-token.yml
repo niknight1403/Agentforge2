@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'diag, bootstrap oder extern'
+        description: 'diag, bootstrap, extern oder sys'
         default: 'diag'
         required: true
 
@@ -45,6 +45,10 @@ jobs:
         if: ${{ github.event.inputs.mode == 'token' }}
         run: |
           bash /tmp/sshcmd "grep '^VF_TOKEN=' /opt/villaforge/hub.env 2>&1; systemctl is-active villaforge; curl -s -m 8 http://127.0.0.1:12000/api/health | head -c 300; true"
+      - name: Ollama-Systemcheck (sys)
+        if: ${{ github.event.inputs.mode == 'sys' }}
+        run: |
+          bash /tmp/sshcmd "echo '== Modelle =='; ollama list; echo '== Test qwen =='; curl -s -m 90 http://127.0.0.1:11434/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen2.5-coder:7b\",\"messages\":[{\"role\":\"user\",\"content\":\"Antworte nur mit OK\"}],\"max_tokens\":5}' | head -c 400; true"
       - name: Extern-Check (extern)
         if: ${{ github.event.inputs.mode == 'extern' }}
         run: |
