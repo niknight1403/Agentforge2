@@ -65,6 +65,19 @@ jobs:
           echo "== Routes danach =="
           curl -s -m 150 -H "Authorization: Bearer $VF" http://152.70.8.227:12000/api/routes | python3 -c 'import json,sys; [print(r["id"], r["name"], "Prio", r["priority"]) for r in json.load(sys.stdin)]' 2>/dev/null || echo "(Lesefehler)"
 
+      - name: Checkout fuer agivilla
+        if: ${{ github.event.inputs.mode == 'agivilla' }}
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: AGI-Villa einrichten (agivilla)
+        if: ${{ github.event.inputs.mode == 'agivilla' }}
+        run: |
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/mk-agi-villa.sh ubuntu@152.70.8.227:/tmp/mk-agi-villa.sh
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/agi-villa.json ubuntu@152.70.8.227:/tmp/agi-villa.json
+          bash /tmp/sshcmd "chmod +x /tmp/mk-agi-villa.sh && sudo bash /tmp/mk-agi-villa.sh /tmp 2>&1; true"
+
       - name: Token lesen (token)
         if: ${{ github.event.inputs.mode == 'token' }}
         run: |
