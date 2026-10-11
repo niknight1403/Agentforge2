@@ -18,7 +18,7 @@ jobs:
           VF_HUBTOKEN: ${{ secrets.VF_HUBTOKEN }}
         run: |
           python3 - <<'PY'
-          import json, os, urllib.request, datetime
+          import base64, json, os, urllib.request, datetime
           tok = os.environ['VF_HUBTOKEN']
           ghauth = {'Authorization': 'Bearer ' + os.environ['GH']}
           def get(url, hdr, tmo):
