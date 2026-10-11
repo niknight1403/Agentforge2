@@ -48,7 +48,7 @@ jobs:
       - name: Ollama-Systemcheck (sys)
         if: ${{ github.event.inputs.mode == 'sys' }}
         run: |
-          bash /tmp/sshcmd "echo '== Modelle =='; ollama list; echo '== Test qwen =='; curl -s -m 90 http://127.0.0.1:11434/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"qwen2.5-coder:7b\",\"messages\":[{\"role\":\"user\",\"content\":\"Antworte nur mit OK\"}],\"max_tokens\":5}' | head -c 400; true"
+          bash /tmp/sshcmd "echo '== Lokaler Hub =='; curl -s -m 5 http://127.0.0.1:12000/api/health; echo; echo '== Dienst =='; sudo systemctl is-active villaforge; sudo systemctl is-active ollama; echo '== iptables INPUT =='; sudo iptables -L INPUT -n --line-numbers | head -12; echo '== Public IP =='; curl -s -m 8 https://ifconfig.me; echo" 
       - name: Extern-Check (extern)
         if: ${{ github.event.inputs.mode == 'extern' }}
         run: |
