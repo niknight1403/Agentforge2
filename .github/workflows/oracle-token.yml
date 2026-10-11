@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'diag, bootstrap, extern, routes, tune, apitune, agivilla, cmd, token oder sys'
+        description: 'diag, bootstrap, extern, routes, tune, apitune, agivilla, cybervilla, cmd, token oder sys'
         default: 'diag'
         required: true
       command:
@@ -91,6 +91,12 @@ jobs:
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/mk-agi-villa.sh ubuntu@92.5.177.159:/tmp/mk-agi-villa.sh
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/agi-villa.json ubuntu@92.5.177.159:/tmp/agi-villa.json
           bash /tmp/sshcmd "chmod +x /tmp/mk-agi-villa.sh && rm -f /tmp/agi-status.txt && sudo setsid nohup bash /tmp/mk-agi-villa.sh >/tmp/agi-setup.log 2>&1 < /dev/null & echo Setup im Hintergrund gestartet"
+      - name: CyberSarah-Villa einrichten (cybervilla)
+        if: ${{ github.event.inputs.mode == 'cybervilla' }}
+        run: |
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/mk-cybersarah-villa.sh ubuntu@92.5.177.159:/tmp/mk-cybersarah-villa.sh
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/cybersarah-villa.json ubuntu@92.5.177.159:/tmp/cybersarah-villa.json
+          bash /tmp/sshcmd "chmod +x /tmp/mk-cybersarah-villa.sh && rm -f /tmp/cybersarah-status.txt && sudo setsid nohup bash /tmp/mk-cybersarah-villa.sh >/tmp/cybersarah-setup.log 2>&1 < /dev/null & echo Setup im Hintergrund gestartet"
       - name: Beliebiger SSH-Befehl (cmd)
         if: ${{ github.event.inputs.mode == 'cmd' }}
         run: |
