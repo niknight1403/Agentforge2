@@ -51,7 +51,8 @@ else
 fi
 
 # --- Werkzeuge ---
-python3 -c 'import venv' 2>/dev/null || sudo apt-get install -y -qq python3-venv >/dev/null 2>&1 || true
+sudo apt-get update -qq >/dev/null 2>&1 || true
+sudo apt-get install -y -qq python3-venv python3-pip >/dev/null 2>&1 || true
 
 # --- Repo klonen / aktualisieren ---
 mkdir -p "$WS"
@@ -65,7 +66,8 @@ git -C "$REPO" config user.name "AGI Agenten Villa"
 
 # --- venv + Abhaengigkeiten (requirements enthaelt pytest) ---
 cd "$REPO"
-[ -x venv/bin/python ] || python3 -m venv venv 2>&1 | tee -a "$STATUS_FILE"
+if [ ! -x venv/bin/pip ]; then rm -rf venv; fi
+[ -x venv/bin/python ] || python3 -m venv venv 2>&1 | tee -a "$STATUS_FILE" || { echo "FEHLER: venv" | tee -a "$STATUS_FILE"; exit 1; }
 ./venv/bin/pip install -q -r agent-loop/requirements.txt 2>&1 | tail -3 | tee -a "$STATUS_FILE" || echo "(pip-Wiederholung)" | tee -a "$STATUS_FILE" && ./venv/bin/pip install -q -r agent-loop/requirements.txt 2>/dev/null || true
 
 # --- npm-Bruecke fuer den Sync (villa-sync ruft 'npm test') ---
@@ -90,10 +92,14 @@ p = json.load(open('/tmp/agi-payload.json'))
 p['sourcePath'] = sys.argv[1]
 json.dump(p, open('/tmp/agi-payload.json', 'w'))
 NEOF
-  RES="$(curl -s -m 30 -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data @/tmp/agi-payload.json "$HUB/api/villas")"
-  VILLA_ID="$(echo "$RES" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("villaId",""))' 2>/dev/null || true)"
-  [ -n "$VILLA_ID" ] || { echo "FEHLER: Villa nicht angelegt: $RES" | tee -a "$STATUS_FILE"; exit 1; }
-  echo "Villa angelegt: #$VILLA_ID" | tee -a "$STATUS_FILE"
+  VILLA_ID=""
+  for TRY in 1 2 3 4; do
+    RES="$(curl -s -m 90 -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data @/tmp/agi-payload.json "$HUB/api/villas" 2>&1)"
+    VILLA_ID="$(echo "$RES" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("villaId",""))' 2>/dev/null || true)"
+    if [ -n "$VILLA_ID" ]; then echo "Villa angelegt: #$VILLA_ID (Versuch $TRY)" | tee -a "$STATUS_FILE"; break; fi
+    echo "POST Versuch $TRY fehlgeschlagen: ${RES:0:200}" | tee -a "$STATUS_FILE"; sleep 20
+  done
+  [ -n "$VILLA_ID" ] || { echo "FEHLER: Villa nicht angelegt" | tee -a "$STATUS_FILE"; exit 1; }
 fi
 
 # --- In Sync-Config eintragen ---
