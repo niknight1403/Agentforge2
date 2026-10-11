@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'diag, bootstrap, extern oder sys'
+        description: 'diag, bootstrap, extern, routes, tune, apitune, agivilla, cmd, token oder sys'
         default: 'diag'
         required: true
       command:
@@ -25,10 +25,21 @@ jobs:
           chmod 600 ~/.ssh/oracle_key
           printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=6 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
           chmod +x /tmp/sshcmd
+      - name: Setup Hub-Login
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          VF=$(curl -s -m 30 -X POST -H "Content-Type: application/json" \
+            -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" \
+            https://hub.cybersarah-ki.com/api/auth/login \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")
+          echo "VF=$VF" >> "$GITHUB_ENV"
+          if [ -z "$VF" ]; then echo "Hub-Login fehlgeschlagen"; fi
       - name: Diagnose (diag)
         if: ${{ github.event.inputs.mode == 'diag' }}
         run: |
-          bash /tmp/sshcmd "echo '== cloud-init =='; sudo cloud-init status 2>&1 | head -2; echo '== /opt =='; ls /opt/villaforge 2>&1 | head -6; echo '== Dienste =='; systemctl is-active villaforge ollama 2>&1; echo '== Bootstrap-Log =='; sudo tail -n 8 /var/log/villaforge-bootstrap.log 2>&1; true"
+          bash /tmp/sshcmd "echo '== cloud-init =='; sudo cloud-init status 2>&1 | head -2; echo '== /opt =='; ls /opt/villaforge 2>&1 | head -6; echo '== Dienste =='; systemctl is-active villaforge-hub ollama 2>&1; echo '== Status-Datei =='; sudo cat /var/lib/ollama-bootstrap.status 2>&1; true"
       - name: Bootstrap starten (detached)
         if: ${{ github.event.inputs.mode == 'bootstrap' }}
         env:
@@ -41,33 +52,32 @@ jobs:
       - name: Routen-Check (routes)
         if: ${{ github.event.inputs.mode == 'routes' }}
         run: |
-          bash /tmp/sshcmd "VF=\$(grep '^VF_TOKEN=' /opt/villaforge/hub.env | cut -d= -f2); \
-            curl -s -m 8 -H \"Authorization: Bearer \$VF\" http://127.0.0.1:12000/api/routes; \
-            echo; echo '---VILLAS---'; \
-            curl -s -m 8 -H \"Authorization: Bearer \$VF\" http://127.0.0.1:12000/api/villas | head -c 600; true"
+          echo '---VILLAS---'
+          curl -s -m 20 -H "Authorization: Bearer $VF" https://hub.cybersarah-ki.com/api/villas | head -c 600
+          echo; echo '---ROUTES---'
+          curl -s -m 20 -H "Authorization: Bearer $VF" https://hub.cybersarah-ki.com/api/routes
+          echo; true
       - name: Route tunen (tune)
         if: ${{ github.event.inputs.mode == 'tune' }}
         run: |
-          bash /tmp/sshcmd "VF=\$(grep '^VF_TOKEN=' /opt/villaforge/hub.env | cut -d= -f2); \
-            for ID in \$(curl -s -m 8 -H \"Authorization: Bearer \$VF\" http://127.0.0.1:12000/api/routes | python3 -c 'import json,sys; print(\" \".join(str(r[\"id\"]) for r in json.load(sys.stdin) if \"ollama\" in r[\"base_url\"].lower()))'); do \
-              curl -s -m 8 -X PATCH -H \"Authorization: Bearer \$VF\" -H \"Content-Type: application/json\" -d \'{\"priority\": 40}\' http://127.0.0.1:12000/api/routes/\$ID; echo; done; \
-            echo '--- ROUTES NACH TUNING ---'; \
-            curl -s -m 8 -H \"Authorization: Bearer \$VF\" http://127.0.0.1:12000/api/routes | python3 -c 'import json,sys; [print(r[\"id\"], r[\"name\"], \"Prio\", r[\"priority\"]) for r in json.load(sys.stdin)]'; true"
+          for ID in $(curl -s -m 20 -H "Authorization: Bearer $VF" https://hub.cybersarah-ki.com/api/routes | python3 -c 'import json,sys; print(" ".join(str(r["id"]) for r in json.load(sys.stdin) if "ollama" in r["base_url"].lower()))'); do
+            curl -s -m 20 -X PATCH -H "Authorization: Bearer $VF" -H "Content-Type: application/json" -d '{"priority": 40}' https://hub.cybersarah-ki.com/api/routes/$ID; echo
+          done
+          echo '--- ROUTES NACH TUNING ---'
+          curl -s -m 20 -H "Authorization: Bearer $VF" https://hub.cybersarah-ki.com/api/routes | python3 -c 'import json,sys; [print(r["id"], r["name"], "Prio", r["priority"]) for r in json.load(sys.stdin)]'; true
       - name: API-Tuning (apitune)
         if: ${{ github.event.inputs.mode == 'apitune' }}
-        env:
-          VF: ${{ secrets.VF_HUBTOKEN }}
         run: |
-          echo "== Routes via public API (Timeout 150s) =="
-          ROUTES=$(curl -s -m 150 -H "Authorization: Bearer $VF" http://92.5.177.159:12000/api/routes) || true
+          echo "== Routes via oeffentliche API (Timeout 150s) =="
+          ROUTES=$(curl -s -m 150 -H "Authorization: Bearer $VF" https://hub.cybersarah-ki.com/api/routes) || true
           echo "$ROUTES" | head -c 300; echo
           IDS=$(echo "$ROUTES" | python3 -c 'import json,sys; rs=json.load(sys.stdin); print(" ".join(str(r["id"]) for r in rs if "ollama" in r.get("base_url","").lower() and r.get("priority",0) < 40))' 2>/dev/null || true)
           echo "Zu tiefpriorisierende Ollama-Routen: $IDS"
           for ID in $IDS; do
-            curl -s -m 150 -X PATCH -H "Authorization: Bearer $VF" -H "Content-Type: application/json" -d '{"priority": 40}' "http://92.5.177.159:12000/api/routes/$ID"; echo
+            curl -s -m 150 -X PATCH -H "Authorization: Bearer $VF" -H "Content-Type: application/json" -d '{"priority": 40}' "https://hub.cybersarah-ki.com/api/routes/$ID"; echo
           done
           echo "== Routes danach =="
-          curl -s -m 150 -H "Authorization: Bearer $VF" http://92.5.177.159:12000/api/routes | python3 -c 'import json,sys; [print(r["id"], r["name"], "Prio", r["priority"]) for r in json.load(sys.stdin)]' 2>/dev/null || echo "(Lesefehler)"
+          curl -s -m 150 -H "Authorization: Bearer $VF" https://hub.cybersarah-ki.com/api/routes | python3 -c 'import json,sys; [print(r["id"], r["name"], "Prio", r["priority"]) for r in json.load(sys.stdin)]' 2>/dev/null || echo "(Lesefehler)"
 
       - name: Checkout fuer agivilla
         if: ${{ github.event.inputs.mode == 'agivilla' }}
@@ -81,26 +91,28 @@ jobs:
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/mk-agi-villa.sh ubuntu@92.5.177.159:/tmp/mk-agi-villa.sh
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ops/agi-villa.json ubuntu@92.5.177.159:/tmp/agi-villa.json
           bash /tmp/sshcmd "chmod +x /tmp/mk-agi-villa.sh && rm -f /tmp/agi-status.txt && sudo setsid nohup bash /tmp/mk-agi-villa.sh >/tmp/agi-setup.log 2>&1 < /dev/null & echo Setup im Hintergrund gestartet"
-
       - name: Beliebiger SSH-Befehl (cmd)
         if: ${{ github.event.inputs.mode == 'cmd' }}
         run: |
           CMD="\${{ github.event.inputs.command }}"
           if [ -z "$CMD" ]; then echo "Kein command-Input gegeben."; exit 1; fi
           bash /tmp/sshcmd "$CMD"
-      - name: Token lesen (token)
+      - name: Hub-Status (token)
         if: ${{ github.event.inputs.mode == 'token' }}
         run: |
-          bash /tmp/sshcmd "grep '^VF_TOKEN=' /opt/villaforge/hub.env 2>&1; systemctl is-active villaforge; curl -s -m 8 http://127.0.0.1:12000/api/health | head -c 300; true"
+          bash /tmp/sshcmd "systemctl is-active villaforge-hub; curl -s -m 8 http://127.0.0.1:12000/api/health | head -c 300; true"
+          echo; echo "== Oeffentlich =="
+          curl -s -m 10 https://hub.cybersarah-ki.com/api/health | head -c 300
+          true
       - name: Ollama-Systemcheck (sys)
         if: ${{ github.event.inputs.mode == 'sys' }}
         run: |
-          bash /tmp/sshcmd "echo '== Lokaler Hub =='; curl -s -m 5 http://127.0.0.1:12000/api/health; echo; echo '== Dienst =='; sudo systemctl is-active villaforge; sudo systemctl is-active ollama; echo '== iptables INPUT =='; sudo iptables -L INPUT -n --line-numbers | head -12; echo '== Public IP =='; curl -s -m 8 https://ifconfig.me; echo" 
+          bash /tmp/sshcmd "echo '== Lokaler Hub =='; curl -s -m 5 http://127.0.0.1:12000/api/health; echo; echo '== Dienst =='; sudo systemctl is-active villaforge-hub; sudo systemctl is-active ollama; echo '== Ollama-Modelle =='; curl -s -m 8 http://127.0.0.1:11434/api/tags | head -c 500; echo; echo '== Public IP =='; curl -s -m 8 https://ifconfig.me; echo"
       - name: Extern-Check (extern)
         if: ${{ github.event.inputs.mode == 'extern' }}
         run: |
-          echo "== Hub von aussen =="
-          curl -s -m 10 http://92.5.177.159:12000/api/health || echo "Hub von aussen NICHT erreichbar (Ingress fehlt?)"
+          echo "== Hub von aussen (HTTPS) =="
+          curl -s -m 10 https://hub.cybersarah-ki.com/api/health || echo "Hub von aussen NICHT erreichbar"
           echo
-          echo "== Ollama-Route pruefen =="
-          curl -s -m 10 http://92.5.177.159:12000/api/health | head -c 400 || true
+          echo "== Ollama von aussen (HTTPS, 401 ohne Token erwartet) =="
+          curl -s -m 10 -o /dev/null -w "HTTP %{http_code}\n" https://ollama.cybersarah-ki.com/v1/models || true

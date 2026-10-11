@@ -15,30 +15,42 @@ jobs:
       - name: Hub-Verbindung und Sync pruefen
         env:
           GH: ${{ secrets.GITHUB_TOKEN }}
-          VF_HUBTOKEN: ${{ secrets.VF_HUBTOKEN }}
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
         run: |
           python3 - <<'PY'
           import base64, json, os, urllib.request, datetime
-          tok = os.environ['VF_HUBTOKEN']
           ghauth = {'Authorization': 'Bearer ' + os.environ['GH']}
           def get(url, hdr, tmo):
               try:
                   return urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=tmo), None
               except Exception as e:
                   return None, str(e)
+          # 0) Login am Hub (Session-Token, v1.10-Auth)
+          login_body = json.dumps({'email': os.environ['VF_ADMIN_EMAIL'],
+                                   'password': os.environ['VF_ADMIN_PASSWORD']}).encode()
+          req = urllib.request.Request('https://hub.cybersarah-ki.com/api/auth/login',
+                                       data=login_body, headers={'Content-Type': 'application/json'})
+          try:
+              tok = json.load(urllib.request.urlopen(req, timeout=15))['token']
+          except Exception as e:
+              tok = None
           now = datetime.datetime.now(datetime.timezone.utc)
-          # 1) Hub von aussen
-          r, err = get('http://92.5.177.159:12000/api/stats',
-                      {'Authorization': 'Bearer ' + tok}, 12)
+          # 1) Hub von aussen (HTTPS via hub.cybersarah-ki.com)
           hub = {}
-          if r:
-              s = json.load(r)
-              hub = {'state': 'UP', 'version': s.get('version'), 'villas': s.get('villas'),
-                     'running': s.get('runningVillas'), 'agents': s.get('agents'),
-                     'routesOk': s.get('routesHealth', {}).get('ok'),
-                     'configured': s.get('routesHealth', {}).get('configured')}
+          if tok:
+              r, err = get('https://hub.cybersarah-ki.com/api/stats',
+                          {'Authorization': 'Bearer ' + tok}, 12)
+              if r:
+                  s = json.load(r)
+                  hub = {'state': 'UP', 'version': s.get('version'), 'villas': s.get('villas'),
+                         'running': s.get('runningVillas'), 'agents': s.get('agents'),
+                         'routesOk': s.get('routesHealth', {}).get('ok'),
+                         'configured': s.get('routesHealth', {}).get('configured')}
+              else:
+                  hub = {'state': 'DOWN', 'error': err[:120]}
           else:
-              hub = {'state': 'DOWN', 'error': err[:120]}
+              hub = {'state': 'DOWN', 'error': 'Login fehlgeschlagen'}
           # 2) Sync-Frische (letzter CyberSarah-Commit)
           r, _ = get('https://api.github.com/repos/niknight1403/CyberSarah-Control-Center/commits?per_page=1', ghauth, 15)
           sync_age = None
@@ -56,7 +68,6 @@ jobs:
           r, _ = get('https://api.github.com/repos/niknight1403/Agentforge2/contents/HUB-WATCH.json', ghauth, 15)
           sha = None
           if r:
-              import base64
               old = json.load(r)
               sha = old.get('sha')
               if old.get('state') == state and (state == 'DOWN' or old.get('hub', {}).get('running') == hub.get('running')):
