@@ -84,6 +84,23 @@ jobs:
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/setup.sh ubuntu@152.70.8.227:/tmp/setup.sh
           bash /tmp/sshcmd "sudo bash /tmp/setup.sh"
 
+      - name: Modelle + Fast-Route (pull)
+        if: ${{ github.event.inputs.mode == 'pull' }}
+        env:
+          VF_HUBTOKEN: ${{ secrets.VF_HUBTOKEN }}
+        run: |
+          TOK="$VF_HUBTOKEN"
+          ORACLE=http://152.70.8.227:12000
+          echo "== Modell-Pulls starten (detached) =="
+          bash /tmp/sshcmd "sudo bash -c 'nohup ollama pull llama3.1:8b >/tmp/pull-llama.log 2>&1 & nohup ollama pull qwen2.5-coder:3b >/tmp/pull-3b.log 2>&1 & echo PULLS-GESTARTET'"
+          echo "== Fast-Route 3b registrieren =="
+          cat > /tmp/r3.json <<'R3'
+          {"name":"Ollama-Oracle-Fast (3b)","baseUrl":"http://127.0.0.1:11434/v1","model":"qwen2.5-coder:3b","keyEnv":"","priority":5}
+          R3
+          curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' --data @/tmp/r3.json $ORACLE/api/routes; echo
+          echo "== Sync-Dienst-Status =="
+          bash /tmp/sshcmd "sudo systemctl list-timers villaforge-sync.timer --no-pickle 2>/dev/null | head -3; sudo systemctl status villaforge-sync.service --no-pager -n 5 2>&1 | head -12"
+          echo PULL-FERTIG
       - name: Korrekturen (fix)
         if: ${{ github.event.inputs.mode == 'fix' }}
         env:
