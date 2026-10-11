@@ -1,9 +1,9 @@
 {
-  "checked_at": "2026-10-11T03:12:56.476690+00:00",
+  "checked_at": "2026-10-11T08:32:15.615545+00:00",
   "hub": {
     "state": "DOWN",
-    "error": "timed out"
+    "error": "<urlopen error timed out>"
   },
-  "sync_age_min": 7,
+  "sync_age_min": 142,
   "state": "DOWN"
 }
