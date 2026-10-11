@@ -1,9 +1,13 @@
 {
-  "checked_at": "2026-10-11T14:46:43.204509+00:00",
+  "checked_at": "2026-10-11T14:48:09.813791+00:00",
   "hub": {
-    "state": "DOWN",
-    "error": "HTTP Error 404: Not Found"
+    "state": "UP",
+    "version": "1.0.0",
+    "routes": 8,
+    "villas": 0,
+    "running": 0,
+    "agents": 0
   },
-  "sync_age_min": 91,
-  "state": "DOWN"
+  "sync_age_min": 92,
+  "state": "DEGRADED"
 }
