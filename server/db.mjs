@@ -172,3 +172,17 @@ export function pruneHistory(villaId, { keepAudit = 400, keepMemories = 300 } = 
         ORDER BY (importance >= 8) DESC, importance DESC, id DESC LIMIT ?)`).run(villaId, villaId, keepMemories).changes;
   return { audit, memories: mem };
 }
+
+// Rat der Agenten (v1.11.0): Runden des agenteninternen Erfahrungsaustauschs.
+// Ergebnisse fliessen zusaetzlich als Erinnerungen an alle Agenten zurueck.
+db.exec(`
+CREATE TABLE IF NOT EXISTS council (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  villa_id INTEGER NOT NULL,
+  round INTEGER NOT NULL,
+  participants TEXT NOT NULL DEFAULT '',
+  messages TEXT NOT NULL DEFAULT '[]',
+  proposals TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL
+);
+`);

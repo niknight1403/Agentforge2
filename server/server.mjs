@@ -11,6 +11,7 @@ import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, 
 import { resumePendingVillas } from './resume.mjs';
 import { bus, emit, eventsSince } from './events.mjs';
 import { pruneOldData, autoResumeQuotaVillas } from './maintenance.mjs';
+import { runCouncil, listCouncil, autoCouncil } from './council.mjs';
 import { VERSION } from './version.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
@@ -247,6 +248,7 @@ async function api(req, res, url) {
         open: one("SELECT COUNT(*) c FROM tasks WHERE status IN ('PENDING','READY','RUNNING','REVIEW')").c
       },
       memories: count('memories'),
+      councilRounds: count('council'),
       audit: count('audit'),
       messages: count('messages'),
       runningVillas: listRunning(),
@@ -358,6 +360,17 @@ async function api(req, res, url) {
     const result = await createVilla(v.value);
     log('Villa angelegt:', result.villaId, `"${v.value.name}"`);
     return json(res, 201, result);
+  }
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'council' && m === 'GET') {
+    return json(res, 200, listCouncil(Number(parts[2]), 10));
+  }
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'council' && m === 'POST') {
+    try {
+      const out = await runCouncil(Number(parts[2]));
+      return json(res, 200, { ok: true, ...out });
+    } catch (e) {
+      return json(res, 400, { error: e.message });
+    }
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'PATCH') {
     const id = Number(parts[2]);
@@ -635,6 +648,13 @@ server.listen(PORT, HOST, () => {
     } catch (err) { logError('Auto-Resume fehlgeschlagen:', err.message || err); }
   }, 60_000);
   autoResume.unref();
+  // Superintelligenz-Loop (v1.11.0): alle 30 Minuten prueft der Hub, welche
+  // Villa eine Rat-Runde faellig hat (aelter als 2 Stunden) und beruft sie
+  // automatisch ein. Fehler duerfen den Hub-Takt niemals anhalten.
+  const councilLoop = setInterval(() => {
+    try { autoCouncil({ isRunning }); } catch { /* Rat stoert Wartung nie */ }
+  }, 30 * 60 * 1000);
+  councilLoop.unref();
 });
 
 

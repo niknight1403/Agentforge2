@@ -34,7 +34,9 @@ data class UiState(
     val message: String = "",
     val error: String? = null,
     /** Hub-Statistik aus GET /api/stats, null bis geladen. */
-    val stats: org.json.JSONObject? = null
+    val stats: org.json.JSONObject? = null,
+    /** Rat der Agenten: letzte Runden aus GET /api/villas/:id/council. */
+    val council: org.json.JSONArray? = null
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -135,6 +137,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 routes = routes
             )
         }
+    }
+
+    /** Laedt die letzten Rat-Runden der Villa in den Zustand. */
+    fun refreshCouncil(villaId: Long) = run {
+        val council = client.council(villaId)
+        _state.update { it.copy(council = council) }
+    }
+
+    /** Beruft eine neue Rat-Runde ein und laedt die Runden danach neu. */
+    fun triggerCouncil(villaId: Long) = run {
+        client.councilTrigger(villaId)
+        val council = client.council(villaId)
+        _state.update { it.copy(council = council) }
     }
 
     /** Speichert den optionalen Hub-Token und verbindet SSE neu. */

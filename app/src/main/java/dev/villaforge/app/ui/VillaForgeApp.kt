@@ -79,12 +79,20 @@ import dev.villaforge.app.ui.theme.Surface2
 import dev.villaforge.app.ui.theme.TextMain
 import dev.villaforge.app.ui.theme.TextMuted
 import dev.villaforge.app.ui.theme.Violet
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import dev.villaforge.app.ui.components.MiniBars
+import dev.villaforge.app.ui.components.SectionCard
+import dev.villaforge.app.ui.components.StatTile
+import dev.villaforge.app.ui.components.StatusPill
+import dev.villaforge.app.ui.theme.Success
 import dev.villaforge.app.ui.theme.Warn
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private enum class Screen { LIST, CREATE, DETAIL, CHAT, SETTINGS }
+private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, SETTINGS }
 
 @Composable
 private fun muted() = MaterialTheme.typography.bodySmall
@@ -121,6 +129,9 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                 },
                 actions = {
                     if (screen == Screen.LIST) {
+                        IconButton(onClick = { screen = Screen.DASHBOARD }) {
+                            Icon(Icons.Filled.Dashboard, contentDescription = "Dashboard")
+                        }
                         IconButton(onClick = { viewModel.refreshAll() }) {
                             Icon(Icons.Filled.Refresh, contentDescription = "Aktualisieren")
                         }
@@ -153,6 +164,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     viewModel.openVilla(id)
                     screen = Screen.DETAIL
                 }
+                Screen.DASHBOARD -> DashboardScreen(state, viewModel) { screen = Screen.LIST }
                 Screen.CREATE -> CreateVillaScreen(state, viewModel) { id ->
                     viewModel.openVilla(id)
                     screen = Screen.CHAT
@@ -731,6 +743,19 @@ private fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
             Spacer(Modifier.height(4.dp))
         }
 
+        Text("Feature Packs", fontWeight = FontWeight.Bold)
+        FEATURE_PACKS.forEach { pack ->
+            var on by rememberSaveable(pack.id) { mutableStateOf(true) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(pack.title, fontWeight = FontWeight.SemiBold)
+                    Text(pack.desc, style = muted(), color = TextMuted)
+                }
+                Spacer(Modifier.width(8.dp))
+                Switch(checked = on, onCheckedChange = { on = it })
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         Text("Hub-Adresse", fontWeight = FontWeight.Bold)
         OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("https://…") }, modifier = Modifier.fillMaxWidth())
         Button(onClick = { viewModel.saveServerUrl(url) }, modifier = Modifier.fillMaxWidth()) { Text("Verbinden") }
@@ -903,3 +928,80 @@ private fun ErrorBanner(text: String) {
 
 private fun time(ts: Long): String =
     SimpleDateFormat("HH:mm", Locale.GERMANY).format(Date(if (ts > 0) ts else System.currentTimeMillis()))
+
+/* ----------------------------- Dashboard (v1.11.0) ----------------------------- */
+
+@Composable
+private fun DashboardScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit) {
+    val packsOn = remember { mutableStateMapOf("monitoring" to true, "analytics" to true, "council" to true, "superintelligence" to true) }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        state.error?.let { ErrorBanner(it) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Mission Control", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.weight(1f))
+            LiveDot(state.live)
+            Spacer(Modifier.width(6.dp))
+            StatusPill(state.healthText)
+        }
+
+        val s = state.stats
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatTile("Villen", "${state.villas.size}", Aqua, Modifier.weight(1f))
+            StatTile("Agenten", s?.optInt("agents")?.toString() ?: "–", Violet, Modifier.weight(1f))
+            StatTile("Offen", s?.optJSONObject("tasks")?.optInt("open")?.toString() ?: "–", Warn, Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val done = (s?.optJSONObject("tasks")?.optInt("total") ?: 0) - (s?.optJSONObject("tasks")?.optInt("open") ?: 0)
+            StatTile("Erledigt", "$done", Success, Modifier.weight(1f))
+            StatTile("Gedächtnis", s?.optInt("memories")?.toString() ?: "–", Aqua, Modifier.weight(1f))
+            StatTile("Rat-Runden", s?.optInt("councilRounds")?.toString() ?: "0", Violet, Modifier.weight(1f))
+        }
+
+        if (packsOn["analytics"] == true && s != null) {
+            Text("Aufgaben-Fortschritt", fontWeight = FontWeight.SemiBold)
+            MiniBars(listOf(2f, 4f, 6f, 8f, 10f, 12f, 14f, 16f))
+        }
+
+        if (packsOn["council"] == true) {
+            Text("Rat der Agenten", fontWeight = FontWeight.SemiBold)
+            val council = state.council
+            if (council != null && council.length() > 0) {
+                val last = council.optJSONObject(0)
+                SectionCard("Runde ${last?.optInt("round") ?: "–"} · ${last?.optJSONArray("proposals")?.length() ?: 0} Vorschläge") {
+                    val arr = last?.optJSONArray("proposals")
+                    (0 until (arr?.length() ?: 0)).forEach { i ->
+                        val p = arr?.optJSONObject(i)
+                        Text("• ${p?.optString("agent")}: ${p?.optString("text")}", style = muted(), color = TextMuted)
+                    }
+                }
+            } else {
+                Text(
+                    "Noch keine Rat-Runde. Starte sie hier oder warte auf den automatischen Loop (alle 2 Stunden).",
+                    style = muted(), color = TextMuted
+                )
+            }
+            val vid = state.villas.firstOrNull()?.id
+            if (vid != null) {
+                Button(onClick = { viewModel.triggerCouncil(vid) }, enabled = !state.busy) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Rat jetzt einberufen")
+                }
+            }
+        }
+
+        if (packsOn["superintelligence"] == true) {
+            SectionCard("Superintelligenz-Loop aktiv") {
+                Text(
+                    "Der Hub beruft den Rat automatisch ein. Erkenntnisse fließen als Erinnerungen in alle Agenten — die Villa optimiert sich fortlaufend selbst weiter.",
+                    style = muted(), color = TextMuted
+                )
+            }
+        }
+
+        if (state.message.isNotBlank()) Text(state.message, color = Aqua, style = muted())
+    }
+}
