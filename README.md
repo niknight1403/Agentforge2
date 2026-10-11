@@ -8,6 +8,32 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.12.0
+
+- **Feature- und Werkzeug-Packs** sind jetzt serverseitig die eine Wahrheit
+  (`server/packs.mjs`, `GET /api/packs`, `PATCH /api/packs/:id`). Ein Pack ist
+  ein echter Schalter, keine Deko: ist sein Werkzeug-Pack aus, blockiert der Hub
+  das Werkzeug im Lauf und protokolliert den Versuch als „blockiert“ im Audit.
+  Der Hauptschalter „Werkzeuge“ sperrt alle Werkzeug-Packs auf einmal. Web-UI
+  und Android-App zeigen und schalten dieselbe Liste.
+- **Werkzeuge sichtbar**: `GET /api/tools` liefert zu jedem Werkzeug sein Pack
+  und die aktuelle Freigabe — frisch berechnet, kein eingefrorener Stand. Die
+  Web-UI hat dafür den Bereich „Werkzeuge & Packs“.
+- **Live-Test im echten Browser**: `npm run test:live` startet einen isolierten
+  Hub und fährt ihn in Chrome bis zum Ende durch — Villa anlegen, alle Reiter,
+  Chat, Entwicklung starten/stoppen, Aufgabenfilter — und protokolliert
+  Konsolenfehler, 5xx-Antworten und abgebrochene Anfragen.
+- **Design-Audit statt Geschmacksfrage**: `npm run test:design` misst die
+  gerenderte Oberfläche gegen harte Kriterien (WCAG-Kontrast, Überlauf,
+  Touch-Ziele ab 44 px, Schriftgröße ab 11 px, benannte Bedienelemente,
+  doppelte IDs, `:focus-visible`, `prefers-reduced-motion`). Beide Läufe hängen
+  in CI (`live-e2e.yml`) und legen Berichte plus Screenshots als Artefakt ab.
+- **Design-Runde**: der Ring der Hero-Kugel saß am falschen Bezugselement, das
+  helle Ende des Primär-Verlaufs erreichte nur 4.05:1 Kontrast (jetzt 5.1:1),
+  es gab keine Fokus-Ringe und keine Rücksicht auf reduzierte Bewegung, 30
+  Stellen lagen unter 11 px und 10 Touch-Ziele unter 44 px — alles behoben.
+  Dazu Toasts und ein `<dialog>`-Modal statt `alert`/`confirm`/`prompt`.
+
 ## Neu in 1.10.0
 
 - Key-Pool mit Kontingent-Rotation: `GROQ_API_KEY`, `OPENROUTER_API_KEY`,
@@ -142,18 +168,27 @@ Da EventSource keine Header senden kann, akzeptiert der Hub zusaetzlich `?token=
 ## Entwicklung & Tests
 
 ```bash
-npm test               # 88 Unit- und Integrationstests (node:test, ohne Abhaengigkeiten)
+npm test               # 181 Unit- und Integrationstests (node:test, ohne Abhaengigkeiten)
+npm run test:live      # Live-Test im echten Chrome (braucht Chrome oder Chromium)
+npm run test:design    # Design-Audit der gerenderten Oberflaeche
 npm run check:secrets  # scannt den Quelltext auf committete API-Keys
 ```
 
-Die Suite besteht aus vier Schichten:
+Die Suite besteht aus sechs Schichten:
 
 | Schicht | Datei | deckt ab |
 | --- | --- | --- |
 | Datenbank & Tools | `db.test.mjs`, `agents.test.mjs`, `fs-tools.test.mjs` | Schema, Seed, Werkzeuge, Audit |
 | LLM-Rotator | `llm.test.mjs` | Key-Aufloesung, Prioritaet/Rotation, Failover, Offline-Planer |
 | Validierung | `validate.test.mjs` | Eingabegrenzen aller POST-Endpunkte |
+| Packs | `packs.test.mjs`, `packs-api.test.mjs` | Pack-Registry, Werkzeugsperre, Schalter-Endpunkte |
+| Oberflaeche (statisch) | `ui-contract.test.mjs`, `ui-design.test.mjs` | IDs und Handler, Design-Regeln direkt im Quelltext |
 | Integration | `api-e2e.test.mjs`, `api-auth.test.mjs` | echter Hub-Prozess ueber HTTP: Anlegen, Chat, SSE, Orchestrierung, VF_TOKEN |
+
+Darueber liegen zwei Browser-Laeufe (`live-e2e.yml`): der Live-E2E klickt die
+Oberflaeche in Chrome durch, das Design-Audit misst Kontrast, Ueberlauf,
+Touch-Ziele, Fokus und reduzierte Bewegung. Beide schreiben einen Report und
+Screenshots nach `artifacts/` — in CI als Build-Artefakt, nicht ins Repo.
 
 CI (`hub-tests.yml`) prueft Syntax, Secret-Scan und die komplette Suite bei jedem Push
 unter `server/**`; `build-apk.yml` baut die Android-APK. Alles ohne Fremd-Abhaengigkeiten
@@ -299,6 +334,9 @@ PATCH  /api/routes/:id                { enabled, priority }
 GET    /api/secrets                   nur Namen
 POST   /api/secrets                   { name, value }
 GET    /api/tools
+GET    /api/packs                     Feature- und Werkzeug-Packs mit Schalterzustand
+GET    /api/tool-packs                Werkzeug-Packs kompakt (fuer App und UI)
+PATCH  /api/packs/:id                 { enabled } – Pack schalten (sperrt/freigibt Werkzeuge)
 GET    /api/events                    Server-Sent Events
 ```
 

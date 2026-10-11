@@ -7,11 +7,12 @@ import { db, now } from './db.mjs';
 import { seedRoutes, syncCatalog } from './seed.mjs';
 import { validateRoute, validateSecret, validateVilla, validateVillaPatch, validateTaskPatch, TASK_STATUSES, validateMessage, validateOrchestrate } from './validate.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus, keyPools } from './llm.mjs';
-import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, TOOL_SPECS, memoryContext, setSource, analyzeProject, importVilla } from './agents.mjs';
+import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, toolSpecs, memoryContext, setSource, analyzeProject, importVilla } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { bus, emit, eventsSince } from './events.mjs';
 import { pruneOldData, autoResumeQuotaVillas } from './maintenance.mjs';
 import { runCouncil, listCouncil, autoCouncil } from './council.mjs';
+import { packState, packSummary, setPackEnabled, packEnabled } from './packs.mjs';
 import { VERSION } from './version.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
@@ -265,6 +266,9 @@ async function api(req, res, url) {
         };
       })(),
       keyPools: keyPools(),
+      // Pack-Zustand gehoert in die Statistik: ein Blick zeigt, ob Werkzeuge
+      // gesperrt sind oder die Villa ihre volle Ausstattung hat.
+      packs: packSummary(),
       limits: {
         ratePerMinute: RATE_LIMIT,
         tokenProtected: !!API_TOKEN
@@ -316,7 +320,30 @@ async function api(req, res, url) {
   }
 
   // ---- Tools ----
-  if (p === '/api/tools' && m === 'GET') return json(res, 200, TOOL_SPECS);
+  if (p === '/api/tools' && m === 'GET') return json(res, 200, toolSpecs());
+
+  // ---- Feature- und Werkzeug-Packs ----
+  // Eine Wahrheit fuer Hub, Web-UI und Android-App: /api/packs liefert alles,
+  // was die Oberflaeche zum Anzeigen und Schalten braucht.
+  if (p === '/api/packs' && m === 'GET') return json(res, 200, packState());
+  if (p === '/api/tool-packs' && m === 'GET') {
+    const state = packState();
+    return json(res, 200, {
+      master: state.master,
+      packs: state.tools,
+      features: state.features.map((f) => ({ id: f.id, title: f.title, enabled: f.enabled })),
+      blocked: state.blocked
+    });
+  }
+  if (parts[0] === 'api' && parts[1] === 'packs' && parts[2] && m === 'PATCH') {
+    const b = await readBody(req);
+    if (typeof b.enabled !== 'boolean') return json(res, 400, { error: 'enabled muss true oder false sein' });
+    const out = setPackEnabled(parts[2], b.enabled);
+    if (!out.ok) return json(res, 404, { error: out.error });
+    emit('pack_updated', { id: parts[2], enabled: out.enabled });
+    log(`Pack ${parts[2]}: ${out.enabled ? 'an' : 'aus'}`);
+    return json(res, 200, { ok: true, pack: out, state: packState() });
+  }
 
   // ---- Villas ----
   // Wartung: alte Protokolle und Chatverlaeufe aufraeumen.
@@ -365,6 +392,7 @@ async function api(req, res, url) {
     return json(res, 200, listCouncil(Number(parts[2]), 10));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'council' && m === 'POST') {
+    if (!packEnabled('council')) return json(res, 409, { error: 'Der Rat der Agenten ist abgeschaltet (Feature-Pack „council").' });
     try {
       const out = await runCouncil(Number(parts[2]));
       return json(res, 200, { ok: true, ...out });
@@ -519,7 +547,7 @@ async function api(req, res, url) {
     return json(res, 202, { ok: true, started: true });
   }
   // Gescheiterte Aufgabe zurueck in die Warteschlange und den Lauf fortsetzen.
-  // Nach einem Offline-Durchhц╓nger (PAUSED mit FAILED-Aufgaben) ist das der
+  // Nach einem Offline-Durchhaenger (PAUSED mit FAILED-Aufgaben) ist das der
   // eine Klick, der die Villa weiterlaufen laesst.
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'tasks' && parts[4] && parts[5] === 'retry' && m === 'POST') {
     const id = Number(parts[2]);
@@ -652,7 +680,7 @@ server.listen(PORT, HOST, () => {
   // Villa eine Rat-Runde faellig hat (aelter als 2 Stunden) und beruft sie
   // automatisch ein. Fehler duerfen den Hub-Takt niemals anhalten.
   const councilLoop = setInterval(() => {
-    try { autoCouncil({ isRunning }); } catch { /* Rat stoert Wartung nie */ }
+    try { if (packEnabled('superintelligence')) autoCouncil({ isRunning }); } catch { /* Rat stoert Wartung nie */ }
   }, 30 * 60 * 1000);
   councilLoop.unref();
 });

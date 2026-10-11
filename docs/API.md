@@ -184,9 +184,44 @@ Antwort enthält `answer` und die verwendete Route (`model`, `route`,
   (`{ enabled, priority }`). Secrets nie im Klartext.
 - `GET /api/secrets` liefert nur Namen; `POST /api/secrets`
   speichert `{ name, value }` serverseitig; `DELETE /api/secrets/:name`.
-- `GET /api/tools` — Whitelist der Agenten-Werkzeuge inklusive Spezifikation.
+- `GET /api/tools` — Whitelist der Agenten-Werkzeuge inklusive Spezifikation,
+  zugehoerigem Werkzeug-Pack (`pack`, `packTitle`) und aktueller Freigabe
+  (`enabled`). Die Freigabe wird pro Anfrage frisch berechnet, damit ein
+  umgeschaltetes Pack sofort wirkt.
 - `GET /api/events` — Server-Sent Events (`text/event-stream`): alle
   Lifecycle-Ereignisse (`type`, `villaId`, `ts`, …) mit aufsteigender
   `id`. Bei Reconnect sendet `EventSource` automatisch `Last-Event-ID`;
   der Hub replays alles seit dieser ID (Retention begrenzt). Ein
   Kommentar-Ping alle 15 Sekunden hält Proxys offen.
+
+## Feature- und Werkzeug-Packs
+
+Ein Pack ist ein echter Schalter: ein abgeschaltetes Werkzeug-Pack sperrt die
+zugehoerigen Werkzeuge der Agenten (`runTool` verweigert, das Audit vermerkt
+`allowed = 0` mit Begruendung). Der Hauptschalter `werkzeuge` sperrt alle
+Werkzeug-Packs auf einmal.
+
+### `GET /api/packs`
+
+```json
+{
+  "features": [{ "id": "monitoring", "title": "Monitoring Pack", "description": "…", "enabled": true, "caps": ["/api/health"] }],
+  "tools": [{ "id": "projekt", "title": "Projektanalyse", "tools": ["project_tree"], "enabled": true, "effective": true, "count": 3 }],
+  "master": { "id": "werkzeuge", "enabled": true },
+  "blocked": []
+}
+```
+
+`enabled` ist der eigene Schalterzustand, `effective` das Ergebnis inklusive
+Hauptschalter. `blocked` listet die Werkzeug-Packs, die gerade wirkungslos sind.
+
+### `GET /api/tool-packs`
+
+Schlanke Sicht fuer Klienten: `master`, `packs`, `features`, `blocked`.
+
+### `PATCH /api/packs/:id`
+
+Body `{ "enabled": true | false }`. Antwort 200 mit neuem Zustand, 400 bei
+fehlendem oder nicht-booleschem `enabled`, 404 bei unbekanntem Pack. Ist das
+Feature-Pack `council` aus, antwortet `POST /api/villas/:id/council` mit 409;
+ist `superintelligence` aus, laeuft die automatische Rat-Runde nicht.

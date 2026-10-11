@@ -14,5 +14,9 @@ server/data/*.db
 server/data/*.db-*
 node_modules/
 
+# Pruef-Artefakte aus Live-Test und Design-Audit (Screenshots/Reports).
+# In CI werden sie als Build-Artefakt hochgeladen, nicht ins Repo geschrieben.
+artifacts/
+
 # Uebertragungspaket fuer den manuellen Push
 *.bundle

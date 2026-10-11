@@ -4,6 +4,7 @@ import { emit } from './events.mjs';
 import { mkdirSync, writeFileSync, readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { projectSummary, searchProject, readProjectFile, runCommand, safePath } from './fs-tools.mjs';
+import { canUseTool, toolPackOf } from './packs.mjs';
 
 export const WORKSPACE = resolve(process.env.VF_WORKSPACE || join(process.cwd(), 'server', 'data', 'workspace'));
 mkdirSync(WORKSPACE, { recursive: true });
@@ -165,7 +166,27 @@ const TOOLS = {
   }
 };
 
-export const TOOL_SPECS = Object.entries(TOOLS).map(([name, t]) => ({ name, description: t.description, schema: t.schema }));
+/**
+ * Statischer Werkzeugkatalog (Name, Beschreibung, Schema, Pack). Bewusst ohne
+ * Freigabe-Flag: der Katalog ist konstant, die Freigabe haengt am jeweiligen
+ * Pack-Zustand und wird von toolSpecs() frisch dazugerechnet. Ein eingefrorenes
+ * Flag wuerde nach dem Umschalten eines Packs veralten.
+ */
+export const TOOL_SPECS = Object.entries(TOOLS).map(([name, t]) => {
+  const pack = toolPackOf(name);
+  return {
+    name,
+    description: t.description,
+    schema: t.schema,
+    pack: pack?.id || null,
+    packTitle: pack?.title || null
+  };
+});
+
+/** Werkzeugkatalog inklusive aktueller Freigabe — fuer API und Oberflaeche. */
+export function toolSpecs() {
+  return TOOL_SPECS.map((t) => ({ ...t, enabled: canUseTool(t.name).allowed }));
+}
 
 /** Ermittelt den freigegebenen Quellordner einer Villa, falls vorhanden. */
 export function sourceRoot(villaId) {
@@ -192,6 +213,14 @@ function audit(villaId, agentId, tool, args, result, allowed = 1) {
 export async function runTool(ctx, name, args) {
   const tool = TOOLS[name];
   if (!tool) { audit(ctx.villaId, ctx.agentId, name, args, 'unbekanntes Werkzeug', 0); return `Unbekanntes Werkzeug: ${name}`; }
+  // Werkzeug-Packs sind ein echter Schalter, keine Deko: ist das Pack aus,
+  // arbeitet der Agent nicht am Projekt — und der Versuch steht im Audit.
+  const gate = canUseTool(name);
+  if (!gate.allowed) {
+    audit(ctx.villaId, ctx.agentId, name, args, `blockiert: ${gate.reason}`, 0);
+    emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, blocked: true, reason: gate.reason });
+    return `Werkzeug blockiert: ${gate.reason} Aktiviere das Pack in den Einstellungen.`;
+  }
   emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, args });
   try {
     const out = await tool.run(ctx, args || {});

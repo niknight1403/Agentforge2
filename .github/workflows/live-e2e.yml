@@ -1,0 +1,46 @@
+name: Live-Test & Design-Audit
+
+# Faehrt den Hub in einem echten Chrome durch (Klicken, Tippen, Tabs, Chat,
+# Start/Stopp) und misst die Oberflaeche gegen harte Design-Kriterien
+# (WCAG-Kontrast, Ueberlauf, Touch-Ziele, Fokus, reduzierte Bewegung).
+# Die statischen Tests in hub-tests.yml bleiben davon unberuehrt.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "scripts/**"
+      - "package.json"
+      - ".github/workflows/live-e2e.yml"
+  workflow_dispatch:
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node 23 einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: "23"
+
+      - name: Browser nachweisen
+        run: |
+          google-chrome --version || chromium --version || true
+
+      - name: Design-Audit
+        run: node scripts/design-audit.mjs
+
+      - name: Live-E2E im echten Browser
+        run: node scripts/live-e2e.mjs
+
+      - name: Berichte und Screenshots sichern
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pruef-berichte
+          path: artifacts/
+          retention-days: 14
+          if-no-files-found: warn
