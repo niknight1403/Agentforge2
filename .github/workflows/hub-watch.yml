@@ -39,14 +39,17 @@ jobs:
           # 1) Hub von aussen (HTTPS via hub.cybersarah-ki.com)
           hub = {}
           if tok:
-              r, err = get('https://hub.cybersarah-ki.com/api/stats',
+              r, err = get('https://hub.cybersarah-ki.com/api/health',
                           {'Authorization': 'Bearer ' + tok}, 12)
               if r:
                   s = json.load(r)
-                  hub = {'state': 'UP', 'version': s.get('version'), 'villas': s.get('villas'),
-                         'running': s.get('runningVillas'), 'agents': s.get('agents'),
-                         'routesOk': s.get('routesHealth', {}).get('ok'),
-                         'configured': s.get('routesHealth', {}).get('configured')}
+                  rv, rv_err = get('https://hub.cybersarah-ki.com/api/villas',
+                                   {'Authorization': 'Bearer ' + tok}, 12)
+                  villas = json.load(rv) if rv else []
+                  running = sum(1 for v in villas if str(v.get('status', '')).lower() in ('running', 'aktiv', 'active'))
+                  agents = sum(int(v.get('agent_count') or v.get('agents') or 0) for v in villas)
+                  hub = {'state': 'UP', 'version': s.get('version'), 'routes': s.get('routes'),
+                         'villas': len(villas), 'running': running, 'agents': agents}
               else:
                   hub = {'state': 'DOWN', 'error': err[:120]}
           else:
