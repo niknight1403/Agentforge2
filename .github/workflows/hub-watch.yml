@@ -28,7 +28,7 @@ jobs:
                   return None, str(e)
           now = datetime.datetime.now(datetime.timezone.utc)
           # 1) Hub von aussen
-          r, err = get('http://152.70.8.227:12000/api/stats',
+          r, err = get('http://92.5.177.159:12000/api/stats',
                       {'Authorization': 'Bearer ' + tok}, 12)
           hub = {}
           if r:

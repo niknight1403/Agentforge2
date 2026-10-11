@@ -19,7 +19,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@152.70.8.227 "$@"' > /tmp/sshcmd
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
           chmod +x /tmp/sshcmd
 
       - name: Dateien und Dienste (files)
@@ -30,7 +30,7 @@ jobs:
         run: |
           printf '%s' "$VF_HUBENV" > /tmp/hub.env
           printf '%s' "$VF_SYNCSRC" > /tmp/villa-sync.mjs
-          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/hub.env /tmp/villa-sync.mjs ubuntu@152.70.8.227:/tmp/
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/hub.env /tmp/villa-sync.mjs ubuntu@92.5.177.159:/tmp/
           cat > /tmp/setup.sh <<'SETUP'
           set -e
           DEST=/opt/villaforge
@@ -81,7 +81,7 @@ jobs:
           systemctl enable --now villaforge-sync.timer
           echo FILES-FERTIG
           SETUP
-          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/setup.sh ubuntu@152.70.8.227:/tmp/setup.sh
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/setup.sh ubuntu@92.5.177.159:/tmp/setup.sh
           bash /tmp/sshcmd "sudo bash /tmp/setup.sh"
 
       - name: Modelle + Fast-Route (pull)
@@ -90,7 +90,7 @@ jobs:
           VF_HUBTOKEN: ${{ secrets.VF_HUBTOKEN }}
         run: |
           TOK="$VF_HUBTOKEN"
-          ORACLE=http://152.70.8.227:12000
+          ORACLE=http://92.5.177.159:12000
           echo "== Modell-Pulls starten (detached) =="
           bash /tmp/sshcmd "sudo bash -c 'nohup ollama pull llama3.1:8b >/tmp/pull-llama.log 2>&1 & nohup ollama pull qwen2.5-coder:3b >/tmp/pull-3b.log 2>&1 & echo PULLS-GESTARTET'"
           echo "== Fast-Route 3b registrieren =="
@@ -107,7 +107,7 @@ jobs:
           VF_HUBTOKEN: ${{ secrets.VF_HUBTOKEN }}
         run: |
           TOK="$VF_HUBTOKEN"
-          ORACLE=http://152.70.8.227:12000
+          ORACLE=http://92.5.177.159:12000
           NEW=http://167.233.118.190:12000
           echo "== Neue VPS-Villa stoppen =="
           curl -s -m 15 -X POST -H "Authorization: Bearer $TOK" $NEW/api/villas/1/stop; echo
@@ -133,7 +133,7 @@ jobs:
           VF_HUBTOKEN: ${{ secrets.VF_HUBTOKEN }}
         run: |
           TOK="$VF_HUBTOKEN"
-          ORACLE=http://152.70.8.227:12000
+          ORACLE=http://92.5.177.159:12000
           NEW=http://167.233.118.190:12000
           echo "== 1) Neue VPS pausieren =="
           curl -s -m 15 -X PATCH -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{"status":"PAUSED"}' $NEW/api/villas/1 || echo PAUSE-VPS-FEHLER
@@ -148,7 +148,7 @@ jobs:
           last = None
           for el in data.get('villas', []):
               body = json.dumps(el).encode()
-              req = urllib.request.Request('http://152.70.8.227:12000/api/villas/import', data=body, method='POST',
+              req = urllib.request.Request('http://92.5.177.159:12000/api/villas/import', data=body, method='POST',
                   headers={'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'})
               r = urllib.request.urlopen(req)
               res = json.load(r)

@@ -1,9 +1,9 @@
 # Oracle 24/7 — Status
 
 MARKER: ORACLE-24-7-ONLINE
-Instanz: 152.70.8.227 (eu-frankfurt-1, 4 OCPU / 24 GB, Ubuntu 22.04)
+Instanz: 92.5.177.159 (eu-frankfurt-1, 4 OCPU / 24 GB, Ubuntu 22.04)
 Hub: VillaForge v1.10.0 — laeuft als systemd-Dienst seit 2026-10-11 00:47 UTC
-Extern erreichbar: http://152.70.8.227:12000 (Health ok, Ingress TCP 12000 aktiv)
+Extern erreichbar: http://92.5.177.159:12000 (Health ok, Ingress TCP 12000 aktiv)
 
 Villa: #1 CyberSarah Villa (24 Agenten, Schwarm) — RUNNING seit 00:48 UTC
 Wiederaufbau: Hub aus Repo, Villa per Backup-API von 167.233.118.190 importiert
