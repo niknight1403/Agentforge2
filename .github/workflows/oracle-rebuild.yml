@@ -95,12 +95,15 @@ jobs:
           echo "== Neue VPS-Villa stoppen =="
           curl -s -m 15 -X POST -H "Authorization: Bearer $TOK" $NEW/api/villas/1/stop; echo
           echo "== Ollama-Routen prio 5 =="
-          curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
-            -d '{\"name\":\"Ollama-Oracle\",\"baseUrl\":\"http://127.0.0.1:11434/v1\",\"model\":\"qwen2.5-coder:7b\",\"keyEnv\":\"\",\"priority\":5}' \
-            $ORACLE/api/routes; echo
-          curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
-            -d '{\"name\":\"Ollama-Oracle-2 (llama)\",\"baseUrl\":\"http://127.0.0.1:11434/v1\",\"model\":\"llama3.1:8b\",\"keyEnv\":\"\",\"priority\":5}' \
-            $ORACLE/api/routes; echo
+          curl -s -X DELETE -H "Authorization: Bearer $TOK" $ORACLE/api/routes/8; echo " (alte Offline-Route weg)"
+          cat > /tmp/r1.json <<'R1'
+          {"name":"Ollama-Oracle","baseUrl":"http://127.0.0.1:11434/v1","model":"qwen2.5-coder:7b","keyEnv":"","priority":5}
+          R1
+          cat > /tmp/r2.json <<'R2'
+          {"name":"Ollama-Oracle-2 (llama)","baseUrl":"http://127.0.0.1:11434/v1","model":"llama3.1:8b","keyEnv":"","priority":5}
+          R2
+          curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' --data @/tmp/r1.json $ORACLE/api/routes; echo
+          curl -s -X POST -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' --data @/tmp/r2.json $ORACLE/api/routes; echo
           echo "== Kontrolle Routen =="
           curl -s -H "Authorization: Bearer $TOK" $ORACLE/api/routes | python3 -c "import json,sys; [print(r['id'], r['name'][:40], 'prio', r['priority'], 'key', r['hasKey']) for r in json.load(sys.stdin)]"
           echo "== Kontrolle Villen =="
