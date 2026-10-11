@@ -1,0 +1,70 @@
+name: Hub-Watch 24/7
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Hub-Verbindung und Sync pruefen
+        env:
+          GH: ${{ secrets.GITHUB_TOKEN }}
+          VF_HUBTOKEN: ${{ secrets.VF_HUBTOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, datetime
+          tok = os.environ['VF_HUBTOKEN']
+          ghauth = {'Authorization': 'Bearer ' + os.environ['GH']}
+          def get(url, hdr, tmo):
+              try:
+                  return urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=tmo), None
+              except Exception as e:
+                  return None, str(e)
+          now = datetime.datetime.now(datetime.timezone.utc)
+          # 1) Hub von aussen
+          r, err = get('http://152.70.8.227:12000/api/stats',
+                      {'Authorization': 'Bearer ' + tok}, 12)
+          hub = {}
+          if r:
+              s = json.load(r)
+              hub = {'state': 'UP', 'version': s.get('version'), 'villas': s.get('villas'),
+                     'running': s.get('runningVillas'), 'agents': s.get('agents'),
+                     'routesOk': s.get('routesHealth', {}).get('ok'),
+                     'configured': s.get('routesHealth', {}).get('configured')}
+          else:
+              hub = {'state': 'DOWN', 'error': err[:120]}
+          # 2) Sync-Frische (letzter CyberSarah-Commit)
+          r, _ = get('https://api.github.com/repos/niknight1403/CyberSarah-Control-Center/commits?per_page=1', ghauth, 15)
+          sync_age = None
+          if r:
+              c = json.load(r)[0]
+              d = datetime.datetime.fromisoformat(c['commit']['author']['date'].replace('Z', '+00:00'))
+              sync_age = int((now - d).total_seconds() / 60)
+          status = {'checked_at': now.isoformat(), 'hub': hub, 'sync_age_min': sync_age}
+          state = hub['state']
+          if state == 'UP' and (sync_age is None or sync_age > 25):
+              state = 'DEGRADED'
+          status['state'] = state
+          print(json.dumps(status, indent=2))
+          # 3) Status nur bei Aenderung in HUB-WATCH.json schreiben
+          r, _ = get('https://api.github.com/repos/niknight1403/Agentforge2/contents/HUB-WATCH.json', ghauth, 15)
+          sha = None
+          if r:
+              import base64
+              old = json.load(r)
+              sha = old.get('sha')
+              if old.get('state') == state and (state == 'DOWN' or old.get('hub', {}).get('running') == hub.get('running')):
+                  print('Zustand unveraendert:', state, '- kein Update.')
+                  raise SystemExit(0 if state == 'UP' else 1)
+          body = json.dumps({'message': f'hub-watch: {state}', 'branch': 'main',
+                             'sha': sha,
+                             'content': base64.b64encode(json.dumps(status, indent=2).encode()).decode()}).encode()
+          req = urllib.request.Request('https://api.github.com/repos/niknight1403/Agentforge2/contents/HUB-WATCH.json',
+                                       data=body, method='PUT', headers=ghauth)
+          urllib.request.urlopen(req)
+          print('HUB-WATCH.json aktualisiert:', state)
+          raise SystemExit(0 if state == 'UP' else 1)
+          PY
