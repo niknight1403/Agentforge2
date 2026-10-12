@@ -1,13 +1,13 @@
 {
-  "checked_at": "2026-10-11T23:31:28.230866+00:00",
+  "checked_at": "2026-10-12T05:15:27.837327+00:00",
   "hub": {
     "state": "UP",
     "version": "1.0.0",
     "routes": 10,
     "villas": 2,
-    "running": 0,
+    "running": 2,
     "agents": 0
   },
-  "sync_age_min": 76,
+  "sync_age_min": 173,
   "state": "DEGRADED"
 }
