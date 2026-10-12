@@ -761,6 +761,25 @@ private fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
         Button(onClick = { viewModel.saveServerUrl(url) }, modifier = Modifier.fillMaxWidth()) { Text("Verbinden") }
 
         Spacer(Modifier.height(4.dp))
+        Text("Anmeldung", fontWeight = FontWeight.Bold)
+        Text(
+            "Mit deinem Hub-Konto anmelden. Die Sitzung wird automatisch erneuert; Zugangsdaten bleiben nur im privaten App-Speicher.",
+            style = muted(), color = TextMuted
+        )
+        var loginMail by rememberSaveable { mutableStateOf(viewModel.loggedInEmail) }
+        var loginPw by rememberSaveable { mutableStateOf("") }
+        OutlinedTextField(value = loginMail, onValueChange = { loginMail = it }, label = { Text("E-Mail") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            value = loginPw, onValueChange = { loginPw = it }, label = { Text("Passwort") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth()
+        )
+        Button(
+            onClick = { viewModel.login(loginMail, loginPw); loginPw = "" },
+            enabled = loginMail.isNotBlank() && loginPw.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Anmelden") }
+
+        Spacer(Modifier.height(4.dp))
         Text("Hub-Token (optional)", fontWeight = FontWeight.Bold)
         Text(
             "Nur nötig, wenn der Hub mit VF_TOKEN gestartet wurde. Wird nur im privaten App-Speicher gehalten.",

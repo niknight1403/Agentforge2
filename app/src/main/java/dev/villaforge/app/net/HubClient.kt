@@ -104,7 +104,15 @@ class HubClient(context: Context) {
         .build()
 
     var baseUrl: String
-        get() = prefs.getString(KEY_BASE, DEFAULT_BASE) ?: DEFAULT_BASE
+        get() {
+            val saved = prefs.getString(KEY_BASE, DEFAULT_BASE) ?: DEFAULT_BASE
+            // Migration: alte, tote Direkt-IPs (frueherer Hub) auf die stabile Adresse umziehen.
+            if (LEGACY_HOSTS.any { saved.contains(it) }) {
+                prefs.edit().putString(KEY_BASE, DEFAULT_BASE).apply()
+                return DEFAULT_BASE
+            }
+            return saved
+        }
         set(value) {
             val clean = value.trim().trimEnd('/')
             prefs.edit().putString(KEY_BASE, clean).apply()
@@ -118,11 +126,51 @@ class HubClient(context: Context) {
             prefs.edit().putString(KEY_TOKEN, clean).apply()
         }
 
+    /** Login-Zugangsdaten fuer das automatische Erneuern der Sitzung (nur privater App-Speicher). */
+    var loginEmail: String
+        get() = prefs.getString(KEY_EMAIL, "") ?: ""
+        set(v) { prefs.edit().putString(KEY_EMAIL, v.trim()).apply() }
+    private var loginPass: String
+        get() = prefs.getString(KEY_PASS, "") ?: ""
+        set(v) { prefs.edit().putString(KEY_PASS, v).apply() }
+    val hasLogin: Boolean get() = loginEmail.isNotBlank() && loginPass.isNotBlank()
+
+    /** Meldet am Hub an (POST /api/auth/login) und speichert den Sitzungs-Token. */
+    suspend fun login(email: String, password: String): String = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("email", email.trim().lowercase()).put("password", password)
+        val req = Request.Builder().url(url("/api/auth/login")).post(body.toString().toRequestBody(JSON)).build()
+        http.newCall(req).execute().use { res ->
+            val text = res.body?.string().orEmpty()
+            if (!res.isSuccessful) throw HubException(res.code, text.take(200))
+            val token = JSONObject(text).optString("token")
+            if (token.isBlank()) throw HubException(500, "Kein Token erhalten")
+            loginEmail = email
+            loginPass = password
+            apiToken = token
+            token
+        }
+    }
+
+    fun logout() {
+        prefs.edit().remove(KEY_PASS).remove(KEY_TOKEN).apply()
+    }
+
     val serverUrl: String get() = baseUrl
 
     private fun url(path: String) = "${baseUrl.trimEnd('/')}$path"
 
     private suspend fun execute(method: String, path: String, body: JSONObject? = null): String =
+        try {
+            executeOnce(method, path, body)
+        } catch (e: HubException) {
+            // Sitzung abgelaufen: mit gespeicherten Zugangsdaten still erneuern und einmal wiederholen.
+            if (e.code == 401 && hasLogin && path != "/api/auth/login") {
+                login(loginEmail, loginPass)
+                executeOnce(method, path, body)
+            } else throw e
+        }
+
+    private suspend fun executeOnce(method: String, path: String, body: JSONObject? = null): String =
         withContext(Dispatchers.IO) {
             val builder = Request.Builder().url(url(path))
             if (apiToken.isNotBlank()) builder.header("Authorization", "Bearer $apiToken")
@@ -350,7 +398,10 @@ class HubClient(context: Context) {
         // Vorgabe: Hub auf dem Entwickler-Rechner, aus dem Android-Emulator
         // erreichbar (10.0.2.2 = Loopback des Hosts). Auf echten Geraeten wird
         // die Adresse in den App-Einstellungen auf die LAN-IP gesetzt.
-        const val DEFAULT_BASE = "http://152.70.8.227:12000"
+        const val DEFAULT_BASE = "https://hub.cybersarah-ki.com"
+        private val LEGACY_HOSTS = listOf("152.70.8.227", "10.0.2.2", "92.5.177.159")
+        private const val KEY_EMAIL = "login_email"
+        private const val KEY_PASS = "login_pass"
         private const val KEY_BASE = "base_url"
         private const val KEY_TOKEN = "api_token"
         private val JSON = "application/json; charset=utf-8".toMediaType()

@@ -152,6 +152,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(council = council) }
     }
 
+    /** Meldet mit E-Mail und Passwort am Hub an, verbindet SSE neu und laedt alles. */
+    fun login(email: String, password: String) = run {
+        client.login(email, password)
+        _state.update { it.copy(message = "Angemeldet als ${email.trim()}", error = null) }
+        startEventStream()
+        refreshAll()
+    }
+
+    fun logout() {
+        client.logout()
+        _state.update { it.copy(message = "Abgemeldet") }
+    }
+
+    val loggedInEmail: String get() = client.loginEmail
+
     /** Speichert den optionalen Hub-Token und verbindet SSE neu. */
     fun saveApiToken(token: String) {
         client.apiToken = token
