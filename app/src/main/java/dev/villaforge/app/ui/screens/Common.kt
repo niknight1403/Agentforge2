@@ -64,6 +64,7 @@ internal fun ErrorBanner(text: String, onRetry: (() -> Unit)? = null) {
     }
 }
 
+@Composable
 internal fun Card(title: String, subtitle: String, badge: String, content: @Composable () -> Unit) {
     Column(
         Modifier
