@@ -194,7 +194,7 @@ internal fun RichText(text: String) {
                 is TextBlock.Numbered -> Row(Modifier.fillMaxWidth()) {
                     Text("${block.number}.  ", color = Violet, fontWeight = FontWeight.Bold)
                     Text(block.text, modifier = Modifier.weight(1f))
-                )
+                }
                 is TextBlock.Paragraph -> Text(block.text, color = TextMain)
             }
         }
