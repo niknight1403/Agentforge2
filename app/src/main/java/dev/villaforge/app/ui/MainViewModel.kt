@@ -36,7 +36,9 @@ data class UiState(
     /** Hub-Statistik aus GET /api/stats, null bis geladen. */
     val stats: org.json.JSONObject? = null,
     /** Rat der Agenten: letzte Runden aus GET /api/villas/:id/council. */
-    val council: org.json.JSONArray? = null
+    val council: org.json.JSONArray? = null,
+    /** Hub verlangt Anmeldung (HTTP 401 ohne gespeicherte Zugangsdaten): Login-Screen zeigen. */
+    val needsLogin: Boolean = false
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -115,6 +117,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(busy = true, error = null) }
             try {
                 block()
+            } catch (e: dev.villaforge.app.net.HubException) {
+                if (e.code == 401) {
+                    _state.update { it.copy(needsLogin = true, error = null, healthText = "Anmeldung erforderlich") }
+                } else {
+                    _state.update { it.copy(error = e.message ?: "Unbekannter Fehler") }
+                }
             } catch (e: Exception) {
                 _state.update { it.copy(error = e.message ?: "Unbekannter Fehler") }
             } finally {
@@ -131,6 +139,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             it.copy(
                 online = true,
+                needsLogin = false,
                 healthText = "Hub online · ${health.optInt("routes")} Routen · v${health.optString("version")}",
                 stats = hubStats,
                 villas = villas,
@@ -154,8 +163,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Meldet mit E-Mail und Passwort am Hub an, verbindet SSE neu und laedt alles. */
     fun login(email: String, password: String) = run {
-        client.login(email, password)
-        _state.update { it.copy(message = "Angemeldet als ${email.trim()}", error = null) }
+        try {
+            client.login(email, password)
+        } catch (e: dev.villaforge.app.net.HubException) {
+            throw Exception(if (e.code == 401 || e.code == 403) "E-Mail oder Passwort falsch." else e.message)
+        }
+        _state.update { it.copy(message = "Angemeldet als ${email.trim()}", error = null, needsLogin = false) }
         startEventStream()
         refreshAll()
     }

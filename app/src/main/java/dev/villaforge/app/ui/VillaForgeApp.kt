@@ -47,6 +47,7 @@ import dev.villaforge.app.ui.screens.DashboardScreen
 import dev.villaforge.app.ui.screens.DiagnosticsScreen
 import dev.villaforge.app.ui.screens.DetailScreen
 import dev.villaforge.app.ui.screens.LiveDot
+import dev.villaforge.app.ui.screens.LoginScreen
 import dev.villaforge.app.ui.screens.SettingsScreen
 import dev.villaforge.app.ui.screens.VillaListScreen
 import dev.villaforge.app.ui.screens.muted
@@ -128,7 +129,9 @@ fun VillaForgeApp(viewModel: MainViewModel) {
         }
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            AnimatedContent(
+            if (state.needsLogin) {
+                LoginScreen(state, viewModel)
+            } else AnimatedContent(
                 targetState = screen,
                 transitionSpec = {
                     (slideInHorizontally(initialOffsetX = { it / 6 }) + fadeIn()) togetherWith
