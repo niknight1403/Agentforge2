@@ -11,8 +11,8 @@ android {
         applicationId = "dev.villaforge.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 15
-        versionName = "1.13.0"
+        versionCode = 16
+        versionName = "1.14.0"
     }
 
     buildTypes {
@@ -68,4 +68,6 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    testImplementation("junit:junit:4.13.2")
 }

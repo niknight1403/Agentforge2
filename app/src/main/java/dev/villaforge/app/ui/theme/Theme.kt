@@ -11,9 +11,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 /*
- * VillaForge Professional Palette (v1.11.0): tiefe Nachtblau-Flaechen mit
+ * VillaForge Professional Palette (v1.14.0): tiefe Nachtblau-Flaechen mit
  * drei Stufen, elektrischem Violett und Aqua als Akzente. Success/Warn/
  * Danger fuer Statusfarben, Border fuer feine Trennlinien.
+ *
+ * Neuerungen v1.14.0:
+ * - Typografie-Hierarchie mit Display-Stil fuer Kennzahlen (tabellarische
+ *   Ziffern, damit Werte beim Zaehlen nicht verbreitern).
+ * - Overline-Stil fuer Sektions-Labels mit Letter-Spacing.
+ * - statusColor(): semantische Statusfarben als zentrale Wahrheit.
  */
 val Violet = Color(0xFF7C6CFF)
 val Aqua = Color(0xFF00E0B8)
@@ -31,6 +37,16 @@ val Border = Color(0xFF2A3654)
 /** Marken-Verlauf fuer Header und Highlights. */
 val BrandGradient = Brush.linearGradient(listOf(Violet, Aqua))
 
+/** Semantische Statusfarbe: zentrale Abbildung Villen-/Aufgaben-/Agentenzustaende. */
+fun statusColor(status: String): Color = when {
+    status == "RUNNING" || status == "läuft" -> Aqua
+    status == "DONE" || status == "COMPLETED" || status == "Key vorhanden" || status == "ok" -> Success
+    status == "FAILED" -> Danger
+    status == "PAUSED" || status == "PLANNING" || status == "STOPPING" ||
+        status == "PENDING" || status == "kein Key" || status == "offline" -> Warn
+    else -> TextMuted
+}
+
 private val scheme = darkColorScheme(
     primary = Violet,
     onPrimary = Color.White,
@@ -47,16 +63,40 @@ private val scheme = darkColorScheme(
     error = Danger
 )
 
+/*
+ * Typografie-Hierarchie: Display fuer grosse Kennzahlen, Standard-Stile fuer
+ * Titel und Text, Overline fuer Ordnungslabels. "tnum" = tabellarische
+ * Ziffern: 1 und 8 gleich breit, Werte zappeln beim Animieren nicht.
+ */
+private val display = TextStyle(
+    fontSize = 28.sp,
+    fontWeight = FontWeight.Bold,
+    color = TextMain,
+    fontFeatureSettings = "tnum"
+)
+
 private val typography = Typography(
+    displayLarge = display,
+    displayMedium = display.copy(fontSize = 24.sp),
     headlineSmall = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextMain),
     titleLarge = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = TextMain),
     titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextMain),
     bodyLarge = TextStyle(fontSize = 15.sp, color = TextMain),
     bodyMedium = TextStyle(fontSize = 14.sp, color = TextMain),
-    bodySmall = TextStyle(fontSize = 12.5.sp, color = TextMuted)
+    bodySmall = TextStyle(fontSize = 12.5.sp, color = TextMuted),
+    labelSmall = TextStyle(
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.2.sp,
+        color = TextMuted
+    )
 )
 
 @Composable
 fun VillaForgeTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = scheme, typography = typography, content = content)
+    MaterialTheme(
+        colorScheme = scheme,
+        typography = typography,
+        content = content
+    )
 }
