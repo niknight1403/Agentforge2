@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-10-12T21:49:48.561418+00:00",
+  "checked_at": "2026-10-13T02:55:15.545892+00:00",
   "hub": {
     "state": "UP",
     "version": "1.0.0",
@@ -8,6 +8,6 @@
     "running": 1,
     "agents": 0
   },
-  "sync_age_min": 196,
+  "sync_age_min": 109,
   "state": "DEGRADED"
 }
