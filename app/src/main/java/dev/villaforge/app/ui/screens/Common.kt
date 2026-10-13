@@ -44,6 +44,7 @@ import java.util.Locale
 internal fun muted() = MaterialTheme.typography.bodySmall
 
 @Composable
+@Composable
 internal fun ErrorBanner(text: String, onRetry: (() -> Unit)? = null) {
     Row(
         Modifier
