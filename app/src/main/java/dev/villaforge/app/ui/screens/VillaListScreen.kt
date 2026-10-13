@@ -25,7 +25,7 @@ import dev.villaforge.app.ui.theme.Aqua
 @Composable
 fun VillaListScreen(state: UiState, onOpen: (Long) -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        state.error?.let { ErrorBanner(it) { viewModel.refreshAll() } }
+        state.error?.let { ErrorBanner(it) }
         if (state.message.isNotBlank()) Text(state.message, color = Aqua, style = muted())
 
         when {
