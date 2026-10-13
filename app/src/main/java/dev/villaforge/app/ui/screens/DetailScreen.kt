@@ -102,6 +102,11 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
             Stat("Status", detail.villa.status)
         }
 
+        state.product?.let { prod ->
+            Spacer(Modifier.height(8.dp))
+            MaturityCard(prod)
+        }
+
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onChat) {
@@ -316,3 +321,55 @@ internal fun AgentRow(agent: Agent) =
 @Composable
 internal fun MemoryRow(memory: Memory) =
     RowCard(memory.title, memory.content.take(240), "${memory.kind} · ${memory.importance}/10")
+
+/**
+ * Marktreife-Karte: Gesamtscore 0-100, Stufe, aktuelle Phase und Fortschritt
+ * je Lebenszyklus-Phase (DISCOVERY bis GROWTH) aus GET /api/villas/:id/product.
+ */
+@Composable
+private fun MaturityCard(prod: org.json.JSONObject) {
+    val score = prod.optInt("score", 0)
+    val stage = prod.optString("stage", "")
+    val current = prod.optString("currentPhase", "")
+    val phases = prod.optJSONArray("phases") ?: org.json.JSONArray()
+
+    Card(
+        title = "Marktreife",
+        subtitle = "$score/100 · $stage",
+        badge = current,
+        content = {
+            for (i in 0 until phases.length()) {
+                val ph = phases.optJSONObject(i) ?: continue
+                val pct = (ph.optDouble("ratio", 0.0) * 100).toInt()
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        ph.optString("title"),
+                        style = muted(),
+                        color = if (pct >= 100) dev.villaforge.app.ui.theme.Success else TextMuted,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("$pct%", style = muted(), color = TextMuted)
+                }
+                androidx.compose.foundation.layout.Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(TextMuted.copy(alpha = 0.15f), RoundedCornerShape(2.dp))
+                ) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier
+                            .fillMaxWidth(pct / 100f)
+                            .height(4.dp)
+                            .background(
+                                if (pct >= 100) dev.villaforge.app.ui.theme.Success else Aqua,
+                                RoundedCornerShape(2.dp)
+                            )
+                    )
+                }
+            }
+        }
+    )
+}

@@ -37,6 +37,10 @@ data class UiState(
     val stats: org.json.JSONObject? = null,
     /** Rat der Agenten: letzte Runden aus GET /api/villas/:id/council. */
     val council: org.json.JSONArray? = null,
+    /** Marktreife/Phasen der offenen Villa aus GET /api/villas/:id/product, null bis geladen. */
+    val product: org.json.JSONObject? = null,
+    /** true = Hub nicht erreichbar, angezeigte Daten stammen aus dem Offline-Cache. */
+    val stale: Boolean = false,
     /** Hub verlangt Anmeldung (HTTP 401 ohne gespeicherte Zugangsdaten): Login-Screen zeigen. */
     val needsLogin: Boolean = false
 )
@@ -54,8 +58,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var liveRefreshJob: Job? = null
 
     init {
+        loadSnapshot()
         startEventStream()
         refreshAll()
+    }
+
+    /** Offline-Fallback: letzten bekannten Villenstand sofort anzeigen, bevor der Hub antwortet. */
+    private fun loadSnapshot() {
+        val cached = client.villasFromCache() ?: return
+        _state.update { it.copy(villas = cached, stale = true, healthText = "verbinde … (zeige letzten Stand)") }
     }
 
     override fun onCleared() {
@@ -105,7 +116,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val detail = _state.value.detail ?: return@launch
                 val refreshed = client.villaDetail(detail.villa.id)
-                _state.update { it.copy(detail = refreshed) }
+                val prod = fetchProduct(detail.villa.id)
+                _state.update { it.copy(detail = refreshed, product = prod) }
             } catch (_: Exception) {
                 // Hintergrund-Aktualisierung darf nie abbrechen.
             }
@@ -140,6 +152,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 online = true,
                 needsLogin = false,
+                stale = false,
                 healthText = "Hub online · ${health.optInt("routes")} Routen · v${health.optString("version")}",
                 stats = hubStats,
                 villas = villas,
@@ -228,7 +241,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val detail = client.villaDetail(id)
         val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
         val msgs = client.messages(id, rootId)
-        _state.update { it.copy(detail = detail, messages = msgs) }
+        val prod = fetchProduct(id)
+        _state.update { it.copy(detail = detail, messages = msgs, product = prod) }
     }
 
     fun sendChat(message: String) = run {
@@ -311,8 +325,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshDetail() = run {
         val detail = _state.value.detail ?: return@run
         val refreshed = client.villaDetail(detail.villa.id)
-        _state.update { it.copy(detail = refreshed) }
+        val prod = fetchProduct(detail.villa.id)
+        _state.update { it.copy(detail = refreshed, product = prod) }
     }
+
+    /** Marktreife laden; Fehler sind unkritisch (Karte bleibt dann einfach weg). */
+    private suspend fun fetchProduct(id: Long): org.json.JSONObject? =
+        try { client.product(id) } catch (e: Exception) { null }
 
     fun toggleRoute(route: LlmRoute) = run {
         client.setRouteEnabled(route.id, !route.enabled)
@@ -327,7 +346,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(routes = routes) }
     }
 
-    fun closeDetail() = _state.update { it.copy(detail = null, messages = emptyList()) }
+    fun closeDetail() = _state.update { it.copy(detail = null, messages = emptyList(), product = null) }
 
     fun clearMessage() = _state.update { it.copy(message = "", error = null) }
 

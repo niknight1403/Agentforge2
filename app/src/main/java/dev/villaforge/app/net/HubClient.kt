@@ -10,6 +10,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 data class Villa(
@@ -96,6 +97,16 @@ class HubClient(context: Context) {
 
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences("vf_settings", Context.MODE_PRIVATE)
+
+    /** Offline-Cache: letzte bekannte Antworten des Hubs als JSON-Snapshots. */
+    private val snapshotDir = File(context.applicationContext.cacheDir, "snapshots").apply { mkdirs() }
+
+    private fun saveSnapshot(key: String, body: String) {
+        runCatching { File(snapshotDir, key).writeText(body) }
+    }
+
+    private fun readSnapshot(key: String): String? =
+        File(snapshotDir, key).takeIf { it.exists() }?.let { f -> runCatching { f.readText() }.getOrNull() }
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -190,10 +201,17 @@ class HubClient(context: Context) {
     suspend fun health(): JSONObject = JSONObject(execute("GET", "/api/health"))
 
     /** Hub-Statistik (GET /api/stats): Zaehler, Laufzeit, laufende Villen. */
-    suspend fun stats(): JSONObject = JSONObject(execute("GET", "/api/stats"))
+    suspend fun stats(): JSONObject = JSONObject(execute("GET", "/api/stats").also { saveSnapshot("stats.json", it) })
 
-    suspend fun villas(): List<Villa> {
-        val arr = JSONArray(execute("GET", "/api/villas"))
+    suspend fun villas(): List<Villa> =
+        parseVillas(execute("GET", "/api/villas").also { saveSnapshot("villas.json", it) })
+
+    /** Letzten bekannten Villenstand aus dem Offline-Cache (null falls keiner existiert). */
+    fun villasFromCache(): List<Villa>? =
+        readSnapshot("villas.json")?.let { raw -> runCatching { parseVillas(raw) }.getOrNull() }
+
+    private fun parseVillas(raw: String): List<Villa> {
+        val arr = JSONArray(raw)
         return (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
             Villa(
@@ -226,8 +244,19 @@ class HubClient(context: Context) {
         execute("POST", "/api/villas/$villaId/source", JSONObject().put("path", path.trim()))
     }
 
-    suspend fun villaDetail(id: Long): VillaDetail {
-        val o = JSONObject(execute("GET", "/api/villas/$id"))
+    suspend fun villaDetail(id: Long): VillaDetail =
+        parseVillaDetail(execute("GET", "/api/villas/$id").also { saveSnapshot("villa-$id.json", it) })
+
+    /** Letzten bekannten Detailstand einer Villa aus dem Offline-Cache. */
+    fun villaDetailFromCache(id: Long): VillaDetail? =
+        readSnapshot("villa-$id.json")?.let { raw -> runCatching { parseVillaDetail(raw) }.getOrNull() }
+
+    /** Marktreife- und Phasendaten der Villa (GET /api/villas/:id/product). */
+    suspend fun product(villaId: Long): JSONObject =
+        JSONObject(execute("GET", "/api/villas/$villaId/product"))
+
+    private fun parseVillaDetail(raw: String): VillaDetail {
+        val o = JSONObject(raw)
         val v = o.getJSONObject("villa")
 
         fun agents(): List<Agent> {
