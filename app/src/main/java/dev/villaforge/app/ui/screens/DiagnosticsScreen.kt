@@ -53,6 +53,16 @@ fun DiagnosticsScreen(state: UiState, viewModel: MainViewModel) {
             KeyRow("Angemeldet", viewModel.loggedInEmail.ifBlank { "–" })
         }
 
+        androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.refreshSecrets() }
+
+        SectionCard("Hub-Secrets") {
+            if (state.secrets.isEmpty()) {
+                Text("Keine Secrets geladen.", style = muted(), color = TextMuted)
+            } else {
+                state.secrets.forEach { KeyRow(it, "hinterlegt") }
+            }
+        }
+
         SectionCard("Routen") {
             if (state.routes.isEmpty()) {
                 Text("Keine Routen geladen.", style = muted(), color = TextMuted)

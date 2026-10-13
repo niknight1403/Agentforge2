@@ -49,6 +49,8 @@ import dev.villaforge.app.net.Task
 import dev.villaforge.app.ui.MainViewModel
 import dev.villaforge.app.ui.UiState
 import dev.villaforge.app.ui.components.AnimatedStatTile
+import dev.villaforge.app.ui.components.RingProgress
+import dev.villaforge.app.ui.components.StackedBar
 import dev.villaforge.app.ui.components.SectionCard
 import dev.villaforge.app.ui.components.StatusBadge
 import dev.villaforge.app.ui.theme.Aqua
@@ -76,7 +78,7 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
     val active = detail.running || detail.villa.status == "RUNNING" || detail.villa.status == "STOPPING"
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        state.error?.let { ErrorBanner(it) }
+        state.error?.let { ErrorBanner(it) { viewModel.refreshAll() } }
         if (state.message.isNotBlank()) Text(state.message, color = Aqua, style = muted())
 
         Spacer(Modifier.height(8.dp))
@@ -241,6 +243,19 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
         }
         Section("Aufgaben") {
             var taskFilter by remember { mutableStateOf("") }
+            StackedBar(
+                listOf(
+                    "DONE" to dev.villaforge.app.ui.theme.Success,
+                    "RUNNING" to Aqua,
+                    "REVIEW" to dev.villaforge.app.ui.theme.Warn,
+                    "PENDING" to dev.villaforge.app.ui.theme.Violet,
+                    "READY" to TextMuted,
+                    "BLOCKED" to dev.villaforge.app.ui.theme.Warn,
+                    "FAILED" to dev.villaforge.app.ui.theme.Danger
+                ).map { (s, c) -> detail.tasks.count { it.status == s } to c },
+                Modifier.fillMaxWidth().height(6.dp)
+            )
+            Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for ((label, value) in listOf(
                     "Alle" to "", "Offen" to "PENDING", "Läuft" to "RUNNING",
@@ -281,7 +296,15 @@ internal fun ReportCard(report: Report) {
                 Text(report.kind, color = Aqua, style = muted())
                 Text(report.title, fontWeight = FontWeight.Bold)
             }
+            val shareContext = androidx.compose.ui.platform.LocalContext.current
             TextButton(onClick = { open = !open }) { Text(if (open) "Zuklappen" else "Anzeigen") }
+            TextButton(onClick = {
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, report.title + "\n\n" + report.content)
+                }
+                shareContext.startActivity(android.content.Intent.createChooser(send, "Bericht teilen"))
+            }) { Text("Teilen") }
         }
         if (open) {
             Spacer(Modifier.height(6.dp))
@@ -338,6 +361,15 @@ private fun MaturityCard(prod: org.json.JSONObject) {
         subtitle = "$score/100 · $stage",
         badge = current,
         content = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RingProgress(score, if (score >= 90) dev.villaforge.app.ui.theme.Success else Aqua)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("$score/100 · $stage", fontWeight = FontWeight.Bold)
+                    Text("Aktive Phase: $current", style = muted(), color = TextMuted)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             for (i in 0 until phases.length()) {
                 val ph = phases.optJSONObject(i) ?: continue
                 val pct = (ph.optDouble("ratio", 0.0) * 100).toInt()

@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,11 +44,26 @@ import java.util.Locale
 internal fun muted() = MaterialTheme.typography.bodySmall
 
 @Composable
-internal fun ErrorBanner(text: String) {
-    Text(text, color = Danger, style = muted(), modifier = Modifier.padding(bottom = 8.dp))
+internal fun ErrorBanner(text: String, onRetry: (() -> Unit)? = null) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(dev.villaforge.app.ui.theme.Danger.copy(alpha = 0.14f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text,
+            color = dev.villaforge.app.ui.theme.Danger,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f)
+        )
+        if (onRetry != null) {
+            TextButton(onClick = onRetry) { Text("Erneut versuchen") }
+        }
+    }
 }
 
-@Composable
 internal fun Card(title: String, subtitle: String, badge: String, content: @Composable () -> Unit) {
     Column(
         Modifier

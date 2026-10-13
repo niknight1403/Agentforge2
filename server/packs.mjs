@@ -32,6 +32,12 @@ export const FEATURE_PACKS = [
     caps: ['/api/villas/:id/council']
   },
   {
+    id: 'product',
+    title: 'Produkt- & Marktreife-Pack',
+    description: 'Marktreife-Score als animierter Ring, Phasen-Fortschritt und Produktwellen je Villa im Detail-Screen.',
+    caps: ['/api/villas/:id/product']
+  },
+  {
     id: 'superintelligence',
     title: 'Superintelligenz-Loop',
     description: 'Der Hub beruft den Rat automatisch alle 2 Stunden ein — die Villa optimiert sich fortlaufend selbst.',

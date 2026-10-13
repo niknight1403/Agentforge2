@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -167,6 +168,13 @@ internal fun ChatBubble(message: ChatMessage) {
             )
             Spacer(Modifier.height(6.dp))
             if (isUser) Text(message.content, color = TextMain) else RichText(message.content)
+            if (!isUser) {
+                val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = {
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.content))
+                }) { Text("Kopieren") }
+            }
         }
     }
 }

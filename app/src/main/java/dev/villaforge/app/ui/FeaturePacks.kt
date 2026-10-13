@@ -29,6 +29,11 @@ val FEATURE_PACKS = listOf(
         "Agenten tauschen Erkenntnisse aus, optimieren die Villa gemeinsam und teilen Vorschlaege."
     ),
     FeaturePack(
+        "product",
+        "Produkt- & Marktreife-Pack",
+        "Marktreife-Score als animierter Ring, Phasen-Fortschritt und Produktwellen je Villa im Detail-Screen."
+    ),
+    FeaturePack(
         "superintelligence",
         "Superintelligenz-Loop",
         "Der Hub beruft den Rat automatisch alle 2 Stunden ein — die Villa optimiert sich fortlaufend selbst."

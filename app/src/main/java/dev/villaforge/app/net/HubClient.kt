@@ -3,6 +3,7 @@ package dev.villaforge.app.net
 import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -109,8 +110,8 @@ class HubClient(context: Context) {
         File(snapshotDir, key).takeIf { it.exists() }?.let { f -> runCatching { f.readText() }.getOrNull() }
 
     private val http = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(180, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
@@ -173,6 +174,10 @@ class HubClient(context: Context) {
     private suspend fun execute(method: String, path: String, body: JSONObject? = null): String =
         try {
             executeOnce(method, path, body)
+        } catch (e: java.io.IOException) {
+            // Netzwerk-Kurzstoerung: einmal kurz warten und still neu versuchen.
+            delay(800)
+            executeOnce(method, path, body)
         } catch (e: HubException) {
             // Sitzung abgelaufen: mit gespeicherten Zugangsdaten still erneuern und einmal wiederholen.
             if (e.code == 401 && hasLogin && path != "/api/auth/login") {
@@ -199,6 +204,18 @@ class HubClient(context: Context) {
         }
 
     suspend fun health(): JSONObject = JSONObject(execute("GET", "/api/health"))
+
+    /** Misst die Hub-Antwortzeit in Millisekunden (null = nicht erreichbar). */
+    suspend fun ping(): Long? {
+        val t0 = System.currentTimeMillis()
+        return try {
+            execute("GET", "/api/health")
+            System.currentTimeMillis() - t0
+        } catch (e: Exception) { null }
+    }
+
+    /** Hinterlegte Hub-Secrets (nur Name und Zeitstempel, nie Werte). */
+    suspend fun secrets(): JSONArray = JSONArray(execute("GET", "/api/secrets"))
 
     /** Hub-Statistik (GET /api/stats): Zaehler, Laufzeit, laufende Villen. */
     suspend fun stats(): JSONObject = JSONObject(execute("GET", "/api/stats").also { saveSnapshot("stats.json", it) })

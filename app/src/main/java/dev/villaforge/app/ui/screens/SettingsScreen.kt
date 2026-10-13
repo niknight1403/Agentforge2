@@ -90,6 +90,8 @@ fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
             OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("https://…") }, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.padding(4.dp))
             Button(onClick = { viewModel.saveServerUrl(url) }, modifier = Modifier.fillMaxWidth()) { Text("Verbinden") }
+            Spacer(Modifier.padding(4.dp))
+            OutlinedButton(onClick = { viewModel.pingHub() }, modifier = Modifier.fillMaxWidth()) { Text("Verbindung testen") }
         }
 
         SectionCard("Anmeldung") {

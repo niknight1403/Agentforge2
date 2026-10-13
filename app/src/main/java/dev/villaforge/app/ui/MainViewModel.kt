@@ -41,6 +41,8 @@ data class UiState(
     val product: org.json.JSONObject? = null,
     /** true = Hub nicht erreichbar, angezeigte Daten stammen aus dem Offline-Cache. */
     val stale: Boolean = false,
+    /** Hinterlegte Hub-Secrets (Namen) fuer die Diagnose. */
+    val secrets: List<String> = emptyList(),
     /** Hub verlangt Anmeldung (HTTP 401 ohne gespeicherte Zugangsdaten): Login-Screen zeigen. */
     val needsLogin: Boolean = false
 )
@@ -56,11 +58,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Debounce fuer SSE-getriebene Detail-Aktualisierung. */
     private var liveRefreshJob: Job? = null
+    private var reconnectJob: Job? = null
 
     init {
         loadSnapshot()
         startEventStream()
         refreshAll()
+    }
+
+    /** Nach Netzwerk-Fehlern automatisch neu verbinden (45 s), bis der Hub wieder antwortet. */
+    private fun scheduleReconnect() {
+        reconnectJob?.cancel()
+        reconnectJob = viewModelScope.launch {
+            delay(45_000)
+            if (!_state.value.online) refreshAll()
+        }
+    }
+
+    /** Misst die Hub-Antwortzeit und meldet sie als Nachricht. */
+    fun pingHub() = viewModelScope.launch {
+        val ms = client.ping()
+        _state.update { it.copy(message = if (ms != null) "Hub erreichbar · ${ms} ms" else "Hub nicht erreichbar") }
+    }
+
+    /** Laedt die Namen hinterlegter Hub-Secrets fuer die Diagnose. */
+    fun refreshSecrets() = viewModelScope.launch {
+        try {
+            val arr = client.secrets()
+            val names = (0 until arr.length()).map { i -> arr.getJSONObject(i).optString("name") }
+            _state.update { it.copy(secrets = names) }
+        } catch (_: Exception) { /* Diagnose ist optional */ }
     }
 
     /** Offline-Fallback: letzten bekannten Villenstand sofort anzeigen, bevor der Hub antwortet. */
@@ -137,6 +164,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(error = e.message ?: "Unbekannter Fehler") }
+                scheduleReconnect()
             } finally {
                 _state.update { it.copy(busy = false) }
             }
