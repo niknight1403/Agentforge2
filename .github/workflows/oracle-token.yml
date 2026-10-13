@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'diag, bootstrap, extern, routes, tune, apitune, agivilla, cybervilla, seed, cmd, token oder sys'
+        description: 'diag, bootstrap, extern, routes, tune, apitune, agivilla, cybervilla, seed, cmd, stripe, token oder sys'
         default: 'diag'
         required: true
       command:
@@ -173,6 +173,23 @@ jobs:
           CMD="\${{ github.event.inputs.command }}"
           if [ -z "$CMD" ]; then echo "Kein command-Input gegeben."; exit 1; fi
           bash /tmp/sshcmd "$CMD"
+      - name: Stripe-Sync (stripe)
+        if: ${{ github.event.inputs.mode == 'stripe' }}
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+        run: |
+          for KV in "STRIPE_SECRET_KEY:$STRIPE_SECRET_KEY" "STRIPE_PUBLISHABLE_KEY:$STRIPE_PUBLISHABLE_KEY"; do
+            NAME="${KV%%:*}"; VALUE="${KV#*:}"
+            if [ -z "$VALUE" ]; then echo "$NAME fehlt - Secret nicht gesetzt?"; continue; fi
+            CODE=$(curl -s -m 20 -o /tmp/resp.json -w "%{http_code}" -X POST               -H "Authorization: Bearer $VF" -H "Content-Type: application/json" \
+              -d "{\"name\":\"$NAME\",\"value\":\"$VALUE\"}" \
+              https://hub.cybersarah-ki.com/api/secrets)
+            echo "$NAME -> HTTP $CODE"; cat /tmp/resp.json; echo
+          done
+          echo "== Hub-Secrets (Namen) =="
+          curl -s -m 20 -H "Authorization: Bearer $VF" https://hub.cybersarah-ki.com/api/secrets | head -c 600
+          echo
       - name: Hub-Status (token)
         if: ${{ github.event.inputs.mode == 'token' }}
         run: |
