@@ -38,6 +38,8 @@ jobs:
           echo "== DB-Groessen =="; DB=$(ls /opt/villaforge/server/data/villaforge.db* 2>/dev/null); ls -la $DB 2>/dev/null | awk '{print $5, $9}'
           which sqlite3 >/dev/null 2>&1 || apt-get install -y -qq sqlite3 >/dev/null 2>&1
           for T in villas agents tasks memories messages audit reports council; do printf "%s: " $T; sqlite3 /opt/villaforge/server/data/villaforge.db "select count(*) from $T" 2>&1; done
+          echo "== Tasks je Villa/Status =="; sqlite3 /opt/villaforge/server/data/villaforge.db "select villa_id, status, count(*) from tasks group by villa_id, status order by villa_id, status" 2>&1 | tr '\n' ' ' | fold -w 150
+          echo; echo "== Villen =="; sqlite3 /opt/villaforge/server/data/villaforge.db "select id,name,status,autonomy from villas" 2>&1
           echo "== Indizes =="; sqlite3 /opt/villaforge/server/data/villaforge.db "select name from sqlite_master where type='index' and name not like 'sqlite_%'" 2>&1 | head -20
           echo "== Hub-Log (letzte 25) =="; [ -n "$HUB" ] && journalctl -u "$HUB" -n 25 --no-pager 2>&1 | cut -c1-220
           echo "== nginx-Fehlerlog =="; tail -n 8 /var/log/nginx/error.log 2>/dev/null | cut -c1-220

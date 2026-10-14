@@ -154,6 +154,25 @@ ensureColumn('tasks', 'quota_blocked', 'INTEGER NOT NULL DEFAULT 0');
 // Zeitstempel, zu dem der Hub einen pausierten Lauf selbst fortsetzt.
 ensureColumn('villas', 'auto_retry_at', 'INTEGER NOT NULL DEFAULT 0');
 
+
+// Indizes: ohne sie scannt jede "WHERE villa_id = ?"-Abfrage die komplette
+// Tabelle - bei ~38.000 Zeilen je Tabelle synchron im Event-Loop. Das liess den
+// Hub haengen (selbst /api/health antwortete nicht mehr). IF NOT EXISTS macht
+// die Migration idempotent; bestehende Datenbanken bekommen sie beim Start.
+db.exec(`
+CREATE INDEX IF NOT EXISTS idx_tasks_villa_status ON tasks(villa_id, status, priority, id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_agents_villa ON agents(villa_id);
+CREATE INDEX IF NOT EXISTS idx_memories_villa ON memories(villa_id, importance, id);
+CREATE INDEX IF NOT EXISTS idx_messages_villa ON messages(villa_id, id);
+CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_villa ON audit(villa_id, id);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit(ts);
+CREATE INDEX IF NOT EXISTS idx_reports_villa ON reports(villa_id, id);
+CREATE INDEX IF NOT EXISTS idx_sources_villa ON sources(villa_id);
+CREATE INDEX IF NOT EXISTS idx_villas_status ON villas(status, autonomy);
+`);
+
 export const now = () => Date.now();
 
 /**
@@ -186,3 +205,5 @@ CREATE TABLE IF NOT EXISTS council (
   created_at INTEGER NOT NULL
 );
 `);
+exec_council_idx();
+function exec_council_idx() { db.exec('CREATE INDEX IF NOT EXISTS idx_council_villa ON council(villa_id, id);'); }

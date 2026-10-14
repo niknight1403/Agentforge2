@@ -7,8 +7,9 @@ import { db, now } from './db.mjs';
 import { seedRoutes, syncCatalog } from './seed.mjs';
 import { validateRoute, validateSecret, validateVilla, validateVillaPatch, validateTaskPatch, TASK_STATUSES, validateMessage, validateOrchestrate } from './validate.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus, keyPools, llmGateStatus } from './llm.mjs';
-import { cmdGateStatus } from './fs-tools.mjs';
-import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, toolSpecs, memoryContext, setSource, analyzeProject, importVilla } from './agents.mjs';
+import { cmdGateStatus, projectSummary, projectTree, searchProject, readProjectFile, runCommand, ALLOWED } from './fs-tools.mjs';
+import { schedulerStatus, villaRanking } from './scheduler.mjs';
+import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, toolSpecs, memoryContext, setSource, analyzeProject, importVilla, sourceRoot } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { bus, emit, eventsSince } from './events.mjs';
 import { pruneOldData, autoResumeQuotaVillas } from './maintenance.mjs';
@@ -203,7 +204,7 @@ async function api(req, res, url) {
   }
 
   if (p === '/api/health') {
-    return json(res, 200, { ok: true, ts: now(), routes: enabledRoutes().length, version: VERSION, llm: llmGateStatus(), cmd: cmdGateStatus() });
+    return json(res, 200, { ok: true, ts: now(), routes: enabledRoutes().length, version: VERSION, llm: llmGateStatus(), cmd: cmdGateStatus(), scheduler: { slots: schedulerStatus().slots, active: schedulerStatus().active.length, queued: schedulerStatus().queued } });
   }
 
   // ---- Routen ----
@@ -320,8 +321,48 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true });
   }
 
+  // ---- Scheduler: Fortschrittsrang der Villen und Slot-Belegung ----
+  if (p === '/api/scheduler' && m === 'GET') {
+    return json(res, 200, { ...schedulerStatus(), llm: llmGateStatus(), cmd: cmdGateStatus(), ranking: villaRanking() });
+  }
+
   // ---- Tools ----
+  // Format bleibt ein Array (Web-UI, Android-App und Tests lesen es so).
   if (p === '/api/tools' && m === 'GET') return json(res, 200, toolSpecs());
+  // Zusatzinfos zu den Werkzeugen: erlaubte Befehle und aktuelle Lastgrenzen.
+  if (p === '/api/tools/meta' && m === 'GET') {
+    return json(res, 200, { commands: ALLOWED, limits: { llm: llmGateStatus(), cmd: cmdGateStatus() } });
+  }
+
+  // ---- Projekt-Werkzeuge (fs-tools): lesen, durchsuchen, pruefen ----
+  // Alle Pfade bleiben im Quellordner der Villa (safePath in fs-tools).
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'project') {
+    const vid = Number(parts[2]);
+    if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(vid)) return json(res, 404, { error: 'Villa nicht gefunden' });
+    const root = sourceRoot(vid);
+    if (!root) return json(res, 409, { error: 'Fuer diese Villa ist kein Quellprojekt hinterlegt' });
+    const sub = parts[4] || 'summary';
+    if (sub === 'summary' && m === 'GET') return json(res, 200, projectSummary(root));
+    if (sub === 'tree' && m === 'GET') return json(res, 200, { files: projectTree(root, Math.min(Number(url.searchParams.get('limit')) || 400, 2000)) });
+    if (sub === 'search' && m === 'GET') {
+      const q = String(url.searchParams.get('q') || '').slice(0, 200);
+      if (!q) return json(res, 400, { error: 'Parameter q fehlt' });
+      return json(res, 200, { query: q, hits: searchProject(root, q, Math.min(Number(url.searchParams.get('limit')) || 60, 200)) });
+    }
+    if (sub === 'read' && m === 'GET') {
+      const f = String(url.searchParams.get('path') || '');
+      if (!f) return json(res, 400, { error: 'Parameter path fehlt' });
+      return json(res, 200, readProjectFile(root, f));
+    }
+    if (sub === 'check' && m === 'POST') {
+      // Build/Test im Projekt, begrenzt durch die globale Befehls-Sperre.
+      const b = await readBody(req);
+      const bin = String(b.binary || 'npm');
+      const out = await runCommand(root, bin, Array.isArray(b.args) ? b.args : ['test'], Math.min(Number(b.timeoutMs) || 120000, 180000));
+      return json(res, out.ok ? 200 : 422, out);
+    }
+    return json(res, 404, { error: 'Unbekannter Projekt-Endpunkt' });
+  }
 
   // ---- Feature- und Werkzeug-Packs ----
   // Eine Wahrheit fuer Hub, Web-UI und Android-App: /api/packs liefert alles,
