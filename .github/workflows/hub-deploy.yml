@@ -16,6 +16,7 @@ jobs:
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
           GT: ${{ secrets.GITHUB_TOKEN }}
+          GTP: ${{ secrets.AGENTFORGE_PAT }}
         run: |
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
@@ -40,13 +41,13 @@ jobs:
           cd "$HUBROOT"
           # Remote-URL mit frischem Token versehen, falls der alte
           # eingebettete Token abgelaufen ist (Exit-5-Ursache).
-          git fetch -q origin main
-          RC=$?
+          RC=0
+          git fetch -q origin main || RC=$?
           if [ "$RC" != "0" ]; then
-            echo "Fetch mit bestehendem Remote fehlgeschlagen (rc=$RC) - setze Fallback-Token."
-            git remote set-url origin "https://x-access-token:${GT}@github.com/niknight1403/AgentForge.git" 2>/dev/null || true
-            git fetch -q origin main
-            RC=$?
+            echo "Fetch mit bestehendem Remote fehlgeschlagen (rc=$RC) - setze PAT-Remote."
+            git remote set-url origin "https://x-access-token:${GTP}@github.com/niknight1403/AgentForge.git" 2>/dev/null || true
+            RC=0
+            git fetch -q origin main || RC=$?
           fi
           [ "$RC" = "0" ] || { echo "FETCH-FEHLGESCHLAGEN rc=$RC"; git remote -v | head -2; exit 3; }
           git reset --hard origin/main 2>&1 | head -3
