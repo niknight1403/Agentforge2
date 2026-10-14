@@ -142,7 +142,19 @@ private fun LiveTab(state: UiState, viewModel: MainViewModel) {
             factory = { ctx ->
                 WebView(ctx).apply {
                     settings.javaScriptEnabled = true
-                    webViewClient = WebViewClient()
+                    webViewClient = object : WebViewClient() {
+                        // Alle Unter-Ressourcen (JS/CSS/Bilder) mit Auth-Header laden,
+                        // sonst 401 auf Assets -> weisse Seite (Live-Ansicht-Bugfix)
+                        override fun shouldInterceptRequest(
+                            view: WebView,
+                            request: android.webkit.WebResourceRequest
+                        ): android.webkit.WebResourceResponse? {
+                            val u = request.url.toString()
+                            return if (u.startsWith(state.serverUrl.trimEnd('/'))) {
+                                viewModel.previewResource(u) ?: super.shouldInterceptRequest(view, request)
+                            } else super.shouldInterceptRequest(view, request)
+                        }
+                    }
                 }
             },
             update = { wv -> if (wv.url != url) wv.loadUrl(url, headers) }
