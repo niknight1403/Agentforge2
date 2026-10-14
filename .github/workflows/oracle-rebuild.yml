@@ -114,6 +114,14 @@ jobs:
             git clone -q https://x-access-token:${GT}@github.com/niknight1403/AgentForge.git "$VFNEW/repo"
             rsync -a --delete --exclude data --exclude node_modules "$VFNEW/repo/server/" ./server/
           fi
+          echo "== Lastbegrenzung fuer 4 Kerne / ein Ollama (Drop-in) =="
+          mkdir -p "/etc/systemd/system/${UNIT}.d"
+          cat > "/etc/systemd/system/${UNIT}.d/zz-load.conf" <<'LOADCONF'
+          [Service]
+          Environment="VF_LLM_MAX_CONCURRENT=2"
+          Environment="VF_RESUME_STAGGER_MS=30000"
+          LOADCONF
+          systemctl daemon-reload
           echo "== Hub neu starten =="
           systemctl restart "$UNIT"
           OK=0
