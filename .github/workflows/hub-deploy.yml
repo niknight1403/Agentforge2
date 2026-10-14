@@ -73,6 +73,29 @@ jobs:
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/deploy.sh ubuntu@92.5.177.159:/tmp/deploy.sh
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GT='$GT' GTP='$GTP' bash -c 'export GT GTP; bash /tmp/deploy.sh'"
 
+      - name: GitHub-Token fuer Produkt-Repos in den Hub synchronisieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          GTP: ${{ secrets.AGENTFORGE_PAT }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GTOKEN='$GTP' bash -s" <<'SEED'
+          DBP=$(systemctl show villaforge-hub -p Environment --value 2>/dev/null | grep -oE 'VF_DB=[^ ]+' | cut -d= -f2 || true)
+          [ -n "$DBP" ] || DBP=/opt/villaforge/server/data/villaforge.db
+          echo "Hub-DB: $DBP"
+          NODEBIN=$(command -v node)
+          sudo GTOKEN="$GTOKEN" "$NODEBIN" -e "
+          const { DatabaseSync } = require('node:sqlite');
+          const db = new DatabaseSync('$DBP');
+          const v = process.env.GTOKEN;
+          const r = db.prepare('UPDATE secrets SET value = ?, updated_at = ? WHERE name = ?').run(v, 0, 'GITHUB_TOKEN');
+          if (r.changes === 0) db.prepare('INSERT INTO secrets (name, value, updated_at) VALUES (?,?,?)').run('GITHUB_TOKEN', v, 0);
+          console.log('GITHUB_TOKEN im Hub hinterlegt.');
+          "
+          SEED
+
       - name: Hub von aussen verifizieren
         run: |
           sleep 5
@@ -81,5 +104,5 @@ jobs:
           import json
           d = json.load(open('/tmp/h.json'))
           print('LIVE-VERSION:', d.get('version'), '| Agenten:', d.get('agents'), '| Villen:', d.get('villas'))
-          assert '1.39' in str(d.get('version','')), 'Live-Version ist nicht 1.39.x!'
+          assert '1.40' in str(d.get('version','')), 'Live-Version ist nicht 1.40.x!'
           print('LIVE-DEPLOY-OK')"
