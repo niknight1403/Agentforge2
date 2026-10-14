@@ -62,13 +62,19 @@ function pump() {
     const id = queue.shift();
     if (active.has(id)) continue;
     active.add(id);
-    Promise.resolve()
-      .then(() => starter(id))
-      .catch((err) => console.error(`[villaforge] Scheduler: Villa ${id} fehlgeschlagen:`, err?.message || err))
-      .finally(() => {
-        active.delete(id);
-        pump();
-      });
+    // Synchron starten: Aufrufer (Tests, Auto-Resume) sehen den Start sofort.
+    try {
+      const result = starter(id);
+      Promise.resolve(result)
+        .catch((err) => console.error(`[villaforge] Scheduler: Villa ${id} fehlgeschlagen:`, err?.message || err))
+        .finally(() => {
+          active.delete(id);
+          pump();
+        });
+    } catch (err) {
+      active.delete(id);
+      console.error(`[villaforge] Scheduler: Villa ${id} fehlgeschlagen:`, err?.message || err);
+    }
   }
 }
 

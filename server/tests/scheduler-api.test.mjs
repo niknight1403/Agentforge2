@@ -62,7 +62,7 @@ test('/api/tools bleibt ein Array, /api/tools/meta nennt erlaubte Befehle', asyn
 });
 
 test('Projekt-Werkzeuge: lesen, suchen, pruefen - und kein Ausbruch', async () => {
-  const v = await (await post('/api/villas', { name: 'Proj', idea: 'Testprojekt fuer Werkzeuge', agentCount: 2 })).json();
+  const v = await (await post('/api/villas', { name: 'Proj', idea: 'Testprojekt fuer Werkzeuge', agentCount: 3 })).json();
   const id = v.villaId ?? v.id;
   assert.ok(id, 'Villa angelegt');
 
