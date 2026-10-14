@@ -19,7 +19,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
+import androidx.compose.material3.Box
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,7 +59,12 @@ import dev.villaforge.app.ui.theme.Violet
 @Composable
 fun ChatScreen(state: UiState, viewModel: MainViewModel) {
     var input by remember { mutableStateOf("") }
+    var search by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+
+    /* Sprint 12: Verlauf lokal durchsuchen (Trefferzaehler inklusive). */
+    val shownMessages = if (search.isBlank()) state.messages
+        else state.messages.filter { it.content.contains(search, ignoreCase = true) }
 
     // Ans Ende springen, sobald neue Nachrichten eintreffen.
     LaunchedEffect(state.messages.size) {
@@ -91,7 +101,15 @@ fun ChatScreen(state: UiState, viewModel: MainViewModel) {
                     )
                 }
             }
-            items(state.messages) { ChatBubble(it) }
+            if (search.isNotBlank()) {
+                item {
+                    Text(
+                        "${shownMessages.size} von ${state.messages.size} Nachrichten",
+                        style = muted(), color = TextMuted
+                    )
+                }
+            }
+            items(shownMessages) { ChatBubble(it) }
             if (state.busy) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(6.dp)) {
@@ -100,6 +118,44 @@ fun ChatScreen(state: UiState, viewModel: MainViewModel) {
                         Text("Deep Agent arbeitet …", style = muted(), color = TextMuted)
                     }
                 }
+            }
+        }
+
+        /* Sprint 11: Chat-Partner waehlen (Dropdown mit allen Agenten). */
+        val detail = state.detail
+        if (detail != null) {
+            var menuOpen by remember { mutableStateOf(false) }
+            val selected = detail.agents.firstOrNull { it.id == state.chatAgentId }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (detail.agents.size > 1) {
+                    Text("An:", style = muted(), color = TextMuted)
+                    Spacer(Modifier.width(6.dp))
+                    Box {
+                        OutlinedButton(onClick = { menuOpen = true }) {
+                            Text(selected?.name ?: "Deep Agent", maxLines = 1)
+                            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Chat-Partner waehlen")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            detail.agents.forEach { agent ->
+                                DropdownMenuItem(
+                                    text = { Text(agent.name + if (agent.isRoot) " · Root" else "") },
+                                    onClick = { viewModel.selectChatAgent(agent.id); menuOpen = false }
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    placeholder = { Text("Verlauf durchsuchen") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
 

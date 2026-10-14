@@ -26,9 +26,13 @@ data class UiState(
     val live: Boolean = false,
     /** Letzte Live-Ereignisse (neueste zuerst, begrenzt). */
     val events: List<VillaEvent> = emptyList(),
+    /** Unix-ms des letzten erfolgreichen Datenabrufs (fuer Stand-Stempel). */
+    val lastRefresh: Long = 0L,
     val villas: List<Villa> = emptyList(),
     val detail: VillaDetail? = null,
     val messages: List<ChatMessage> = emptyList(),
+    /** Aktueller Chat-Partner (Agent-ID), null = Root/Deep Agent. */
+    val chatAgentId: Long? = null,
     val routes: List<LlmRoute> = emptyList(),
     val busy: Boolean = false,
     val message: String = "",
@@ -184,7 +188,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 healthText = "Hub online · ${health.optInt("routes")} Routen · v${health.optString("version")}",
                 stats = hubStats,
                 villas = villas,
-                routes = routes
+                routes = routes,
+                lastRefresh = System.currentTimeMillis()
             )
         }
     }
@@ -270,7 +275,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
         val msgs = client.messages(id, rootId)
         val prod = fetchProduct(id)
-        _state.update { it.copy(detail = detail, messages = msgs, product = prod) }
+        _state.update { it.copy(detail = detail, messages = msgs, product = prod, chatAgentId = rootId) }
+    }
+
+    /** Wechselt den Chat-Partner und laedt dessen Verlauf nach. */
+    fun selectChatAgent(agentId: Long) = run {
+        val detail = _state.value.detail ?: return@run
+        _state.update { it.copy(chatAgentId = agentId) }
+        val msgs = client.messages(detail.villa.id, agentId)
+        _state.update { it.copy(messages = msgs) }
     }
 
     fun sendChat(message: String) = run {
@@ -278,9 +291,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
         val optimistic = _state.value.messages + ChatMessage("user", message, System.currentTimeMillis())
         _state.update { it.copy(messages = optimistic, message = "Deep Agent arbeitet …") }
-        val reply = client.chat(detail.villa.id, rootId, message)
+        val targetId = _state.value.chatAgentId ?: rootId
+        val reply = client.chat(detail.villa.id, targetId, message)
         val refreshed = client.villaDetail(detail.villa.id)
-        val msgs = client.messages(detail.villa.id, rootId)
+        val msgs = client.messages(detail.villa.id, targetId)
         _state.update {
             it.copy(
                 detail = refreshed,
@@ -374,7 +388,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(routes = routes) }
     }
 
-    fun closeDetail() = _state.update { it.copy(detail = null, messages = emptyList(), product = null) }
+    fun closeDetail() = _state.update { it.copy(detail = null, messages = emptyList(), product = null, chatAgentId = null) }
+
+    /** Leert den Live-Ereignis-Feed. */
+    fun clearEvents() = _state.update { it.copy(events = emptyList()) }
 
     fun clearMessage() = _state.update { it.copy(message = "", error = null) }
 
