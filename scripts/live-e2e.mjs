@@ -309,6 +309,8 @@ async function run() {
     await page.evaluate("document.querySelector('#villaList .villa-card').click(); return true;");
     await page.waitFor("document.querySelector('#detailPanel').hidden === false", { timeout: 30_000, label: 'Arbeitsbereich mobil' });
     await delay(600);
+    const tabVisible = await page.evaluate(`const rect = document.querySelector('.side-tab[data-tab="chat"]').getBoundingClientRect(); return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight;`);
+    if (!tabVisible) throw new Error('Primärer Chat-Reiter ist auf Mobilgeräten nicht sichtbar');
     const snap = await page.evaluate(`
       const shell = document.querySelector('.workspace-shell').getBoundingClientRect();
       const panel = document.querySelector('#detailPanel').getBoundingClientRect();

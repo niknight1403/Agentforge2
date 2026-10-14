@@ -918,3 +918,15 @@ input::placeholder, textarea::placeholder { color: #97a5ba; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+.status #healthText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* On phones, keep workspace navigation visible above the conversation. */
+@media (max-width: 760px) {
+  .workspace-sidebar { flex-direction: column; max-height: none; overflow: hidden; gap: 8px; }
+  .workspace-sidebar .sidebar-section:first-child { min-width: 0; }
+  .workspace-sidebar .sidebar-section:first-child > .eyebrow,
+  .workspace-sidebar .stats,
+  .workspace-sidebar .sidebar-section:nth-child(2) { display: none; }
+  .workspace-sidebar .sidebar-links { order: -1; min-width: 0 !important; width: 100%; overflow-x: auto; flex-shrink: 0; }
+  .workspace-sidebar .progress-track { margin-top: 0; }
+  .workspace-sidebar .progress-label { margin: 4px 0 0; }
+}

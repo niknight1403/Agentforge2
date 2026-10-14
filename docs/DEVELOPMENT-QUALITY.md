@@ -36,4 +36,4 @@ Benötigt JDK 17, Gradle 8.7 und das Android-SDK. Die APK verwendet weiterhin di
 
 Hub-, Browser- und Android-Workflows laufen auch bei Pull Requests. Sie haben Zeitlimits, minimale Leserechte und brechen überholte Läufe ab. Android-Prüfberichte und Browser-Screenshots werden als Actions-Artefakte gesichert. Der APK-Workflow ruft keine echten LLM-Provider mehr auf.
 
-Zum Zeitpunkt der lokalen Umsetzung bestehen 184 Tests; Syntax und Secret-Scan sind grün. Android-Build und gerenderte Browserprüfung sind lokal nicht bestätigt: Gradle/Android-SDK fehlen, und der Browser-Download ist in dieser Umgebung fehlgeschlagen. Diese Ergebnisse müssen in Actions geprüft werden, bevor der Umbau als vollständig grün gilt.
+Lokal bestehen 187 Tests; Syntax und Secret-Scan sind grün. Der erste Actions-Lauf bestätigt zusätzlich Hub-Tests, Android Lint und Android-Unit-Tests sowie 18 Browser-Funktionsprüfungen und einen Design-Audit ohne Befunde bei vier Bildschirmbreiten. Die abschließenden Actions-Läufe prüfen den finalen Stand; die maßgeblichen Ergebnisse stehen direkt im Pull Request.
