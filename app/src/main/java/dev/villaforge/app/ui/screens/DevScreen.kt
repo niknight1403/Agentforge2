@@ -1,0 +1,266 @@
+package dev.villaforge.app.ui.screens
+
+import android.annotation.SuppressLint
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import dev.villaforge.app.ui.MainViewModel
+import dev.villaforge.app.ui.UiState
+import dev.villaforge.app.ui.components.EmptyState
+import dev.villaforge.app.ui.components.KeyRow
+import dev.villaforge.app.ui.components.SectionCard
+import dev.villaforge.app.ui.components.SectionHeader
+import dev.villaforge.app.ui.theme.Aqua
+import dev.villaforge.app.ui.theme.Danger
+import dev.villaforge.app.ui.theme.TextMuted
+
+/*
+ * Entwicklungsbereich (v1.24.0): Chat-Entwicklungsfenster mit Deep Agent,
+ * App-Live-Ansicht (WebView auf den Web-Build der Villa) und autonomer
+ * Fertigstellung inklusive Produkt-Build mit APK-/Paket-Download.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DevScreen(state: UiState, viewModel: MainViewModel) {
+    val detail = state.detail ?: return
+    var tab by remember { mutableStateOf(0) }
+
+    Column(Modifier.fillMaxSize()) {
+        state.error?.let { ErrorBanner(it) { viewModel.refreshAll() } }
+        if (state.message.isNotBlank()) Text(state.message, color = Aqua, style = muted(), modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+        TabRow(selectedTabIndex = tab) {
+            listOf("Chat" to "Deep-Agent-Chat", "Live-Ansicht" to "Laufende App", "Fertigstellung" to "Autonom & Build").forEachIndexed { i, (label, desc) ->
+                Tab(
+                    selected = tab == i,
+                    onClick = { tab = i },
+                    text = { Text(label) },
+                    icon = null
+                )
+            }
+        }
+        when (tab) {
+            0 -> ChatScreen(state, viewModel)
+            1 -> LiveTab(state, viewModel)
+            2 -> FinishTab(state, viewModel)
+        }
+    }
+}
+
+/** Live-Ansicht: Web-Build der Villa im WebView, sonst Status und Build-Einstieg. */
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun LiveTab(state: UiState, viewModel: MainViewModel) {
+    val preview = state.preview
+    if (preview?.optString("type") == "web") {
+        val url = state.serverUrl.trimEnd('/') + preview.optString("path")
+        val headers = viewModel.authHeader()?.let { mapOf("Authorization" to it) } ?: emptyMap()
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    settings.javaScriptEnabled = true
+                    webViewClient = WebViewClient()
+                }
+            },
+            update = { wv -> if (wv.url != url) wv.loadUrl(url, headers) }
+        )
+    } else {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            EmptyState(
+                title = "Noch keine Live-Ansicht",
+                hint = preview?.optString("hint")
+                    ?: "Sobald die Villa einen Web-Build erzeugt (dist-Ordner), laeuft die App hier live im Bild."
+            )
+            BuildCard(state, viewModel)
+        }
+    }
+}
+
+/** Autonome Fertigstellung: 24/7-Lauf, Vorschlaege aus Phasen und Rat, Produkt-Build. */
+@Composable
+private fun FinishTab(state: UiState, viewModel: MainViewModel) {
+    val detail = state.detail ?: return
+    val active = detail.running || detail.villa.status == "RUNNING" || detail.villa.status == "STOPPING"
+
+    LaunchedEffect(detail.villa.id) { viewModel.refreshCouncil(detail.villa.id) }
+    /* Waehrend eines autonomen Laufs Stand und Build nachladen. */
+    LaunchedEffect(detail.villa.id, active) {
+        while (active) {
+            kotlinx.coroutines.delay(5000)
+            viewModel.refreshDetail()
+            viewModel.refreshBuild()
+        }
+    }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        SectionCard("Autonome Fertigstellung") {
+            Text(
+                if (active) "Die Villa arbeitet gerade autonom: Phasen-Aufgaben, Rat und Umsatz-Zyklus steuern die Wellen."
+                else "Starte den 24/7-Lauf: Die Agenten planen, bauen und verbessern das Projekt eigenstaendig weiter.",
+                style = muted(), color = TextMuted
+            )
+            Spacer(Modifier.height(8.dp))
+            if (active) {
+                StatusBadge(detail.villa.status + " · läuft")
+            } else {
+                Button(onClick = { viewModel.orchestrate() }, enabled = !state.busy) {
+                    Text("Autonom fertigstellen starten")
+                }
+            }
+        }
+
+        SectionHeader("Entwicklungsvorschläge")
+        val product = state.product
+        val phases = product?.optJSONArray("phases")
+        if (phases != null && phases.length() > 0) {
+            (0 until phases.length()).forEach { i ->
+                val ph = phases.optJSONObject(i) ?: return@forEach
+                val pct = (ph.optDouble("ratio", 0.0) * 100).toInt()
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(ph.optString("title"), fontWeight = FontWeight.SemiBold)
+                        Text("$pct %", style = muted(), color = if (pct >= 100) dev.villaforge.app.ui.theme.Success else TextMuted)
+                    }
+                    if (pct < 100 && !active) {
+                        TextButton(onClick = { viewModel.orchestrate() }) { Text("Umsetzen") }
+                    }
+                }
+            }
+        } else {
+            Text("Noch keine Phasen-Vorschläge — erst Lauf starten.", style = muted(), color = TextMuted)
+        }
+        val council = state.council
+        if (council != null && council.length() > 0) {
+            val last = council.optJSONObject(0)
+            val proposals = last?.optJSONArray("proposals")
+            (0 until (proposals?.length() ?: 0)).forEach { i ->
+                val p = proposals?.optJSONObject(i)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(p?.optString("agent") ?: "", style = muted(), color = Aqua)
+                        Text(p?.optString("text") ?: "", style = muted())
+                    }
+                    if (!active) {
+                        TextButton(onClick = { viewModel.orchestrate() }) { Text("Umsetzen") }
+                    }
+                }
+            }
+        }
+
+        BuildCard(state, viewModel)
+    }
+}
+
+/** Produkt-Build-Karte: Status, Start, APK-/Paket-Download und Log-Auszug. */
+@Composable
+private fun BuildCard(state: UiState, viewModel: MainViewModel) {
+    val detail = state.detail ?: return
+    val build = state.build
+    val status = build?.optString("status") ?: "none"
+    val context = LocalContext.current
+
+    /* Waehrend des Baus Status abfragen, bis er fertig ist. */
+    LaunchedEffect(status) {
+        while (status == "running") {
+            kotlinx.coroutines.delay(5000)
+            viewModel.refreshBuild()
+            break
+        }
+    }
+
+    SectionCard("Produkt-Build (APK / Paket)") {
+        KeyRow("Status", when (status) {
+            "running" -> "baut gerade …"
+            "ready" -> "bereit zum Download"
+            "failed" -> "fehlgeschlagen"
+            else -> "noch nicht gebaut"
+        })
+        build?.optString("kind")?.takeIf { it.isNotBlank() && it != "empty" }?.let { KeyRow("Projektart", it) }
+        if (status == "ready") {
+            KeyRow(
+                "Artefakt",
+                build.optString("artifact") +
+                    if (build.optLong("sizeBytes", 0) > 0) " · ${build.optLong("sizeBytes") / 1048576} MB" else ""
+            )
+        }
+        build?.optString("error")?.takeIf { it.isNotBlank() }?.let {
+            Spacer(Modifier.height(4.dp))
+            Text(it, color = Danger, style = muted())
+        }
+        val log = build?.optJSONArray("log")
+        if (log != null && log.length() > 0) {
+            Spacer(Modifier.height(4.dp))
+            (maxOf(0, log.length() - 4) until log.length()).forEach { i ->
+                Text("· " + log.optString(i), style = muted(), color = TextMuted)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { viewModel.triggerBuild() },
+                enabled = !state.busy && status != "running"
+            ) { Text("Produkt bauen") }
+            if (status == "ready") {
+                Button(onClick = {
+                    val url = state.serverUrl.trimEnd('/') + "/api/villas/${detail.villa.id}/build/download"
+                    val name = build?.optString("artifact") ?: "villa-${detail.villa.id}.bin"
+                    val request = android.app.DownloadManager.Request(android.net.Uri.parse(url))
+                        .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                        .setTitle("VillaForge · " + detail.villa.name)
+                        .setMimeType(
+                            when (build?.optString("artifactType")) {
+                                "apk" -> "application/vnd.android.package-archive"
+                                "tar.gz" -> "application/gzip"
+                                else -> "application/zip"
+                            }
+                        )
+                    request.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, name)
+                    viewModel.authHeader()?.let { request.addRequestHeader("Authorization", it) }
+                    val dm = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+                    dm.enqueue(request)
+                }) { Text("Download") }
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        Text(
+            if (status == "ready" && build?.optString("kind") == "android") "Echte APK - direkt installierbar."
+            else if (status == "ready") "Paket-Download mit Quellcode und Build. APKs entstehen bei Android-Projekten mit SDK auf dem Hub.",
+            style = muted(), color = TextMuted
+        )
+    }
+}

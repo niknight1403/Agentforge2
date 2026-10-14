@@ -47,6 +47,10 @@ data class UiState(
     val stale: Boolean = false,
     /** Hinterlegte Hub-Secrets (Namen) fuer die Diagnose. */
     val secrets: List<String> = emptyList(),
+    /** Build-Status der offenen Villa (GET /build), null bis geladen. */
+    val build: org.json.JSONObject? = null,
+    /** Live-Vorschau-Info der offenen Villa (GET /preview), null bis geladen. */
+    val preview: org.json.JSONObject? = null,
     /** Hub verlangt Anmeldung (HTTP 401 ohne gespeicherte Zugangsdaten): Login-Screen zeigen. */
     val needsLogin: Boolean = false
 )
@@ -275,7 +279,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
         val msgs = client.messages(id, rootId)
         val prod = fetchProduct(id)
-        _state.update { it.copy(detail = detail, messages = msgs, product = prod, chatAgentId = rootId) }
+        val build = fetchBuild(id)
+        val preview = fetchPreview(id)
+        _state.update {
+            it.copy(detail = detail, messages = msgs, product = prod, chatAgentId = rootId, build = build, preview = preview)
+        }
     }
 
     /** Wechselt den Chat-Partner und laedt dessen Verlauf nach. */
@@ -379,6 +387,37 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Build-Status laden; Fehler sind unkritisch (Karte zeigt 'nicht gebaut'). */
+    private suspend fun fetchBuild(id: Long): org.json.JSONObject? =
+        try { client.buildStatus(id) } catch (e: Exception) { null }
+
+    /** Live-Vorschau-Info laden; Fehler sind unkritisch. */
+    private suspend fun fetchPreview(id: Long): org.json.JSONObject? =
+        try { client.previewInfo(id) } catch (e: Exception) { null }
+
+    /** Autorisierungs-Header fuer Downloads (DownloadManager/WebView). */
+    fun authHeader(): String? = client.authHeaderValue()
+
+    /** Aktualisiert Build-Status und Vorschau-Info der offenen Villa. */
+    fun refreshBuild() = run {
+        val detail = _state.value.detail ?: return@run
+        val build = fetchBuild(detail.villa.id)
+        val preview = fetchPreview(detail.villa.id)
+        _state.update { it.copy(build = build, preview = preview) }
+    }
+
+    /** Startet den Produkt-Build und meldet den Start. */
+    fun triggerBuild() = run {
+        val detail = _state.value.detail ?: return@run
+        try {
+            client.startBuild(detail.villa.id)
+        } catch (e: dev.villaforge.app.net.HubException) {
+            throw Exception(if (e.code == 409) "Build läuft bereits." else e.message)
+        }
+        _state.update { it.copy(message = "Produkt-Build gestartet") }
+        refreshBuild()
+    }
+
     /** Marktreife laden; Fehler sind unkritisch (Karte bleibt dann einfach weg). */
     private suspend fun fetchProduct(id: Long): org.json.JSONObject? =
         try { client.product(id) } catch (e: Exception) { null }
@@ -396,7 +435,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(routes = routes) }
     }
 
-    fun closeDetail() = _state.update { it.copy(detail = null, messages = emptyList(), product = null, chatAgentId = null) }
+    fun closeDetail() = _state.update { it.copy(detail = null, messages = emptyList(), product = null, chatAgentId = null, build = null, preview = null) }
 
     /** Leert den Live-Ereignis-Feed. */
     fun clearEvents() = _state.update { it.copy(events = emptyList()) }

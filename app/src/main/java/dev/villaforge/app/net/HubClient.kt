@@ -277,6 +277,22 @@ class HubClient(context: Context) {
     fun villaDetailFromCache(id: Long): VillaDetail? =
         readSnapshot("villa-$id.json")?.let { raw -> runCatching { parseVillaDetail(raw) }.getOrNull() }
 
+    /** Build-Status der Villa (GET /api/villas/:id/build). */
+    suspend fun buildStatus(villaId: Long): JSONObject =
+        JSONObject(execute("GET", "/api/villas/$villaId/build"))
+
+    /** Startet den Produkt-Build (POST /api/villas/:id/build). */
+    suspend fun startBuild(villaId: Long): JSONObject =
+        JSONObject(execute("POST", "/api/villas/$villaId/build", JSONObject()))
+
+    /** Live-Vorschau-Info (GET /api/villas/:id/preview). */
+    suspend fun previewInfo(villaId: Long): JSONObject =
+        JSONObject(execute("GET", "/api/villas/$villaId/preview"))
+
+    /** Autorisierungs-Header fuer externe Downloads (DownloadManager, WebView). */
+    fun authHeaderValue(): String? =
+        if (apiToken.isNotBlank()) "Bearer $apiToken" else null
+
     /** Marktreife- und Phasendaten der Villa (GET /api/villas/:id/product). */
     suspend fun product(villaId: Long): JSONObject =
         JSONObject(execute("GET", "/api/villas/$villaId/product"))
