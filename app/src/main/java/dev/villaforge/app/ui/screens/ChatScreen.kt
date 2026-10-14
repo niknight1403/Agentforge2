@@ -188,13 +188,19 @@ fun ChatScreen(state: UiState, viewModel: MainViewModel) {
             OutlinedTextField(
                 value = input,
                 onValueChange = { input = it },
-                placeholder = { Text("Nachricht an den Deep Agent") },
+                placeholder = { Text("Nachricht an " + (state.detail?.agents?.firstOrNull { it.id == state.chatAgentId }?.name ?: "den Deep Agent")) },
                 modifier = Modifier.weight(1f),
                 maxLines = 5
             )
             Spacer(Modifier.width(8.dp))
+            val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
             Button(
-                onClick = { if (input.isNotBlank()) { viewModel.sendChat(input); input = "" } },
+                onClick = {
+                    if (input.isNotBlank()) {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        viewModel.sendChat(input); input = ""
+                    }
+                },
                 enabled = input.isNotBlank() && !state.busy,
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)
             ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Senden") }

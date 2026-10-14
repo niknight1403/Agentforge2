@@ -121,17 +121,20 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
                     enabled = !state.busy && detail.villa.status != "STOPPING",
                     colors = ButtonDefaults.buttonColors(containerColor = Danger)
                 ) {
-                    Icon(Icons.Filled.Stop, contentDescription = null)
+                    Icon(Icons.Filled.Stop, contentDescription = "Villa stoppen")
                     Spacer(Modifier.width(6.dp))
                     Text(if (detail.villa.status == "STOPPING") "Stoppt …" else "Stoppen")
                 }
             } else {
                 Button(
-                    onClick = { viewModel.orchestrate() },
+                    onClick = {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        viewModel.orchestrate()
+                    },
                     enabled = !state.busy,
                     colors = ButtonDefaults.buttonColors(containerColor = Aqua, contentColor = Ink)
                 ) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    Icon(Icons.Filled.PlayArrow, contentDescription = "Entwicklung starten")
                     Spacer(Modifier.width(6.dp)); Text("Entwicklung starten")
                 }
             }
@@ -139,20 +142,21 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
         if (detail.villa.sourcePath.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = { viewModel.analyze() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Filled.Refresh, contentDescription = null)
+                Icon(Icons.Filled.Refresh, contentDescription = "Projekt erneut analysieren")
                 Spacer(Modifier.width(6.dp)); Text("Projekt erneut analysieren")
             }
         }
         if (detail.tasks.any { it.status == "FAILED" }) {
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = { viewModel.retryFailed() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null)
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Fehlgeschlagene Aufgaben erneut starten")
                 Spacer(Modifier.width(6.dp)); Text("Fehlgeschlagene Aufgaben erneut starten")
             }
         }
 
         Spacer(Modifier.height(8.dp))
         val context = LocalContext.current
+        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = {
@@ -167,7 +171,7 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
                 enabled = !state.busy,
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Filled.Share, contentDescription = null)
+                Icon(Icons.Filled.Share, contentDescription = "Villa-Export teilen")
                 Spacer(Modifier.width(6.dp)); Text("Export")
             }
             OutlinedButton(
@@ -175,7 +179,7 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
                 enabled = !state.busy,
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Filled.Edit, contentDescription = null)
+                Icon(Icons.Filled.Edit, contentDescription = "Villa bearbeiten")
                 Spacer(Modifier.width(6.dp)); Text("Bearbeiten")
             }
             if (!active) {
@@ -184,7 +188,7 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
                     enabled = !state.busy,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(Icons.Filled.Delete, contentDescription = null)
+                    Icon(Icons.Filled.Delete, contentDescription = "Villa löschen")
                     Spacer(Modifier.width(6.dp)); Text("Löschen")
                 }
             }
@@ -196,7 +200,10 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
                 title = { Text("Villa löschen?") },
                 text = { Text("\"${detail.villa.name}\" mitsamt Agenten, Aufgaben und Berichten endgültig löschen.") },
                 confirmButton = {
-                    TextButton(onClick = { showDelete = false; viewModel.delete(); onDeleted() }) { Text("Löschen") }
+                    TextButton(onClick = {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        showDelete = false; viewModel.delete(); onDeleted()
+                    }) { Text("Löschen") }
                 },
                 dismissButton = {
                     TextButton(onClick = { showDelete = false }) { Text("Abbrechen") }
