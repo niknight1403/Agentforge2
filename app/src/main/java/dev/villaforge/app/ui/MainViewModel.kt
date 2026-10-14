@@ -41,6 +41,8 @@ data class UiState(
     val stats: org.json.JSONObject? = null,
     /** Rat der Agenten: letzte Runden aus GET /api/villas/:id/council. */
     val council: org.json.JSONArray? = null,
+    /** Rueckmeldung der Rat-Uebernahme (Bestaetigen-Knopf). */
+    val councilNote: String? = null,
     /** Marktreife/Phasen der offenen Villa aus GET /api/villas/:id/product, null bis geladen. */
     val product: org.json.JSONObject? = null,
     /** true = Hub nicht erreichbar, angezeigte Daten stammen aus dem Offline-Cache. */
@@ -215,6 +217,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         client.councilTrigger(villaId)
         val council = client.council(villaId)
         _state.update { it.copy(council = council) }
+    }
+
+    /** Uebernimmt die Ratsvorschlaege per Bestaetigung als Aufgaben der Villa. */
+    fun adoptCouncil(villaId: Long, roundId: Long = 0L) = run {
+        val res = client.councilAdopt(villaId, roundId)
+        val added = res.optInt("added", 0)
+        val note = if (added > 0) "$added Ratsvorschlaege als Aufgaben uebernommen"
+            else "Ratsvorschlaege bereits im Aufgabenplan"
+        _state.update { it.copy(councilNote = note, error = null) }
+        refreshCouncil(villaId)
     }
 
     /** Meldet mit E-Mail und Passwort am Hub an, verbindet SSE neu und laedt alles. */

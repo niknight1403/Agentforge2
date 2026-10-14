@@ -487,6 +487,10 @@ class HubClient(context: Context) {
     suspend fun councilTrigger(villaId: Long): org.json.JSONObject =
         org.json.JSONObject(execute("POST", "/api/villas/$villaId/council", JSONObject()))
 
+    /** Uebernimmt die Ratsvorschlaege einer Runde als Aufgaben (POST council/adopt). */
+    suspend fun councilAdopt(villaId: Long, roundId: Long = 0L): org.json.JSONObject =
+        org.json.JSONObject(execute("POST", "/api/villas/$villaId/council/adopt", JSONObject().put("round", roundId)))
+
     companion object {
         // Vorgabe: Hub auf dem Entwickler-Rechner, aus dem Android-Emulator
         // erreichbar (10.0.2.2 = Loopback des Hosts). Auf echten Geraeten wird

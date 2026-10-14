@@ -268,19 +268,32 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
             Text("Noch keine Phasen-Vorschläge — erst Lauf starten.", style = muted(), color = TextMuted)
         }
         val council = state.council
-        if (council != null && council.length() > 0) {
-            val last = council.optJSONObject(0)
-            val proposals = last?.optJSONArray("proposals")
-            (0 until (proposals?.length() ?: 0)).forEach { i ->
-                val p = proposals?.optJSONObject(i)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(p?.optString("agent") ?: "", style = muted(), color = Aqua)
-                        Text(p?.optString("text") ?: "", style = muted())
-                    }
-                    if (!active) {
-                        TextButton(onClick = { viewModel.orchestrate() }) { Text("Umsetzen") }
-                    }
+        val last = council?.optJSONObject(0)
+        val proposals = last?.optJSONArray("proposals")
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Rat der Agenten · Runde ${last?.optInt("round") ?: 0}",
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = { viewModel.triggerCouncil(detail.villa.id) }) { Text("Einberufen") }
+            TextButton(
+                onClick = { viewModel.adoptCouncil(detail.villa.id, last?.optLong("id") ?: 0L) },
+                enabled = (proposals?.length() ?: 0) > 0
+            ) { Text("Übernehmen") }
+        }
+        if (council == null || council.length() == 0) {
+            Text("Noch keine Rat-Runde — jetzt einberufen.", style = muted(), color = TextMuted)
+        }
+        state.councilNote?.let {
+            Text(it, style = muted(), color = dev.villaforge.app.ui.theme.Success)
+        }
+        (0 until (proposals?.length() ?: 0)).forEach { i ->
+            val p = proposals?.optJSONObject(i)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(p?.optString("agent") ?: "", style = muted(), color = Aqua)
+                    Text(p?.optString("text") ?: "", style = muted())
                 }
             }
         }
