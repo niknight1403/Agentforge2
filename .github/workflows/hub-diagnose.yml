@@ -1,0 +1,33 @@
+name: Hub-Diagnose
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Endpunkte mit Login messen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          H=https://hub.cybersarah-ki.com
+          echo "== health (ohne Login) =="
+          curl -s -m 30 -o /dev/null -w "health: HTTP %{http_code} in %{time_total}s\n" $H/api/health
+          echo "== login =="
+          RESP=$(curl -s -m 30 -w "\nHTTP %{http_code} in %{time_total}s" -X POST -H "Content-Type: application/json" \
+            -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" $H/api/auth/login)
+          echo "$RESP" | tail -1
+          TOK=$(echo "$RESP" | head -1 | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")
+          [ -z "$TOK" ] && { echo "KEIN TOKEN - Login fehlgeschlagen"; echo "$RESP" | head -1 | cut -c1-200; exit 0; }
+          for P in /api/villas /api/routes /api/stats /api/evolution/pending; do
+            curl -s -m 60 -o /tmp/r.json -w "$P: HTTP %{http_code} in %{time_total}s, %{size_download} Bytes\n" -H "Authorization: Bearer $TOK" $H$P
+          done
+          echo "== Ollama-Dienst direkt (lokal auf VM nicht erreichbar, daher ueber Hub-Routen) =="
+          curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/routes | python3 -c "
+          import json,sys
+          for r in json.load(sys.stdin): print(r['id'], r['name'][:34], '| prio', r['priority'], '| key', r.get('hasKey'), '| enabled', r.get('enabled'))"
+          echo "== Hub-Chat-Test (Ollama/Route, 90s Limit) =="
+          curl -s -m 90 -o /tmp/c.json -w "chat-probe: HTTP %{http_code} in %{time_total}s\n" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"Antworte nur mit: ok"}]}' $H/api/chat || true
+          head -c 300 /tmp/c.json; echo
