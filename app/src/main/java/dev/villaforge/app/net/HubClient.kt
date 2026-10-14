@@ -396,6 +396,20 @@ class HubClient(context: Context) {
         )
     }
 
+    /** Laedt eine URL mit Auth-Header und liefert sie als WebView-Ressource (Live-Ansicht).
+     *  Behebt weisse Seite: Skripte/CSS laden sonst ohne Auth (401). */
+    fun webResource(url: String): android.webkit.WebResourceResponse? = try {
+        val req = okhttp3.Request.Builder().url(url)
+            .header("Authorization", authHeaderValue() ?: "")
+            .build()
+        val resp = http.newCall(req).execute()
+        val mime = resp.header("Content-Type")?.substringBefore(';')?.trim() ?: "text/plain"
+        val stream = resp.body?.byteStream()
+        if (resp.isSuccessful && stream != null) android.webkit.WebResourceResponse(mime, "utf-8", stream)
+        else { resp.close(); null }
+    } catch (e: Exception) { null }
+
+
     suspend fun messages(villaId: Long, agentId: Long?): List<ChatMessage> {
         val path = if (agentId != null) "/api/villas/$villaId/messages?agentId=$agentId"
         else "/api/villas/$villaId/messages"
