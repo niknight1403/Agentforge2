@@ -22,8 +22,11 @@ jobs:
           chmod 600 ~/.ssh/oracle_key
           cat > /tmp/deploy.sh <<'DEP'
           set -e
-          echo "== Hub-Verzeichnis aus systemd ermitteln =="
-          EXEC=$(systemctl show villaforge -p ExecStart --value 2>/dev/null | grep -oE '/[^ ]*server\.mjs' | head -1 || true)
+          echo "== Hub-Verzeichnis und Dienst aus systemd ermitteln =="
+          UNIT=$(systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -iE '^(hub|villaforge)' | head -1 || true)
+          [ -n "$UNIT" ] || UNIT=hub
+          echo "UNIT=$UNIT"
+          EXEC=$(systemctl show "$UNIT" -p ExecStart --value 2>/dev/null | grep -oE '/[^ ]*server\.mjs' | head -1 || true)
           HUBDIR=$(dirname "${EXEC:-/opt/villaforge/server/server.mjs}")
           echo "HUBDIR=$HUBDIR"
           echo "== Git-Stand vorher =="
@@ -33,9 +36,14 @@ jobs:
           cd "$HUBROOT"
           # Remote-URL mit frischem Token versehen, falls der alte
           # eingebettete Token abgelaufen ist (Exit-5-Ursache).
-          git remote set-url origin "https://x-access-token:${GT}@github.com/niknight1403/AgentForge.git" 2>/dev/null || true
           git fetch -q origin main
           RC=$?
+          if [ "$RC" != "0" ]; then
+            echo "Fetch mit bestehendem Remote fehlgeschlagen (rc=$RC) - setze Fallback-Token."
+            git remote set-url origin "https://x-access-token:${GT}@github.com/niknight1403/AgentForge.git" 2>/dev/null || true
+            git fetch -q origin main
+            RC=$?
+          fi
           [ "$RC" = "0" ] || { echo "FETCH-FEHLGESCHLAGEN rc=$RC"; git remote -v | head -2; exit 3; }
           git reset --hard origin/main 2>&1 | head -3
           git log --oneline -1
@@ -45,12 +53,13 @@ jobs:
           fi
           echo "== Neustart =="
           systemctl daemon-reload || true
-          systemctl restart villaforge
+          systemctl restart "$UNIT"
           sleep 6
           echo "== Dienststatus =="
-          systemctl is-active villaforge
+          systemctl is-active "$UNIT"
           echo "== Health/Version lokal =="
-          PORT=$(systemctl show villaforge -p Environment --value 2>/dev/null | grep -oE 'PORT=[0-9]+' | cut -d= -f2 || true)
+          PORT=$(systemctl show "$UNIT" -p Environment --value 2>/dev/null | grep -oE 'PORT=[0-9]+' | cut -d= -f2 || true)
+          [ -n "$PORT" ] || PORT=3000
           curl -s -m 30 "http://127.0.0.1:${PORT:-3000}/api/health" | head -c 600; echo
           echo "== Tests auf der VM (Bestandsschutz) =="
           cd "$HUBDIR" && (VF_TEST=1 timeout 300 node --test tests/*.test.mjs 2>&1 | tail -4) || true
