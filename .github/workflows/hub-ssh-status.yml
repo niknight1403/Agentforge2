@@ -32,6 +32,9 @@ jobs:
           [ -n "$HUB" ] && systemctl status "$HUB" --no-pager -n 0 | head -12
           echo "== Lauschende Ports =="; ss -tlnp 2>/dev/null | grep -E ':(80|443|11434|12000|3000)\b' | awk '{print $4,$6}'
           echo "== Lokaler Health :12000 =="; curl -s -m 10 -w "\nHTTP %{http_code} in %{time_total}s\n" http://127.0.0.1:12000/api/health | tail -c 400
+          echo "== Git-Stand/Remote auf der VM =="; for D in /opt/villaforge /opt/villaforge/..; do [ -d "$D/.git" ] && { cd "$D"; git remote -v | head -1; git log -1 --format='%h %s' | cut -c1-120; break; }; done
+          echo "== Gate in laufendem Code? =="; grep -c "VF_LLM_MAX_CONCURRENT" /opt/villaforge/server/llm.mjs 2>/dev/null || echo "0 (kein Gate)"
+          echo "== Drop-ins =="; ls /etc/systemd/system/villaforge-hub.service.d/ 2>/dev/null
           echo "== Hub-Log (letzte 25) =="; [ -n "$HUB" ] && journalctl -u "$HUB" -n 25 --no-pager 2>&1 | cut -c1-220
           echo "== nginx-Fehlerlog =="; tail -n 8 /var/log/nginx/error.log 2>/dev/null | cut -c1-220
           echo "== OOM/Kill-Spuren =="; dmesg 2>/dev/null | grep -iE 'out of memory|killed process' | tail -3
