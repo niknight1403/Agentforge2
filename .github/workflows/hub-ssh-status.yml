@@ -35,6 +35,10 @@ jobs:
           echo "== Git-Stand/Remote auf der VM =="; for D in /opt/villaforge /opt/villaforge/..; do [ -d "$D/.git" ] && { cd "$D"; git remote -v | head -1; git log -1 --format='%h %s' | cut -c1-120; break; }; done
           echo "== Gate in laufendem Code? =="; grep -c "VF_LLM_MAX_CONCURRENT" /opt/villaforge/server/llm.mjs 2>/dev/null || echo "0 (kein Gate)"
           echo "== Drop-ins =="; ls /etc/systemd/system/villaforge-hub.service.d/ 2>/dev/null
+          echo "== DB-Groessen =="; DB=$(ls /opt/villaforge/server/data/villaforge.db* 2>/dev/null); ls -la $DB 2>/dev/null | awk '{print $5, $9}'
+          which sqlite3 >/dev/null 2>&1 || apt-get install -y -qq sqlite3 >/dev/null 2>&1
+          for T in villas agents tasks memories messages audit reports council; do printf "%s: " $T; sqlite3 /opt/villaforge/server/data/villaforge.db "select count(*) from $T" 2>&1; done
+          echo "== Indizes =="; sqlite3 /opt/villaforge/server/data/villaforge.db "select name from sqlite_master where type='index' and name not like 'sqlite_%'" 2>&1 | head -20
           echo "== Hub-Log (letzte 25) =="; [ -n "$HUB" ] && journalctl -u "$HUB" -n 25 --no-pager 2>&1 | cut -c1-220
           echo "== nginx-Fehlerlog =="; tail -n 8 /var/log/nginx/error.log 2>/dev/null | cut -c1-220
           echo "== OOM/Kill-Spuren =="; dmesg 2>/dev/null | grep -iE 'out of memory|killed process' | tail -3
