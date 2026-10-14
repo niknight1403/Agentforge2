@@ -64,6 +64,7 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
     val detail = state.detail ?: return
     var showDelete by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
 
     // Waehrend eines Durchlaufs den Fortschritt regelmaessig nachladen.
     LaunchedEffect(detail.villa.id, detail.running, detail.villa.status) {
@@ -156,7 +157,6 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
 
         Spacer(Modifier.height(8.dp))
         val context = LocalContext.current
-        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = {
