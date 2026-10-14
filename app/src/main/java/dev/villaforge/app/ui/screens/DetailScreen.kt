@@ -245,7 +245,23 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
 
         if (detail.reports.isNotEmpty()) {
             SectionCard("Berichte") {
-                detail.reports.forEach { report -> ReportCard(report) }
+                /* Sprint 22: Berichte filtern und zaehlen. */
+                var reportSearch by remember { mutableStateOf("") }
+                OutlinedTextField(
+                    value = reportSearch,
+                    onValueChange = { reportSearch = it },
+                    placeholder = { Text("Berichte durchsuchen") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                val reportMatches = detail.reports.filter {
+                    reportSearch.isBlank() || it.title.contains(reportSearch, ignoreCase = true) ||
+                        it.content.contains(reportSearch, ignoreCase = true) ||
+                        it.kind.contains(reportSearch, ignoreCase = true)
+                }
+                Text("${reportMatches.size} von ${detail.reports.size} Berichten", style = muted(), color = TextMuted)
+                reportMatches.forEach { report -> ReportCard(report) }
             }
         }
         Section("Aufgaben") {
@@ -275,7 +291,24 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
                     )
                 }
             }
-            val shownTasks = if (taskFilter.isEmpty()) detail.tasks else detail.tasks.filter { it.status == taskFilter }
+            /* Sprint 21: Textsuche ueber Titel, Beschreibung und Ergebnis. */
+            var taskSearch by remember { mutableStateOf("") }
+            OutlinedTextField(
+                value = taskSearch,
+                onValueChange = { taskSearch = it },
+                placeholder = { Text("Aufgaben durchsuchen") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(4.dp))
+            val shownTasks = detail.tasks
+                .filter { taskFilter.isEmpty() || it.status == taskFilter }
+                .filter {
+                    taskSearch.isBlank() || it.title.contains(taskSearch, ignoreCase = true) ||
+                        it.description.contains(taskSearch, ignoreCase = true) ||
+                        it.result.contains(taskSearch, ignoreCase = true)
+                }
+            Text("${shownTasks.size} von ${detail.tasks.size} Aufgaben", style = muted(), color = TextMuted)
             if (shownTasks.isEmpty()) {
                 Text("Keine Aufgaben in dieser Ansicht.", style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
             } else {
