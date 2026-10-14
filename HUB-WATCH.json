@@ -1,9 +1,13 @@
 {
-  "checked_at": "2026-10-14T17:52:44.274495+00:00",
+  "checked_at": "2026-10-14T21:26:41.976520+00:00",
   "hub": {
-    "state": "DOWN",
-    "error": "Login fehlgeschlagen"
+    "state": "UP",
+    "version": "1.39.0",
+    "routes": 10,
+    "villas": 11,
+    "running": 11,
+    "agents": 0
   },
-  "sync_age_min": 151,
-  "state": "DOWN"
+  "sync_age_min": 112,
+  "state": "DEGRADED"
 }
