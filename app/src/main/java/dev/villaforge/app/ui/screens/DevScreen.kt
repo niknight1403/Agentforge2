@@ -39,6 +39,7 @@ import dev.villaforge.app.ui.components.EmptyState
 import dev.villaforge.app.ui.components.KeyRow
 import dev.villaforge.app.ui.components.SectionCard
 import dev.villaforge.app.ui.components.SectionHeader
+import dev.villaforge.app.ui.components.StatusBadge
 import dev.villaforge.app.ui.theme.Aqua
 import dev.villaforge.app.ui.theme.Danger
 import dev.villaforge.app.ui.theme.TextMuted
@@ -211,7 +212,7 @@ private fun BuildCard(state: UiState, viewModel: MainViewModel) {
             else -> "noch nicht gebaut"
         })
         build?.optString("kind")?.takeIf { it.isNotBlank() && it != "empty" }?.let { KeyRow("Projektart", it) }
-        if (status == "ready") {
+        if (status == "ready" && build != null) {
             KeyRow(
                 "Artefakt",
                 build.optString("artifact") +
@@ -259,7 +260,8 @@ private fun BuildCard(state: UiState, viewModel: MainViewModel) {
         Spacer(Modifier.width(4.dp))
         Text(
             if (status == "ready" && build?.optString("kind") == "android") "Echte APK - direkt installierbar."
-            else if (status == "ready") "Paket-Download mit Quellcode und Build. APKs entstehen bei Android-Projekten mit SDK auf dem Hub.",
+            else if (status == "ready") "Paket-Download mit Quellcode und Build. APKs entstehen bei Android-Projekten mit SDK auf dem Hub."
+            else "Der Hub packt das Projekt der Villa: echte APKs bei Android-Projekten (SDK), sonst Paket.",
             style = muted(), color = TextMuted
         )
     }
