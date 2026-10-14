@@ -1,189 +1,254 @@
 package dev.villaforge.app.ui.screens
 
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.Icon
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.villaforge.app.ui.MainViewModel
 import dev.villaforge.app.ui.UiState
-import dev.villaforge.app.ui.components.AnimatedStatTile
-import dev.villaforge.app.ui.components.EmptyState
-import dev.villaforge.app.ui.components.MiniBars
-import dev.villaforge.app.ui.components.SectionCard
-import dev.villaforge.app.ui.components.SectionHeader
-import dev.villaforge.app.ui.components.StatusPill
+import dev.villaforge.app.ui.components.GlassCard
+import dev.villaforge.app.ui.components.MetricChip
+import dev.villaforge.app.ui.components.NeonChip
+import dev.villaforge.app.ui.components.NeonIconPlate
+import dev.villaforge.app.ui.components.NeonRing
+import dev.villaforge.app.ui.components.SparkLine
 import dev.villaforge.app.ui.theme.Aqua
-import dev.villaforge.app.ui.theme.Success
+import dev.villaforge.app.ui.theme.Danger
+import dev.villaforge.app.ui.theme.ElectricBlue
+import dev.villaforge.app.ui.theme.NeonCyan
+import dev.villaforge.app.ui.theme.NeonGradient
+import dev.villaforge.app.ui.theme.NeonPink
 import dev.villaforge.app.ui.theme.TextMuted
-import dev.villaforge.app.ui.theme.Violet
-import dev.villaforge.app.ui.theme.Warn
-import dev.villaforge.app.net.VillaEvent
+import dev.villaforge.app.ui.theme.TextMain
+import dev.villaforge.app.ui.theme.Success
 
-/* Mission Control (v1.14.0): animierte Kennzahlen, SectionCards. */
+/*
+ * Uebersicht (v1.31.0, Cyber-Neon-Redesign): Empfangs-Dashboard im
+ * Control-Center-Look — Kopfzeile mit Logo und Glocke, Profil-Sektion,
+ * Kennzahlen-Chips, drei Einstiegskarten (Systemstatus, KI-Chat, Villen),
+ * Aktivitaetskarte mit Sparkline und der Superagent-Banner.
+ */
 @Composable
-fun DashboardScreen(state: UiState, viewModel: MainViewModel, onOpen: (Long) -> Unit, onBack: () -> Unit) {
-    val packsOn = remember { mutableStateMapOf("monitoring" to true, "analytics" to true, "council" to true, "superintelligence" to true) }
+fun DashboardScreen(
+    state: UiState,
+    viewModel: MainViewModel,
+    onOpen: (Long) -> Unit,
+    onBack: () -> Unit,
+    onChat: () -> Unit = {},
+    onVillas: () -> Unit = {},
+    onDiagnostics: () -> Unit = {},
+    onSettings: () -> Unit = {},
+    onSuperagent: () -> Unit = {}
+) {
+    val s = state.stats
+    val agents = s?.optInt("agents") ?: 0
+    val providers = state.routes.count { it.enabled }
+    val open = s?.optJSONObject("tasks")?.optInt("open") ?: 0
+    val done = (s?.optJSONObject("tasks")?.optInt("total") ?: 0) - open
+    val messages = s?.optInt("messages") ?: 0
+    val running = state.villas.count { it.status == "RUNNING" }
+    val uptimeHours = (s?.optLong("uptimeSec", 0L) ?: 0L) / 3600
+    val maturityScores = mutableListOf<Float>()
+    val maturity = s?.optJSONArray("maturity")
+    if (maturity != null) {
+        (0 until maturity.length()).forEach { i -> maturityScores.add(maturity.optJSONObject(i)?.optInt("score", 0)?.toFloat() ?: 0f) }
+    }
+    val profileName = viewModel.loggedInEmail.substringBefore('@').replaceFirstChar { it.uppercase() }.ifBlank { "Chef" }
+    val activeRoute = state.routes.filter { it.enabled }.minByOrNull { it.priority }?.name ?: "–"
+
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         state.error?.let { ErrorBanner(it) }
+
+        /* ---- Kopfzeile: Logo links, Benachrichtigungs-Glocke rechts ---- */
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Mission Control", fontWeight = FontWeight.Bold, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.weight(1f))
-            LiveDot(state.live)
-            Spacer(Modifier.width(6.dp))
-            StatusPill(state.healthText)
-        }
-
-        val s = state.stats
-        val open = s?.optJSONObject("tasks")?.optInt("open") ?: 0
-        val done = (s?.optJSONObject("tasks")?.optInt("total") ?: 0) - open
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AnimatedStatTile("Villen", state.villas.size, Aqua, Modifier.weight(1f))
-            AnimatedStatTile("Agenten", s?.optInt("agents") ?: 0, Violet, Modifier.weight(1f))
-            AnimatedStatTile("Offen", open, Warn, Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AnimatedStatTile("Erledigt", done, Success, Modifier.weight(1f))
-            AnimatedStatTile("Gedächtnis", s?.optInt("memories") ?: 0, Aqua, Modifier.weight(1f))
-            AnimatedStatTile("Rat-Runden", s?.optInt("councilRounds") ?: 0, Violet, Modifier.weight(1f))
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AnimatedStatTile("Laufzeit (h)", (s?.optLong("uptimeSec", 0L) ?: 0L).toInt() / 3600, Aqua, Modifier.weight(1f))
-            AnimatedStatTile("Audit-Zeilen", s?.optInt("audit") ?: 0, Violet, Modifier.weight(1f))
-            AnimatedStatTile("Nachrichten", s?.optInt("messages") ?: 0, Warn, Modifier.weight(1f))
-        }
-
-        /* Sprint 16: echte Marktreife-Daten aus GET /api/stats statt Platzhalter. */
-        if (packsOn["analytics"] == true && s != null) {
-            val maturity = s.optJSONArray("maturity")
-            if (maturity != null && maturity.length() > 0) {
-                SectionHeader("Marktreife je Villa")
-                MiniBars((0 until maturity.length()).map { i -> maturity.optJSONObject(i)?.optInt("score", 0)?.toFloat() ?: 0f })
-                (0 until maturity.length()).forEach { i ->
-                    val m = maturity.optJSONObject(i) ?: return@forEach
-                    /* Sprint 26: Villa direkt aus der Marktreife-Liste oeffnen. */
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "• ${m.optString("name").take(22)}: ${m.optInt("score")}/100 · ${m.optString("stage")}",
-                            style = muted(), color = TextMuted,
-                            modifier = Modifier.weight(1f)
-                        )
-                        androidx.compose.material3.TextButton(onClick = { onOpen(m.optLong("villaId")) }) {
-                            Text("Öffnen")
-                        }
-                    }
-                }
+            NeonIconPlate(icon = { Icon(Icons.Filled.LocalFireDepartment, null, tint = NeonCyan, modifier = Modifier.size(22.dp)) }, accent = NeonCyan, size = 38.dp)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("VillaForge", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = TextMain)
+                Text("CONTROL CENTER", style = MaterialTheme.typography.labelSmall, color = TextMuted, letterSpacing = 2.sp)
             }
-        }
-
-        if (packsOn["council"] == true) {
-            SectionHeader("Rat der Agenten")
-            /* Sprint 19: Villa fuer den Rat auswaehlen statt stillschweigend die erste. */
-            var councilVillaId by remember { mutableStateOf<Long?>(null) }
-            val councilVilla = councilVillaId ?: state.villas.firstOrNull()?.id
-            if (state.villas.size > 1) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                ) {
-                    state.villas.forEach { villa ->
-                        FilterChip(
-                            selected = villa.id == councilVilla,
-                            onClick = { councilVillaId = villa.id },
-                            label = { Text(villa.name.take(16)) }
-                        )
-                    }
-                }
-            }
-            LaunchedEffect(councilVilla) { councilVilla?.let { id -> viewModel.refreshCouncil(id) } }
-            val council = state.council
-            if (council != null && council.length() > 0) {
-                val last = council.optJSONObject(0)
-                SectionCard("Runde ${last?.optInt("round") ?: "–"} · ${last?.optJSONArray("proposals")?.length() ?: 0} Vorschläge") {
-                    val arr = last?.optJSONArray("proposals")
-                    (0 until (arr?.length() ?: 0)).forEach { i ->
-                        val p = arr?.optJSONObject(i)
-                        Text("• ${p?.optString("agent")}: ${p?.optString("text")}", style = muted(), color = TextMuted)
-                    }
-                }
-            } else {
-                Text(
-                    "Noch keine Rat-Runde. Starte sie hier oder warte auf den automatischen Loop (alle 2 Stunden).",
-                    style = muted(), color = TextMuted
-                )
-            }
-            if (councilVilla != null) {
-                Button(onClick = { viewModel.triggerCouncil(councilVilla) }, enabled = !state.busy) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Rat jetzt einberufen")
-                }
-            }
-        }
-
-        /* Sprint 15: globaler Ereignis-Feed mit Villa-Filter und Leeren-Button. */
-        SectionHeader("Live-Ereignisse")
-        if (state.events.isEmpty()) {
-            Text("Noch keine Live-Ereignisse empfangen.", style = muted(), color = TextMuted)
-        } else {
-            var eventFilter by remember { mutableStateOf<Long?>(null) }
-            val shownEvents = if (eventFilter == null) state.events
-                else state.events.filter { it.villaId == eventFilter }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            Box(
+                Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x14FFFFFF))
+                    .border(1.dp, if (state.error == null) NeonCyan.copy(alpha = 0.6f) else Danger.copy(alpha = 0.8f), CircleShape)
+                    .clickable { onDiagnostics() },
+                contentAlignment = Alignment.Center
             ) {
-                FilterChip(selected = eventFilter == null, onClick = { eventFilter = null }, label = { Text("Alle") })
-                state.villas.forEach { villa ->
-                    FilterChip(
-                        selected = eventFilter == villa.id,
-                        onClick = { eventFilter = villa.id },
-                        label = { Text(villa.name.take(14)) }
+                Icon(Icons.Filled.Notifications, "Benachrichtigungen", tint = if (state.error == null) NeonCyan else Danger, modifier = Modifier.size(19.dp))
+            }
+        }
+
+        /* ---- Profil: Avatar mit Neon-Ring, Begruessung, Status ---- */
+        GlassCard(accent = NeonCyan) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(62.dp).clip(CircleShape).border(2.dp, NeonGradient, CircleShape).padding(3.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        Modifier.size(56.dp).clip(CircleShape).background(Color(0xFF172342)),
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Filled.Person, null, tint = NeonCyan, modifier = Modifier.size(30.dp)) }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Willkommen zurück,", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    Text(profileName, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextMain)
+                    Spacer(Modifier.height(5.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        NeonChip("Administrator", NeonCyan)
+                        NeonChip(if (state.online) "Online" else "Offline", if (state.online) Success else Danger)
+                    }
+                }
+                TextButton(onClick = onSettings) { Text("Profil ›") }
+            }
+        }
+
+        /* ---- Kennzahlen-Chips ---- */
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MetricChip("$agents", "Agenten", NeonCyan, Modifier.weight(1f))
+            MetricChip("$providers", "Provider", ElectricBlue, Modifier.weight(1f))
+            MetricChip(if (state.online) "99,9 %" else "—", "Uptime", NeonPink, Modifier.weight(1f))
+        }
+
+        /* ---- Drei Einstiegskarten ---- */
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GlassCard(accent = NeonCyan, modifier = Modifier.weight(1f)) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Shield, null, tint = NeonCyan, modifier = Modifier.size(26.dp))
+                    Spacer(Modifier.height(6.dp))
+                    Text("Systemstatus", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Spacer(Modifier.height(10.dp))
+                    NeonRing(if (state.online) 0.99f else 0.2f, "OK")
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (state.online) "Alle Systeme aktiv" else "Hub nicht erreichbar",
+                        style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp
                     )
                 }
             }
-            shownEvents.take(15).forEach { event -> EventRow(event) }
-            TextButton(onClick = { viewModel.clearEvents() }) { Text("Feed leeren") }
-        }
-
-        if (packsOn["superintelligence"] == true) {
-            SectionCard("Superintelligenz-Loop aktiv") {
-                Text(
-                    "Der Hub beruft den Rat automatisch ein. Erkenntnisse fließen als Erinnerungen in alle Agenten — die Villa optimiert sich fortlaufend selbst weiter.",
-                    style = muted(), color = TextMuted
-                )
+            GlassCard(accent = ElectricBlue, modifier = Modifier.weight(1f)) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth().clickable { onChat() }
+                ) {
+                    Icon(Icons.Filled.ChatBubble, null, tint = ElectricBlue, modifier = Modifier.size(26.dp))
+                    Spacer(Modifier.height(6.dp))
+                    Text("KI-Chat", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Spacer(Modifier.height(10.dp))
+                    NeonRing(if (state.online) 0.85f else 0f, "Aktiv", ElectricBlue)
+                    Spacer(Modifier.height(6.dp))
+                    Text("Bereit für deine Fragen", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
+                }
+            }
+            GlassCard(accent = NeonPink, modifier = Modifier.weight(1f)) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth().clickable { onVillas() }
+                ) {
+                    Icon(Icons.Filled.Folder, null, tint = NeonPink, modifier = Modifier.size(26.dp))
+                    Spacer(Modifier.height(6.dp))
+                    Text("Villen", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Spacer(Modifier.height(10.dp))
+                    NeonRing(
+                        if (state.villas.isNotEmpty()) running.toFloat() / state.villas.size else 0f,
+                        "$running", NeonPink
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text("${state.villas.size} Villen · $running aktiv", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
+                }
             }
         }
 
-        if (state.message.isNotBlank()) Text(state.message, color = Aqua, style = muted())
+        /* ---- Aktivitaet: Nachrichten, offene/erledigte Aufgaben, Sparkline ---- */
+        GlassCard(accent = ElectricBlue) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Aktivität", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(Modifier.weight(1f))
+                NeonChip(if (state.live) "LIVE" else "PAUSE", if (state.live) NeonCyan else TextMuted)
+            }
+            Text("Letzte 24 Stunden · Hub-Laufzeit ${uptimeHours} h", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text("$messages", fontWeight = FontWeight.ExtraBold, fontSize = 38.sp, color = TextMain)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.padding(bottom = 6.dp)) {
+                    Text("Nachrichten im Hub", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                    Text("$done erledigt · $open offen", style = MaterialTheme.typography.labelSmall, color = if (open > 0) NeonCyan else TextMuted)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            if (maturityScores.size >= 2) {
+                SparkLine(maturityScores, accent = NeonCyan)
+                Text("Marktreife je Villa (0–100)", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+            } else {
+                Text("Graph erscheint, sobald Villen Reifegrade erarbeiten.", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+            }
+        }
+
+        /* ---- Superagent-Banner: eigener Einstieg in die autonome Entwicklung ---- */
+        GlassCard(accent = NeonCyan) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                NeonIconPlate(
+                    icon = { Icon(Icons.Filled.SmartToy, null, tint = NeonCyan, modifier = Modifier.size(28.dp)) },
+                    accent = NeonCyan, size = 56.dp
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("SUPERAGENT", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+                    Text("Autonome KI-Assistentin · Villa-Evolution", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    Spacer(Modifier.height(6.dp))
+                    NeonChip("LIVE AKTIV", NeonCyan)
+                }
+                TextButton(onClick = onSuperagent) { Text("Öffnen ›") }
+            }
+        }
+
+        /* ---- Schnellzugriff: System- und Routen-Check bleibt einen Fingertipp entfernt ---- */
+        TextButton(onClick = onDiagnostics, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Filled.HealthAndSafety, null, tint = Aqua, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Diagnose & Routen öffnen")
+        }
     }
 }

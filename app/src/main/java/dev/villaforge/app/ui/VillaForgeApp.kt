@@ -20,7 +20,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -56,6 +58,7 @@ import dev.villaforge.app.ui.screens.SettingsScreen
 import dev.villaforge.app.ui.screens.VillaListScreen
 import dev.villaforge.app.ui.screens.muted
 import dev.villaforge.app.ui.theme.Aqua
+import dev.villaforge.app.ui.theme.NeonCyan
 import dev.villaforge.app.ui.theme.Ink
 import dev.villaforge.app.ui.theme.Surface1
 import dev.villaforge.app.ui.theme.TextMain
@@ -68,18 +71,18 @@ import dev.villaforge.app.ui.theme.TextMuted
  */
 private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, DEV, SETTINGS, DIAGNOSTICS }
 
-private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.DIAGNOSTICS, Screen.SETTINGS)
+private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.CHAT, Screen.DIAGNOSTICS, Screen.SETTINGS)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VillaForgeApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var screen by remember { mutableStateOf(Screen.LIST) }
+    var screen by remember { mutableStateOf(Screen.DASHBOARD) }
 
     Scaffold(
         containerColor = Ink,
         topBar = {
-            TopAppBar(
+            if (screen != Screen.DASHBOARD) TopAppBar(
                 title = {
                     Column {
                         Text("VillaForge", fontWeight = FontWeight.Bold)
@@ -91,7 +94,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     }
                 },
                 navigationIcon = {
-                    if (screen != Screen.LIST) {
+                    if (!topLevelScreens.contains(screen)) {
                         IconButton(onClick = {
                             when (screen) {
                                 Screen.CHAT, Screen.DEV -> screen = Screen.DETAIL
@@ -118,14 +121,21 @@ fun VillaForgeApp(viewModel: MainViewModel) {
         bottomBar = {
             if (topLevelScreens.contains(screen)) {
                 NavigationBar(containerColor = Surface1) {
-                    NavigationBarItem(selected = screen == Screen.LIST, onClick = { viewModel.closeDetail(); screen = Screen.LIST },
-                        icon = { Icon(Icons.Filled.Home, contentDescription = "Villen") }, label = { Text("Villen") })
                     NavigationBarItem(selected = screen == Screen.DASHBOARD, onClick = { viewModel.closeDetail(); screen = Screen.DASHBOARD },
-                        icon = { Icon(Icons.Filled.Dashboard, contentDescription = "Mission Control") }, label = { Text("Mission") })
-                    NavigationBarItem(selected = screen == Screen.DIAGNOSTICS, onClick = { viewModel.closeDetail(); screen = Screen.DIAGNOSTICS },
-                        icon = { Icon(Icons.Filled.HealthAndSafety, contentDescription = "Diagnose") }, label = { Text("Diagnose") })
+                        icon = { Icon(Icons.Filled.Dashboard, contentDescription = "Übersicht", tint = if (screen == Screen.DASHBOARD) NeonCyan else TextMuted) },
+                        label = { Text("Übersicht") })
+                    NavigationBarItem(selected = screen == Screen.CHAT, onClick = {
+                            val target = state.villas.firstOrNull { it.status == "RUNNING" } ?: state.villas.firstOrNull()
+                            if (target != null) { viewModel.openVilla(target.id); screen = Screen.CHAT } else screen = Screen.LIST
+                        },
+                        icon = { Icon(Icons.Filled.Chat, contentDescription = "Chat", tint = if (screen == Screen.CHAT) NeonCyan else TextMuted) },
+                        label = { Text("Chat") })
+                    NavigationBarItem(selected = screen == Screen.LIST, onClick = { viewModel.closeDetail(); screen = Screen.LIST },
+                        icon = { Icon(Icons.Filled.Home, contentDescription = "Villen", tint = if (screen == Screen.LIST) NeonCyan else TextMuted) },
+                        label = { Text("Villen") })
                     NavigationBarItem(selected = screen == Screen.SETTINGS, onClick = { viewModel.closeDetail(); screen = Screen.SETTINGS },
-                        icon = { Icon(Icons.Filled.Settings, contentDescription = "Einstellungen") }, label = { Text("Mehr") })
+                        icon = { Icon(Icons.Filled.Person, contentDescription = "Konto", tint = if (screen == Screen.SETTINGS) NeonCyan else TextMuted) },
+                        label = { Text("Konto") })
                 }
             }
         },
@@ -155,7 +165,22 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                         viewModel.openVilla(id)
                         screen = Screen.DETAIL
                     }
-                    Screen.DASHBOARD -> DashboardScreen(state, viewModel, onOpen = { id -> viewModel.openVilla(id); screen = Screen.DETAIL }) { screen = Screen.LIST }
+                    Screen.DASHBOARD -> DashboardScreen(
+                        state, viewModel,
+                        onOpen = { id -> viewModel.openVilla(id); screen = Screen.DETAIL },
+                        onBack = { screen = Screen.LIST },
+                        onChat = {
+                            val target = state.villas.firstOrNull { it.status == "RUNNING" } ?: state.villas.firstOrNull()
+                            if (target != null) { viewModel.openVilla(target.id); screen = Screen.CHAT } else screen = Screen.LIST
+                        },
+                        onVillas = { viewModel.closeDetail(); screen = Screen.LIST },
+                        onDiagnostics = { screen = Screen.DIAGNOSTICS },
+                        onSettings = { screen = Screen.SETTINGS },
+                        onSuperagent = {
+                            val target = state.villas.firstOrNull { it.status == "RUNNING" } ?: state.villas.firstOrNull()
+                            if (target != null) { viewModel.openVilla(target.id); screen = Screen.DEV } else screen = Screen.CREATE
+                        }
+                    )
                     Screen.CREATE -> CreateVillaScreen(state, viewModel) { id ->
                         viewModel.openVilla(id)
                         screen = Screen.CHAT

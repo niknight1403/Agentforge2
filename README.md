@@ -8,6 +8,20 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.31.0 — Cyber-Neon-Redesign der Übersicht
+
+- **Komplett neue Übersicht** im Control-Center-Design: Kopfzeile mit VillaForge-Logo
+  und Benachrichtigungs-Glocke, Profil-Sektion mit Neon-Ring und Status-Badges,
+  Kennzahlen-Chips (Agenten, Provider, Uptime), drei Einstiegskarten mit
+  Fortschrittsringen (Systemstatus, KI-Chat, Villen), Aktivitäts-Karte mit
+  Live-Badge und Marktreife-Sparkline sowie der Superagent-Banner mit direktem
+  Zugang zur Villa-Evolution.
+- **Neue Navigation**: Übersicht · Chat · Villen · Konto — die Übersicht ist jetzt
+  Startbildschirm; Chat öffnet direkt die aktivste Villa.
+- **Neue Design-Bausteine**: Glas-Karten mit Neon-Rand, Fortschrittsringe,
+  Sparklines und Status-Chips (`ui/components/Neon.kt`), Neon-Palette in Theme.
+- Mobile-optimiert: klare Hierarchie, größere Touch-Ziele, ein Blick pro Karte.
+
 ## Neu in 1.30.0
 
 - **Villa-Evolution**: Jede Villa schlägt nach erledigten Aufgaben selbst vor,
