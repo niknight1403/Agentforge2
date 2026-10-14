@@ -2,6 +2,7 @@ package dev.villaforge.app.ui.components
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -23,7 +24,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -79,11 +84,15 @@ fun AnimatedStatTile(label: String, target: Int, accent: Color = Aqua, modifier:
 @Composable
 fun MiniBars(values: List<Float>, modifier: Modifier = Modifier, barColor: Color = Aqua) {
     val max = (values.maxOrNull() ?: 1f).coerceAtLeast(0.001f)
+    /* Sprint 29: Balken wachsen beim Erscheinen weich hoch. */
+    var started by remember { mutableStateOf(false) }
+    LaunchedEffect(values) { started = true }
+    val grow by animateFloatAsState(if (started) 1f else 0f, animationSpec = tween(700), label = "balken")
     Canvas(modifier.fillMaxWidth().height(56.dp)) {
         if (values.isEmpty()) return@Canvas
         val w = size.width / values.size
         values.forEachIndexed { i, v ->
-            val h = (v / max) * size.height * 0.92f
+            val h = (v / max) * size.height * 0.92f * grow
             drawRoundRect(
                 color = if (i == values.lastIndex) barColor else barColor.copy(alpha = 0.45f),
                 topLeft = Offset(i * w + w * 0.18f, size.height - h),
