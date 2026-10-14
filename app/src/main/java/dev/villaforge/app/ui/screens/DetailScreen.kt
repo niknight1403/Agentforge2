@@ -275,8 +275,49 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
                 shownTasks.forEach { TaskRow(it) { taskId -> viewModel.retryTask(taskId) } }
             }
         }
-        Section("Agenten") { detail.agents.take(60).forEach { AgentRow(it) } }
-        Section("Gedächtnis") { detail.memories.take(40).forEach { MemoryRow(it) } }
+        /* Sprint 17: Agenten durchsuchen und zaehlen. */
+        Section("Agenten") {
+            var agentSearch by remember { mutableStateOf("") }
+            OutlinedTextField(
+                value = agentSearch,
+                onValueChange = { agentSearch = it },
+                placeholder = { Text("Agent suchen (Name oder Rolle)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(6.dp))
+            val agentMatches = detail.agents.filter {
+                it.name.contains(agentSearch, ignoreCase = true) || it.role.contains(agentSearch, ignoreCase = true)
+            }
+            Text("${agentMatches.size} von ${detail.agents.size} Agenten", style = muted(), color = TextMuted)
+            agentMatches.take(60).forEach { AgentRow(it) }
+        }
+        /* Sprint 18: Gedächtnis durchsuchen, nach Wichtigkeit sortieren. */
+        Section("Gedächtnis") {
+            var memSearch by remember { mutableStateOf("") }
+            var onlyImportant by remember { mutableStateOf(false) }
+            OutlinedTextField(
+                value = memSearch,
+                onValueChange = { memSearch = it },
+                placeholder = { Text("Erinnerungen durchsuchen") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = !onlyImportant, onClick = { onlyImportant = false }, label = { Text("Alle") })
+                FilterChip(selected = onlyImportant, onClick = { onlyImportant = true }, label = { Text("Wichtig (≥7)") })
+            }
+            val memMatches = detail.memories
+                .filter { m ->
+                    (!onlyImportant || m.importance >= 7) &&
+                        (memSearch.isBlank() || m.title.contains(memSearch, ignoreCase = true) ||
+                            m.content.contains(memSearch, ignoreCase = true))
+                }
+                .sortedByDescending { it.importance }
+            Text("${memMatches.size} von ${detail.memories.size} Einträgen", style = muted(), color = TextMuted)
+            memMatches.take(40).forEach { MemoryRow(it) }
+        }
     }
 }
 
