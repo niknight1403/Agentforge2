@@ -363,12 +363,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(message = "Export bereit") }
     }
 
-    /** Aktualisiert den Stand waehrend eines laufenden Durchlaufs. */
+    /* Sprint 33: bei Verbindungsfehler den letzten Detail-Snapshot zeigen. */
     fun refreshDetail() = run {
         val detail = _state.value.detail ?: return@run
-        val refreshed = client.villaDetail(detail.villa.id)
-        val prod = fetchProduct(detail.villa.id)
-        _state.update { it.copy(detail = refreshed, product = prod) }
+        var fromCache = false
+        val refreshed = try {
+            client.villaDetail(detail.villa.id)
+        } catch (e: Exception) {
+            fromCache = true
+            client.villaDetailFromCache(detail.villa.id)
+        }
+        if (refreshed != null) {
+            val prod = if (fromCache) _state.value.product else fetchProduct(detail.villa.id)
+            _state.update { it.copy(detail = refreshed, product = prod, stale = fromCache) }
+        }
     }
 
     /** Marktreife laden; Fehler sind unkritisch (Karte bleibt dann einfach weg). */
@@ -392,6 +400,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Leert den Live-Ereignis-Feed. */
     fun clearEvents() = _state.update { it.copy(events = emptyList()) }
+
+    /** Groesse des Offline-Caches in Bytes (Diagnose). */
+    fun cacheBytes(): Long = client.snapshotsSizeBytes()
+
+    /** Leert den Offline-Cache und meldet den Erfolg. */
+    fun clearCache() = run {
+        client.clearSnapshots()
+        _state.update { it.copy(message = "Offline-Cache geleert") }
+    }
 
     fun clearMessage() = _state.update { it.copy(message = "", error = null) }
 

@@ -265,6 +265,15 @@ class HubClient(context: Context) {
         parseVillaDetail(execute("GET", "/api/villas/$id").also { saveSnapshot("villa-$id.json", it) })
 
     /** Letzten bekannten Detailstand einer Villa aus dem Offline-Cache. */
+    /** Groesse aller Offline-Snapshots in Bytes (fuer die Diagnose-Anzeige). */
+    fun snapshotsSizeBytes(): Long =
+        snapshotDir.listFiles()?.sumOf { if (it.isFile) it.length() else 0L } ?: 0L
+
+    /** Loescht alle Offline-Snapshots. */
+    fun clearSnapshots() {
+        snapshotDir.listFiles()?.forEach { it.delete() }
+    }
+
     fun villaDetailFromCache(id: Long): VillaDetail? =
         readSnapshot("villa-$id.json")?.let { raw -> runCatching { parseVillaDetail(raw) }.getOrNull() }
 

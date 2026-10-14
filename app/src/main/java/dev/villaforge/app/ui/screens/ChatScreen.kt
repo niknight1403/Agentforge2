@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -204,12 +206,19 @@ fun ChatScreen(state: UiState, viewModel: MainViewModel) {
                 .padding(10.dp),
             verticalAlignment = Alignment.Bottom
         ) {
+            /* Sprint 34: Enter-Taste sendet direkt. */
             OutlinedTextField(
                 value = input,
                 onValueChange = { input = it },
                 placeholder = { Text("Nachricht an " + (state.detail?.agents?.firstOrNull { it.id == state.chatAgentId }?.name ?: "den Deep Agent")) },
                 modifier = Modifier.weight(1f),
-                maxLines = 5
+                maxLines = 5,
+                keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Send),
+                keyboardActions = KeyboardActions(
+                    onSend = {
+                        if (input.isNotBlank()) { viewModel.sendChat(input); input = "" }
+                    }
+                )
             )
             Spacer(Modifier.width(8.dp))
             val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current

@@ -52,6 +52,8 @@ fun DiagnosticsScreen(state: UiState, viewModel: MainViewModel) {
             KeyRow("Live-Feed (SSE)", if (state.live) "verbunden" else "getrennt")
             KeyRow("Hub-Health", state.healthText)
             KeyRow("Angemeldet", viewModel.loggedInEmail.ifBlank { "–" })
+            KeyRow("Offline-Cache", "${viewModel.cacheBytes() / 1024} KB")
+            TextButton(onClick = { viewModel.clearCache() }) { Text("Offline-Cache leeren") }
         }
 
         androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.refreshSecrets() }
