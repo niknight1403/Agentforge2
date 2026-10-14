@@ -30,11 +30,11 @@ jobs:
       - name: Unit-Tests
         run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
 
-      - name: Debug-APK bauen
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: Release-APK bauen (R8-minimiert)
+        run: gradle :app:assembleRelease --no-daemon --stacktrace
 
       - name: APK umbenennen
-        run: cp app/build/outputs/apk/debug/app-debug.apk VillaForge.apk
+        run: cp app/build/outputs/apk/release/app-release.apk VillaForge.apk
 
       - name: APK als Artefakt hochladen
         uses: actions/upload-artifact@v4

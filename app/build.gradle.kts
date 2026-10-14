@@ -11,17 +11,21 @@ android {
         applicationId = "dev.villaforge.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 25
-        versionName = "1.26.0"
+        versionCode = 26
+        versionName = "1.27.0"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Optimierter Release-Build: R8 verkleinert+verschleiert, Ressourcen werden
+            // gestrippt. Debug-Signatur haelt die APK direkt installierbar.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
             isMinifyEnabled = false
