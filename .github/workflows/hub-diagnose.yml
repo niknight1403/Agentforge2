@@ -31,3 +31,22 @@ jobs:
           echo "== Hub-Chat-Test (Ollama/Route, 90s Limit) =="
           curl -s -m 90 -o /tmp/c.json -w "chat-probe: HTTP %{http_code} in %{time_total}s\n" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"Antworte nur mit: ok"}]}' $H/api/chat || true
           head -c 300 /tmp/c.json; echo
+
+      - name: Ollama auf der VM pruefen (SSH)
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/ollcheck.sh <<'CHK'
+          echo "== Dienste =="; systemctl is-active ollama villaforge* 2>/dev/null | head -5
+          echo "== Geladene Modelle (ollama ps) =="; ollama ps 2>&1 | head -8
+          echo "== Installierte Modelle =="; ollama list 2>&1 | head -10
+          echo "== Top-CPU-Prozesse =="; ps aux --sort=-%cpu | head -6 | cut -c1-150
+          echo "== Ollama-Antwort llama3.2:3b (45s Limit) =="
+          curl -s -m 45 -w "\nHTTP %{http_code} in %{time_total}s\n" http://127.0.0.1:11434/api/generate -d '{"model":"llama3.2:3b","prompt":"Sag nur: ok","stream":false,"options":{"num_predict":6}}' | tail -c 350
+          echo "== Letzte Ollama-Logzeilen =="; journalctl -u ollama -n 12 --no-pager 2>&1 | cut -c1-170
+          CHK
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/ollcheck.sh ubuntu@92.5.177.159:/tmp/ollcheck.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/ollcheck.sh"
