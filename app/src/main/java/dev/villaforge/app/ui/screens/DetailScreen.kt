@@ -121,8 +121,14 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
             Text("Offline · zeige letzten Stand", style = muted(), color = dev.villaforge.app.ui.theme.Warn)
         }
 
+        /* Kostenloser KI-Designer: passendes Bild zur Villa. */
+        dev.villaforge.app.ui.components.HeroImage(
+            idea = detail.villa.idea, seed = detail.villa.id,
+            modifier = Modifier.fillMaxWidth().height(140.dp)
+        )
+        Spacer(Modifier.height(10.dp))
+
         state.product?.let { prod ->
-            Spacer(Modifier.height(8.dp))
             MaturityCard(prod)
         }
 
@@ -483,13 +489,6 @@ private fun MaturityCard(prod: org.json.JSONObject) {
     val stage = prod.optString("stage", "")
     val current = prod.optString("currentPhase", "")
     val phases = prod.optJSONArray("phases") ?: org.json.JSONArray()
-
-    /* Kostenloser KI-Designer: passendes Bild zur Villa. */
-    dev.villaforge.app.ui.components.HeroImage(
-        idea = detail.villa.idea, seed = detail.villa.id,
-        modifier = Modifier.fillMaxWidth().height(140.dp)
-    )
-    Spacer(Modifier.height(10.dp))
 
     Card(
         title = "Marktreife",
