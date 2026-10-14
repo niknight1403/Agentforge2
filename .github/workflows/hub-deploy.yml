@@ -26,9 +26,13 @@ jobs:
           UNIT=$(systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -iE '^(hub|villaforge)' | head -1 || true)
           [ -n "$UNIT" ] || UNIT=hub
           echo "UNIT=$UNIT"
-          EXEC=$(systemctl show "$UNIT" -p ExecStart --value 2>/dev/null | grep -oE '/[^ ]*server\.mjs' | head -1 || true)
-          HUBDIR=$(dirname "${EXEC:-/opt/villaforge/server/server.mjs}")
-          echo "HUBDIR=$HUBDIR"
+          WD=$(systemctl show "$UNIT" -p WorkingDirectory --value 2>/dev/null | tr -d '"' || true)
+          EXEC=$(systemctl show "$UNIT" -p ExecStart --value 2>/dev/null || true)
+          MJS=$(echo "$EXEC" | grep -oE '[^ ;"=]*server\.mjs' | head -1 || true)
+          if [ -n "$MJS" ] && [ "${MJS:0:1}" = "/" ]; then HUBDIR=$(dirname "$MJS")
+          elif [ -n "$WD" ] && [ -n "$MJS" ]; then HUBDIR=$(dirname "$WD/$MJS")
+          else HUBDIR=/opt/villaforge/server; fi
+          echo "HUBDIR=$HUBDIR (WD=$WD, MJS=$MJS)"
           echo "== Git-Stand vorher =="
           git -C "$HUBDIR/.." log --oneline -1 2>/dev/null || git -C "$HUBDIR" log --oneline -1 2>/dev/null || true
           echo "== git pull (origin main) =="
@@ -76,5 +80,5 @@ jobs:
           import json
           d = json.load(open('/tmp/h.json'))
           print('LIVE-VERSION:', d.get('version'), '| Agenten:', d.get('agents'), '| Villen:', d.get('villas'))
-          assert '1.38' in str(d.get('version','')), 'Live-Version ist nicht 1.38.x!'
+          assert '1.39' in str(d.get('version','')), 'Live-Version ist nicht 1.39.x!'
           print('LIVE-DEPLOY-OK')"
