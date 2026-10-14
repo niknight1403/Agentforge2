@@ -104,5 +104,5 @@ jobs:
           import json
           d = json.load(open('/tmp/h.json'))
           print('LIVE-VERSION:', d.get('version'), '| Agenten:', d.get('agents'), '| Villen:', d.get('villas'))
-          assert '1.41' in str(d.get('version','')), 'Live-Version ist nicht 1.41.x!'
+          assert '1.41.1' in str(d.get('version','')), 'Live-Version ist nicht 1.41.1!'
           print('LIVE-DEPLOY-OK')"
