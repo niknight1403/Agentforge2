@@ -59,6 +59,8 @@ data class UiState(
     val activity: List<dev.villaforge.app.net.ChatMessage>? = null,
     /** Analyse-Vorschlaege des Innovations-Scouts. */
     val proposals: org.json.JSONArray? = null,
+    /** Villa-Evolution: Status der offenen Villa samt ihrer Vorschlaege. */
+    val evolution: org.json.JSONObject? = null,
     /** Hub verlangt Anmeldung (HTTP 401 ohne gespeicherte Zugangsdaten): Login-Screen zeigen. */
     val needsLogin: Boolean = false
 )
@@ -460,6 +462,39 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         client.proposalReject(id)
         _state.update { it.copy(message = "Vorschlag abgelehnt") }
         refreshProposals()
+    }
+
+    /* ---- Villa-Evolution: naechste Phasen, Perfektion, Marketplace je Villa ---- */
+
+    /** Evolutions-Status der offenen Villa laden (Stufe + offene Vorschlaege). */
+    fun refreshEvolution(villaId: Long) = run {
+        val evo = try { client.evolution(villaId) } catch (e: Exception) { null }
+        _state.update { it.copy(evolution = evo) }
+    }
+
+    /** Villa einen neuen Vorschlag erzeugen lassen. kind: NEXT_PHASES | PERFECT | MARKETPLACE. */
+    fun proposeEvolution(villaId: Long, kind: String) = run {
+        val r = client.evolutionPropose(villaId, kind)
+        val note = if (r.optBoolean("fallback", false))
+            "Vorschlag aus Standardplan (kein Modell erreichbar) - bitte pruefen"
+        else "Neuer Vorschlag mit ${r.optInt("items", 0)} Aufgaben erstellt"
+        _state.update { it.copy(message = note) }
+        refreshEvolution(villaId)
+    }
+
+    /** Vorschlag bestaetigen: Aufgaben legen an und die Villa entwickelt weiter. */
+    fun approveEvolution(villaId: Long, proposalId: Long) = run {
+        val r = client.evolutionApprove(proposalId)
+        _state.update { it.copy(message = "Bestätigt: ${r.optInt("added", 0)} neue Aufgaben - die Villa entwickelt weiter") }
+        refreshEvolution(villaId)
+        refreshDetail()
+    }
+
+    /** Vorschlag ablehnen. */
+    fun rejectEvolution(villaId: Long, proposalId: Long) = run {
+        client.evolutionReject(proposalId)
+        _state.update { it.copy(message = "Vorschlag abgelehnt") }
+        refreshEvolution(villaId)
     }
 
     /** Aktualisiert Build-Status und Vorschau-Info der offenen Villa. */

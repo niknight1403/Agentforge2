@@ -84,6 +84,48 @@ jobs:
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/setup.sh ubuntu@92.5.177.159:/tmp/setup.sh
           bash /tmp/sshcmd "sudo bash /tmp/setup.sh"
 
+      - name: Hub-Code aktualisieren (update)
+        if: ${{ github.event.inputs.mode == 'update' }}
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          GT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+          cat > /tmp/hubupdate.sh <<'UPD'
+          set -e
+          # Hub-Verzeichnis aus der systemd-Unit bestimmen (ExecStart-Pfad).
+          EXEC=$(systemctl show villaforge -p ExecStart --value | grep -oE '/[^ ]*server\.mjs' | head -1 || true)
+          HUBDIR=$(dirname "${EXEC:-/opt/villaforge/server/server.mjs}")
+          cd "$(dirname "$HUBDIR")"
+          if [ -d .git ]; then
+            echo "== git pull in $PWD =="
+            git fetch -q origin && git reset -q --hard origin/main && git log -1 --oneline
+          else
+            echo "== kein Git-Klon in $PWD - Server-Code aus AgentForge ersetzen =="
+            VFNEW=$(mktemp -d)
+            git clone -q https://x-access-token:${GT}@github.com/niknight1403/AgentForge.git "$VFNEW/repo"
+            rsync -a --delete --exclude data --exclude node_modules "$VFNEW/repo/server/" ./server/
+          fi
+          echo "== Hub neu starten =="
+          systemctl restart villaforge
+          OK=0
+          for i in $(seq 1 45); do
+            sleep 2
+            curl -sf -m 2 http://127.0.0.1:12000/api/health >/dev/null 2>&1 && OK=1 && break
+          done
+          if [ "$OK" = 1 ]; then echo HUB-UPDATE-OK; else
+            echo HUB-NICHT-DA
+            journalctl -u villaforge -n 25 --no-pager || true
+            systemctl status villaforge --no-pager -l | head -20
+            exit 1
+          fi
+          UPD
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/hubupdate.sh ubuntu@92.5.177.159:/tmp/hubupdate.sh
+          bash /tmp/sshcmd "sudo GT=$GT bash /tmp/hubupdate.sh"
       - name: Modelle + Fast-Route (pull)
         if: ${{ github.event.inputs.mode == 'pull' }}
         env:

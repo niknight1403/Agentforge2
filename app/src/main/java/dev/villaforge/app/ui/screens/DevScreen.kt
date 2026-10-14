@@ -183,6 +183,7 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
     LaunchedEffect(detail.villa.id) {
         viewModel.refreshCouncil(detail.villa.id)
         viewModel.refreshProposals()
+        viewModel.refreshEvolution(detail.villa.id)
     }
     /* Waehrend eines autonomen Laufs Stand und Build nachladen. */
     LaunchedEffect(detail.villa.id, active) {
@@ -190,6 +191,7 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
             kotlinx.coroutines.delay(5000)
             viewModel.refreshDetail()
             viewModel.refreshBuild()
+            viewModel.refreshEvolution(detail.villa.id)
         }
     }
 
@@ -256,6 +258,85 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
                 Button(onClick = { viewModel.orchestrate() }, enabled = !state.busy) {
                     Text("Autonom fertigstellen starten")
                 }
+            }
+        }
+
+        /* ---- Villa-Evolution: jede Villa schlaegt selbst vor, wie es weitergeht. ---- */
+        SectionHeader("Villa-Evolution (nächste Phasen · Perfektion · Marketplace)")
+        val evo = state.evolution
+        if (evo == null) {
+            Text("Status der Villa-Evolution wird geladen …", style = muted(), color = TextMuted)
+        } else {
+            val stage = evo.optString("stage")
+            val rounds = evo.optInt("phaseRounds", 0)
+            val done = evo.optInt("done", 0)
+            val open = evo.optInt("open", 0)
+            val stageText = when (stage) {
+                "DEVELOPING" -> "Die Villa arbeitet an ihren aktuellen Aufgaben ($open offen, $done erledigt). Ist alles erledigt, schlägt sie die nächsten Phasen vor."
+                "PLANNING_NEXT" -> "Alle Aufgaben sind erledigt ($done) — die Villa schlägt jetzt die nächsten Phasen vor (Runde ${rounds + 1})."
+                "PERFECTING" -> "Alle Phasen sind abgeschlossen (Runde $rounds bestätigt) — jetzt geht es um Perfektionierung, Optimierung und Marktreife."
+                else -> "Stufe $stage"
+            }
+            Text(stageText, style = muted(), color = TextMuted)
+            if (evo.optBoolean("workspaceEmpty", false)) {
+                Text(
+                    "Achtung: Der Projektordner ist noch leer — erledigte Aufgaben haben bisher nur Berichte erzeugt. Neue Vorschläge fordern jetzt echten Code ein.",
+                    style = muted(), color = dev.villaforge.app.ui.theme.Warn
+                )
+            }
+            val evoProps = evo.optJSONArray("proposals")
+            if (evoProps != null && evoProps.length() > 0) {
+                (0 until evoProps.length()).forEach { i ->
+                    val pr = evoProps.optJSONObject(i) ?: return@forEach
+                    val kind = pr.optString("kind")
+                    val kindLabel = when (kind) {
+                        "PERFECT" -> "Perfektionierung"
+                        "MARKETPLACE" -> "AI Marketplace"
+                        else -> "Nächste Phasen (Runde ${pr.optInt("round", 1)})"
+                    }
+                    SectionCard(kindLabel + ": " + pr.optString("title")) {
+                        Text(pr.optString("summary"), style = muted())
+                        Spacer(Modifier.height(4.dp))
+                        val items = pr.optJSONArray("items")
+                        (0 until (items?.length() ?: 0)).forEach { k ->
+                            val it = items?.optJSONObject(k)
+                            Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                Text("· " + (it?.optString("title") ?: ""), fontWeight = FontWeight.SemiBold)
+                                Text((it?.optString("description") ?: "") + "  [" + (it?.optString("role") ?: "") + "]", style = muted(), color = TextMuted)
+                            }
+                        }
+                        if (pr.optString("status") == "pending") {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { viewModel.approveEvolution(detail.villa.id, pr.optLong("id")) },
+                                    enabled = !state.busy
+                                ) { Text("Bestätigen & weiterentwickeln") }
+                                OutlinedButton(
+                                    onClick = { viewModel.rejectEvolution(detail.villa.id, pr.optLong("id")) },
+                                    enabled = !state.busy
+                                ) { Text("Ablehnen") }
+                            }
+                        } else {
+                            Text("Bestätigt — Aufgaben liegen an.", style = muted(), color = dev.villaforge.app.ui.theme.Success)
+                        }
+                    }
+                }
+            } else {
+                Text("Kein offener Vorschlag — du kannst die Villa jetzt einen erzeugen lassen.", style = muted(), color = TextMuted)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { viewModel.proposeEvolution(detail.villa.id, "NEXT_PHASES") },
+                    enabled = !state.busy
+                ) { Text("Nächste Phasen vorschlagen") }
+                OutlinedButton(
+                    onClick = { viewModel.proposeEvolution(detail.villa.id, "PERFECT") },
+                    enabled = !state.busy
+                ) { Text("Perfektionierung") }
+                OutlinedButton(
+                    onClick = { viewModel.proposeEvolution(detail.villa.id, "MARKETPLACE") },
+                    enabled = !state.busy
+                ) { Text("AI Marketplace") }
             }
         }
 

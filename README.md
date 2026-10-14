@@ -8,6 +8,25 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.30.0
+
+- **Villa-Evolution**: Jede Villa schlägt nach erledigten Aufgaben selbst vor,
+  wie es weitergeht. Ist alles abgeschlossen, erzeugt sie einen Vorschlag für
+  die **nächsten Phasen** (bestätigen → die Villa entwickelt eigenständig
+  weiter, bis alle nötigen Phasen fertig sind). Danach schlägt sie Schritte zur
+  **Perfektionierung und Optimierung** vor, bis das Projekt optimal fertig
+  ist. Zusätzlich bekommt jede Villa einen eigenen **AI-Marketplace-Vorschlag**
+  für ihr Projekt. Nichts startet ohne Bestätigung des Besitzers.
+- **Ehrliche Fertigstellung**: „Alle Phasen 100 %“ zählt nur, wenn der
+  Projektordner echte Dateien enthält. Bei leerem Workspace verlangt der
+  Vorschlag zwingend echte Code-Aufgaben — der Build-Fehler „Workspace ist
+  leer“ wird damit an der Wurzel behoben.
+- App: Neuer Bereich „Villa-Evolution“ in der Fertigstellungs-Ansicht mit
+  Vorschlags-Karten, Bestätigen/Ablehnen und drei Anstoß-Buttons.
+- Hub-Routen: `/api/evolution/villas/:id`, `.../propose`,
+  `/api/evolution/proposals/:id/approve|reject`, `/api/evolution/pending`,
+  `/api/evolution/tick`; automatischer Takt alle 30 Minuten.
+
 ## Neu in 1.12.0
 
 - **Feature- und Werkzeug-Packs** sind jetzt serverseitig die eine Wahrheit

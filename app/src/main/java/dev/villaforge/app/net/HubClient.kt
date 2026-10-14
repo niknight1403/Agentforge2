@@ -505,6 +505,24 @@ class HubClient(context: Context) {
     suspend fun councilAdopt(villaId: Long, roundId: Long = 0L): org.json.JSONObject =
         org.json.JSONObject(execute("POST", "/api/villas/$villaId/council/adopt", JSONObject().put("round", roundId)))
 
+    /* ---- Villa-Evolution: jede Villa schlaegt selbst naechste Phasen, Perfektion und Marketplace vor ---- */
+
+    /** Evolutions-Status einer Villa inkl. offener Vorschlaege (GET /api/evolution/villas/:id). */
+    suspend fun evolution(villaId: Long): org.json.JSONObject =
+        org.json.JSONObject(execute("GET", "/api/evolution/villas/$villaId"))
+
+    /** Villa laesst sich einen Vorschlag der Art erzeugen: NEXT_PHASES | PERFECT | MARKETPLACE. */
+    suspend fun evolutionPropose(villaId: Long, kind: String): org.json.JSONObject =
+        org.json.JSONObject(execute("POST", "/api/evolution/villas/$villaId/propose", JSONObject().put("kind", kind)))
+
+    /** Vorschlag bestaetigen: wird zu echten Aufgaben und die Villa entwickelt weiter. */
+    suspend fun evolutionApprove(proposalId: Long): org.json.JSONObject =
+        org.json.JSONObject(execute("POST", "/api/evolution/proposals/$proposalId/approve", JSONObject()))
+
+    /** Vorschlag ablehnen. */
+    suspend fun evolutionReject(proposalId: Long): org.json.JSONObject =
+        org.json.JSONObject(execute("POST", "/api/evolution/proposals/$proposalId/reject", JSONObject()))
+
     companion object {
         // Vorgabe: Hub auf dem Entwickler-Rechner, aus dem Android-Emulator
         // erreichbar (10.0.2.2 = Loopback des Hosts). Auf echten Geraeten wird
