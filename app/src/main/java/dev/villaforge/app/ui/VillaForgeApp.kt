@@ -140,7 +140,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                 label = "screenTransition"
             ) { target ->
                 when (target) {
-                    Screen.LIST -> VillaListScreen(state) { id ->
+                    Screen.LIST -> VillaListScreen(state, viewModel) { id ->
                         viewModel.openVilla(id)
                         screen = Screen.DETAIL
                     }
