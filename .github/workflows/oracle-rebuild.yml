@@ -98,8 +98,12 @@ jobs:
           cat > /tmp/hubupdate.sh <<'UPD'
           set -e
           # Hub-Verzeichnis aus der systemd-Unit bestimmen (ExecStart-Pfad).
-          EXEC=$(systemctl show villaforge -p ExecStart --value | grep -oE '/[^ ]*server\.mjs' | head -1 || true)
+          EXEC=$(systemctl show villaforge -p ExecStart --value 2>/dev/null | grep -oE '/[^ ]*server\.mjs' | head -1 || true)
           HUBDIR=$(dirname "${EXEC:-/opt/villaforge/server/server.mjs}")
+          # Unit-Namen ermitteln (heisst nicht überall villaforge.service).
+          UNIT=$(systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -iE '^(hub|villaforge)' | head -1 || true)
+          UNIT=${UNIT:-villaforge.service}
+          echo "== Unit: $UNIT =="
           cd "$(dirname "$HUBDIR")"
           if [ -d .git ]; then
             echo "== git pull in $PWD =="
@@ -111,7 +115,7 @@ jobs:
             rsync -a --delete --exclude data --exclude node_modules "$VFNEW/repo/server/" ./server/
           fi
           echo "== Hub neu starten =="
-          systemctl restart villaforge
+          systemctl restart "$UNIT"
           OK=0
           for i in $(seq 1 45); do
             sleep 2
@@ -119,8 +123,8 @@ jobs:
           done
           if [ "$OK" = 1 ]; then echo HUB-UPDATE-OK; else
             echo HUB-NICHT-DA
-            journalctl -u villaforge -n 25 --no-pager || true
-            systemctl status villaforge --no-pager -l | head -20
+            journalctl -u "$UNIT" -n 25 --no-pager || true
+            systemctl status "$UNIT" --no-pager -l | head -20
             exit 1
           fi
           UPD
