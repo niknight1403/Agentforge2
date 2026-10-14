@@ -57,9 +57,10 @@ test('Abweichender ETag liefert weiterhin die Datei', async () => {
 });
 
 test('CSS und JS tragen ebenfalls ETags', async () => {
-  for (const path of ['/styles.css', '/app.js']) {
+  for (const path of ['/styles.css', '/app.js', '/ui-state.js']) {
     const r = await fetch(`${BASE}${path}`);
     assert.equal(r.status, 200);
     assert.ok(r.headers.get('etag'), `ETag fehlt fuer ${path}`);
   }
 });
+

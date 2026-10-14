@@ -246,6 +246,7 @@ async function api(req, res, url) {
       agents: count('agents'),
       tasks: {
         total: count('tasks'),
+        done: one("SELECT COUNT(*) c FROM tasks WHERE status = 'DONE'").c,
         open: one("SELECT COUNT(*) c FROM tasks WHERE status IN ('PENDING','READY','RUNNING','REVIEW')").c
       },
       memories: count('memories'),
@@ -709,3 +710,4 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
     setTimeout(() => process.exit(0), 5000).unref();
   });
 }
+

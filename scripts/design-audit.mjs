@@ -30,6 +30,7 @@ function designProbe() {
   const findings = { contrast: [], overflow: [], clipped: [], smallText: [], unnamed: [], duplicateIds: [], pseudoHost: [], tinyTargets: [], notes: [] };
 
   const shown = (el) => {
+    if (el.closest("[inert]")) return false;
     const s = getComputedStyle(el);
     if (s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0) return false;
     const r = el.getBoundingClientRect();
@@ -200,10 +201,13 @@ async function probe(name) {
     })).json();
     console.log(`Testvilla #${created.villaId}`);
 
-    for (const [name, vp] of [['desktop', { w: 1440, h: 960 }], ['mobil', { w: 390, h: 844, mobile: true }]]) {
+    for (const [name, vp] of [['desktop', { w: 1440, h: 960 }], ['tablet', { w: 768, h: 1024 }], ['mobil', { w: 390, h: 844, mobile: true }], ['kompakt', { w: 320, h: 740, mobile: true }]]) {
       await page.navigate(url);
       await page.setViewport(vp.w, vp.h, { mobile: !!vp.mobile });
       await delay(600);
+      const dashboard = await probe(`${name}-dashboard`);
+      console.log(`${name}/dashboard ${JSON.stringify(dashboard.counts)}`);
+      await page.screenshot(join(OUT, `${name}-dashboard.png`));
       // Arbeitsbereich oeffnen, damit dessen Stile mitgemessen werden.
       await page.evaluate("const c = document.querySelector('#villaList .villa-card'); if (c) c.click(); return true;");
       await page.waitFor("document.querySelector('#detailPanel').hidden === false", { timeout: 20_000, label: 'Arbeitsbereich' });
@@ -211,6 +215,11 @@ async function probe(name) {
       const out = await probe(name);
       console.log(`${name.padEnd(8)} ${JSON.stringify(out.counts)}`);
       await page.screenshot(join(OUT, `${name}.png`));
+      for (const tab of ['tasks', 'agents', 'packs', 'reports', 'memory', 'audit']) {
+        await page.evaluate(`document.querySelector('.side-tab[data-tab="${tab}"]').click(); return true;`);
+        await delay(200);
+        await probe(`${name}-${tab}`);
+      }
     }
 
     // Reduzierte Bewegung respektieren?
@@ -243,3 +252,4 @@ async function probe(name) {
   }
   process.exit(code);
 })();
+

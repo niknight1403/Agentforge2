@@ -20,12 +20,16 @@ const setToken = (t) => { t ? localStorage.setItem('vf_token', t) : localStorage
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 async function api(path, opts = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}) };
-  const res = await fetch(path, { headers, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
-  const text = await res.text();
-  let data; try { data = JSON.parse(text); } catch { data = { error: text || `HTTP ${res.status}` }; }
-  if (!res.ok && !data.error) data.error = `HTTP ${res.status}`;
-  return data;
+  const headers = { 'Content-Type': 'application/json', ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}), ...opts.headers };
+  try {
+    const res = await fetch(path, { ...opts, headers, signal: opts.signal ?? AbortSignal.timeout(90000), body: opts.body ? JSON.stringify(opts.body) : undefined });
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch { data = { error: text || `HTTP ${res.status}` }; }
+    if (!res.ok && !data.error) data.error = `HTTP ${res.status}`;
+    return data;
+  } catch (err) {
+    return { error: err.name === 'TimeoutError' ? 'Der Hub antwortet zu langsam. Bitte erneut versuchen.' : 'Hub nicht erreichbar. Bitte die Verbindung prüfen.' };
+  }
 }
 
 let currentVilla = null;
@@ -33,6 +37,8 @@ let currentAgentId = null;
 let latestVillas = [];
 let packState = null;
 let eventSource = null;
+let workspaceOpener = null;
+let villaLoadSequence = 0;
 
 /* ---------------------------- Rueckmeldungen ---------------------------- */
 
@@ -137,21 +143,41 @@ async function checkHealth() {
 /* -------------------------------- Villen ------------------------------ */
 
 async function loadVillas() {
-  const villas = await api('/api/villas');
-  if (villas.error || !Array.isArray(villas)) {
-    $('#villaList').innerHTML = '<p class="empty-state">Villen konnten nicht geladen werden.</p>';
+  const sequence = ++villaLoadSequence;
+  $('#villaList').setAttribute('aria-busy', 'true');
+  try {
+    const villas = await api('/api/villas');
+    if (sequence !== villaLoadSequence) return;
+    if (villas.error || !Array.isArray(villas)) throw new Error(villas.error || 'Ungültige Antwort');
+    latestVillas = villas;
+    $('#openLatestBtn').disabled = !villas.length;
+    renderVillaList();
+  } catch (err) {
+    if (sequence !== villaLoadSequence) return;
+    $('#villaResultCount').textContent = 'Laden fehlgeschlagen';
+    $('#villaList').innerHTML = '<div class="empty-state"><b>Villen nicht erreichbar</b><p>Prüfe deine Verbindung und lade die Liste erneut.</p><button class="ghost villa-retry" type="button">Erneut laden</button></div>';
+    $('#villaList').querySelector('.villa-retry').addEventListener('click', loadVillas);
+  } finally {
+    if (sequence === villaLoadSequence) $('#villaList').setAttribute('aria-busy', 'false');
+  }
+}
+
+function renderVillaList() {
+  const villas = VillaUI.visibleVillas(latestVillas, {
+    query: $('#villaSearch').value, status: $('#villaFilter').value, sort: $('#villaSort').value
+  });
+  $('#villaResultCount').textContent = `${villas.length} von ${latestVillas.length} Villen`;
+  if (!villas.length) {
+    const hasVillas = latestVillas.length > 0;
+    $('#villaList').innerHTML = `<div class="empty-state"><span class="empty-icon" aria-hidden="true">◇</span><b>${hasVillas ? 'Kein passender Entwicklungsraum' : 'Dein erstes Projekt beginnt hier'}</b><p>${hasVillas ? 'Ändere deine Suche oder setze die Filter zurück.' : 'Beschreibe deine Idee und erstelle eine Villa für dein Agententeam.'}</p><button class="ghost empty-action" type="button">${hasVillas ? 'Filter zurücksetzen' : 'Idee eingeben'}</button></div>`;
+    $('#villaList').querySelector('.empty-action').addEventListener('click', () => {
+      if (hasVillas) { $('#villaSearch').value = ''; $('#villaFilter').value = ''; renderVillaList(); $('#villaSearch').focus(); }
+      else $('#idea').focus();
+    });
     return;
   }
-  latestVillas = villas;
-  $('#metricVillas').textContent = latestVillas.length;
-  if (!latestVillas.length) {
-    $('#villaList').innerHTML = '<p class="empty-state">Noch keine Villa erstellt. Starte oben deine erste Entwicklungsumgebung.</p>';
-    return;
-  }
-  $('#villaList').innerHTML = latestVillas.map((v) => `<button type="button" class="villa-card" data-id="${v.id}"><span><b>${esc(v.name)}</b><small>${esc((v.idea || '').slice(0, 105))}</small></span><span class="badge ${esc(v.status)}">${esc(statusLabel(v.status))}</span></button>`).join('');
+  $('#villaList').innerHTML = villas.map((v) => `<button type="button" class="villa-card" data-id="${esc(v.id)}"><span class="villa-card-title"><span class="project-mark" aria-hidden="true">◇</span><b>${esc(v.name)}</b></span><small>${esc((v.idea || '').slice(0, 160))}</small><span class="villa-card-footer"><span class="badge ${esc(v.status)}">${esc(statusLabel(v.status))}</span><span class="project-open">Öffnen ↗</span></span></button>`).join('');
   document.querySelectorAll('.villa-card').forEach((el) => el.addEventListener('click', () => openVilla(Number(el.dataset.id))));
-  const active = latestVillas.find((v) => v.status === 'RUNNING');
-  $('#metricAgents').textContent = active ? 'aktiv' : '0';
 }
 
 async function createVilla() {
@@ -185,7 +211,9 @@ async function createVilla() {
 }
 
 function openWorkspace() {
+  if ($('#detailPanel').hidden) workspaceOpener = document.activeElement;
   $('#detailPanel').hidden = false;
+  document.querySelectorAll('.topbar, .dashboard, body > footer').forEach((el) => { el.inert = true; });
   document.body.classList.add('workspace-open');
   setTimeout(() => $('#chatMsg')?.focus(), 80);
 }
@@ -193,7 +221,10 @@ function openWorkspace() {
 function closeWorkspace() {
   $('#detailPanel').hidden = true;
   document.body.classList.remove('workspace-open');
-  $('#closeDetail')?.focus();
+  document.querySelectorAll('.topbar, .dashboard, body > footer').forEach((el) => { el.inert = false; });
+  currentVilla = null;
+  currentAgentId = null;
+  (workspaceOpener?.isConnected ? workspaceOpener : $('#openLatestBtn')).focus();
 }
 
 async function openVilla(id) {
@@ -203,6 +234,7 @@ async function openVilla(id) {
   const agents = data.agents || [];
   currentAgentId = agents.find((a) => a.is_root)?.id ?? agents[0]?.id ?? null;
   openWorkspace();
+  selectTab('chat');
   $('#dName').textContent = data.villa.name;
   $('#dIdea').textContent = data.villa.idea;
   renderAll(data);
@@ -245,8 +277,7 @@ function renderStats(d) {
   if (track) track.setAttribute('aria-valuenow', String(pct));
   $('#taskCount').textContent = total;
   $('#agentCountLabel').textContent = agents.length;
-  $('#metricAgents').textContent = agents.length;
-  $('#metricTasks').textContent = `${pct}%`;
+
 }
 
 function renderSuggestions(d) {
@@ -538,6 +569,9 @@ async function loadTools() {
 async function loadStats() {
   const s = await api('/api/stats');
   if (s.error) return;
+  $('#metricVillas').textContent = s.villas;
+  $('#metricAgents').textContent = s.agents;
+  $('#metricTasks').textContent = `${s.tasks.done ?? 0}/${s.tasks.total}`;
   let h = `Villen ${s.villas} · Agenten ${s.agents} · Aufgaben offen ${s.tasks.open}/${s.tasks.total} · laufende Villen ${s.runningVillas ? s.runningVillas.length : 0} · Hub v${s.version}`;
   if (s.routesHealth) {
     const rh = s.routesHealth;
@@ -557,8 +591,8 @@ function connectEvents() {
   const t = getToken();
   const es = new EventSource(t ? `/api/events?token=${encodeURIComponent(t)}` : '/api/events');
   eventSource = es;
-  es.onopen = () => { if (eventSource === es) $('#healthDot').className = 'dot ok'; };
-  es.onerror = () => { if (eventSource === es) checkHealth(); };
+  es.onopen = () => { if (eventSource === es) { $('#healthDot').className = 'dot ok'; $('#streamStatus').textContent = '● Live verbunden'; } };
+  es.onerror = () => { if (eventSource === es) { $('#streamStatus').textContent = 'Live getrennt · verbinde erneut'; checkHealth(); } };
   // Nur Statusaenderungen loesen einen Refresh aus; Schwellwertereignisse
   // (task/chat/tool) werden gebuendelt, damit ein Lauf die API nicht flutet.
   let refreshTimer = null;
@@ -646,6 +680,7 @@ function selectTab(tab) {
     const on = t.dataset.tab === tab;
     t.classList.toggle('active', on);
     t.setAttribute('aria-selected', on ? 'true' : 'false');
+    t.tabIndex = on ? 0 : -1;
   });
   document.querySelectorAll('.workspace-main .tabpane').forEach((p) => p.classList.toggle('active', p.dataset.pane === tab));
   if (tab === 'packs') { loadPacks(); loadTools(); }
@@ -655,7 +690,10 @@ function selectTab(tab) {
 
 $('#taskFilter').addEventListener('change', () => currentVilla && renderTasks(currentVilla.tasks));
 $('#retryFailedBar').addEventListener('click', retryFailedAll);
-$('#createBtn').addEventListener('click', createVilla);
+$('#createForm').addEventListener('submit', (e) => { e.preventDefault(); createVilla(); });
+$('#villaSearch').addEventListener('input', renderVillaList);
+$('#villaFilter').addEventListener('change', renderVillaList);
+$('#villaSort').addEventListener('change', renderVillaList);
 $('#heroCreateBtn').addEventListener('click', () => { $('#createSection').scrollIntoView({ behavior: 'smooth' }); setTimeout(() => $('#idea').focus(), 350); });
 $('#refreshBtn').addEventListener('click', loadVillas);
 $('#openLatestBtn').addEventListener('click', () => latestVillas[0] && openVilla(latestVillas[0].id));
@@ -670,7 +708,7 @@ $('#pruneBtn').addEventListener('click', pruneAudit);
 $('#startBtn').addEventListener('click', startDevelopment);
 $('#stopBtn').addEventListener('click', stopDevelopment);
 $('#sendBtn').addEventListener('click', sendChat);
-$('#chatMsg').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+$('#chatMsg').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); } });
 $('#addRouteBtn').addEventListener('click', addRoute);
 $('#addSecretBtn').addEventListener('click', addSecret);
 $('#saveTokenBtn').addEventListener('click', saveToken);
@@ -679,9 +717,41 @@ $('#offlineRetry').addEventListener('click', () => { checkHealth(); loadVillas()
 $('#modalCancel').addEventListener('click', () => $('#modal').close('cancel'));
 // Enter im Modal-Formular bestaetigt, damit man nicht zur Maus greifen muss.
 $('#modalFields').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#modalOk').click(); } });
-document.querySelectorAll('.side-tab').forEach((t) => t.addEventListener('click', () => selectTab(t.dataset.tab)));
+document.querySelectorAll('.side-tab').forEach((t, index, tabs) => {
+  t.id = `tab-${t.dataset.tab}`;
+  t.setAttribute('aria-controls', `pane-${t.dataset.tab}`);
+  t.tabIndex = t.classList.contains('active') ? 0 : -1;
+  const pane = document.querySelector(`[data-pane="${t.dataset.tab}"]`);
+  pane.id = `pane-${t.dataset.tab}`;
+  pane.setAttribute('role', 'tabpanel');
+  pane.setAttribute('aria-labelledby', t.id);
+  t.addEventListener('click', () => selectTab(t.dataset.tab));
+  t.addEventListener('keydown', (e) => {
+    const offset = ['ArrowRight', 'ArrowDown'].includes(e.key) ? 1 : ['ArrowLeft', 'ArrowUp'].includes(e.key) ? -1 : 0;
+    if (!offset && !['Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const next = tabs[e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + offset + tabs.length) % tabs.length];
+    selectTab(next.dataset.tab); next.focus();
+  });
+});
+function syncNavigation() {
+  const hash = location.hash || '#top';
+  document.querySelectorAll('.topnav a').forEach((a) => {
+    const active = a.getAttribute('href') === hash;
+    a.classList.toggle('active', active);
+    if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+}
+window.addEventListener('hashchange', syncNavigation);
+syncNavigation();
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('#detailPanel').hidden && !$('#modal').open) closeWorkspace();
+  if (e.key === 'Tab' && !$('#detailPanel').hidden && !$('#modal').open) {
+    const focusable = [...$('#detailPanel').querySelectorAll('button, input, textarea, select, [tabindex="0"]')].filter((el) => !el.disabled && el.getClientRects().length && el.tabIndex >= 0);
+    const first = focusable[0], last = focusable.at(-1);
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+  }
+  if (e.key === 'Escape'  && !$('#detailPanel').hidden && !$('#modal').open) closeWorkspace();
 });
 
 checkHealth();
@@ -694,3 +764,4 @@ loadTools();
 connectEvents();
 setInterval(checkHealth, 20000);
 setInterval(loadStats, 30000);
+

@@ -1,5 +1,6 @@
 package dev.villaforge.app.ui.screens
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.villaforge.app.net.VillaEvent
@@ -70,10 +72,11 @@ internal fun Card(title: String, subtitle: String, badge: String, onClick: (() -
     Column(
         Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .border(1.dp, dev.villaforge.app.ui.theme.Border, RoundedCornerShape(16.dp))
             .background(Surface1)
-            .padding(14.dp)
+            .padding(18.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
@@ -95,7 +98,7 @@ internal fun RowCard(title: String, subtitle: String, badge: String, trailing: (
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(Surface1)
-            .padding(12.dp)
+            .padding(16.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
@@ -170,3 +173,4 @@ internal fun EventRow(event: VillaEvent) {
 
 internal fun time(ts: Long): String =
     SimpleDateFormat("HH:mm", Locale.GERMANY).format(Date(if (ts > 0) ts else System.currentTimeMillis()))
+

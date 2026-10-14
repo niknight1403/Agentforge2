@@ -11,11 +11,12 @@
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 </head>
 <body>
-  <div class="aurora"></div>
+  <a class="skip-link" href="#top">Zum Inhalt springen</a>
+  <div class="aurora" aria-hidden="true"></div>
 
   <header class="topbar">
-    <a class="brand" href="#top" aria-label="VillaForge Startseite"><span class="logo-mark" aria-hidden="true">✦</span><span><strong>VillaForge</strong><small>CONTROL CENTER</small></span></a>
-    <nav class="topnav" aria-label="Hauptnavigation"><a class="active" href="#top">Übersicht</a><a href="#villaSection">Villen</a><a href="#routesSection">System</a></nav>
+    <a class="brand" href="#top" aria-label="VillaForge Startseite"><span class="logo-mark" aria-hidden="true">✦</span><span><strong>VillaForge</strong><small>AGENT WORKSPACE</small></span></a>
+    <nav class="topnav" aria-label="Hauptnavigation"><a class="active" href="#top" aria-current="page"><span aria-hidden="true">◫</span> Übersicht</a><a href="#villaSection"><span aria-hidden="true">◇</span> Villen</a><a href="#packsSection"><span aria-hidden="true">⚒</span> Werkzeuge</a><a href="#routesSection"><span aria-hidden="true">⌁</span> System</a></nav>
     <div class="status"><span id="healthDot" class="dot" aria-hidden="true"></span><span id="healthText" role="status" aria-live="polite">verbinde…</span></div>
   </header>
 
@@ -25,45 +26,55 @@
     <button id="offlineRetry" class="ghost compact" type="button">Erneut versuchen</button>
   </div>
 
-  <main id="top" class="dashboard">
+  <main id="top" class="dashboard" tabindex="-1">
+    <div class="page-heading"><div><p class="eyebrow">VILLAFORGE / ÜBERSICHT</p><h1>Dein Entwicklungsstudio</h1><p>Projekte steuern. Fortschritt sehen. Den nächsten Schritt machen.</p></div><span class="studio-tag">DEEP AGENT STUDIO</span></div>
     <section class="hero panel-glass">
       <div>
         <p class="eyebrow">DEEP-AGENT CONTROL CENTER</p>
-        <h1>Deine Idee.<br /><span>Deine Villa.</span></h1>
-        <p class="hero-copy">Ein fokussierter Entwicklungsraum für Planung, Chat und Umsetzung – mit genau den Informationen, die du gerade brauchst.</p>
+        <h2>Von der Idee<br /><span>zur Umsetzung.</span></h2>
+        <p class="hero-copy">Ein Raum für dein nächstes Projekt. Plane mit deinen Agenten, prüfe Ergebnisse und behalte die Kontrolle.</p>
         <button id="heroCreateBtn" class="primary large" type="button">Neue Villa starten <span aria-hidden="true">→</span></button>
       </div>
-      <div class="hero-orb" aria-hidden="true"><div class="orb-core">✦</div></div>
+      <div class="hero-visual" aria-hidden="true"><div class="hero-orb"><div class="orb-core">✦</div></div><span class="orbit-label">PLANEN · BAUEN · PRÜFEN</span></div>
     </section>
 
     <section class="metric-grid" aria-label="Systemübersicht">
-      <article class="metric-card"><span class="metric-icon purple" aria-hidden="true">⌘</span><div><b id="metricVillas">0</b><small>Villen</small></div></article>
-      <article class="metric-card"><span class="metric-icon cyan" aria-hidden="true">◈</span><div><b id="metricAgents">0</b><small>Agenten aktiv</small></div></article>
-      <article class="metric-card"><span class="metric-icon green" aria-hidden="true">✓</span><div><b id="metricTasks">0%</b><small>Aufgabenfortschritt</small></div></article>
-      <article class="metric-card"><span class="metric-icon pink" aria-hidden="true">⚡</span><div><b id="metricRoutes">0</b><small>LLM-Routen</small></div></article>
+      <article class="metric-card"><span class="metric-icon purple" aria-hidden="true">⌘</span><div><b id="metricVillas">—</b><small>Villen</small></div></article>
+      <article class="metric-card"><span class="metric-icon cyan" aria-hidden="true">◈</span><div><b id="metricAgents">—</b><small>Agenten im Pool</small></div></article>
+      <article class="metric-card"><span class="metric-icon green" aria-hidden="true">✓</span><div><b id="metricTasks">—</b><small>Aufgaben erledigt</small></div></article>
+      <article class="metric-card"><span class="metric-icon pink" aria-hidden="true">⚡</span><div><b id="metricRoutes">—</b><small>LLM-Routen</small></div></article>
     </section>
 
     <section id="createSection" class="panel-glass create-panel">
+      <form id="createForm">
       <div class="section-heading"><div><p class="eyebrow">STARTER</p><h2>Eine neue Villa aufbauen</h2></div><span class="section-count">01</span></div>
       <p class="hint">Beschreibe dein Ziel. Nach dem Erstellen öffnet sich automatisch der Chat-Entwicklungsraum mit Vorschlägen und dem Deep Agent.</p>
       <div class="form-grid">
-        <label>Titel der Villa<input id="villaName" placeholder="z. B. Mein Produkt-Launch" /></label>
-        <label>Agentenpool<input id="agentCount" type="number" min="3" max="1000" value="24" /></label>
+        <label>Titel der Villa<input id="villaName" maxlength="160" placeholder="z. B. Mein Produkt-Launch" /></label>
+        <label>Agentenpool<input id="agentCount" type="number" min="3" max="1000" value="24" required /></label>
       </div>
-      <label>Idee / Ziel<textarea id="idea" rows="4" placeholder="Was soll gebaut, verbessert oder analysiert werden? Zielgruppe, Funktionen, Rahmenbedingungen …"></textarea></label>
+      <label>Idee / Ziel<textarea id="idea" rows="4" required maxlength="20000" placeholder="Was soll gebaut, verbessert oder analysiert werden? Zielgruppe, Funktionen, Rahmenbedingungen …"></textarea></label>
       <details class="advanced">
         <summary>Erweitert · bestehende App analysieren</summary>
         <label>Quellpfad, optional<input id="sourcePath" placeholder="/pfad/zur/bestehenden/app" /></label>
       </details>
       <div class="actions">
-        <button id="createBtn" class="primary" type="button">Villa erstellen <span aria-hidden="true">→</span></button>
+        <button id="createBtn" class="primary" type="submit">Villa erstellen <span aria-hidden="true">→</span></button>
         <button id="refreshBtn" class="ghost" type="button">Aktualisieren</button>
       </div>
       <p id="createMsg" class="msg" role="status" aria-live="polite"></p>
+      </form>
     </section>
 
     <section id="villaSection" class="panel-glass">
       <div class="section-heading"><div><p class="eyebrow">WORKSPACE</p><h2>Deine Villen</h2></div><button id="openLatestBtn" class="ghost compact" type="button">Letzte öffnen</button></div>
+      <p class="hint">Alle Entwicklungsräume an einem Ort. Öffne eine Villa, um weiterzuarbeiten.</p>
+      <div class="villa-toolbar">
+        <label class="search-label"><span class="visually-hidden">Villen durchsuchen</span><input id="villaSearch" type="search" placeholder="Name oder Idee suchen …" /></label>
+        <label><span class="visually-hidden">Villenstatus</span><select id="villaFilter"><option value="">Alle Status</option><option value="RUNNING">Läuft</option><option value="PLANNING">Plant</option><option value="PAUSED">Pausiert</option><option value="COMPLETED">Fertig</option><option value="FAILED">Fehler</option></select></label>
+        <label><span class="visually-hidden">Sortierung</span><select id="villaSort"><option value="newest">Neueste zuerst</option><option value="name">Name A–Z</option><option value="status">Status</option></select></label>
+      </div>
+      <p id="villaResultCount" class="result-count" role="status" aria-live="polite"></p>
       <div id="villaList" class="villa-list"><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
       <div class="actions">
         <input id="importFile" type="file" accept="application/json,.json" hidden />
@@ -118,7 +129,7 @@
     </section>
   </main>
 
-  <section id="detailPanel" class="workspace-overlay" hidden aria-label="Villa Entwicklungsfenster">
+  <section id="detailPanel" class="workspace-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="dName">
     <div class="workspace-shell">
       <header class="workspace-header">
         <div class="workspace-title">
@@ -159,10 +170,10 @@
         </aside>
         <section class="workspace-main">
           <div class="tabpane active" data-pane="chat">
-            <div class="chat-heading"><div><p class="eyebrow">DEEP AGENT</p><h3>Gemeinsam entwickeln</h3></div><span class="live-dot">● live</span></div>
+            <div class="chat-heading"><div><p class="eyebrow">DEEP AGENT</p><h3>Gemeinsam entwickeln</h3></div><span id="streamStatus" class="live-dot" role="status">Live-Verbindung wird aufgebaut</span></div>
             <div id="chatLog" class="chat-log" role="log" aria-live="polite" aria-label="Chatverlauf"></div>
             <div class="chat-input">
-              <textarea id="chatMsg" rows="2" placeholder="Schreibe eine Anweisung oder frage nach dem nächsten Schritt …"></textarea>
+              <textarea id="chatMsg" aria-label="Anweisung an den Deep Agent" rows="2" placeholder="Schreibe eine Anweisung oder frage nach dem nächsten Schritt …"></textarea>
               <button id="sendBtn" class="send-button" type="button" aria-label="Nachricht senden">↑</button>
             </div>
             <p class="chat-help">Enter zum Senden · Shift+Enter für neue Zeile</p>
@@ -223,6 +234,8 @@
     </div>
   </dialog>
 
+  <script src="/ui-state.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
+

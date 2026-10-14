@@ -1,6 +1,8 @@
 name: Build Android APK
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
@@ -10,9 +12,17 @@ on:
       - ".github/workflows/build-apk.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +36,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
+
+      - name: Android Lint
+        run: gradle :app:lintDebug --no-daemon --stacktrace
 
       - name: Unit-Tests
         run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
@@ -43,20 +56,11 @@ jobs:
           path: VillaForge.apk
           if-no-files-found: error
 
-      - name: Node 23 einrichten
-        uses: actions/setup-node@v4
+
+      - name: Android-Prüfberichte sichern
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          node-version: "23"
-
-      - name: Hub-Syntax pruefen (kein Start, keine Schluessel)
-        run: node --check server/server.mjs
-
-      # LLM-Smoke-Test: laeuft nur, wenn Repository-Secrets hinterlegt sind
-      # (Settings → Secrets and variables → Actions). Keys erscheinen nie
-      # im Log und liegen nicht im Repo; der Hub liest sie aus der Umgebung.
-      - name: LLM-Smoke-Test (nur mit GitHub Secrets)
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: node server/scripts/llm-smoke.mjs
+          name: android-quality-reports
+          path: app/build/reports/
+          if-no-files-found: warn

@@ -1,34 +1,42 @@
 name: Hub-Tests
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
+      - "scripts/**"
       - "server/**"
       - "package.json"
       - ".github/workflows/hub-tests.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Node 23 einrichten
+      - name: Node 24 einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: "23"
+          node-version: "24"
 
-      - name: Syntax pruefen
-        run: |
-          node --check server/server.mjs
-          node --check server/agents.mjs
-          node --check server/llm.mjs
-          node --check server/db.mjs
+      - name: Alle JavaScript-Dateien prüfen
+        run: npm run check:syntax
 
       - name: Secret-Scan
         run: node scripts/check-secrets.mjs
 
       - name: Unit- und Integrationstests
         run: node --test server/tests/*.test.mjs
+

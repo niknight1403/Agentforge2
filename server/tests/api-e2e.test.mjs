@@ -122,6 +122,7 @@ test('Stats: Zaehler und Laufzustand stimmen', async () => {
   assert.ok(st.uptimeSec >= 0);
   assert.ok(Number.isInteger(st.villas) && st.villas >= 1, 'Villa-Zaehler fehlt');
   assert.ok(st.tasks.total >= 1, 'Aufgaben-Zaehler fehlt');
+  assert.ok(Number.isInteger(st.tasks.done) && st.tasks.done >= 0 && st.tasks.done <= st.tasks.total, 'Erledigte Aufgaben sind ein gültiger globaler Zähler');
   assert.ok(Array.isArray(st.runningVillas), 'runningVillas muss Array sein');
   assert.ok(st.limits && typeof st.limits.ratePerMinute === 'number');
   const rh = st.routesHealth;
@@ -400,3 +401,4 @@ test('Stop-Endpunkt und sauberes Herunterfahren', async () => {
   const health = await fetch(`${BASE}/api/health`);
   assert.equal(health.status, 200);
 });
+

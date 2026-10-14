@@ -267,6 +267,24 @@ async function run() {
     return 'alle Anfragen sauber';
   });
 
+  await check('Arbeitsbereich: Reiter per Tastatur und Fokus wiederherstellen', async () => {
+    await page.evaluate(`const tab = document.querySelector('.side-tab[data-tab="chat"]'); tab.click(); tab.focus(); return true;`);
+    await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 });
+    const keyboard = await page.evaluate(`return document.activeElement.dataset.tab === 'tasks' && document.querySelector('.dashboard').inert;`);
+    if (!keyboard) throw new Error('Tastaturreiter oder Hintergrund-Isolation fehlen');
+    await page.evaluate(`document.querySelector('#closeDetail').click(); return true;`);
+    const restored = await page.evaluate(`return !document.querySelector('.dashboard').inert && document.activeElement.getClientRects().length > 0;`);
+    if (!restored) throw new Error('Fokus geht beim Schließen verloren');
+    return 'Pfeiltasten, isolierter Hintergrund und sichtbarer Fokus';
+  });
+  await check('Villen-Suche, Leerzustand und Filter-Reset', async () => {
+    const empty = await page.evaluate(`const search = document.querySelector('#villaSearch'); search.value = 'kein-treffer-999'; search.dispatchEvent(new Event('input')); return document.querySelectorAll('.villa-card').length === 0 && !!document.querySelector('.empty-action');`);
+    if (!empty) throw new Error('Suche filtert nicht');
+    const reset = await page.evaluate(`document.querySelector('.empty-action').click(); return document.querySelector('#villaSearch').value === '' && document.querySelectorAll('.villa-card').length > 0;`);
+    if (!reset) throw new Error('Filter-Reset stellt Liste nicht wieder her');
+    return 'Suche und Reset funktionieren';
+  });
+
   await check('Mobile Ansicht (390x844) bleibt bedienbar', async () => {
     await page.setViewport(390, 844, { mobile: true });
     await page.navigate(`http://127.0.0.1:${PORT}/`);
@@ -360,3 +378,4 @@ function writeReport() {
   if (report.console.errors.length) console.log(`   ! Konsolenfehler: ${report.console.errors.length}`);
   process.exit(failed ? 1 : 0);
 })();
+

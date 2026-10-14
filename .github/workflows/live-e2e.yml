@@ -5,6 +5,8 @@ name: Live-Test & Design-Audit
 # (WCAG-Kontrast, Ueberlauf, Touch-Ziele, Fokus, reduzierte Bewegung).
 # Die statischen Tests in hub-tests.yml bleiben davon unberuehrt.
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
@@ -14,6 +16,13 @@ on:
       - ".github/workflows/live-e2e.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   browser:
     runs-on: ubuntu-latest
@@ -21,10 +30,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Node 23 einrichten
+      - name: Node 24 einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: "23"
+          node-version: "24"
 
       - name: Browser nachweisen
         run: |
@@ -44,3 +53,4 @@ jobs:
           path: artifacts/
           retention-days: 14
           if-no-files-found: warn
+

@@ -6,13 +6,21 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,7 +32,6 @@ import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,11 +44,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.villaforge.app.ui.screens.ChatScreen
@@ -74,105 +79,143 @@ private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.DIAGN
 @Composable
 fun VillaForgeApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var screen by remember { mutableStateOf(Screen.LIST) }
+    var screen by rememberSaveable { mutableStateOf(Screen.LIST) }
 
-    Scaffold(
-        containerColor = Ink,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("VillaForge", fontWeight = FontWeight.Bold)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(state.healthText, style = muted(), color = TextMuted)
-                            Spacer(Modifier.width(6.dp))
-                            LiveDot(state.live)
-                        }
-                    }
-                },
-                navigationIcon = {
-                    if (screen != Screen.LIST) {
-                        IconButton(onClick = {
-                            when (screen) {
-                                Screen.CHAT, Screen.DEV -> screen = Screen.DETAIL
-                                else -> { screen = Screen.LIST; viewModel.closeDetail() }
-                            }
-                        }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
-                    }
-                },
-                actions = {
-                    if (topLevelScreens.contains(screen)) {
-                        IconButton(onClick = { viewModel.refreshAll() }) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Aktualisieren")
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Surface1,
-                    titleContentColor = TextMain,
-                    navigationIconContentColor = TextMain,
-                    actionIconContentColor = TextMain
-                )
-            )
-        },
-        bottomBar = {
-            if (topLevelScreens.contains(screen)) {
-                NavigationBar(containerColor = Surface1) {
-                    NavigationBarItem(selected = screen == Screen.LIST, onClick = { viewModel.closeDetail(); screen = Screen.LIST },
-                        icon = { Icon(Icons.Filled.Home, contentDescription = "Villen") }, label = { Text("Villen") })
-                    NavigationBarItem(selected = screen == Screen.DASHBOARD, onClick = { viewModel.closeDetail(); screen = Screen.DASHBOARD },
-                        icon = { Icon(Icons.Filled.Dashboard, contentDescription = "Mission Control") }, label = { Text("Mission") })
-                    NavigationBarItem(selected = screen == Screen.DIAGNOSTICS, onClick = { viewModel.closeDetail(); screen = Screen.DIAGNOSTICS },
-                        icon = { Icon(Icons.Filled.HealthAndSafety, contentDescription = "Diagnose") }, label = { Text("Diagnose") })
-                    NavigationBarItem(selected = screen == Screen.SETTINGS, onClick = { viewModel.closeDetail(); screen = Screen.SETTINGS },
-                        icon = { Icon(Icons.Filled.Settings, contentDescription = "Einstellungen") }, label = { Text("Mehr") })
-                }
-            }
-        },
-        floatingActionButton = {
-            if (screen == Screen.LIST) {
-                Button(onClick = { screen = Screen.CREATE }, shape = RoundedCornerShape(16.dp)) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Deep Agent")
-                }
-            }
+    val goBack: () -> Unit = {
+        when (screen) {
+            Screen.CHAT, Screen.DEV -> screen = Screen.DETAIL
+            else -> { screen = Screen.LIST; viewModel.closeDetail() }
         }
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            if (state.needsLogin) {
-                LoginScreen(state, viewModel)
-            } else AnimatedContent(
-                targetState = screen,
-                transitionSpec = {
-                    (slideInHorizontally(initialOffsetX = { it / 6 }) + fadeIn()) togetherWith
-                        (slideOutHorizontally(targetOffsetX = { -it / 6 }) + fadeOut())
-                },
-                label = "screenTransition"
-            ) { target ->
-                when (target) {
-                    Screen.LIST -> VillaListScreen(state, viewModel) { id ->
-                        viewModel.openVilla(id)
-                        screen = Screen.DETAIL
+    }
+    BackHandler(enabled = screen != Screen.LIST && !state.needsLogin, onBack = goBack)
+    val destinations = listOf(
+        Triple(Screen.LIST, Icons.Filled.Home, "Villen"),
+        Triple(Screen.DASHBOARD, Icons.Filled.Dashboard, "Mission"),
+        Triple(Screen.DIAGNOSTICS, Icons.Filled.HealthAndSafety, "Diagnose"),
+        Triple(Screen.SETTINGS, Icons.Filled.Settings, "System")
+    )
+    val title = when (screen) {
+        Screen.LIST -> "VillaForge"
+        Screen.CREATE -> "Neue Villa"
+        Screen.DASHBOARD -> "Mission Control"
+        Screen.DETAIL -> "Entwicklungsraum"
+        Screen.CHAT -> "Deep Agent"
+        Screen.DEV -> "Entwicklung"
+        Screen.SETTINGS -> "Einstellungen"
+        Screen.DIAGNOSTICS -> "Systemdiagnose"
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val useRail = maxWidth >= 840.dp && topLevelScreens.contains(screen) && !state.needsLogin
+        Row(Modifier.fillMaxSize()) {
+            if (useRail) {
+                NavigationRail(containerColor = Surface1, modifier = Modifier.fillMaxHeight()) {
+                    destinations.forEach { (target, icon, label) ->
+                        NavigationRailItem(
+                            selected = screen == target,
+                            onClick = { viewModel.closeDetail(); screen = target },
+                            icon = { Icon(icon, contentDescription = null) },
+                            label = { Text(label) }
+                        )
                     }
-                    Screen.DASHBOARD -> DashboardScreen(state, viewModel, onOpen = { id -> viewModel.openVilla(id); screen = Screen.DETAIL }) { screen = Screen.LIST }
-                    Screen.CREATE -> CreateVillaScreen(state, viewModel) { id ->
-                        viewModel.openVilla(id)
-                        screen = Screen.CHAT
-                    }
-                    Screen.DETAIL -> DetailScreen(state, viewModel, onChat = { screen = Screen.CHAT }, onDeleted = { screen = Screen.LIST }, onDev = { screen = Screen.DEV })
-                    Screen.CHAT -> ChatScreen(state, viewModel)
-                    Screen.DEV -> DevScreen(state, viewModel, onOpenVilla = { id -> viewModel.openVilla(id); screen = Screen.DEV })
-                    Screen.SETTINGS -> SettingsScreen(state, viewModel)
-                    Screen.DIAGNOSTICS -> DiagnosticsScreen(state, viewModel)
                 }
             }
+            Scaffold(
+                modifier = Modifier.weight(1f),
+                containerColor = Ink,
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            Column {
+                                Text(if (state.needsLogin) "Mit Hub verbinden" else title, style = MaterialTheme.typography.titleLarge)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(state.healthText, style = muted(), color = TextMuted)
+                                    Spacer(Modifier.width(6.dp))
+                                    LiveDot(state.live)
+                                }
+                            }
+                        },
+                        navigationIcon = {
+                            if (screen != Screen.LIST && !state.needsLogin) {
+                                IconButton(onClick = goBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
+                            }
+                        },
+                        actions = {
+                            if (topLevelScreens.contains(screen) && !state.needsLogin) {
+                                IconButton(onClick = { viewModel.refreshAll() }) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = "Aktualisieren")
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Surface1,
+                            titleContentColor = TextMain,
+                            navigationIconContentColor = TextMain,
+                            actionIconContentColor = TextMain
+                        )
+                    )
+                },
+                bottomBar = {
+                    if (topLevelScreens.contains(screen) && !useRail && !state.needsLogin) {
+                        NavigationBar(containerColor = Surface1) {
+                            destinations.forEach { (target, icon, label) ->
+                                NavigationBarItem(
+                                    selected = screen == target,
+                                    onClick = { viewModel.closeDetail(); screen = target },
+                                    icon = { Icon(icon, contentDescription = null) },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+                    }
+                },
+                floatingActionButton = {
+                    if (screen == Screen.LIST && !state.needsLogin) {
+                        Button(onClick = { screen = Screen.CREATE }, shape = RoundedCornerShape(16.dp)) {
+                            Icon(Icons.Filled.Add, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Neue Villa")
+                        }
+                    }
+                }
+            ) { padding ->
+                Box(Modifier.fillMaxSize().padding(padding)) {
+                    if (state.needsLogin) {
+                        LoginScreen(state, viewModel)
+                    } else AnimatedContent(
+                        targetState = screen,
+                        transitionSpec = {
+                            (slideInHorizontally(initialOffsetX = { it / 6 }) + fadeIn()) togetherWith
+                                (slideOutHorizontally(targetOffsetX = { -it / 6 }) + fadeOut())
+                        },
+                        label = "screenTransition"
+                    ) { target ->
+                        when (target) {
+                            Screen.LIST -> VillaListScreen(state, viewModel) { id ->
+                                viewModel.openVilla(id)
+                                screen = Screen.DETAIL
+                            }
+                            Screen.DASHBOARD -> DashboardScreen(state, viewModel, onOpen = { id -> viewModel.openVilla(id); screen = Screen.DETAIL }) { screen = Screen.LIST }
+                            Screen.CREATE -> CreateVillaScreen(state, viewModel) { id ->
+                                viewModel.openVilla(id)
+                                screen = Screen.CHAT
+                            }
+                            Screen.DETAIL -> DetailScreen(state, viewModel, onChat = { screen = Screen.CHAT }, onDeleted = { screen = Screen.LIST }, onDev = { screen = Screen.DEV })
+                            Screen.CHAT -> ChatScreen(state, viewModel)
+                            Screen.DEV -> DevScreen(state, viewModel, onOpenVilla = { id -> viewModel.openVilla(id); screen = Screen.DEV })
+                            Screen.SETTINGS -> SettingsScreen(state, viewModel)
+                            Screen.DIAGNOSTICS -> DiagnosticsScreen(state, viewModel)
+                        }
+                    }
 
-            if (state.busy) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp).size(32.dp),
-                    color = Aqua
-                )
+                    if (state.busy) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+                            color = Aqua,
+                            trackColor = Surface1
+                        )
+                    }
+                }
             }
         }
     }
