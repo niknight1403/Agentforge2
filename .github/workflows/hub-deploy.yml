@@ -15,7 +15,7 @@ jobs:
       - name: Hub live updaten (git pull + Restart + Version pruefen)
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
-          REF: ${{ github.event.inputs.ref || 'main' }}
+          GT: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
@@ -29,9 +29,15 @@ jobs:
           echo "== Git-Stand vorher =="
           git -C "$HUBDIR/.." log --oneline -1 2>/dev/null || git -C "$HUBDIR" log --oneline -1 2>/dev/null || true
           echo "== git pull (origin main) =="
-          cd "$HUBDIR/.." 2>/dev/null || cd "$HUBDIR"
-          git fetch --all -q 2>&1 | head -3 || true
-          git reset --hard origin/main -q 2>&1 | head -3 || true
+          HUBROOT=$(cd "$HUBDIR/.." 2>/dev/null && pwd || echo "$HUBDIR")
+          cd "$HUBROOT"
+          # Remote-URL mit frischem Token versehen, falls der alte
+          # eingebettete Token abgelaufen ist (Exit-5-Ursache).
+          git remote set-url origin "https://x-access-token:${GT}@github.com/niknight1403/AgentForge.git" 2>/dev/null || true
+          git fetch -q origin main
+          RC=$?
+          [ "$RC" = "0" ] || { echo "FETCH-FEHLGESCHLAGEN rc=$RC"; git remote -v | head -2; exit 3; }
+          git reset --hard origin/main 2>&1 | head -3
           git log --oneline -1
           echo "== Abhaengigkeiten aktualisieren (falls noetig) =="
           if [ -f package.json ]; then
@@ -51,7 +57,7 @@ jobs:
           echo "DEPLOY-ENDE"
           DEP
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/deploy.sh ubuntu@92.5.177.159:/tmp/deploy.sh
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/deploy.sh"
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GT='$GT' bash -c 'export GT; bash /tmp/deploy.sh'"
 
       - name: Hub von aussen verifizieren
         run: |
