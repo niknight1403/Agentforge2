@@ -105,6 +105,22 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
             Stat("Status", detail.villa.status)
         }
 
+        /* Sprint 32: Fortschrittsring fuer den Aufgaben-Abschluss. */
+        Spacer(Modifier.height(8.dp))
+        val doneCount = detail.tasks.count { it.status == "DONE" }
+        val pct = if (detail.tasks.isEmpty()) 0 else (doneCount * 100) / detail.tasks.size
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RingProgress(pct, if (pct >= 100) dev.villaforge.app.ui.theme.Success else Aqua)
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("$pct % erledigt", fontWeight = FontWeight.Bold)
+                Text("$doneCount von ${detail.tasks.size} Aufgaben", style = muted(), color = TextMuted)
+            }
+        }
+        if (state.stale) {
+            Text("Offline · zeige letzten Stand", style = muted(), color = dev.villaforge.app.ui.theme.Warn)
+        }
+
         state.product?.let { prod ->
             Spacer(Modifier.height(8.dp))
             MaturityCard(prod)
@@ -278,6 +294,26 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
                 ).map { (s, c) -> detail.tasks.count { it.status == s } to c },
                 Modifier.fillMaxWidth().height(6.dp)
             )
+            Spacer(Modifier.height(4.dp))
+            /* Sprint 37: Legende zu den Statusfarben des Balkens. */
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                for ((status, color) in listOf(
+                    "DONE" to dev.villaforge.app.ui.theme.Success, "RUNNING" to Aqua,
+                    "PENDING" to dev.villaforge.app.ui.theme.Violet, "FAILED" to dev.villaforge.app.ui.theme.Danger
+                )) {
+                    val n = detail.tasks.count { it.status == status }
+                    if (n > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(
+                                Modifier.width(8.dp).height(8.dp)
+                                    .background(color, RoundedCornerShape(2.dp))
+                            ) {}
+                            Spacer(Modifier.width(3.dp))
+                            Text("$status $n", style = muted(), color = TextMuted)
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for ((label, value) in listOf(

@@ -1,6 +1,7 @@
 package dev.villaforge.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,10 +66,11 @@ internal fun ErrorBanner(text: String, onRetry: (() -> Unit)? = null) {
 }
 
 @Composable
-internal fun Card(title: String, subtitle: String, badge: String, content: @Composable () -> Unit) {
+internal fun Card(title: String, subtitle: String, badge: String, onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .clip(RoundedCornerShape(14.dp))
             .background(Surface1)
             .padding(14.dp)

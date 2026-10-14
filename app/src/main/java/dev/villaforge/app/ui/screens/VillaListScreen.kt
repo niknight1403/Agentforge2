@@ -130,7 +130,7 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
             else -> {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(visible, key = { it.id }) { villa ->
-                        Card(villa.name, villa.idea.take(120), villa.status) {
+                        Card(villa.name, villa.idea.take(120), villa.status, onClick = { onOpen(villa.id) }) {
                             OutlinedButton(onClick = { onOpen(villa.id) }) { Text("Öffnen") }
                         }
                     }
