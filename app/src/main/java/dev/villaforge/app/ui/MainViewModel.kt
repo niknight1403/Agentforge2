@@ -416,6 +416,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Autorisierungs-Header fuer Downloads (DownloadManager/WebView). */
     fun authHeader(): String? = client.authHeaderValue()
 
+    /** Live-Ansicht: URL mit Auth-Header laden (WebView-Ressource). */
+    fun previewResource(url: String): android.webkit.WebResourceResponse? = client.webResource(url)
+
     /** Aktivitaet laden: letzte Meldungen aller Agenten der offenen Villa. */
     fun refreshActivity() = run {
         val detail = _state.value.detail ?: return@run
