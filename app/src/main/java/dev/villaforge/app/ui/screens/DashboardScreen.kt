@@ -46,7 +46,7 @@ import dev.villaforge.app.net.VillaEvent
 
 /* Mission Control (v1.14.0): animierte Kennzahlen, SectionCards. */
 @Composable
-fun DashboardScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit) {
+fun DashboardScreen(state: UiState, viewModel: MainViewModel, onOpen: (Long) -> Unit, onBack: () -> Unit) {
     val packsOn = remember { mutableStateMapOf("monitoring" to true, "analytics" to true, "council" to true, "superintelligence" to true) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -90,10 +90,17 @@ fun DashboardScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit
                 MiniBars((0 until maturity.length()).map { i -> maturity.optJSONObject(i)?.optInt("score", 0)?.toFloat() ?: 0f })
                 (0 until maturity.length()).forEach { i ->
                     val m = maturity.optJSONObject(i) ?: return@forEach
-                    Text(
-                        "• ${m.optString("name").take(22)}: ${m.optInt("score")}/100 · ${m.optString("stage")}",
-                        style = muted(), color = TextMuted
-                    )
+                    /* Sprint 26: Villa direkt aus der Marktreife-Liste oeffnen. */
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "• ${m.optString("name").take(22)}: ${m.optInt("score")}/100 · ${m.optString("stage")}",
+                            style = muted(), color = TextMuted,
+                            modifier = Modifier.weight(1f)
+                        )
+                        androidx.compose.material3.TextButton(onClick = { onOpen(m.optLong("villaId")) }) {
+                            Text("Öffnen")
+                        }
+                    }
                 }
             }
         }

@@ -144,7 +144,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                         viewModel.openVilla(id)
                         screen = Screen.DETAIL
                     }
-                    Screen.DASHBOARD -> DashboardScreen(state, viewModel) { screen = Screen.LIST }
+                    Screen.DASHBOARD -> DashboardScreen(state, viewModel, onOpen = { id -> viewModel.openVilla(id); screen = Screen.DETAIL }) { screen = Screen.LIST }
                     Screen.CREATE -> CreateVillaScreen(state, viewModel) { id ->
                         viewModel.openVilla(id)
                         screen = Screen.CHAT

@@ -41,6 +41,8 @@ import dev.villaforge.app.ui.theme.TextMuted
 fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (Long) -> Unit) {
     var search by remember { mutableStateOf("") }
     var statusFilter by remember { mutableStateOf("") }
+    /* Sprint 25: Sortierung Neueste / Name / Status. */
+    var sortMode by remember { mutableStateOf("neu") }
 
     /* Sprint 14: regelmaeßige Hintergrunderneuerung, solange die Liste sichtbar ist. */
     viewModel?.let { vm ->
@@ -52,10 +54,15 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
         }
     }
 
-    val visible = state.villas.filter { villa ->
+    val filtered = state.villas.filter { villa ->
         (statusFilter.isEmpty() || villa.status == statusFilter) &&
             (search.isBlank() || villa.name.contains(search, ignoreCase = true) ||
                 villa.idea.contains(search, ignoreCase = true))
+    }
+    val visible = when (sortMode) {
+        "name" -> filtered.sortedBy { it.name.lowercase() }
+        "status" -> filtered.sortedWith(compareBy({ it.status }, { it.name.lowercase() }))
+        else -> filtered.sortedByDescending { it.id }
     }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -92,6 +99,18 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
                 FilterChip(
                     selected = statusFilter == value,
                     onClick = { statusFilter = value },
+                    label = { Text(label) }
+                )
+            }
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
+            for ((label, value) in listOf("Neueste" to "neu", "Name" to "name", "Status" to "status")) {
+                FilterChip(
+                    selected = sortMode == value,
+                    onClick = { sortMode = value },
                     label = { Text(label) }
                 )
             }
