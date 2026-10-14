@@ -9,6 +9,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -214,6 +217,21 @@ fun SectionHeader(text: String) {
         text.uppercase(),
         style = MaterialTheme.typography.labelSmall,
         modifier = Modifier.padding(top = 10.dp)
+    )
+}
+
+/** KI-generiertes Villen-Bild (kostenloser Designer: Pollinations.ai, ohne API-Key). */
+@Composable
+fun HeroImage(idea: String, seed: Long, modifier: Modifier = Modifier) {
+    val prompt = java.net.URLEncoder.encode(
+        "modern premium app concept hero image, ${idea.take(140)}, dark futuristic gradient, teal and violet neon accents, minimalist professional digital art, high quality",
+        "UTF-8"
+    )
+    AsyncImage(
+        model = "https://image.pollinations.ai/prompt/$prompt?width=720&height=320&nologo=true&seed=${seed * 31 + 7}",
+        contentDescription = "KI-generiertes Villen-Bild",
+        contentScale = ContentScale.Crop,
+        modifier = modifier
     )
 }
 

@@ -162,7 +162,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     }
                     Screen.DETAIL -> DetailScreen(state, viewModel, onChat = { screen = Screen.CHAT }, onDeleted = { screen = Screen.LIST }, onDev = { screen = Screen.DEV })
                     Screen.CHAT -> ChatScreen(state, viewModel)
-                    Screen.DEV -> DevScreen(state, viewModel)
+                    Screen.DEV -> DevScreen(state, viewModel, onOpenVilla = { id -> viewModel.openVilla(id); screen = Screen.DEV })
                     Screen.SETTINGS -> SettingsScreen(state, viewModel)
                     Screen.DIAGNOSTICS -> DiagnosticsScreen(state, viewModel)
                 }

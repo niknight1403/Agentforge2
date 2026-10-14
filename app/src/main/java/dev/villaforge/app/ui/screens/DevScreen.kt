@@ -51,7 +51,7 @@ import dev.villaforge.app.ui.theme.TextMuted
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DevScreen(state: UiState, viewModel: MainViewModel) {
+fun DevScreen(state: UiState, viewModel: MainViewModel, onOpenVilla: (Long) -> Unit = {}) {
     val detail = state.detail ?: return
     var tab by remember { mutableStateOf(0) }
 
@@ -59,19 +59,72 @@ fun DevScreen(state: UiState, viewModel: MainViewModel) {
         state.error?.let { ErrorBanner(it) { viewModel.refreshAll() } }
         if (state.message.isNotBlank()) Text(state.message, color = Aqua, style = muted(), modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
         TabRow(selectedTabIndex = tab) {
-            listOf("Chat" to "Deep-Agent-Chat", "Live-Ansicht" to "Laufende App", "Fertigstellung" to "Autonom & Build").forEachIndexed { i, (label, desc) ->
-                Tab(
-                    selected = tab == i,
-                    onClick = { tab = i },
-                    text = { Text(label) },
-                    icon = null
-                )
+            listOf("Aktivität", "Chat", "Live-Ansicht", "Fertigstellung").forEachIndexed { i, label ->
+                Tab(selected = tab == i, onClick = { tab = i }, text = { Text(label) })
             }
         }
         when (tab) {
-            0 -> ChatScreen(state, viewModel)
-            1 -> LiveTab(state, viewModel)
-            2 -> FinishTab(state, viewModel)
+            0 -> ActivityTab(state, viewModel)
+            1 -> ChatScreen(state, viewModel)
+            2 -> LiveTab(state, viewModel)
+            3 -> FinishTab(state, viewModel, onOpenVilla)
+        }
+    }
+}
+
+/** Aktivitaet: WAS/WARUM/WIE-Erklaerung plus Agenten-Timeline. */
+@Composable
+private fun ActivityTab(state: UiState, viewModel: MainViewModel) {
+    val detail = state.detail ?: return
+    LaunchedEffect(detail.villa.id) {
+        viewModel.refreshActivity()
+        viewModel.explain()
+    }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        dev.villaforge.app.ui.components.HeroImage(
+            idea = detail.villa.idea, seed = detail.villa.id,
+            modifier = Modifier.fillMaxWidth().height(120.dp)
+        )
+        SectionCard("Was macht die Villa gerade?") {
+            val ex = state.explanation
+            if (ex != null) {
+                for ((label, key) in listOf("Was" to "was", "Warum" to "warum", "Wie" to "wie", "Nächster Schritt" to "naechsterSchritt")) {
+                    val v = ex.optString(key)
+                    if (v.isNotBlank()) {
+                        Text(label.uppercase(), style = muted(), color = Aqua, fontWeight = FontWeight.Bold)
+                        Text(v, style = muted())
+                        if (key != "naechsterSchritt") Spacer(Modifier.height(6.dp))
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                OutlinedButton(onClick = { viewModel.explain() }, enabled = !state.busy) { Text("Neu erklären") }
+            } else {
+                Text("Erklärung wird geladen …", style = muted(), color = TextMuted)
+            }
+        }
+        SectionHeader("Agenten-Aktivität")
+        val activity = state.activity
+        if (activity == null || activity.isEmpty()) {
+            Text("Noch keine Meldungen.", style = muted(), color = TextMuted)
+        } else {
+            activity.take(12).forEach { m ->
+                val agent = detail.agents.firstOrNull { it.id == m.agentId }
+                Column(Modifier.fillMaxWidth()) {
+                    Row {
+                        Text(agent?.name ?: (if (m.role == "user") "Du" else "Agent"), fontWeight = FontWeight.SemiBold, color = Aqua, style = muted())
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            java.text.SimpleDateFormat("dd.MM. HH:mm", java.util.Locale.GERMANY).format(java.util.Date(m.createdAt)),
+                            style = muted(), color = TextMuted
+                        )
+                    }
+                    Text(m.content.take(240), style = muted())
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
         }
     }
 }
@@ -111,11 +164,14 @@ private fun LiveTab(state: UiState, viewModel: MainViewModel) {
 
 /** Autonome Fertigstellung: 24/7-Lauf, Vorschlaege aus Phasen und Rat, Produkt-Build. */
 @Composable
-private fun FinishTab(state: UiState, viewModel: MainViewModel) {
+private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Long) -> Unit = {}) {
     val detail = state.detail ?: return
     val active = detail.running || detail.villa.status == "RUNNING" || detail.villa.status == "STOPPING"
 
-    LaunchedEffect(detail.villa.id) { viewModel.refreshCouncil(detail.villa.id) }
+    LaunchedEffect(detail.villa.id) {
+        viewModel.refreshCouncil(detail.villa.id)
+        viewModel.refreshProposals()
+    }
     /* Waehrend eines autonomen Laufs Stand und Build nachladen. */
     LaunchedEffect(detail.villa.id, active) {
         while (active) {
@@ -129,6 +185,52 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        /* Analyse-Vorschlaege: bessere Alternativen mit klarer Begruendung. */
+        SectionHeader("Analyse-Vorschläge (bessere Alternativen)")
+        val props = state.proposals
+        if (props == null || props.length() == 0) {
+            Text("Noch keine Vorschläge. Der Scout analysiert alle 6 h - oder du forderst jetzt eine bessere Alternative an.",
+                style = muted(), color = TextMuted)
+        } else {
+            (0 until props.length()).forEach { i ->
+                val p = props.optJSONObject(i) ?: return@forEach
+                var showPrompt by remember(p.optLong("id")) { mutableStateOf(false) }
+                SectionCard(p.optString("title")) {
+                    Text("Projekt: " + p.optString("proposedName"), fontWeight = FontWeight.Bold, color = Aqua)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Warum es sich lohnt:", style = muted(), color = TextMuted)
+                    Text(p.optString("whyBetter"), style = muted())
+                    val benefits = p.optJSONArray("benefits")
+                    if (benefits != null) {
+                        (0 until benefits.length()).forEach { b ->
+                            Text("· " + benefits.optString(b), style = muted())
+                        }
+                    }
+                    TextButton(onClick = { showPrompt = !showPrompt }) {
+                        Text(if (showPrompt) "Masterprompt verbergen" else "Masterprompt ansehen")
+                    }
+                    if (showPrompt) Text(p.optString("masterprompt"), style = muted(), color = TextMuted)
+                    if (p.optString("status") == "pending") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { viewModel.approveProposal(p.optLong("id")) { id -> onOpenVilla(id) } }, enabled = !state.busy) {
+                                Text("Bestätigen & Villa gründen")
+                            }
+                            OutlinedButton(onClick = { viewModel.rejectProposal(p.optLong("id")) }, enabled = !state.busy) {
+                                Text("Ablehnen")
+                            }
+                        }
+                    } else {
+                        val vid = p.optLong("villaId", -1)
+                        Text("Villa #$vid wurde gegründet.", style = muted(), color = dev.villaforge.app.ui.theme.Success)
+                        if (vid > 0) TextButton(onClick = { onOpenVilla(vid) }) { Text("Villa öffnen") }
+                    }
+                }
+            }
+        }
+        OutlinedButton(onClick = { viewModel.scanProposals() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+            Text("Jetzt nach besserer Alternative suchen")
+        }
+
         SectionCard("Autonome Fertigstellung") {
             Text(
                 if (active) "Die Villa arbeitet gerade autonom: Phasen-Aufgaben, Rat und Umsatz-Zyklus steuern die Wellen."

@@ -484,6 +484,13 @@ private fun MaturityCard(prod: org.json.JSONObject) {
     val current = prod.optString("currentPhase", "")
     val phases = prod.optJSONArray("phases") ?: org.json.JSONArray()
 
+    /* Kostenloser KI-Designer: passendes Bild zur Villa. */
+    dev.villaforge.app.ui.components.HeroImage(
+        idea = detail.villa.idea, seed = detail.villa.id,
+        modifier = Modifier.fillMaxWidth().height(140.dp)
+    )
+    Spacer(Modifier.height(10.dp))
+
     Card(
         title = "Marktreife",
         subtitle = "$score/100 · $stage",
