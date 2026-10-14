@@ -7,6 +7,7 @@ import { db, now } from './db.mjs';
 import { seedRoutes, syncCatalog } from './seed.mjs';
 import { validateRoute, validateSecret, validateVilla, validateVillaPatch, validateTaskPatch, TASK_STATUSES, validateMessage, validateOrchestrate } from './validate.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus, keyPools, llmGateStatus } from './llm.mjs';
+import { cmdGateStatus } from './fs-tools.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, toolSpecs, memoryContext, setSource, analyzeProject, importVilla } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { bus, emit, eventsSince } from './events.mjs';
@@ -202,7 +203,7 @@ async function api(req, res, url) {
   }
 
   if (p === '/api/health') {
-    return json(res, 200, { ok: true, ts: now(), routes: enabledRoutes().length, version: VERSION, llm: llmGateStatus() });
+    return json(res, 200, { ok: true, ts: now(), routes: enabledRoutes().length, version: VERSION, llm: llmGateStatus(), cmd: cmdGateStatus() });
   }
 
   // ---- Routen ----
