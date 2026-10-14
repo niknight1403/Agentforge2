@@ -130,6 +130,30 @@ jobs:
           UPD
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/hubupdate.sh ubuntu@92.5.177.159:/tmp/hubupdate.sh
           bash /tmp/sshcmd "sudo GT=$GT bash /tmp/hubupdate.sh"
+      - name: Ollama neu starten (ollama-restart)
+        if: ${{ github.event.inputs.mode == 'ollama-restart' }}
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/ollrestart.sh <<'RST'
+          echo "== Vorher: ollama ps =="; ollama ps 2>&1 | head -5
+          echo "== Haengende Runner beenden und Dienst neu starten =="
+          systemctl stop ollama || true
+          pkill -9 -f llama-server || true
+          sleep 3
+          systemctl start ollama
+          for i in $(seq 1 30); do curl -sf -m 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && break; sleep 2; done
+          echo "== Modell warm laden + Antwortzeit =="
+          curl -s -m 120 -w "\nHTTP %{http_code} in %{time_total}s\n" http://127.0.0.1:11434/api/generate -d '{"model":"llama3.2:3b","prompt":"Sag nur: ok","stream":false,"keep_alive":"30m","options":{"num_predict":6}}' | tail -c 300
+          echo "== Zweite Anfrage (warm) =="
+          curl -s -m 60 -w "\nHTTP %{http_code} in %{time_total}s\n" http://127.0.0.1:11434/api/generate -d '{"model":"llama3.2:3b","prompt":"Nenne eine Farbe.","stream":false,"keep_alive":"30m","options":{"num_predict":10}}' | tail -c 300
+          echo "== Nachher: Last =="; uptime
+          RST
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/ollrestart.sh ubuntu@92.5.177.159:/tmp/ollrestart.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/ollrestart.sh"
       - name: Modelle + Fast-Route (pull)
         if: ${{ github.event.inputs.mode == 'pull' }}
         env:
