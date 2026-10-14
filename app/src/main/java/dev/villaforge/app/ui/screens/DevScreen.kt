@@ -194,12 +194,12 @@ private fun BuildCard(state: UiState, viewModel: MainViewModel) {
     val status = build?.optString("status") ?: "none"
     val context = LocalContext.current
 
-    /* Waehrend des Baus Status abfragen, bis er fertig ist. */
-    LaunchedEffect(status) {
-        while (status == "running") {
+    /* Solange der Build laeuft, Status abfragen bis er fertig ist. */
+    LaunchedEffect(Unit) {
+        while (true) {
             kotlinx.coroutines.delay(5000)
-            viewModel.refreshBuild()
-            break
+            val st = viewModel.state.value.build?.optString("status")
+            if (st == "running") viewModel.refreshBuild() else break
         }
     }
 

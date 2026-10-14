@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -27,6 +28,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -43,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.villaforge.app.ui.screens.ChatScreen
 import dev.villaforge.app.ui.screens.CreateVillaScreen
+import dev.villaforge.app.ui.screens.DevScreen
 import dev.villaforge.app.ui.screens.DashboardScreen
 import dev.villaforge.app.ui.screens.DiagnosticsScreen
 import dev.villaforge.app.ui.screens.DetailScreen
@@ -62,7 +66,9 @@ import dev.villaforge.app.ui.theme.TextMuted
  * leben in ui/screens/, Bausteine in ui/components/, der Parser in core/.
  * Hier bleibt nur die Navigation mit sanften uebergangen zurueck.
  */
-private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, SETTINGS, DIAGNOSTICS }
+private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, DEV, SETTINGS, DIAGNOSTICS }
+
+private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.DIAGNOSTICS, Screen.SETTINGS)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,25 +94,16 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     if (screen != Screen.LIST) {
                         IconButton(onClick = {
                             when (screen) {
-                                Screen.CHAT -> screen = Screen.DETAIL
+                                Screen.CHAT, Screen.DEV -> screen = Screen.DETAIL
                                 else -> { screen = Screen.LIST; viewModel.closeDetail() }
                             }
                         }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
                     }
                 },
                 actions = {
-                    if (screen == Screen.LIST) {
-                        IconButton(onClick = { screen = Screen.DASHBOARD }) {
-                            Icon(Icons.Filled.Dashboard, contentDescription = "Dashboard")
-                        }
-                        IconButton(onClick = { screen = Screen.DIAGNOSTICS }) {
-                            Icon(Icons.Filled.HealthAndSafety, contentDescription = "Diagnose")
-                        }
+                    if (topLevelScreens.contains(screen)) {
                         IconButton(onClick = { viewModel.refreshAll() }) {
                             Icon(Icons.Filled.Refresh, contentDescription = "Aktualisieren")
-                        }
-                        IconButton(onClick = { screen = Screen.SETTINGS }) {
-                            Icon(Icons.Filled.Settings, contentDescription = "Einstellungen")
                         }
                     }
                 },
@@ -117,6 +114,20 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     actionIconContentColor = TextMain
                 )
             )
+        },
+        bottomBar = {
+            if (topLevelScreens.contains(screen)) {
+                NavigationBar(containerColor = Surface1) {
+                    NavigationBarItem(selected = screen == Screen.LIST, onClick = { viewModel.closeDetail(); screen = Screen.LIST },
+                        icon = { Icon(Icons.Filled.Home, contentDescription = "Villen") }, label = { Text("Villen") })
+                    NavigationBarItem(selected = screen == Screen.DASHBOARD, onClick = { viewModel.closeDetail(); screen = Screen.DASHBOARD },
+                        icon = { Icon(Icons.Filled.Dashboard, contentDescription = "Mission Control") }, label = { Text("Mission") })
+                    NavigationBarItem(selected = screen == Screen.DIAGNOSTICS, onClick = { viewModel.closeDetail(); screen = Screen.DIAGNOSTICS },
+                        icon = { Icon(Icons.Filled.HealthAndSafety, contentDescription = "Diagnose") }, label = { Text("Diagnose") })
+                    NavigationBarItem(selected = screen == Screen.SETTINGS, onClick = { viewModel.closeDetail(); screen = Screen.SETTINGS },
+                        icon = { Icon(Icons.Filled.Settings, contentDescription = "Einstellungen") }, label = { Text("Mehr") })
+                }
+            }
         },
         floatingActionButton = {
             if (screen == Screen.LIST) {
@@ -149,8 +160,9 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                         viewModel.openVilla(id)
                         screen = Screen.CHAT
                     }
-                    Screen.DETAIL -> DetailScreen(state, viewModel, onChat = { screen = Screen.CHAT }, onDeleted = { screen = Screen.LIST })
+                    Screen.DETAIL -> DetailScreen(state, viewModel, onChat = { screen = Screen.CHAT }, onDeleted = { screen = Screen.LIST }, onDev = { screen = Screen.DEV })
                     Screen.CHAT -> ChatScreen(state, viewModel)
+                    Screen.DEV -> DevScreen(state, viewModel)
                     Screen.SETTINGS -> SettingsScreen(state, viewModel)
                     Screen.DIAGNOSTICS -> DiagnosticsScreen(state, viewModel)
                 }

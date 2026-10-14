@@ -60,7 +60,7 @@ import dev.villaforge.app.ui.theme.TextMuted
 
 /* Detail-Ansicht (v1.14.0): animierte Kennzahlen, semantische Badges. */
 @Composable
-fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, onDeleted: () -> Unit) {
+fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, onDeleted: () -> Unit, onDev: () -> Unit = {}) {
     val detail = state.detail ?: return
     var showDelete by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) }
@@ -155,6 +155,17 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
                     Spacer(Modifier.width(6.dp)); Text("Entwicklung starten")
                 }
             }
+        }
+        /* Entwicklungsbereich: Chat, Live-Ansicht, autonome Fertigstellung, APK-Build. */
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = onDev,
+            enabled = !state.busy,
+            colors = ButtonDefaults.buttonColors(containerColor = dev.villaforge.app.ui.theme.Violet, contentColor = Ink),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Filled.Edit, contentDescription = "Entwicklungsbereich öffnen")
+            Spacer(Modifier.width(6.dp)); Text("Entwicklungsbereich")
         }
         if (detail.villa.sourcePath.isNotBlank()) {
             Spacer(Modifier.height(8.dp))

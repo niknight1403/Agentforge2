@@ -9,6 +9,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -224,6 +225,7 @@ fun SectionCard(title: String, content: @Composable () -> Unit) {
             .fillMaxWidth()
             .animateContentSize(animationSpec = tween(250))
             .clip(RoundedCornerShape(16.dp))
+            .border(0.6.dp, Aqua.copy(alpha = 0.16f), RoundedCornerShape(16.dp))
             .background(Surface2)
     ) {
         Column(
