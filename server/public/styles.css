@@ -930,3 +930,9 @@ input::placeholder, textarea::placeholder { color: #97a5ba; }
   .workspace-sidebar .progress-track { margin-top: 0; }
   .workspace-sidebar .progress-label { margin: 4px 0 0; }
 }
+/* Tablet headers need a separate navigation row rather than squeezing labels. */
+@media (min-width: 761px) and (max-width: 1199px) {
+  .topbar { flex-wrap: wrap; gap: 12px; }
+  .topnav { order: 3; width: 100%; justify-content: center; }
+  .status { margin-left: auto; min-width: 0; }
+}
