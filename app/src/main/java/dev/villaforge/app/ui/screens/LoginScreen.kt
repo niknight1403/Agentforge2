@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +40,8 @@ import dev.villaforge.app.ui.theme.TextMuted
 fun LoginScreen(state: UiState, viewModel: MainViewModel) {
     var mail by rememberSaveable { mutableStateOf(viewModel.loggedInEmail) }
     var pw by rememberSaveable { mutableStateOf("") }
+    /* Sprint 27: Passwort bei Bedarf im Klartext pruefen. */
+    var showPw by rememberSaveable { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
@@ -61,8 +64,12 @@ fun LoginScreen(state: UiState, viewModel: MainViewModel) {
         OutlinedTextField(
             value = pw, onValueChange = { pw = it }, label = { Text("Passwort") },
             singleLine = true, modifier = Modifier.fillMaxWidth(),
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            visualTransformation = if (showPw) androidx.compose.ui.text.input.VisualTransformation.None
+                else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = {
+                TextButton(onClick = { showPw = !showPw }) { Text(if (showPw) "Verbergen" else "Anzeigen") }
+            }
         )
         Spacer(Modifier.height(16.dp))
         Button(

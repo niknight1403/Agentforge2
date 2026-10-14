@@ -41,12 +41,21 @@ fun CreateVillaScreen(state: UiState, viewModel: MainViewModel, onCreated: (Long
             style = muted(), color = TextMuted
         )
         OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Titel") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = idea, onValueChange = { idea = it }, label = { Text("Idee / Ziel") }, modifier = Modifier.fillMaxWidth(), minLines = 4)
+        OutlinedTextField(
+            value = idea, onValueChange = { idea = it }, label = { Text("Idee / Ziel") },
+            modifier = Modifier.fillMaxWidth(), minLines = 4,
+            supportingText = { Text("${idea.length} Zeichen") }
+        )
         OutlinedTextField(
             value = count,
             onValueChange = { count = it.filter { c -> c.isDigit() } },
             label = { Text("Anzahl Agenten (3–1000)") },
             modifier = Modifier.fillMaxWidth()
+        )
+        /* Sprint 28: Last-Limit transparent machen. */
+        Text(
+            "Der Hub aktiviert maximal 24 Agenten gleichzeitig; weitere warten im Agentenpool.",
+            style = muted(), color = TextMuted
         )
         OutlinedTextField(
             value = sourcePath,

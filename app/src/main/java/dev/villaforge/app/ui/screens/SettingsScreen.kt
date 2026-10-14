@@ -111,6 +111,12 @@ fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
                 enabled = loginMail.isNotBlank() && loginPw.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Anmelden") }
+            if (viewModel.loggedInEmail.isNotBlank()) {
+                Spacer(Modifier.padding(4.dp))
+                Text("Angemeldet als ${viewModel.loggedInEmail}", style = muted(), color = TextMuted)
+                Spacer(Modifier.padding(4.dp))
+                OutlinedButton(onClick = { viewModel.logout() }, modifier = Modifier.fillMaxWidth()) { Text("Abmelden") }
+            }
         }
 
         SectionCard("Hub-Token (optional)") {
