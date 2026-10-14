@@ -21,18 +21,18 @@ import androidx.compose.ui.unit.sp
  * - Overline-Stil fuer Sektions-Labels mit Letter-Spacing.
  * - statusColor(): semantische Statusfarben als zentrale Wahrheit.
  */
-val Violet = Color(0xFF7C6CFF)
-val Aqua = Color(0xFF00E0B8)
-val Ink = Color(0xFF05070F)
-val Surface1 = Color(0xFF10182C)
-val Surface2 = Color(0xFF18223C)
-val Surface3 = Color(0xFF212D4E)
+val Violet = Color(0xFF8B6CFF)
+val Aqua = Color(0xFF00E6C2)
+val Ink = Color(0xFF050816)
+val Surface1 = Color(0xFF101A33)
+val Surface2 = Color(0xFF172342)
+val Surface3 = Color(0xFF24335A)
 val TextMain = Color(0xFFECF0FF)
 val TextMuted = Color(0xFF94A0C8)
 val Warn = Color(0xFFFFB020)
 val Danger = Color(0xFFFF5F6D)
 val Success = Color(0xFF35D97B)
-val Border = Color(0xFF2A3654)
+val Border = Color(0xFF34446D)
 
 /** Marken-Verlauf fuer Header und Highlights. */
 val BrandGradient = Brush.linearGradient(listOf(Violet, Aqua))
@@ -78,7 +78,7 @@ private val display = TextStyle(
 private val typography = Typography(
     displayLarge = display,
     displayMedium = display.copy(fontSize = 24.sp),
-    headlineSmall = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextMain),
+    headlineSmall = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.Bold, color = TextMain),
     titleLarge = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = TextMain),
     titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextMain),
     bodyLarge = TextStyle(fontSize = 15.sp, color = TextMain),

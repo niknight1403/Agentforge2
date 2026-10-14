@@ -1,6 +1,7 @@
 package dev.villaforge.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,7 @@ import dev.villaforge.app.ui.theme.Surface1
 import dev.villaforge.app.ui.theme.Surface2
 import dev.villaforge.app.ui.theme.TextMain
 import dev.villaforge.app.ui.theme.TextMuted
+import androidx.compose.ui.graphics.Brush
 import dev.villaforge.app.ui.theme.statusColor
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -72,6 +74,7 @@ internal fun Card(title: String, subtitle: String, badge: String, onClick: (() -
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .clip(RoundedCornerShape(14.dp))
+            .border(1.dp, Brush.linearGradient(listOf(Aqua.copy(alpha = 0.24f), dev.villaforge.app.ui.theme.Violet.copy(alpha = 0.34f))), RoundedCornerShape(14.dp))
             .background(Surface1)
             .padding(14.dp)
     ) {
