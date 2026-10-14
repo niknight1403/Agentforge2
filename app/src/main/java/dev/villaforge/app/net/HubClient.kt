@@ -51,7 +51,8 @@ data class Memory(
 data class ChatMessage(
     val role: String,
     val content: String,
-    val createdAt: Long
+    val createdAt: Long,
+    val agentId: Long = 0
 )
 
 data class Report(
@@ -289,6 +290,26 @@ class HubClient(context: Context) {
     suspend fun previewInfo(villaId: Long): JSONObject =
         JSONObject(execute("GET", "/api/villas/$villaId/preview"))
 
+    /** WAS/WARUM/WIE-Erklaerung der aktuellen Villa-Aktivitaet (POST /api/villas/:id/explain). */
+    suspend fun explain(villaId: Long): JSONObject =
+        JSONObject(execute("POST", "/api/villas/$villaId/explain", JSONObject()))
+
+    /** Offene Analyse-Vorschlaege des Innovations-Scouts (GET /api/proposals). */
+    suspend fun proposals(): org.json.JSONArray =
+        org.json.JSONArray(execute("GET", "/api/proposals"))
+
+    /** Scout anstossen: nach einer besseren Alternative suchen (POST /api/proposals/scan). */
+    suspend fun proposalsScan(): JSONObject =
+        JSONObject(execute("POST", "/api/proposals/scan", JSONObject()))
+
+    /** Vorschlag bestaetigen: Hub gruendet autonom eine Villa (POST /api/proposals/:id/approve). */
+    suspend fun proposalApprove(id: Long): JSONObject =
+        JSONObject(execute("POST", "/api/proposals/$id/approve", JSONObject()))
+
+    /** Vorschlag ablehnen (POST /api/proposals/:id/reject). */
+    suspend fun proposalReject(id: Long): JSONObject =
+        JSONObject(execute("POST", "/api/proposals/$id/reject", JSONObject()))
+
     /** Autorisierungs-Header fuer externe Downloads (DownloadManager, WebView). */
     fun authHeaderValue(): String? =
         if (apiToken.isNotBlank()) "Bearer $apiToken" else null
@@ -384,7 +405,8 @@ class HubClient(context: Context) {
             ChatMessage(
                 role = o.optString("role"),
                 content = o.optString("content"),
-                createdAt = o.optLong("created_at")
+                createdAt = o.optLong("created_at"),
+                agentId = o.optLong("agent_id")
             )
         }
     }

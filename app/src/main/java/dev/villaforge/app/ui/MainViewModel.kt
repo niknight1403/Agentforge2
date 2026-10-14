@@ -51,6 +51,12 @@ data class UiState(
     val build: org.json.JSONObject? = null,
     /** Live-Vorschau-Info der offenen Villa (GET /preview), null bis geladen. */
     val preview: org.json.JSONObject? = null,
+    /** WAS/WARUM/WIE-Erklaerung der offenen Villa. */
+    val explanation: org.json.JSONObject? = null,
+    /** Letzte Agenten-Meldungen aller Agenten der offenen Villa (Aktivitaet). */
+    val activity: List<dev.villaforge.app.net.ChatMessage>? = null,
+    /** Analyse-Vorschlaege des Innovations-Scouts. */
+    val proposals: org.json.JSONArray? = null,
     /** Hub verlangt Anmeldung (HTTP 401 ohne gespeicherte Zugangsdaten): Login-Screen zeigen. */
     val needsLogin: Boolean = false
 )
@@ -397,6 +403,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Autorisierungs-Header fuer Downloads (DownloadManager/WebView). */
     fun authHeader(): String? = client.authHeaderValue()
+
+    /** Aktivitaet laden: letzte Meldungen aller Agenten der offenen Villa. */
+    fun refreshActivity() = run {
+        val detail = _state.value.detail ?: return@run
+        val msgs = try { client.messages(detail.villa.id, null) } catch (e: Exception) { null }
+        _state.update { it.copy(activity = msgs) }
+    }
+
+    /** WAS/WARUM/WIE-Erklaerung der offenen Villa anfordern. */
+    fun explain() = run {
+        val detail = _state.value.detail ?: return@run
+        val ex = try { client.explain(detail.villa.id) } catch (e: Exception) { null }
+        _state.update { it.copy(explanation = ex) }
+    }
+
+    /** Scout-Vorschlaege laden. */
+    fun refreshProposals() = run {
+        val props = try { client.proposals() } catch (e: Exception) { null }
+        _state.update { it.copy(proposals = props) }
+    }
+
+    /** Scout anstossen: Villa analysiert und schlaegt bessere Alternative vor. */
+    fun scanProposals() = run {
+        client.proposalsScan()
+        _state.update { it.copy(message = "Analyse läuft - der Scout prüft bessere Alternativen") }
+        refreshProposals()
+    }
+
+    /** Vorschlag bestaetigen: Hub gruendet selbststaendig eine neue Villa. */
+    fun approveProposal(id: Long, onCreated: (Long) -> Unit = {}) = run {
+        val r = client.proposalApprove(id)
+        val villaId = r.optLong("villaId", -1)
+        _state.update { it.copy(message = "Villa '${r.optString("villaName")}' wurde gegründet und startet autonom") }
+        refreshProposals()
+        if (villaId > 0) onCreated(villaId)
+    }
+
+    /** Vorschlag ablehnen. */
+    fun rejectProposal(id: Long) = run {
+        client.proposalReject(id)
+        _state.update { it.copy(message = "Vorschlag abgelehnt") }
+        refreshProposals()
+    }
 
     /** Aktualisiert Build-Status und Vorschau-Info der offenen Villa. */
     fun refreshBuild() = run {
