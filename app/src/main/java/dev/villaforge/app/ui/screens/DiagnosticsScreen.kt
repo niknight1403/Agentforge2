@@ -88,6 +88,47 @@ fun DiagnosticsScreen(state: UiState, viewModel: MainViewModel) {
         Button(onClick = { viewModel.refreshAll() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
             Text("Verbindung jetzt testen")
         }
+        OutlinedButton(
+            onClick = { viewModel.pingHub() },
+            enabled = !state.busy,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Latenz messen") }
+        /* Sprint 24: gesamter Diagnosestand als Text teilbar (Support-Fall). */
+        val diagContext = androidx.compose.ui.platform.LocalContext.current
+        OutlinedButton(
+            onClick = {
+                val report = buildString {
+                    appendLine("VillaForge Diagnosebericht")
+                    appendLine("Zeit: " + time(System.currentTimeMillis()))
+                    appendLine()
+                    appendLine("Hub: ${'$'}{state.serverUrl}")
+                    appendLine("Status: " + if (state.online) "verbunden" else "getrennt")
+                    appendLine("Live-Feed (SSE): " + if (state.live) "verbunden" else "getrennt")
+                    appendLine("Health: ${'$'}{state.healthText}")
+                    appendLine("Angemeldet: ${'$'}{viewModel.loggedInEmail.ifBlank { "–" }}")
+                    appendLine()
+                    appendLine("Routen:")
+                    if (state.routes.isEmpty()) appendLine("  keine geladen")
+                    state.routes.forEach { r ->
+                        appendLine("  ${'$'}{r.name}: ${'$'}{r.model} · Prio ${'$'}{r.priority} · ok ${'$'}{r.ok}/fail ${'$'}{r.fail}" + if (r.enabled) "" else " · aus")
+                    }
+                    appendLine()
+                    appendLine("Hub-Secrets: " + if (state.secrets.isEmpty()) "–" else state.secrets.joinToString(", "))
+                    appendLine()
+                    appendLine("Letzte Ereignisse:")
+                    if (state.events.isEmpty()) appendLine("  keine")
+                    state.events.take(15).forEach { e ->
+                        appendLine("  [${'$'}{time(e.ts)}] ${'$'}{e.text}")
+                    }
+                }
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, report)
+                }
+                diagContext.startActivity(android.content.Intent.createChooser(send, "Diagnosebericht teilen"))
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Diagnosebericht teilen") }
         if (state.message.isNotBlank()) Text(state.message, color = Aqua, style = muted())
     }
 }

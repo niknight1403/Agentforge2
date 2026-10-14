@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.DropdownMenu
@@ -156,6 +157,24 @@ fun ChatScreen(state: UiState, viewModel: MainViewModel) {
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
+                Spacer(Modifier.width(8.dp))
+                val shareContext = androidx.compose.ui.platform.LocalContext.current
+                OutlinedButton(onClick = {
+                    /* Sprint 23: gesamten Verlauf als Text teilen. */
+                    val header = "Chat-Verlauf " +
+                        (state.detail?.villa?.name?.let { n -> "– $n " } ?: "") +
+                        time(System.currentTimeMillis()) + "\n\n"
+                    val body = state.messages.joinToString("\n\n") { m ->
+                        (if (m.role == "user") "Ich: " else "Agent: ") + m.content
+                    }
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_TEXT, header + body)
+                    }
+                    shareContext.startActivity(android.content.Intent.createChooser(send, "Chat-Verlauf teilen"))
+                }) {
+                    Icon(Icons.Filled.Share, contentDescription = "Chat-Verlauf teilen")
+                }
             }
         }
 
