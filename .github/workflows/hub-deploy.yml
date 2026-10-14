@@ -71,7 +71,7 @@ jobs:
           echo "DEPLOY-ENDE"
           DEP
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/deploy.sh ubuntu@92.5.177.159:/tmp/deploy.sh
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GT='$GT' bash -c 'export GT; bash /tmp/deploy.sh'"
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GT='$GT' GTP='$GTP' bash -c 'export GT GTP; bash /tmp/deploy.sh'"
 
       - name: Hub von aussen verifizieren
         run: |
