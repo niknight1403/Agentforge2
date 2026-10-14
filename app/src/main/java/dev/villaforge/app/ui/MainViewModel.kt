@@ -62,7 +62,10 @@ data class UiState(
     /** Villa-Evolution: Status der offenen Villa samt ihrer Vorschlaege. */
     val evolution: org.json.JSONObject? = null,
     /** Hub verlangt Anmeldung (HTTP 401 ohne gespeicherte Zugangsdaten): Login-Screen zeigen. */
-    val needsLogin: Boolean = false
+    val needsLogin: Boolean = false,
+    /** Ergebnis des Verbindungstests (Diagnose). */
+    val connTest: List<String> = emptyList(),
+    val connTestRunning: Boolean = false
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -91,6 +94,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             delay(45_000)
             if (!_state.value.online) refreshAll()
         }
+    }
+
+    /** Fuehrt den Verbindungstest aus und zeigt jede Stufe mit genauer Ursache. */
+    fun runConnectionTest() = viewModelScope.launch {
+        _state.update { it.copy(connTestRunning = true, connTest = listOf("Test laeuft ...")) }
+        val lines = try { client.connectionTest() } catch (e: Exception) { listOf("Test-FEHLER: ${e.javaClass.simpleName}: ${e.message}") }
+        _state.update { it.copy(connTestRunning = false, connTest = lines) }
     }
 
     /** Misst die Hub-Antwortzeit und meldet sie als Nachricht. */
@@ -181,7 +191,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     _state.update { it.copy(error = e.message ?: "Unbekannter Fehler") }
                 }
             } catch (e: Exception) {
-                _state.update { it.copy(error = e.message ?: "Unbekannter Fehler") }
+                val reason = "${e.javaClass.simpleName}: ${e.message ?: "unbekannt"}"
+                _state.update { it.copy(error = "Hub nicht erreichbar ($reason)", healthText = "Fehler: ${e.javaClass.simpleName}") }
                 scheduleReconnect()
             } finally {
                 _state.update { it.copy(busy = false) }
