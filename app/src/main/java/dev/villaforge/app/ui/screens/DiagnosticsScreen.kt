@@ -101,16 +101,16 @@ fun DiagnosticsScreen(state: UiState, viewModel: MainViewModel) {
                     appendLine("VillaForge Diagnosebericht")
                     appendLine("Zeit: " + time(System.currentTimeMillis()))
                     appendLine()
-                    appendLine("Hub: ${'$'}{state.serverUrl}")
+                    appendLine("Hub: ${state.serverUrl}")
                     appendLine("Status: " + if (state.online) "verbunden" else "getrennt")
                     appendLine("Live-Feed (SSE): " + if (state.live) "verbunden" else "getrennt")
-                    appendLine("Health: ${'$'}{state.healthText}")
-                    appendLine("Angemeldet: ${'$'}{viewModel.loggedInEmail.ifBlank { "–" }}")
+                    appendLine("Health: ${state.healthText}")
+                    appendLine("Angemeldet: ${viewModel.loggedInEmail.ifBlank { "–" }}")
                     appendLine()
                     appendLine("Routen:")
                     if (state.routes.isEmpty()) appendLine("  keine geladen")
                     state.routes.forEach { r ->
-                        appendLine("  ${'$'}{r.name}: ${'$'}{r.model} · Prio ${'$'}{r.priority} · ok ${'$'}{r.ok}/fail ${'$'}{r.fail}" + if (r.enabled) "" else " · aus")
+                        appendLine("  ${r.name}: ${r.model} · Prio ${r.priority} · ok ${r.ok}/fail ${r.fail}" + if (r.enabled) "" else " · aus")
                     }
                     appendLine()
                     appendLine("Hub-Secrets: " + if (state.secrets.isEmpty()) "–" else state.secrets.joinToString(", "))
@@ -118,7 +118,7 @@ fun DiagnosticsScreen(state: UiState, viewModel: MainViewModel) {
                     appendLine("Letzte Ereignisse:")
                     if (state.events.isEmpty()) appendLine("  keine")
                     state.events.take(15).forEach { e ->
-                        appendLine("  [${'$'}{time(e.ts)}] ${'$'}{e.text}")
+                        appendLine("  [${time(e.ts)}] ${e.text}")
                     }
                 }
                 val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
