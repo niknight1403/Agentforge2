@@ -1,0 +1,65 @@
+name: Hub-Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch/Tag, der auf die VM soll (Standard main)'
+        required: false
+        default: 'main'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Hub live updaten (git pull + Restart + Version pruefen)
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          REF: ${{ github.event.inputs.ref || 'main' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/deploy.sh <<'DEP'
+          set -e
+          echo "== Hub-Verzeichnis aus systemd ermitteln =="
+          EXEC=$(systemctl show villaforge -p ExecStart --value 2>/dev/null | grep -oE '/[^ ]*server\.mjs' | head -1 || true)
+          HUBDIR=$(dirname "${EXEC:-/opt/villaforge/server/server.mjs}")
+          echo "HUBDIR=$HUBDIR"
+          echo "== Git-Stand vorher =="
+          git -C "$HUBDIR/.." log --oneline -1 2>/dev/null || git -C "$HUBDIR" log --oneline -1 2>/dev/null || true
+          echo "== git pull (origin main) =="
+          cd "$HUBDIR/.." 2>/dev/null || cd "$HUBDIR"
+          git fetch --all -q 2>&1 | head -3 || true
+          git reset --hard origin/main -q 2>&1 | head -3 || true
+          git log --oneline -1
+          echo "== Abhaengigkeiten aktualisieren (falls noetig) =="
+          if [ -f package.json ]; then
+            npm install --omit=dev --no-audit --no-fund 2>&1 | tail -2 || true
+          fi
+          echo "== Neustart =="
+          systemctl daemon-reload || true
+          systemctl restart villaforge
+          sleep 6
+          echo "== Dienststatus =="
+          systemctl is-active villaforge
+          echo "== Health/Version lokal =="
+          PORT=$(systemctl show villaforge -p Environment --value 2>/dev/null | grep -oE 'PORT=[0-9]+' | cut -d= -f2 || true)
+          curl -s -m 30 "http://127.0.0.1:${PORT:-3000}/api/health" | head -c 600; echo
+          echo "== Tests auf der VM (Bestandsschutz) =="
+          cd "$HUBDIR" && (VF_TEST=1 timeout 300 node --test tests/*.test.mjs 2>&1 | tail -4) || true
+          echo "DEPLOY-ENDE"
+          DEP
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/deploy.sh ubuntu@92.5.177.159:/tmp/deploy.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/deploy.sh"
+
+      - name: Hub von aussen verifizieren
+        run: |
+          sleep 5
+          curl -s -m 60 -o /tmp/h.json -w "health: HTTP %{http_code} in %{time_total}s\n" https://hub.cybersarah-ki.com/api/health
+          python3 -c "
+          import json
+          d = json.load(open('/tmp/h.json'))
+          print('LIVE-VERSION:', d.get('version'), '| Agenten:', d.get('agents'), '| Villen:', d.get('villas'))
+          assert '1.38' in str(d.get('version','')), 'Live-Version ist nicht 1.38.x!'
+          print('LIVE-DEPLOY-OK')"
