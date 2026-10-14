@@ -32,6 +32,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -77,7 +79,10 @@ fun AnimatedStatTile(label: String, target: Int, accent: Color = Aqua, modifier:
         animationSpec = tween(durationMillis = 600),
         label = "counter"
     )
-    StatTile(label = label, value = "$progress", accent = accent, modifier = modifier)
+    StatTile(
+        label = label, value = "$progress", accent = accent,
+        modifier = modifier.semantics { contentDescription = "$label: $target" }
+    )
 }
 
 /** Kompaktes Balkendiagramm (Canvas), letzter Balken hervorgehoben. */

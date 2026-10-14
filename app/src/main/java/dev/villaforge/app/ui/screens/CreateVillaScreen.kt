@@ -1,5 +1,7 @@
 package dev.villaforge.app.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,6 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +45,23 @@ fun CreateVillaScreen(state: UiState, viewModel: MainViewModel, onCreated: (Long
             style = muted(), color = TextMuted
         )
         OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Titel") }, modifier = Modifier.fillMaxWidth())
+        /* Sprint 38: Vorlagen als Startpunkt. */
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
+            for ((label, template) in listOf(
+                "Tool-App" to "Eine produktive App mit klarem Nutzen: Kernfunktion, einfache Bedienung, Monetarisierung über Pro-Abo.",
+                "KI-Agent" to "Ein KI-Agenten-System, das eine wiederkehrende Aufgabe selbstständig plant, ausführt und verbessert.",
+                "MIDI & Musik" to "Eine App für Musikproduktion: Controller-Grid, Anbindung an DAWs, Presets und Szenen."
+            )) {
+                FilterChip(
+                    selected = false,
+                    onClick = { idea = template; if (name.isBlank()) name = label },
+                    label = { Text(label) }
+                )
+            }
+        }
         OutlinedTextField(
             value = idea, onValueChange = { idea = it }, label = { Text("Idee / Ziel") },
             modifier = Modifier.fillMaxWidth(), minLines = 4,

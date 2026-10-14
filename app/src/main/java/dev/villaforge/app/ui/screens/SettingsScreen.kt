@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import dev.villaforge.app.net.HubClient
 import dev.villaforge.app.net.LlmRoute
 import dev.villaforge.app.ui.FEATURE_PACKS
 import dev.villaforge.app.ui.MainViewModel
@@ -92,6 +93,15 @@ fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
             Button(onClick = { viewModel.saveServerUrl(url) }, modifier = Modifier.fillMaxWidth()) { Text("Verbinden") }
             Spacer(Modifier.padding(4.dp))
             OutlinedButton(onClick = { viewModel.pingHub() }, modifier = Modifier.fillMaxWidth()) { Text("Verbindung testen") }
+            /* Sprint 35: Standard-Adresse wiederherstellen. */
+            Spacer(Modifier.padding(4.dp))
+            OutlinedButton(
+                onClick = {
+                    url = HubClient.DEFAULT_BASE
+                    viewModel.saveServerUrl(url)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Standard-Adresse wiederherstellen") }
         }
 
         SectionCard("Anmeldung") {
@@ -160,6 +170,13 @@ fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
 
         SectionHeader("LLM-Routen")
         state.routes.forEach { RouteRow(it) { viewModel.toggleRoute(it) } }
+
+        /* Sprint 35: App-Version am Ende der Einstellungen. */
+        val versionContext = androidx.compose.ui.platform.LocalContext.current
+        val versionName = androidx.compose.runtime.remember(versionContext) {
+            try { versionContext.packageManager.getPackageInfo(versionContext.packageName, 0).versionName ?: "?" } catch (_: Exception) { "?" }
+        }
+        Text("VillaForge App v${'$'}versionName", style = muted(), color = TextMuted)
     }
 }
 
