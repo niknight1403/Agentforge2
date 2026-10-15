@@ -278,6 +278,17 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
                 else -> "Stufe $stage"
             }
             Text(stageText, style = muted(), color = TextMuted)
+            val etaMin = evo.optInt("etaMin", 0)
+            val cur = evo.optJSONArray("currentTasks")
+            if (cur != null && cur.length() > 0) {
+                Text(
+                    "Jetzt: " + (0 until cur.length()).joinToString(" · ") { cur.optString(it) } +
+                        (if (etaMin > 0) "  —  Restdauer ≈ ${etaMin} Min" else ""),
+                    style = muted(), color = Aqua, fontSize = 12.sp
+                )
+            } else if (open > 0 && etaMin > 0) {
+                Text("$open offen — Restdauer ≈ ${etaMin} Min", style = muted(), color = TextMuted, fontSize = 12.sp)
+            }
             if (evo.optBoolean("workspaceEmpty", false)) {
                 Text(
                     "Achtung: Der Projektordner ist noch leer — erledigte Aufgaben haben bisher nur Berichte erzeugt. Neue Vorschläge fordern jetzt echten Code ein.",
@@ -294,10 +305,12 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
                         "MARKETPLACE" -> "AI Marketplace"
                         else -> "Nächste Phasen (Runde ${pr.optInt("round", 1)})"
                     }
-                    SectionCard(kindLabel + ": " + pr.optString("title")) {
+                    val items = pr.optJSONArray("items")
+                    val avgTask = if (open > 0 && etaMin > 0) (etaMin / open).coerceAtLeast(1) else 3
+                    val sprintEta = (items?.length() ?: 0) * avgTask
+                    SectionCard(kindLabel + ": " + pr.optString("title") + "  ·  ≈ ${sprintEta} Min") {
                         Text(pr.optString("summary"), style = muted())
                         Spacer(Modifier.height(4.dp))
-                        val items = pr.optJSONArray("items")
                         (0 until (items?.length() ?: 0)).forEach { k ->
                             val it = items?.optJSONObject(k)
                             Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {

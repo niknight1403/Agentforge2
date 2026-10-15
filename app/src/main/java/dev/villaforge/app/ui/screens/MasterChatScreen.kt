@@ -100,13 +100,15 @@ fun MasterChatScreen(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lon
                             style = MaterialTheme.typography.bodyMedium, color = TextMain
                         )
                         Text(
-                            "Ich uebersetze deinen Wunsch in ein professionelles Entwicklungs-Prompt, gruende die passende Villa, starte die autonome Entwicklung und liefere ein Design-Konzeptbild.",
+                            "Ich erstelle und starte Villen mit professionellem Prompt, stoppe, pausiere und starte sie auf Zuruf - und liefere ein Design-Konzeptbild zu jeder Gruendung.",
                             style = MaterialTheme.typography.bodySmall, color = TextMuted
                         )
                         Spacer(Modifier.height(6.dp))
                         SuggestionChip("Erstelle eine App, die meine Termine automatisch plant", Icons.Filled.RocketLaunch) { input = it }
                         SuggestionChip("Ich moechte einen Dark-Mode-Toggle in der Uebersicht", Icons.Filled.DesignServices) { input = it }
                         SuggestionChip("Verbessere die Performance der Villen-Liste", Icons.Filled.AutoAwesome) { input = it }
+                        SuggestionChip("Welche Villa arbeitet gerade?", Icons.Filled.RocketLaunch) { input = it }
+                        SuggestionChip("Pausiere alle Villen ausser der CyberSarah Villa", Icons.Filled.RocketLaunch) { input = it }
                     }
                 }
             }

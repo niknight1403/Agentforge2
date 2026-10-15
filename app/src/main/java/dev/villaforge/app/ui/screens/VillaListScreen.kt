@@ -127,7 +127,20 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
                 state.villas.isEmpty() -> item { EmptyState(title = "Noch keine Villa", hint = "Tippe unten auf „Deep Agent“ und starte deine erste autonome Entwicklung.") }
                 visible.isEmpty() -> item { EmptyState(title = "Kein Treffer", hint = "Passe Suche oder Status-Filter an, um alle Villen wieder zu sehen.") }
                 else -> items(visible, key = { it.id }) { villa ->
-                    Card(villa.name, villa.idea.take(140), villa.displayStatus(), onClick = { onOpen(villa.id) }) {
+                    Card(villa.name, villa.idea.take(110), villa.displayStatus(), onClick = { onOpen(villa.id) }) {
+                        if (villa.executing) {
+                            Text(
+                                (villa.runningTasks.firstOrNull() ?: "arbeitet an Aufgaben") + "  ·  ≈ ${villa.etaMin} Min",
+                                style = muted(), color = Aqua, fontSize = 12.sp
+                            )
+                        } else if (villa.queued) {
+                            Text(
+                                "wartet auf freien Rechen-Slot  ·  ${villa.openCount} offen · ≈ ${villa.etaMin} Min",
+                                style = muted(), color = androidx.compose.ui.graphics.Color(0xFFFFB020), fontSize = 12.sp
+                            )
+                        } else if (villa.openCount > 0) {
+                            Text("${villa.openCount} offen · ≈ ${villa.etaMin} Min", style = muted(), color = TextMuted, fontSize = 12.sp)
+                        }
                         Text("Projekt öffnen", color = Aqua, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     }
                 }

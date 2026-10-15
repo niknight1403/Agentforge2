@@ -8,6 +8,18 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.34.0 — Transparenz, Sprints & voller Master-Agent
+
+- **Was macht die Villa + wie lange?**: Jede Villa zeigt ihre aktuelle
+  Aufgabe und eine geschaetzte Restdauer (ETA aus der durchschnittlichen
+  Aufgabe-Dauer): Liste, Detail und Fertigstellung.
+- **Sprints & Perfektionierung**: Naechste-Phasen- und Perfektions-Vorschlaege
+  sind echte Sprints mit Ziel-Wort, konkretem Artefakt im Akzeptanzkriterium
+  und messbaren Perfektionszielen; jede Sprint-Karte zeigt ≈ Dauer.
+- **Master-Agent steuert alles**: Villen per Namen stoppen, pausieren und
+  starten - direkt aus dem Master-Chat.
+- **ARBEITET/WARTET**: Live-Rechen-Slot-Status statt pauschal gruenem RUNNING.
+
 ## Neu in 1.33.1 — Live-Arbeitsstatus der Villen
 
 - **ARBEITET vs. WARTET**: Der Hub liefert jetzt den echten Rechen-Slot-Zustand.

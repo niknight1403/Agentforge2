@@ -25,7 +25,13 @@ data class Villa(
     /** Live: haelt gerade einen Rechen-Slot (arbeitet wirklich). */
     val executing: Boolean = false,
     /** Live: Autonomie an, aber wartet auf einen freien Slot. */
-    val queued: Boolean = false
+    val queued: Boolean = false,
+    /** Live: Titel der Aufgaben, die gerade laufen. */
+    val runningTasks: List<String> = emptyList(),
+    /** Live: offene Aufgaben. */
+    val openCount: Int = 0,
+    /** Live: geschaetzte Restdauer in Minuten (0 = nichts offen). */
+    val etaMin: Int = 0
 )
 
 data class Agent(
@@ -307,7 +313,13 @@ class HubClient(context: Context) {
                 status = o.optString("status"),
                 maxAgents = o.optInt("max_agents", 1000),
                 executing = o.optInt("executing", 0) == 1,
-                queued = o.optInt("queued", 0) == 1
+                queued = o.optInt("queued", 0) == 1,
+                runningTasks = run {
+                    val a = o.optJSONArray("runningTasks") ?: JSONArray()
+                    (0 until a.length()).map { i -> a.optString(i) }
+                },
+                openCount = o.optInt("openCount", 0),
+                etaMin = o.optInt("etaMin", 0)
             )
         }
     }
