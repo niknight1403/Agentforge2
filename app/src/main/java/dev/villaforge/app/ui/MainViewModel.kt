@@ -37,6 +37,12 @@ data class UiState(
     val messages: List<ChatMessage> = emptyList(),
     /** Aktueller Chat-Partner (Agent-ID), null = Root/Deep Agent. */
     val chatAgentId: Long? = null,
+    val masterMessages: List<ChatMessage> = emptyList(),
+    val masterSuggestions: org.json.JSONArray = org.json.JSONArray(),
+    val masterStatus: org.json.JSONObject? = null,
+    val masterBusy: Boolean = false,
+    val masterPending: Boolean = false,
+    val masterError: String? = null,
     val routes: List<LlmRoute> = emptyList(),
     val busy: Boolean = false,
     val message: String = "",
@@ -309,6 +315,57 @@ class MainViewModel(app: Application, savedStateHandle: SavedStateHandle) : Andr
         client.setSource(detail.villa.id, path)
         val refreshed = client.villaDetail(detail.villa.id)
         _state.update { it.copy(detail = refreshed, message = "Quellprojekt gespeichert") }
+    }
+
+    private var pendingMaster: Pair<String, String>? = null
+
+    fun loadMaster() = viewModelScope.launch {
+        _state.update { it.copy(masterBusy = true, masterError = null) }
+        try {
+            val messages = client.masterMessages()
+            val suggestions = client.masterSuggestions()
+            val status = client.masterStatus()
+            _state.update { it.copy(masterMessages = messages, masterSuggestions = suggestions, masterStatus = status) }
+        } catch (e: Exception) {
+            _state.update { it.copy(masterError = "Master-Agent nicht erreichbar. Der Hub muss die Master-Verwaltung unterstützen. ${e.message.orEmpty().take(150)}") }
+        } finally { _state.update { it.copy(masterBusy = false) } }
+    }
+
+    fun sendMaster(message: String) {
+        if (_state.value.masterBusy || (message.isBlank() && pendingMaster == null)) return
+        val request = pendingMaster ?: (message.trim() to java.util.UUID.randomUUID().toString()).also {
+            pendingMaster = it
+            _state.update { state -> state.copy(masterMessages = state.masterMessages + ChatMessage("user", it.first, System.currentTimeMillis())) }
+        }
+        _state.update { it.copy(masterBusy = true, masterPending = true, masterError = null) }
+        viewModelScope.launch {
+            try {
+                var result = client.masterChat(request.first, request.second)
+                repeat(15) {
+                    if (result.optBoolean("pending")) {
+                        delay(1500)
+                        result = client.masterTurn(request.second)
+                    }
+                }
+                if (result.optBoolean("pending")) throw IllegalStateException("Die Anfrage läuft noch. Mit „Status prüfen“ wird dieselbe Anfrage weiterverfolgt.")
+                val messages = client.masterMessages()
+                pendingMaster = null
+                _state.update { it.copy(masterMessages = messages, masterPending = false, masterError = if (result.optBoolean("ok", true)) null else result.optString("answer")) }
+                refreshAll()
+                val suggestions = client.masterSuggestions()
+                val status = client.masterStatus()
+                _state.update { it.copy(masterSuggestions = suggestions, masterStatus = status) }
+            } catch (e: Exception) {
+                _state.update { it.copy(masterError = e.message ?: "Master-Anfrage fehlgeschlagen. Bitte den Status prüfen.") }
+            } finally { _state.update { it.copy(masterBusy = false) } }
+        }
+    }
+    fun dismissMasterSuggestion(id: String) = viewModelScope.launch {
+        try {
+            client.dismissMasterSuggestion(id)
+            val suggestions = client.masterSuggestions()
+            _state.update { it.copy(masterSuggestions = suggestions) }
+        } catch (e: Exception) { _state.update { it.copy(masterError = e.message) } }
     }
 
     fun retrySelectedVilla() {

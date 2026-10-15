@@ -515,10 +515,7 @@ footer {
   line-height: 1.4;
   background: rgba(31, 38, 73, 0.7);
 }
-.suggestion-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--cyan); font-size: var(--text-xs); margin-bottom: 4px; }
-.suggestion-title em { color: var(--muted); font-style: normal; font-size: 11px; white-space: nowrap; }
-.suggestion-rationale { display: block; color: var(--text); }
-.suggestion small { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; overflow-wrap: anywhere; }
+.suggestion span { display: block; color: var(--cyan); font-size: var(--text-xs); margin-bottom: 3px; }
 
 .side-tab {
   display: flex;
@@ -965,13 +962,34 @@ input::placeholder, textarea::placeholder { color: #97a5ba; }
   .topnav { order: 3; width: 100%; justify-content: center; }
   .status { margin-left: auto; min-width: 0; }
 }
-.master-panel { border-color: rgba(139,108,255,.35); background: linear-gradient(135deg, rgba(28,24,70,.78), rgba(8,18,36,.82)); }
-.master-chat-log { min-height: 120px; max-height: 260px; margin: 14px 0; }
-.master-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.master-quick-actions .ghost { min-height: 44px; }
-@media (max-width: 640px) {
-  .master-panel { padding: 14px; }
-  .master-chat-log { max-height: 230px; }
-  .master-quick-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .master-quick-actions .ghost:last-child { grid-column: 1 / -1; }
+
+/* App-wide master agent, independent from an individual development room. */
+.master-nav { color: #ddd6ff; background: #26233e; display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.master-dialog { width: min(960px, calc(100% - 32px)); height: min(860px, 92dvh); padding: 0; border: 1px solid var(--line); border-radius: 20px; background: var(--bg); color: var(--text); }
+.master-dialog::backdrop { background: rgba(0,0,0,.7); }
+.master-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 24px; gap: 10px; }
+.master-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.master-heading h2 { margin: 0; }
+.master-heading .hint, #masterSummary { margin: 0; }
+.master-capabilities { color: var(--muted); font-size: 13px; max-height: 160px; overflow: auto; flex-shrink: 0; }
+.master-capabilities summary { cursor: pointer; min-height: 44px; display: list-item; padding-top: 10px; }
+.master-suggestions { display: flex; gap: 8px; overflow-x: auto; flex-shrink: 0; padding: 3px; }
+.master-suggestions button { white-space: nowrap; font-size: 13px; }
+.master-log { flex: 1; min-height: 80px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 6px; }
+.master-bubble { max-width: 92%; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; align-self: flex-start; }
+.master-bubble.user { background: #26233e; align-self: flex-end; }
+.master-bubble small { color: var(--muted); font-size: 12px; }
+.master-bubble p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; }
+.master-composer { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; flex-shrink: 0; }
+.master-composer textarea { min-height: 70px; max-height: 160px; }
+#masterMsg { margin: 0; }
+.mobile-nav .master-nav { display: grid; place-items: center; gap: 2px; font-size: 18px; min-height: 48px; padding: 4px; border: 0; }
+.mobile-nav .master-nav small { font-size: 11px; }
+@media (max-width: 760px) {
+  .master-dialog { width: 100%; max-width: 100%; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; }
+  .master-shell { padding: max(16px, env(safe-area-inset-top)) 16px max(12px,env(safe-area-inset-bottom)); gap: 8px; }
+  .master-heading .hint { display: none; }
+  .master-composer { grid-template-columns: minmax(0,1fr) 90px; }
+  .master-composer textarea { min-height: 60px; }
+  .master-bubble { max-width: 96%; font-size: 14px; }
 }

@@ -1,99 +1,34 @@
-import { db, now } from './db.mjs';
-
-const OPEN = new Set(['PENDING', 'READY', 'RUNNING', 'REVIEW']);
-const HIGH_RISK = new Set(['FAILED', 'BLOCKED']);
-
-function suggestion({ id, title, category, priority, score, rationale, context, prompt, actionLabel = 'Im Chat starten' }) {
-  return { id, title, category, priority, score, rationale, context, prompt, actionLabel };
-}
-
-/**
- * Liefert priorisierte Empfehlungen aus dem echten Villa-Kontext.
- * Die Funktion bleibt deterministisch und offline-fähig; LLMs können die
- * vorgeschlagenen Prompts anschließend im Entwicklungs-Chat ausführen.
- */
-export function villaSuggestions(villaId) {
-  const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(Number(villaId));
-  if (!villa) return [];
-  const tasks = db.prepare('SELECT * FROM tasks WHERE villa_id = ? ORDER BY priority ASC, id ASC').all(villa.id);
-  const agents = db.prepare('SELECT status, is_root FROM agents WHERE villa_id = ?').all(villa.id);
-  const latestMessage = db.prepare('SELECT role, content, created_at FROM messages WHERE villa_id = ? ORDER BY id DESC LIMIT 1').get(villa.id);
-  const latestReport = db.prepare('SELECT kind, title, created_at FROM reports WHERE villa_id = ? ORDER BY id DESC LIMIT 1').get(villa.id);
-  const open = tasks.filter((t) => OPEN.has(t.status));
-  const failed = tasks.filter((t) => HIGH_RISK.has(t.status));
-  const done = tasks.filter((t) => t.status === 'DONE');
-  const runningAgents = agents.filter((a) => ['THINKING', 'RUNNING'].includes(a.status)).length;
-  const idleAgents = agents.filter((a) => a.status === 'IDLE').length;
-  const suggestions = [];
-
-  if (failed.length) {
-    suggestions.push(suggestion({
-      id: 'recover-failed', title: 'Fehler zuerst beheben', category: 'Stabilität', priority: 1,
-      score: 100 + failed.length * 5,
-      rationale: `${failed.length} Aufgabe(n) brauchen Aufmerksamkeit, bevor neue Arbeit sinnvoll ist.`,
-      context: [`${failed.length} fehlgeschlagene oder blockierte Aufgaben`, villa.status === 'PAUSED' ? 'Villa ist pausiert' : 'Lauf kann stabilisiert werden'],
-      prompt: 'Analysiere die fehlgeschlagenen und blockierten Aufgaben, ordne die Ursachen nach Risiko und behebe zuerst den wichtigsten Fehler. Starte nichts blind neu.',
-      actionLabel: 'Fehler analysieren'
-    }));
+import { createHash } from 'node:crypto';
+import { db } from './db.mjs';
+import { duplicateGroups } from './duplicates.mjs';
+import { getSetting } from './control-store.mjs';
+export function suggestions(villaId = null, isRunning = () => false) {
+  const out = [];
+  const add = (kind, title, reason, prompt, target = '') => {
+    const id = createHash('sha256').update(JSON.stringify([kind, villaId, target, prompt])).digest('hex').slice(0, 20);
+    out.push({ id, kind, title, reason, prompt, villaId });
+  };
+  if (villaId != null) {
+    const villa = db.prepare('SELECT * FROM villas WHERE id=? AND status != ?').get(villaId, 'ARCHIVED');
+    if (!villa) return [];
+    const failed = db.prepare("SELECT id,title FROM tasks WHERE villa_id=? AND status='FAILED' ORDER BY priority,id LIMIT 1").get(villaId);
+    if (failed) add('repair', 'Fehler gezielt beheben', `Aufgabe #${failed.id} ist fehlgeschlagen.`, `Analysiere den Fehler in Aufgabe #${failed.id} „${failed.title}“. Behebe die Ursache und prüfe das Ergebnis.`, failed.id);
+    const pending = db.prepare("SELECT id,title,description FROM tasks WHERE villa_id=? AND status IN ('PENDING','READY') ORDER BY priority,id LIMIT 12").all(villaId);
+    const seen = new Set();
+    for (const task of pending) {
+      const key = task.title.trim().toLowerCase(); if (seen.has(key)) continue; seen.add(key);
+      add('next_task', task.title, 'Offene Aufgabe aus dem aktuellen Projektplan.', `Bearbeite Aufgabe #${task.id} „${task.title}“. ${String(task.description).slice(0, 350)} Liefere ein überprüfbares Ergebnis.`, task.id);
+    }
+    if (!failed && !pending.length) add('verify', 'Ergebnisse verifizieren', 'Keine offenen Aufgaben im aktuellen Plan.', `Prüfe die tatsächlichen Ergebnisse von Villa #${villaId}. Nenne belegbare Lücken und konkrete Abnahmekriterien, statt einen neuen Standardplan zu erzeugen.`);
+  } else {
+    const duplicates = duplicateGroups(isRunning);
+    if (duplicates.length) add('cleanup', 'Doppelte Villen aufräumen', `${duplicates.length} Gruppen mit gleichem Namen, Ziel und Quellpfad.`, 'Archiviere die doppelten Villen und behalte alle Arbeitsstände.');
+    const villas = db.prepare("SELECT v.id,v.name,COUNT(t.id) AS failed FROM villas v JOIN tasks t ON t.villa_id=v.id WHERE t.status='FAILED' AND v.status != 'ARCHIVED' GROUP BY v.id ORDER BY failed DESC,v.id LIMIT 3").all();
+    for (const v of villas) add('repair', `${v.name}: Fehler prüfen`, `${v.failed} fehlgeschlagene Aufgaben.`, `Zeige Status und nächste Schritte für Villa #${v.id}.`, v.id);
+    const skills = db.prepare('SELECT COUNT(*) c FROM control_skills WHERE enabled=1').get().c;
+    if (!skills) add('skill', 'Arbeitsweise festlegen', 'Noch kein eigener Skill aktiviert.', 'Erstelle einen Skill mit dem Titel Qualitätsprüfung: Jede Änderung braucht konkrete Abnahmekriterien, Fehlerzustände und eine passende Prüfung.');
+    add('status', 'Gesamtüberblick', 'Aktuelle Villen, Werkzeuge und Konfiguration prüfen.', 'Status');
   }
-  if (open.length) {
-    const next = open[0];
-    suggestions.push(suggestion({
-      id: 'next-task', title: 'Nächsten Schritt umsetzen', category: 'Ausführung', priority: 2,
-      score: 82 + Math.max(0, 9 - Number(next.priority || 5)),
-      rationale: `${open.length} offene Aufgabe(n); die höchste Priorität ist „${next.title}“.`,
-      context: [`Priorität ${next.priority || 5}`, `${done.length}/${tasks.length} Aufgaben erledigt`, runningAgents ? `${runningAgents} Agent(en) arbeiten` : 'Kein Agent arbeitet gerade'],
-      prompt: `Bearbeite als Nächstes die Aufgabe „${next.title}“. Prüfe zuerst vorhandene Ergebnisse, liefere ein prüfbares Ergebnis und markiere offene Risiken.`,
-      actionLabel: 'Aufgabe anweisen'
-    }));
-  }
-  if (villa.source_path) {
-    suggestions.push(suggestion({
-      id: 'quality-audit', title: 'Bestehendes Projekt auditieren', category: 'Qualität', priority: 3,
-      score: 76,
-      rationale: 'Ein Quellprojekt ist hinterlegt und kann gegen die aktuelle Zielidee geprüft werden.',
-      context: [`Quellpfad: ${villa.source_path}`, latestReport ? `Letzter Bericht: ${latestReport.title}` : 'Noch kein Analysebericht'],
-      prompt: 'Analysiere das bestehende Projekt auf Architektur-, UI-, Sicherheits- und Testverbesserungen. Vergleiche die Befunde mit der Villa-Idee und erstelle eine priorisierte Roadmap.',
-      actionLabel: 'Audit starten'
-    }));
-  }
-  if (done.length >= 3 || latestReport) {
-    suggestions.push(suggestion({
-      id: 'review-release', title: 'Qualitätssicherung durchführen', category: 'Review', priority: 4,
-      score: 68 + Math.min(done.length, 10),
-      rationale: `${done.length} Aufgaben sind abgeschlossen${latestReport ? ' und ein Ergebnisbericht liegt vor' : ''}.`,
-      context: [`${done.length} erledigte Aufgaben`, latestReport ? `Bericht: ${latestReport.kind}` : 'Kein aktueller Bericht'],
-      prompt: 'Prüfe die bisherigen Ergebnisse gegen die Villa-Idee, führe die verfügbaren Tests aus und dokumentiere konkrete Release-Blocker sowie den nächsten sicheren Schritt.',
-      actionLabel: 'Review anfordern'
-    }));
-  }
-  if (agents.length && idleAgents / agents.length > 0.75 && open.length) {
-    suggestions.push(suggestion({
-      id: 'increase-throughput', title: 'Agenten gezielter einsetzen', category: 'Effizienz', priority: 5,
-      score: 61,
-      rationale: `${idleAgents} von ${agents.length} Agenten sind verfügbar, während Aufgaben offen bleiben.`,
-      context: [`${idleAgents} freie Agenten`, `${open.length} offene Aufgaben`],
-      prompt: 'Prüfe, ob die offenen Aufgaben unabhängig parallelisiert werden können. Verteile nur klar abgegrenzte Arbeit und halte gemeinsame Abhängigkeiten explizit fest.',
-      actionLabel: 'Parallelisierung prüfen'
-    }));
-  }
-  if (latestMessage?.role === 'user' && now() - Number(latestMessage.created_at || 0) < 24 * 60 * 60_000) {
-    suggestions.push(suggestion({
-      id: 'follow-up-chat', title: 'Letzte Anweisung vertiefen', category: 'Kontext', priority: 6,
-      score: 55,
-      rationale: 'Die letzte Nachricht stammt vom Nutzer und hat noch keinen Folgeimpuls.',
-      context: [`Letzte Anweisung: ${String(latestMessage.content).slice(0, 100)}`],
-      prompt: 'Greife meine letzte Anweisung auf, fasse den aktuellen Stand knapp zusammen und schlage genau eine konkrete, reversible nächste Aktion vor.',
-      actionLabel: 'Kontext fortsetzen'
-    }));
-  }
-  suggestions.push(suggestion({
-    id: 'business-case', title: 'Produkt- und Umsatzchance prüfen', category: 'Strategie', priority: 7,
-    score: 40,
-    rationale: 'Ein strategischer Check hält Nutzenversprechen und Zielgruppe sichtbar.',
-    context: [villa.idea ? `Ziel: ${String(villa.idea).slice(0, 120)}` : 'Keine Zielbeschreibung'],
-    prompt: 'Bewerte Zielgruppe, Nutzenversprechen, Preismodell und den schnellsten realistischen Validierungsschritt für diese Villa.',
-    actionLabel: 'Strategie prüfen'
-  }));
-  return suggestions.sort((a, b) => b.score - a.score || a.priority - b.priority).slice(0, 5);
+  const dismissed = new Set(db.prepare('SELECT id FROM control_dismissals').all().map(r => r.id));
+  return out.filter(s => !dismissed.has(s.id)).slice(0, getSetting('suggestionCount'));
 }

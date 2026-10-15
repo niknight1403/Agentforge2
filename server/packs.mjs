@@ -10,6 +10,7 @@
  * protokolliert das im Audit als "blockiert".
  */
 import { db, now } from './db.mjs';
+import { toolEnabled } from './control-store.mjs';
 
 /** Reihenfolge = Anzeigereihenfolge in Weboberflaeche und App. */
 export const FEATURE_PACKS = [
@@ -79,7 +80,7 @@ export const TOOL_PACKS = [
   { id: 'projekt', title: 'Projektanalyse', description: 'Quellprojekt lesen, durchsuchen und ueberblicken.', tools: ['project_tree', 'project_search', 'project_read'] },
   { id: 'ausfuehrung', title: 'Ausfuehrung', description: 'Builds und Tests im Projekt starten (nur erlaubte Programme).', tools: ['project_run'] },
   { id: 'artefakte', title: 'Artefakte', description: 'Dateien im Villa-Workspace schreiben und auflisten.', tools: ['artifact_write', 'artifact_list'] },
-  { id: 'recherche', title: 'Recherche', description: 'Seiten im Netz abrufen und auswerten.', tools: ['web_fetch'] },
+  { id: 'recherche', title: 'Recherche', description: 'Seiten im Netz abrufen und auswerten.', tools: ['web_fetch', 'connector_read'] },
   { id: 'berichte', title: 'Berichte', description: 'Analyse-, Umsatz- und Review-Berichte ablegen.', tools: ['report_write'] }
 ];
 
@@ -123,6 +124,7 @@ export function setPackEnabled(id, enabled) {
  * Der Hauptschalter schlaegt alles; sonst entscheidet das eigene Werkzeug-Pack.
  */
 export function canUseTool(toolName) {
+  if (!toolEnabled(toolName)) return { allowed: false, reason: 'Werkzeug wurde vom Master-Agent deaktiviert.' };
   if (!packEnabled(MASTER_PACK)) return { allowed: false, reason: 'Werkzeug-Pack (Hauptschalter) ist ausgeschaltet.' };
   const pack = toolPackOf(toolName);
   if (!pack) return { allowed: true }; // Werkzeuge ohne Pack bleiben erlaubt
@@ -162,3 +164,4 @@ export function packSummary() {
     blocked: s.blocked
   };
 }
+

@@ -44,6 +44,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.SmartToy
+import dev.villaforge.app.ui.screens.MasterScreen
 import androidx.compose.material3.TextButton
 import dev.villaforge.app.ui.components.EmptyState
 import androidx.compose.runtime.getValue
@@ -75,9 +77,9 @@ import dev.villaforge.app.ui.theme.TextMuted
  * leben in ui/screens/, Bausteine in ui/components/, der Parser in core/.
  * Hier bleibt nur die Navigation mit sanften uebergangen zurueck.
  */
-private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, DEV, SETTINGS, DIAGNOSTICS }
+private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, MASTER, DEV, SETTINGS, DIAGNOSTICS }
 
-private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.CHAT, Screen.DIAGNOSTICS, Screen.SETTINGS)
+private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.CHAT, Screen.MASTER, Screen.DIAGNOSTICS, Screen.SETTINGS)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,11 +87,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf(Screen.DASHBOARD) }
 
-    val openChat: () -> Unit = {
-        val target = state.villas.firstOrNull { it.status == "RUNNING" } ?: state.villas.firstOrNull()
-        if (target != null) { viewModel.openVilla(target.id); screen = Screen.CHAT }
-        else screen = Screen.LIST
-    }
+    val openChat: () -> Unit = { screen = Screen.MASTER }
     LaunchedEffect(screen, state.selectedVillaId, state.detail) {
         if (screen in listOf(Screen.DETAIL, Screen.CHAT, Screen.DEV) &&
             state.selectedVillaId == null && state.detail == null) screen = Screen.LIST
@@ -104,7 +102,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
     val destinations = listOf(
         Triple(Screen.LIST, Icons.Filled.Home, "Villen"),
         Triple(Screen.DASHBOARD, Icons.Filled.Dashboard, "Übersicht"),
-        Triple(Screen.CHAT, Icons.Filled.Chat, "Chat"),
+        Triple(Screen.MASTER, Icons.Filled.SmartToy, "Master"),
         Triple(Screen.DIAGNOSTICS, Icons.Filled.HealthAndSafety, "Diagnose"),
         Triple(Screen.SETTINGS, Icons.Filled.Settings, "System")
     )
@@ -114,6 +112,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
         Screen.DASHBOARD -> "Mission Control"
         Screen.DETAIL -> "Entwicklungsraum"
         Screen.CHAT -> "Deep Agent"
+        Screen.MASTER -> "Master-Agent"
         Screen.DEV -> "Entwicklung"
         Screen.SETTINGS -> "Einstellungen"
         Screen.DIAGNOSTICS -> "Systemdiagnose"
@@ -243,6 +242,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                             }
                             Screen.DETAIL -> DetailScreen(state, viewModel, onChat = { screen = Screen.CHAT }, onDeleted = { screen = Screen.LIST }, onDev = { screen = Screen.DEV })
                             Screen.CHAT -> ChatScreen(state, viewModel)
+                            Screen.MASTER -> MasterScreen(state, viewModel)
                             Screen.DEV -> DevScreen(state, viewModel, onOpenVilla = { id -> viewModel.openVilla(id); screen = Screen.DEV })
                             Screen.SETTINGS -> SettingsScreen(state, viewModel)
                             Screen.DIAGNOSTICS -> DiagnosticsScreen(state, viewModel)

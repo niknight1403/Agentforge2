@@ -16,13 +16,13 @@
 
   <header class="topbar">
     <a class="brand" href="#top" aria-label="VillaForge Startseite"><span class="logo-mark" aria-hidden="true">✦</span><span><strong>VillaForge</strong><small>AGENT WORKSPACE</small></span></a>
-    <nav class="topnav" aria-label="Hauptnavigation"><a class="active" href="#top" aria-current="page"><span aria-hidden="true">◫</span> Übersicht</a><a href="#villaSection"><span aria-hidden="true">◇</span> Villen</a><a href="#packsSection"><span aria-hidden="true">⚒</span> Werkzeuge</a><a href="#routesSection"><span aria-hidden="true">⌁</span> System</a></nav>
+    <nav class="topnav" aria-label="Hauptnavigation"><button id="masterOpenBtn" type="button" class="master-nav"><span aria-hidden="true">✦</span> Master-Agent</button><a class="active" href="#top" aria-current="page"><span aria-hidden="true">◫</span> Übersicht</a><a href="#villaSection"><span aria-hidden="true">◇</span> Villen</a><a href="#packsSection"><span aria-hidden="true">⚒</span> Werkzeuge</a><a href="#routesSection"><span aria-hidden="true">⌁</span> System</a></nav>
     <div class="status"><span id="healthDot" class="dot" aria-hidden="true"></span><span id="healthText" role="status" aria-live="polite">verbinde…</span></div>
   </header>
 
   <nav id="mobileNav" class="mobile-nav" aria-label="Mobile Hauptnavigation">
     <a class="active" href="#top" data-nav-section="top"><span aria-hidden="true">⌂</span><small>Übersicht</small></a>
-    <a href="#createSection" data-nav-section="createSection"><span aria-hidden="true">＋</span><small>Neue Villa</small></a>
+    <button id="mobileMasterBtn" type="button" class="master-nav"><span aria-hidden="true">✦</span><small>Master</small></button>
     <a href="#villaSection" data-nav-section="villaSection"><span aria-hidden="true">◈</span><small>Villen</small></a>
     <a href="#packsSection" data-nav-section="packsSection"><span aria-hidden="true">⚒</span><small>System</small></a>
   </nav>
@@ -43,22 +43,6 @@
         <button id="heroCreateBtn" class="primary large" type="button">Neue Villa starten <span aria-hidden="true">→</span></button>
       </div>
       <div class="hero-visual" aria-hidden="true"><div class="hero-orb"><div class="orb-core">✦</div></div><span class="orbit-label">PLANEN · BAUEN · PRÜFEN</span></div>
-    </section>
-
-    <section id="masterSection" class="panel-glass master-panel">
-      <div class="section-heading"><div><p class="eyebrow">MASTER AGENT</p><h2>Die ganze VillaForge-App steuern</h2></div><span class="section-count">00</span></div>
-      <p class="hint">Villen anlegen, Duplikate prüfen, Vorschläge verbessern und Packs oder Connector-Zustände konfigurieren – in einem klaren globalen Chat.</p>
-      <div id="masterChatLog" class="chat-log master-chat-log" role="log" aria-live="polite" aria-label="Master-Agent-Verlauf"></div>
-      <div class="chat-input">
-        <textarea id="masterChatMsg" aria-label="Nachricht an den Master Agent" rows="2" placeholder="z. B. Status anzeigen oder Villa erstellen, Name: …, Idee: …"></textarea>
-        <button id="masterSendBtn" class="send-button" type="button" aria-label="Master-Agent-Nachricht senden">↑</button>
-      </div>
-      <div class="master-quick-actions" aria-label="Master-Agent-Schnellaktionen">
-        <button type="button" class="ghost compact" data-master-prompt="Status und aktive Konfiguration anzeigen">Status</button>
-        <button type="button" class="ghost compact" data-master-prompt="Doppelte Villen anzeigen">Duplikate prüfen</button>
-        <button type="button" class="ghost compact" data-master-prompt="Welche Verbesserungen sind als Nächstes sinnvoll?">Optimierungsvorschläge</button>
-      </div>
-      <p id="masterMsg" class="msg" role="status" aria-live="polite"></p>
     </section>
 
     <section class="metric-grid" aria-label="Systemübersicht">
@@ -241,6 +225,19 @@
       </div>
     </div>
   </section>
+
+  <dialog id="masterDialog" class="master-dialog" aria-labelledby="masterTitle">
+    <div class="master-shell">
+      <header class="master-heading"><div><p class="eyebrow">APP-WEITE VERWALTUNG</p><h2 id="masterTitle">Master-Agent</h2><p class="hint">Konfiguriere VillaForge mit deinen Nachrichten.</p></div><button id="masterCloseBtn" class="ghost" type="button" aria-label="Master-Agent schließen">✕</button></header>
+      <p id="masterSummary" class="hint" role="status"></p>
+      <details class="master-capabilities"><summary>Was kann der Master-Agent?</summary><p>Villen und Projektprompts erstellen, Packs und Werkzeuge schalten, eigene Skills speichern, HTTP-JSON-Connectoren konfigurieren und prüfen, Einstellungen ändern und Dubletten archivieren. OAuth- und MCP-Verbindungen benötigen ihre jeweilige Einrichtung. Keine Schlüsselwerte in den Chat eingeben.</p><div id="masterCatalog"></div></details>
+      <div id="masterSuggestions" class="master-suggestions" aria-label="Passende Vorschläge"></div>
+      <div id="masterLog" class="master-log" role="log" aria-live="polite" aria-label="Master-Agent Verlauf"></div>
+      <p id="masterMsg" class="msg" role="status" aria-live="polite"></p>
+      <form id="masterForm" class="master-composer"><label class="visually-hidden" for="masterInput">Nachricht an den Master-Agent</label><textarea id="masterInput" rows="2" maxlength="8000" required placeholder='Zum Beispiel: Erstelle Villa "Musikstudio": Eine mobile Live-Performance-App'></textarea><button id="masterSendBtn" class="primary" type="submit">Senden</button></form>
+      <p class="chat-help">Enter senden · Shift+Enter neue Zeile · Änderungen werden mit Ergebnis protokolliert</p>
+    </div>
+  </dialog>
 
   <footer>VillaForge · privat &amp; lokal · fokussierte Agenten-Entwicklung</footer>
 

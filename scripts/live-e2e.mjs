@@ -330,6 +330,23 @@ async function run() {
   await page.navigate(`http://127.0.0.1:${PORT}/`);
   await delay(700);
   await safeShot('07-uebersicht-zurueck-desktop');
+  await check('Master-Chat: Status und Villa mit Prompt erstellen', async () => {
+    await page.evaluate("document.querySelector('#masterOpenBtn').click(); return true;");
+    await page.waitFor("document.querySelector('#masterDialog').open && document.querySelector('#masterSummary').textContent.includes('Villen')", {timeout:15000});
+    await page.evaluate("document.querySelector('#masterInput').value='Status'; document.querySelector('#masterForm').requestSubmit(); return true;");
+    await page.waitFor("document.querySelector('#masterLog').textContent.includes('sichtbare Villen') && !document.querySelector('#masterSendBtn').disabled", {timeout:15000});
+    await page.evaluate(`document.querySelector('#masterInput').value='Erstelle Villa "Master Browser": Ein überprüfbarer Projektauftrag'; document.querySelector('#masterForm').requestSubmit(); return true;`);
+    await page.waitFor("document.querySelector('#masterLog').textContent.includes('mit Projektauftrag angelegt') && !document.querySelector('#masterSendBtn').disabled",{timeout:90000});
+    await safeShot('08-master-desktop');
+    await page.setViewport(390,844);
+    await delay(200);
+    const overflow=await page.evaluate('return document.documentElement.scrollWidth-window.innerWidth;');
+    if(overflow>2) throw new Error(`Master überläuft um ${overflow}px`);
+    await safeShot('09-master-mobile');
+    await page.evaluate("document.querySelector('#masterCloseBtn').click(); return true;");
+    return 'Status, dauerhafter Verlauf und echte Villa-Erstellung; Desktop und Mobil';
+  });
+
 }
 
 async function teardown() {

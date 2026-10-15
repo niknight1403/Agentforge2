@@ -378,20 +378,13 @@ GET    /api/villas/:id/suggestions    datenbasierte nächste Schritte für die V
 GET    /api/villas/duplicates         Duplikat-Gruppen als sichere Vorschau
 POST   /api/villas/duplicates         { apply: true, ids: [...] } – nur bestätigte Kandidaten löschen
 POST   /api/agents/:id/chat           { message }
-GET    /api/master/state              globale Villen-, Pack- und Connector-Übersicht
-GET    /api/master/messages           globaler Master-Agent-Verlauf
-POST   /api/master/chat               { message } – App-Konfiguration per natürlicher Sprache
-PATCH  /api/master/connectors/:id     { enabled } – Connector-Zustand verwalten
-GET    /api/routes
-POST   /api/routes                    { name, provider, baseUrl, model, keyEnv, priority }
-PATCH  /api/routes/:id                { enabled, priority }
-GET    /api/secrets                   nur Namen
-POST   /api/secrets                   { name, value }
-GET    /api/tools
-GET    /api/packs                     Feature- und Werkzeug-Packs mit Schalterzustand
-GET    /api/tool-packs                Werkzeug-Packs kompakt (fuer App und UI)
-PATCH  /api/packs/:id                 { enabled } – Pack schalten (sperrt/freigibt Werkzeuge)
-GET    /api/events                    Server-Sent Events
+GET    /api/master/status             Villen, Packs, Werkzeuge, Skills, Connectoren und Dubletten
+GET    /api/master/messages           dauerhafter globaler Verlauf
+POST   /api/master/chat               { message, requestId } – wiederholsichere Konfiguration
+GET    /api/master/turn/:requestId     Ergebnis einer laufenden Anfrage
+GET    /api/master/suggestions        priorisierte, kontextbezogene Vorschläge
+GET    /api/master/duplicates         Vorschau genauer Duplikate
+POST   /api/master/duplicates/archive reversible Bereinigung; Aufgaben und Verläufe bleiben erhalten
 ```
 
 Manuelle Starts werden standardmäßig auf `VF_VILLA_SLOTS` gleichzeitige Villen
@@ -484,3 +477,12 @@ gradle :app:assembleDebug
 
 oder automatisch über GitHub Actions (Workflow `.github/workflows/build-apk.yml`,
 Artefakt `villaforge-apk`). Aktueller Stand liegt als `VillaForge.apk` im Repo.
+
+
+Der globale Master-Agent verwendet die vorhandenen KI-Routen für freie Konfigurationswünsche.
+Status, Dublettenbereinigung und `Erstelle Villa "Name": Ziel` funktionieren auch offline.
+Villen werden mit Projektauftrag angelegt und erst auf ausdrücklichen Startwunsch ausgeführt.
+Eigene Skills wirken in den Agenten-Anweisungen; Werkzeug- und Pack-Schalter werden bei jedem Aufruf geprüft.
+Connectoren unterstützen öffentliche HTTPS-JSON-GET-Endpunkte mit optionaler vorhandener Secret-Referenz.
+OAuth- und MCP-Installationen benötigen ihre eigene Einrichtung. Schlüsselwerte gehören nicht in den Chat.
+Die appweite Verwaltung ist im Benutzer-Hub Administratoren vorbehalten.

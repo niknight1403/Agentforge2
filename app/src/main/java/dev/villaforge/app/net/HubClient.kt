@@ -281,6 +281,20 @@ class HubClient(context: Context) {
         }
     }
 
+    suspend fun masterMessages(): List<ChatMessage> {
+        val rows = JSONArray(execute("GET", "/api/master/messages"))
+        return (0 until rows.length()).map { i ->
+            val row = rows.getJSONObject(i)
+            ChatMessage(row.optString("role"), row.optString("content"), row.optLong("created_at"))
+        }
+    }
+    suspend fun masterSuggestions(): JSONArray = JSONArray(execute("GET", "/api/master/suggestions"))
+    suspend fun masterStatus(): JSONObject = JSONObject(execute("GET", "/api/master/status"))
+    suspend fun masterChat(message: String, requestId: String): JSONObject =
+        JSONObject(execute("POST", "/api/master/chat", JSONObject().put("message", message).put("requestId", requestId)))
+    suspend fun masterTurn(requestId: String): JSONObject = JSONObject(execute("GET", "/api/master/turn/$requestId"))
+    suspend fun dismissMasterSuggestion(id: String) { execute("POST", "/api/master/suggestions/dismiss", JSONObject().put("id", id)) }
+
     suspend fun createVilla(name: String, idea: String, agentCount: Int, sourcePath: String = ""): Long {
         val body = JSONObject()
             .put("name", name)

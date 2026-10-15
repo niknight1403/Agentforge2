@@ -253,10 +253,7 @@ function closeWorkspace() {
   document.querySelectorAll('.topbar, #mobileNav, .dashboard, body > footer').forEach((el) => { el.inert = false; });
   currentVilla = null;
   currentAgentId = null;
-  const fallback = $('#openLatestBtn');
-  const target = workspaceOpener?.isConnected && workspaceOpener.getClientRects().length ? workspaceOpener : fallback;
-  target?.focus();
-  if (document.activeElement !== target) fallback?.focus();
+  (workspaceOpener?.isConnected ? workspaceOpener : $('#openLatestBtn')).focus();
 }
 
 async function openVilla(id) {
@@ -270,7 +267,7 @@ async function openVilla(id) {
   $('#dName').textContent = data.villa.name;
   $('#dIdea').textContent = data.villa.idea;
   renderAll(data);
-  await renderSuggestions(data);
+  renderSuggestions(data);
   await loadChat(id);
   $('#chatMsg').focus();
 }
@@ -313,15 +310,12 @@ function renderStats(d) {
 }
 
 async function renderSuggestions(d) {
-  const tasks = d.tasks || [];
-  const fallback = [
-    { title: 'Plan schärfen', prompt: 'Prüfe den aktuellen Plan, nenne die drei wichtigsten Risiken und schlage konkrete Verbesserungen vor.', rationale: 'Projektqualität erhöhen' },
-    { title: 'Nächsten Schritt', prompt: tasks.find((t) => ['PENDING', 'READY'].includes(t.status))?.title || 'Welche konkrete Aufgabe sollten wir als Nächstes umsetzen?', rationale: 'Arbeitsfluss fortsetzen' }
-  ];
-  const out = await api(`/api/villas/${d.villa.id}/suggestions`);
-  const suggestions = Array.isArray(out) && out.length ? out : fallback;
-  $('#suggestionList').innerHTML = suggestions.map((s) => `<button type="button" class="suggestion" data-prompt="${esc(s.prompt)}"><span class="suggestion-title"><b>${esc(s.title)}</b><em>${esc(s.category || 'Empfehlung')} · ${esc(String(s.priority || ''))}</em></span><span class="suggestion-rationale">${esc(s.rationale || s.prompt.slice(0, 72))}</span>${Array.isArray(s.context) && s.context.length ? `<small>${esc(s.context.slice(0, 2).join(' · '))}</small>` : ''}</button>`).join('');
-  document.querySelectorAll('.suggestion').forEach((b) => b.addEventListener('click', () => { $('#chatMsg').value = b.dataset.prompt; $('#chatMsg').focus(); }));
+  const id = d.villa.id;
+  const rows = await api(`/api/master/suggestions?villaId=${id}`);
+  if (currentVilla?.villa.id !== id) return;
+  if (!Array.isArray(rows)) { $('#suggestionList').textContent = 'Vorschläge gerade nicht verfügbar.'; return; }
+  $('#suggestionList').innerHTML = rows.length ? rows.map(r => `<button type="button" class="suggestion" data-prompt="${esc(r.prompt)}"><span>${esc(r.title)} ↗</span>${esc(r.reason)}</button>`).join('') : '<p class="hint">Keine neuen passenden Vorschläge.</p>';
+  document.querySelectorAll('#suggestionList .suggestion').forEach(b => b.addEventListener('click', () => { selectTab('chat'); $('#chatMsg').value = b.dataset.prompt; $('#chatMsg').focus(); }));
 }
 
 function renderTasks(tasks) {
@@ -422,7 +416,7 @@ async function refreshCurrent() {
   if (data.error) return;
   currentVilla = data;
   renderAll(data);
-  await renderSuggestions(data);
+  renderSuggestions(data);
   loadVillas();
 }
 
@@ -705,33 +699,6 @@ async function importVillaFile() {
   }
 }
 
-/* -------------------------- Globaler Master-Agent ----------------------- */
-function renderMasterMessages(messages) {
-  const log = $('#masterChatLog');
-  if (!log) return;
-  log.innerHTML = Array.isArray(messages) && messages.length
-    ? messages.map((m) => `<div class="bubble ${m.role === 'user' ? 'user' : 'assistant'}"><span class="meta">${m.role === 'user' ? 'Du' : 'Master Agent'}</span>${esc(m.content)}</div>`).join('')
-    : '<div class="bubble assistant"><span class="meta">Master Agent · bereit</span>Ich kann die gesamte VillaForge-Konfiguration steuern. Frage mich nach Status, Duplikaten, Vorschlägen, Villen, Packs oder Connectoren.</div>';
-  log.scrollTop = log.scrollHeight;
-}
-async function loadMasterChat() {
-  const messages = await api('/api/master/messages?limit=40');
-  if (!messages.error) renderMasterMessages(messages);
-}
-async function sendMasterChat(text = $('#masterChatMsg')?.value.trim()) {
-  if (!text) return;
-  $('#masterChatMsg').value = '';
-  const log = $('#masterChatLog');
-  log.insertAdjacentHTML('beforeend', `<div class="bubble user"><span class="meta">Du</span>${esc(text)}</div><div class="bubble assistant"><span class="meta">Master Agent · arbeitet …</span>Konfiguration wird geprüft …</div>`);
-  log.scrollTop = log.scrollHeight;
-  const out = await api('/api/master/chat', { method: 'POST', body: { message: text }, timeoutMs: 120000 });
-  if (out.error) { toast(`Master-Agent: ${out.error}`, 'err'); await loadMasterChat(); return; }
-  setMsg('#masterMsg', out.answer || 'Aktion verarbeitet.');
-  await loadMasterChat();
-  await Promise.all([loadVillas(), loadStats(), loadPacks()]);
-  if (out.villaId) openVilla(out.villaId);
-}
-
 /* -------------------------------- Tabs -------------------------------- */
 
 function selectTab(tab) {
@@ -768,9 +735,6 @@ $('#startBtn').addEventListener('click', startDevelopment);
 $('#stopBtn').addEventListener('click', stopDevelopment);
 $('#sendBtn').addEventListener('click', sendChat);
 $('#chatMsg').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); } });
-$('#masterSendBtn').addEventListener('click', () => sendMasterChat());
-$('#masterChatMsg').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMasterChat(); } });
-document.querySelectorAll('[data-master-prompt]').forEach((b) => b.addEventListener('click', () => sendMasterChat(b.dataset.masterPrompt)));
 $('#addRouteBtn').addEventListener('click', addRoute);
 $('#addSecretBtn').addEventListener('click', addSecret);
 $('#saveTokenBtn').addEventListener('click', saveToken);
@@ -818,6 +782,60 @@ loadPacks();
 loadTools();
 connectEvents();
 connectSectionNavigation();
-loadMasterChat();
 setInterval(checkHealth, 20000);
 setInterval(loadStats, 30000);
+
+/* Master-Agent: one persistent, app-wide conversation; independent of a villa. */
+let masterPending = null;
+let masterSending = false;
+function renderMasterMessages(rows) {
+  $('#masterLog').innerHTML = rows.length ? rows.map(m => `<article class="master-bubble ${m.role === 'user' ? 'user' : ''}"><small>${m.role === 'user' ? 'Du' : 'Master-Agent'}</small><p>${esc(m.content)}</p></article>`).join('') : '<div class="empty-state"><b>Deine Zentrale für VillaForge</b><p>Beschreibe eine Änderung oder wähle einen Vorschlag. Du kannst mit „Status“ beginnen.</p></div>';
+  $('#masterLog').scrollTop = $('#masterLog').scrollHeight;
+}
+async function refreshMaster() {
+  const [history, status, proposals] = await Promise.all([api('/api/master/messages'),api('/api/master/status'),api('/api/master/suggestions')]);
+  if (history.error) { setMsg('#masterMsg', `Master-Agent nicht verfügbar: ${history.error}. Der Hub benötigt die passende Aktualisierung.`,true); return; }
+  renderMasterMessages(history);
+  if (!status.error) {
+    $('#masterSummary').textContent = `${status.villas.length} Villen · ${status.archived.length} archiviert · ${status.skills.length} Skills · ${status.connectors.length} Connectoren`;
+    $('#masterCatalog').innerHTML = `<p class="hint">Packs: ${status.packs.features.map(p => `${esc(p.id)} ${p.enabled ? 'an' : 'aus'}`).join(' · ')}</p><p class="hint">Skills: ${status.skills.map(s => `${esc(s.title)} (${s.enabled ? 'an' : 'aus'})`).join(', ') || 'noch keine'}</p><p class="hint">Connectoren: ${status.connectors.map(c => `${esc(c.title)}: ${esc(c.last_status)}`).join(', ') || 'noch keine'}</p>`;
+  }
+  const rows = Array.isArray(proposals) ? proposals : [];
+  $('#masterSuggestions').innerHTML = rows.map(r => `<button type="button" class="ghost master-suggestion" data-prompt="${esc(r.prompt)}" title="${esc(r.reason)}">${esc(r.title)} ↗</button>`).join('');
+  document.querySelectorAll('.master-suggestion').forEach(b => b.addEventListener('click', () => { $('#masterInput').value = b.dataset.prompt; $('#masterInput').focus(); }));
+}
+async function openMaster() {
+  if (!$('#masterDialog').open) $('#masterDialog').showModal();
+  setMsg('#masterMsg','');
+  await refreshMaster();
+  $('#masterInput').focus();
+}
+async function sendMaster(e) {
+  e?.preventDefault();
+  if (masterSending) return;
+  const message = $('#masterInput').value.trim();
+  if (!masterPending && !message) return;
+  if (!masterPending) masterPending = {message,requestId:crypto.randomUUID()};
+  masterSending = true; $('#masterSendBtn').disabled = true;
+  setMsg('#masterMsg','Master-Agent prüft die Nachricht und führt passende Aktionen aus …');
+  try {
+    let out = await api('/api/master/chat',{method:'POST',body:masterPending});
+    for (let i=0;out.pending && i<15;i++) {
+      await new Promise(r => setTimeout(r,1500));
+      out = await api(`/api/master/turn/${encodeURIComponent(masterPending.requestId)}`);
+    }
+    if (out.error || out.pending) throw new Error(out.error || 'Die Aktion läuft noch. Mit „Status prüfen“ wird dieselbe Anfrage fortgesetzt.');
+    if (out.answer) setMsg('#masterMsg',out.ok ? 'Bearbeitung abgeschlossen.' : 'Bitte das Ergebnis im Verlauf prüfen.',!out.ok);
+    masterPending = null; $('#masterInput').value = '';
+    await Promise.all([refreshMaster(),loadVillas(),loadStats(),loadPacks()]);
+  } catch(err) { setMsg('#masterMsg',String(err.message || err),true); }
+  finally {
+    masterSending = false; $('#masterSendBtn').disabled = false;
+    $('#masterSendBtn').textContent = masterPending ? 'Status prüfen' : 'Senden';
+  }
+}
+$('#masterOpenBtn').addEventListener('click',openMaster);
+$('#mobileMasterBtn').addEventListener('click',openMaster);
+$('#masterCloseBtn').addEventListener('click',() => $('#masterDialog').close());
+$('#masterForm').addEventListener('submit',sendMaster);
+$('#masterInput').addEventListener('keydown',e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMaster(); } });

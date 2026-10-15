@@ -4,6 +4,7 @@ import { emit } from './events.mjs';
 import { mkdirSync, writeFileSync, readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { projectSummary, searchProject, readProjectFile, runCommand, safePath } from './fs-tools.mjs';
+import { skillInstructions, readConnector } from './control-store.mjs';
 import { canUseTool, toolPackOf } from './packs.mjs';
 
 export const WORKSPACE = resolve(process.env.VF_WORKSPACE || join(process.cwd(), 'server', 'data', 'workspace'));
@@ -16,6 +17,11 @@ const ROLES = ['PLANNER', 'RESEARCHER', 'ARCHITECT', 'CODER', 'REVIEWER', 'TESTE
 /* ------------------------------------------------------------------ */
 
 const TOOLS = {
+  connector_read: {
+    description: 'Liest JSON über einen konfigurierten und aktivierten HTTPS-Connector (nur GET).',
+    schema: { connectorId: 'string' },
+    run: async (ctx, args) => JSON.stringify(await readConnector(String(args.connectorId))).slice(0, 12000)
+  },
   memory_write: {
     description: 'Schreibt einen dauerhaften Eintrag ins Gedaechtnis.',
     schema: { title: 'string', content: 'string', kind: 'FACT|DECISION|ARTIFACT|LESSON|IDEA|CONSTRAINT', importance: '1-10' },
@@ -409,7 +415,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, villaId = agen
   const ctx = { villaId, agentId: agent.id };
   const context = statusContext(villaId);
   const history = [
-    { role: 'system', content: `${agent.system_prompt}${memoryContext(villaId, agent.id)}\n\nWerkzeuge: ${JSON.stringify(TOOL_SPECS)}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
+    { role: 'system', content: `${agent.system_prompt}\nEigene Skills:\n${skillInstructions()}${memoryContext(villaId, agent.id)}\n\nWerkzeuge: ${JSON.stringify(TOOL_SPECS)}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
     { role: 'user', content: userPrompt }
   ];
 
@@ -747,6 +753,7 @@ export function stopVilla(villaId) {
 }
 
 export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, adaptive = true, maxRounds = 6 } = {}) {
+  if (db.prepare('SELECT status FROM villas WHERE id=?').get(villaId)?.status === 'ARCHIVED') return;
   if (running.get(villaId)) return;
   const job = { stop: false, processed: 0, concurrency: Math.max(1, Math.min(Number(concurrency) || 4, 12)), retries: new Map() };
   running.set(villaId, job);
@@ -968,3 +975,4 @@ export function guessRole(task) {
   if (/integrat|release|zusammen/.test(t)) return 'INTEGRATOR';
   return 'WORKER';
 }
+

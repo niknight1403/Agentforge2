@@ -15,8 +15,9 @@
  *   Gleichstand, und Villen mit Fehlern fallen leicht zurueck.
  */
 import { db } from './db.mjs';
+import { getSetting } from './control-store.mjs';
 
-const SLOTS = () => Math.max(1, Number(process.env.VF_VILLA_SLOTS ?? 2) || 2);
+const SLOTS = () => Math.max(1, Number(getSetting('villaSlots', Number(process.env.VF_VILLA_SLOTS ?? 2))) || 2);
 
 /** Fortschritt und Rang aller Villen in einer einzigen Abfrage. */
 export function villaRanking() {
@@ -60,7 +61,7 @@ export function schedulerStatus() {
 function pump() {
   while (starter && active.size < SLOTS() && queue.length) {
     const id = queue.shift();
-    if (active.has(id)) continue;
+    if (active.has(id) || db.prepare('SELECT status FROM villas WHERE id=?').get(id)?.status === 'ARCHIVED') continue;
     active.add(id);
     // Synchron starten: Aufrufer (Tests, Auto-Resume) sehen den Start sofort.
     try {

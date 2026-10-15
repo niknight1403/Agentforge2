@@ -16,9 +16,7 @@ import { pruneOldData, autoResumeQuotaVillas } from './maintenance.mjs';
 import { runCouncil, listCouncil, autoCouncil } from './council.mjs';
 import { packState, packSummary, setPackEnabled, packEnabled } from './packs.mjs';
 import { VERSION } from './version.mjs';
-import { duplicateSummary, removeDuplicates } from './villa-dedupe.mjs';
-import { villaSuggestions } from './suggestions.mjs';
-import { masterChat, masterMessages, masterState, setConnector } from './master-agent.mjs';
+import { createMasterControl } from './master-control.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -146,6 +144,18 @@ function serveStatic(req, res, pathname) {
   res.end(readFileSync(file));
 }
 
+const scheduledOptions = new Map();
+function scheduleVilla(id, options = {}) {
+  scheduledOptions.set(id, options);
+  return enqueueVillas([id]);
+}
+configureScheduler({ start: id => {
+  const options = scheduledOptions.get(id) || { concurrency:4,maxTasks:500,adaptive:true,maxRounds:6 };
+  scheduledOptions.delete(id);
+  return orchestrate(id,options);
+} });
+const masterControl = createMasterControl({ chat, createVilla, isRunning, stopVilla, toolSpecs, packState, setPackEnabled, emit, startVilla(id) { return scheduleVilla(id); } });
+
 /* --------------------------- API --------------------------- */
 /* ---------- Rate-Limit fuer schreibende Anfragen ---------- */
 // Ein einfaches prozesslocales Zeitfenster pro IP. GET bleibt frei, SSE sowieso.
@@ -206,8 +216,10 @@ async function api(req, res, url) {
     }
   }
 
+  if (await masterControl.handle(req, res, url, readBody, json)) return;
+
   if (p === '/api/health') {
-    return json(res, 200, { ok: true, ts: now(), routes: enabledRoutes().length, version: VERSION, llm: llmGateStatus(), cmd: cmdGateStatus(), scheduler: { slots: schedulerStatus().slots, active: schedulerStatus().active.length, queued: schedulerStatus().queued } });
+    return json(res, 200, { ok: true, masterControl: 1, ts: now(), routes: enabledRoutes().length, version: VERSION, llm: llmGateStatus(), cmd: cmdGateStatus(), scheduler: { slots: schedulerStatus().slots, active: schedulerStatus().active.length, queued: schedulerStatus().queued } });
   }
 
   // ---- Routen ----
@@ -406,8 +418,8 @@ async function api(req, res, url) {
     // Gesamtzahl steht im X-Total-Count-Header, blaettern via ?limit=/?offset=.
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
     const offset = Math.max(Number(url.searchParams.get('offset')) || 0, 0);
-    const rows = db.prepare('SELECT * FROM villas ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset);
-    const total = db.prepare('SELECT COUNT(*) c FROM villas').get().c;
+    const rows = db.prepare("SELECT * FROM villas WHERE status != 'ARCHIVED' ORDER BY created_at DESC LIMIT ? OFFSET ?").all(limit, offset);
+    const total = db.prepare("SELECT COUNT(*) c FROM villas WHERE status != 'ARCHIVED'").get().c;
     const body = JSON.stringify(rows);
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
@@ -430,41 +442,9 @@ async function api(req, res, url) {
     const b = await readBody(req);
     const v = validateVilla(b);
     if (!v.ok) return json(res, 400, { error: v.error });
-    const result = await createVilla(v.value);
+    const result = await masterControl.createUniqueVilla(v.value);
     log('Villa angelegt:', result.villaId, `"${v.value.name}"`);
     return json(res, 201, result);
-  }
-  // Duplikate zuerst nur analysieren; das Löschen akzeptiert ausschließlich
-  // IDs aus der aktuellen Vorschau und verlangt apply=true.
-  if (p === '/api/villas/duplicates' && m === 'GET') {
-    return json(res, 200, duplicateSummary());
-  }
-  if (p === '/api/villas/duplicates' && m === 'POST') {
-    const b = await readBody(req);
-    if (b?.apply !== true) return json(res, 200, { ok: true, dryRun: true, ...duplicateSummary() });
-    const out = removeDuplicates(b.ids, { isRunning });
-    emit('villas_deduplicated', { removed: out.applied.map((v) => v.id), skipped: out.skipped });
-    return json(res, 200, { ok: true, dryRun: false, result: out, summary: duplicateSummary() });
-  }
-  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'suggestions' && m === 'GET') {
-    const id = Number(parts[2]);
-    if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
-    return json(res, 200, villaSuggestions(id));
-  }
-  // Globaler Master-Agent: kein Villa-Kontext nötig, aber alle Antworten und
-  // Konfigurationsaktionen bleiben im eigenen Verlauf nachvollziehbar.
-  if (p === '/api/master/state' && m === 'GET') return json(res, 200, masterState());
-  if (p === '/api/master/messages' && m === 'GET') return json(res, 200, masterMessages(url.searchParams.get('limit')));
-  if (p === '/api/master/chat' && m === 'POST') {
-    const b = await readBody(req);
-    const out = await masterChat(b?.message, { isRunning });
-    return json(res, out.error ? 400 : 200, out);
-  }
-  if (parts[0] === 'api' && parts[1] === 'master' && parts[2] === 'connectors' && parts[3] && m === 'PATCH') {
-    const b = await readBody(req);
-    if (typeof b.enabled !== 'boolean') return json(res, 400, { error: 'enabled muss true oder false sein' });
-    const out = setConnector(parts[3], b.enabled);
-    return json(res, out.ok ? 200 : 404, out);
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'council' && m === 'GET') {
     return json(res, 200, listCouncil(Number(parts[2]), 10));
@@ -616,8 +596,9 @@ async function api(req, res, url) {
     if (isRunning(id)) return json(res, 202, { ok: true, alreadyRunning: true });
     const check = validateOrchestrate(b);
     if (!check.ok) return json(res, 400, { error: check.error });
-    const schedule = enqueueVillas([id]);
-    return json(res, 202, { ok: true, started: schedule.active.includes(id), queued: !schedule.active.includes(id), scheduler: schedule });
+    if (db.prepare('SELECT status FROM villas WHERE id=?').get(id)?.status === 'ARCHIVED') return json(res,409,{error:'Villa zuerst wiederherstellen.'});
+    const schedule = scheduleVilla(id,check.value);
+    return json(res,202,{ok:true,started:schedule.active.includes(id),queued:!schedule.active.includes(id),scheduler:schedule});
   }
   // Gescheiterte Aufgabe zurueck in die Warteschlange und den Lauf fortsetzen.
   // Nach einem Offline-Durchhaenger (PAUSED mit FAILED-Aufgaben) ist das der
@@ -734,11 +715,6 @@ server.listen(PORT, HOST, () => {
   log(`UI:      http://localhost:${PORT}/`);
   log(`Health:  http://localhost:${PORT}/api/health`);
   if (API_TOKEN) log('API-Schutz aktiv (VF_TOKEN gesetzt).');
-
-  // Auch manuelle UI/API-Starts laufen durch dieselbe Slotbegrenzung wie
-  // Wiederaufnahmen. Dadurch überlasten vier gleichzeitige Villen den Hub
-  // nicht: standardmäßig arbeiten zwei, die übrigen warten nach Fortschritt.
-  configureScheduler({ start: (id) => orchestrate(id, { concurrency: 4, maxTasks: 500, adaptive: true, maxRounds: 6 }) });
 
   // Nach einem Neustart unterbrochene Laeufe fortsetzen (nur wenn erlaubt).
   if (process.env.VF_RESUME !== '0') {
