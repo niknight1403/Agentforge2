@@ -22,7 +22,7 @@ jobs:
           TOK=$(echo "$RESP" | head -1 | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")
           [ -z "$TOK" ] && { echo "KEIN TOKEN - Login fehlgeschlagen"; echo "$RESP" | head -1 | cut -c1-200; exit 0; }
           echo "== System-Audit (Selbstheilung) =="
-          curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/system/audit | jq -r '"AUDIT: " + (if .green then "GRUEN" else "ROT" end) + " | " + (.areas | map((if .green then "OK " else "ROT ") + .name + ": " + .detail) | join(", ")) + " | Heil-Aktionen: " + (.actions | length | tostring)'
+          curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/system/audit | python3 -c 'import json,sys; d=json.load(sys.stdin); print("AUDIT:", "GRUEN" if d["green"] else "ROT", "|", ", ".join(("OK " if a["green"] else "ROT ")+a["name"]+": "+a["detail"] for a in d["areas"]), "| Heil-Aktionen:", len(d["actions"]))'
           for P in /api/villas /api/routes /api/stats /api/evolution/pending; do
             curl -s -m 60 -o /tmp/r.json -w "$P: HTTP %{http_code} in %{time_total}s, %{size_download} Bytes\n" -H "Authorization: Bearer $TOK" $H$P
           done
