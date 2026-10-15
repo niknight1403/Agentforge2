@@ -5,7 +5,7 @@ on:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Endpunkte mit Login messen
         env:
@@ -71,6 +71,8 @@ jobs:
                       return json.loads(r.read()), round(time.time()-t0, 1)
               except urllib.error.HTTPError as e:
                   return {"http": e.code, "body": e.read().decode()[:200]}, round(time.time()-t0, 1)
+              except Exception as e:
+                  return {"exception": str(e)[:160]}, round(time.time()-t0, 1)
           def get(path, tok):
               req = urllib.request.Request(BASE + path, headers={"Authorization": "Bearer " + tok})
               with urllib.request.urlopen(req, timeout=30) as r:
@@ -95,7 +97,7 @@ jobs:
               except Exception as ex:
                   print("EVO-READ:", str(ex)[:120])
               # echter Chat-Turn durch die Route-Kette
-              ans, dt = post("/api/villas/%d/chat" % v.get("id"), {"message": "Sag nur: ok - kein Werkzeug, keine Aufgabe."}, tok, 180)
+              ans, dt = post("/api/villas/%d/chat" % v.get("id"), {"message": "Sag nur: ok - kein Werkzeug, keine Aufgabe."}, tok, 420)
               print("CHAT-PROBE: Route:", ans.get("route") or ans.get("http"), "| Modell:", ans.get("model"), "| offline:", ans.get("offline"), "| Dauer:", dt, "s")
               print("CHAT-ANTWORT:", str(ans.get("answer"))[:200])
           PROBE
