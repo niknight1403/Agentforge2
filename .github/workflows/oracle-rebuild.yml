@@ -173,6 +173,57 @@ jobs:
           RST
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/ollrestart.sh ubuntu@92.5.177.159:/tmp/ollrestart.sh
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/ollrestart.sh"
+      - name: LLM-Kette reparieren (llm-fix)
+        if: ${{ github.event.inputs.mode == 'llm-fix' }}
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          VF_GEMINI_KEY: ${{ secrets.VF_GEMINI_KEY }}
+          VF_HFTOKEN: ${{ secrets.VF_HFTOKEN }}
+          VF_OPENROUTER_KEY: ${{ secrets.VF_OPENROUTER_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+          cat > /tmp/llmfix.sh << 'LLMFIX'
+          set -e
+          HUBENV=/opt/villaforge/hub.env
+          add_env() { grep -q "^$1=" $HUBENV 2>/dev/null || echo "$1=$2" >> $HUBENV; }
+          add_env GEMINI_API_KEY "$VF_GEMINI_KEY"
+          add_env HF_TOKEN "$VF_HFTOKEN"
+          add_env OPENROUTER_API_KEY "$VF_OPENROUTER_KEY"
+          chmod 600 $HUBENV
+          # Routes in der Hub-DB reparieren (node:sqlite wie im Hub selbst)
+          cd /opt/villaforge
+          sudo -u root node -e "
+          const { DatabaseSync } = require('node:sqlite');
+          const db = new DatabaseSync('server/data/villaforge.db');
+          const gem = db.prepare(\"SELECT id FROM routes WHERE provider='gemini'\").get();
+          if (gem) {
+            db.prepare('UPDATE routes SET base_url=?, model=?, key_env=?, priority=2, enabled=1 WHERE id=?')
+              .run('https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-flash-lite-latest', 'GEMINI_API_KEY', gem.id);
+          } else {
+            db.prepare('INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, status, created_at, updated_at) VALUES (?,?,?,?,?,1,1,2,?,?,?)')
+              .run('Gemini Flash Lite (free tier)', 'gemini', 'https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-flash-lite-latest', 'GEMINI_API_KEY', 'ACTIVE', Date.now(), Date.now());
+          }
+          if ('$VF_HFTOKEN') {
+            const hf = db.prepare(\"SELECT id FROM routes WHERE provider='huggingface'\").get();
+            if (hf) db.prepare('UPDATE routes SET key_env=?, enabled=1 WHERE id=?').run('HF_TOKEN', hf.id);
+          }
+          const rows = db.prepare('SELECT id, name, provider, model, priority, key_env, enabled FROM routes ORDER BY priority').all();
+          console.log(JSON.stringify(rows, null, 1));
+          " 2>&1 | grep -v ExperimentalWarning
+          UNIT=$(ls /etc/systemd/system | grep -iE 'villaforge|hub' | grep service | head -1 | sed 's/.service$//')
+          systemctl restart "$UNIT"
+          sleep 6
+          curl -sf -m 5 http://127.0.0.1:12000/api/health && echo && echo LLM-FIX-OK
+          LLMFIX
+          # Variablen ins Skript nehmen (Werte kommen aus den maskierten Secrets)
+          export VF_GEMINI_KEY VF_HFTOKEN VF_OPENROUTER_KEY
+          sed -i "s|\$VF_GEMINI_KEY|$(printf '%s' "$VF_GEMINI_KEY")|; s|\$VF_HFTOKEN|$(printf '%s' "$VF_HFTOKEN")|; s|\$VF_OPENROUTER_KEY|$(printf '%s' "$VF_OPENROUTER_KEY")|" /tmp/llmfix.sh 2>/dev/null || true
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/llmfix.sh ubuntu@92.5.177.159:/tmp/llmfix.sh
+          bash /tmp/sshcmd "sudo bash /tmp/llmfix.sh"
       - name: Modelle + Fast-Route (pull)
         if: ${{ github.event.inputs.mode == 'pull' }}
         env:
