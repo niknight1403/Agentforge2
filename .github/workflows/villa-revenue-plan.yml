@@ -42,16 +42,20 @@ jobs:
           cat > /tmp/vback.js <<'JS'
           const { DatabaseSync } = require("node:sqlite");
           const db = new DatabaseSync(process.env.DBF);
-          const villas = db.prepare("SELECT id FROM villas").all();
+          const villas = db.prepare("SELECT id, name FROM villas").all();
           for (const v of villas) {
             const vis = db.prepare("SELECT vision FROM villas WHERE id = ?").get(v.id);
-            if (vis && vis.vision) continue;
+            const bad = !vis || !vis.vision || String(vis.vision).includes("Standardplan") || String(vis.vision).includes("Kein Sprachmodell");
+            if (!bad) { console.log("VISION-OK villa", v.id, ":", String(vis.vision).slice(0, 80)); continue; }
             const p = db.prepare("SELECT id, summary, extra FROM villa_proposals WHERE villa_id = ? AND kind = 'REVENUE' ORDER BY id DESC LIMIT 1").get(v.id);
-            if (!p) continue;
-            const vision = String(p.extra || "").trim() || String(p.summary || "").slice(0, 200);
+            console.log("VILLA", v.id, v.name, "| REVENUE-Vorschlag:", p ? "id " + p.id + " extra='" + String(p.extra || "").slice(0, 40) + "' summary='" + String(p.summary || "").slice(0, 60) + "'" : "keiner");
+            const vision = String(p && p.extra || "").trim() || (p && !String(p.summary || "").includes("Standardplan") && !String(p.summary || "").includes("Kein Sprachmodell") ? String(p.summary || "").slice(0, 200) : "");
             if (vision) {
               db.prepare("UPDATE villas SET vision = ?, updated_at = ? WHERE id = ?").run(vision, Date.now(), v.id);
               console.log("VISION-SET villa", v.id, ":", vision.slice(0, 90));
+            } else if (vis && vis.vision) {
+              db.prepare("UPDATE villas SET vision = ?, updated_at = ? WHERE id = ?").run("", Date.now(), v.id);
+              console.log("VISION-CLEARED villa", v.id, "(Standardplan-Reste entfernt)");
             }
           }
           JS
