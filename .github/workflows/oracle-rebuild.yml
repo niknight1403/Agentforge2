@@ -278,8 +278,10 @@ jobs:
           cp -r $M/manifests/registry.ollama.ai/library/llama3.2 $E/manifests/registry.ollama.ai/library/ 2>/dev/null || true
           for MF in $(find $E/manifests/registry.ollama.ai/library/llama3.2 -type f 2>/dev/null); do
             for D in $(grep -o 'sha256:[a-f0-9]*' "$MF" | sort -u); do
-              cp -n "$M/blobs/$D" "$E/blobs/" 2>/dev/null || true
+              BLOB=$(echo "$D" | sed 's/sha256:/sha256-/')
+              cp -n "$M/blobs/$BLOB" "$E/blobs/" 2>/dev/null || echo "Blob fehlt: $BLOB"
             done
+            ls -la $E/blobs/ | head -8
           done
           chown -R ollama:ollama $E
           systemctl daemon-reload
