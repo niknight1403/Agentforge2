@@ -111,16 +111,16 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Surface1,
+                    containerColor = Ink,
                     titleContentColor = TextMain,
-                    navigationIconContentColor = TextMain,
+                    navigationIconContentColor = NeonCyan,
                     actionIconContentColor = TextMain
                 )
             )
         },
         bottomBar = {
             if (topLevelScreens.contains(screen)) {
-                NavigationBar(containerColor = Surface1) {
+                NavigationBar(containerColor = Ink, tonalElevation = 0.dp) {
                     NavigationBarItem(selected = screen == Screen.DASHBOARD, onClick = { viewModel.closeDetail(); screen = Screen.DASHBOARD },
                         icon = { Icon(Icons.Filled.Dashboard, contentDescription = "Übersicht", tint = if (screen == Screen.DASHBOARD) NeonCyan else TextMuted) },
                         label = { Text("Übersicht") })

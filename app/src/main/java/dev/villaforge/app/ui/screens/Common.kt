@@ -73,9 +73,9 @@ internal fun Card(title: String, subtitle: String, badge: String, onClick: (() -
         Modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .clip(RoundedCornerShape(14.dp))
-            .border(1.dp, Brush.linearGradient(listOf(Aqua.copy(alpha = 0.24f), dev.villaforge.app.ui.theme.Violet.copy(alpha = 0.34f))), RoundedCornerShape(14.dp))
-            .background(Surface1)
+            .clip(RoundedCornerShape(18.dp))
+            .border(0.9.dp, Brush.linearGradient(listOf(dev.villaforge.app.ui.theme.NeonCyan.copy(alpha = 0.38f), dev.villaforge.app.ui.theme.NeonPink.copy(alpha = 0.24f))), RoundedCornerShape(18.dp))
+            .background(Surface2.copy(alpha = 0.88f))
             .padding(14.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -96,8 +96,9 @@ internal fun RowCard(title: String, subtitle: String, badge: String, trailing: (
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Surface1)
+            .clip(RoundedCornerShape(16.dp))
+            .border(0.7.dp, Brush.linearGradient(listOf(dev.villaforge.app.ui.theme.NeonCyan.copy(alpha = 0.26f), dev.villaforge.app.ui.theme.NeonPink.copy(alpha = 0.16f))), RoundedCornerShape(16.dp))
+            .background(Surface2.copy(alpha = 0.86f))
             .padding(12.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

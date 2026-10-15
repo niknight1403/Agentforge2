@@ -47,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.villaforge.app.ui.theme.Aqua
+import dev.villaforge.app.ui.theme.NeonCyan
+import dev.villaforge.app.ui.theme.NeonPink
 import dev.villaforge.app.ui.theme.Border
 import dev.villaforge.app.ui.theme.Surface2
 import dev.villaforge.app.ui.theme.Surface3
@@ -114,14 +116,14 @@ fun MiniBars(values: List<Float>, modifier: Modifier = Modifier, barColor: Color
 
 /** Status-Pille mit sanftem Farbhaftergrund. */
 @Composable
-fun StatusPill(text: String, color: Color = Aqua) {
+fun StatusPill(text: String, color: Color = NeonCyan) {
     Text(
         text,
         color = color,
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
-            .background(color.copy(alpha = 0.14f))
+            .background(color.copy(alpha = 0.12f))
             .padding(horizontal = 10.dp, vertical = 4.dp)
     )
 }
@@ -242,14 +244,14 @@ fun SectionCard(title: String, content: @Composable () -> Unit) {
         Modifier
             .fillMaxWidth()
             .animateContentSize(animationSpec = tween(250))
-            .clip(RoundedCornerShape(16.dp))
-            .border(0.6.dp, Aqua.copy(alpha = 0.16f), RoundedCornerShape(16.dp))
-            .background(Surface2)
+            .clip(RoundedCornerShape(18.dp))
+            .border(0.8.dp, Brush.linearGradient(listOf(NeonCyan.copy(alpha = 0.35f), NeonPink.copy(alpha = 0.22f))), RoundedCornerShape(18.dp))
+            .background(Surface2.copy(alpha = 0.86f))
     ) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(Color(0xFF7C6CFF).copy(alpha = 0.25f), Color(0xFF00E0B8).copy(alpha = 0.12f))))
+                .background(Brush.linearGradient(listOf(NeonCyan.copy(alpha = 0.10f), NeonPink.copy(alpha = 0.06f))))
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Text(title, fontWeight = FontWeight.SemiBold)

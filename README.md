@@ -8,6 +8,20 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.32.0
+
+- **Ganzheitliches Cyber-Neon-Design**: Glas-Karten mit Neon-Gradient-Rändern
+  jetzt auf ALLEN Screens (Villen, Details, Chat, Fertigstellung, Diagnose,
+  Einstellungen) — einheitliches Control-Center-Gefühl statt Mix aus Stilen.
+- **Hub-Qualitätssprung (OpenHands-Muster)**: Fail-Fast-Verifikation — nach
+  jeder Code-Batch läuft sofort ein Build-/Testlauf statt erst am Rundenende;
+  Fehler werden im selben Lauf als Prio-1-Aufgabe selbst geheilt. Der
+  Phasen-Planer kennt jetzt die echten Baustellen (Lessons Learned).
+- **LLM-Kette repariert (alle Villen)**: Gemini Flash Lite (verifiziert
+  arbeitendes Gratis-Modell) auf Priorität 2, HuggingFace + OpenRouter-Keys
+  im Hub-Secrets-Store, Cooldowns zurückgesetzt — keine „Kein Sprachmodell
+  erreichbar"-Standardpläne mehr.
+
 ## Neu in 1.31.0 — Cyber-Neon-Redesign der Übersicht
 
 - **Komplett neue Übersicht** im Control-Center-Design: Kopfzeile mit VillaForge-Logo
