@@ -8,6 +8,52 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.35.0 — Umsatz-Fokus & Endprodukt-Vision
+
+- **Ziel sichtbar auf jeder Villa**: Die Agenten definieren WAS am Ende
+  konkret verkauft wird (Endprodukt mit Preis) - als "Ziel:"-Zeile auf
+  jeder Villen-Karte und im Detail.
+- **Weg zum Umsatz**: Neue Vorschlagsart mit konkreten Schritten bis zum
+  ersten Umsatz - Zielkunden, Preis in EUR, Verkaufspartner, Landingpage,
+  Zahlungslink. Bestaetigen legt priorisierte UMSATZ-Aufgaben an.
+- **Neue Idee (Umsatz-Pivot)**: Agenten pruefen nach dem Umsatz-Plan,
+  ob ein weitaus umsatzstaerkeres Produkt auf der Kernidee moeglich ist -
+  mit Umsatzschaetzung und MVP-Schritten.
+- **CCC = Hauptumsatzprojekt**: Der Master priorisiert Umsatzschritte
+  fuer das CyberSarah Control Center.
+
+## Neu in 1.34.0 — Transparenz, Sprints & voller Master-Agent
+
+- **Was macht die Villa + wie lange?**: Jede Villa zeigt ihre aktuelle
+  Aufgabe und eine geschaetzte Restdauer (ETA aus der durchschnittlichen
+  Aufgabe-Dauer): Liste, Detail und Fertigstellung.
+- **Sprints & Perfektionierung**: Naechste-Phasen- und Perfektions-Vorschlaege
+  sind echte Sprints mit Ziel-Wort, konkretem Artefakt im Akzeptanzkriterium
+  und messbaren Perfektionszielen; jede Sprint-Karte zeigt ≈ Dauer.
+- **Master-Agent steuert alles**: Villen per Namen stoppen, pausieren und
+  starten - direkt aus dem Master-Chat.
+- **ARBEITET/WARTET**: Live-Rechen-Slot-Status statt pauschal gruenem RUNNING.
+
+## Neu in 1.33.1 — Live-Arbeitsstatus der Villen
+
+- **ARBEITET vs. WARTET**: Der Hub liefert jetzt den echten Rechen-Slot-Zustand.
+  Villen, die gerade arbeiten, pulsieren gruen (ARBEITET); Villen in der
+  Warteschleife zeigen bernstein WARTET - statt pauschal alles gruen.
+- Villen-Liste: Kopfzeile zaehlt "X arbeiten · Y warten".
+- Uebersicht: Villen-Karte zeigt aktiv und wartend getrennt.
+
+## Neu in 1.33.0 — MASTER-AGENT mit eigenem Chatfenster
+
+- **Master-Agent-Chat**: eigener Tab „Master" — Wunsch reinschreiben (z.B.
+  „aendere Bereich X" oder „baue mir Y"), der Master uebersetzt ihn in ein
+  professionelles Entwicklungs-Prompt, gruendet autonom die passende Villa und
+  startet die Entwicklung sofort. Erstellte Villa direkt aus dem Chat oeffenbar.
+- **Kostenloses App-Designer-Tool-Pack**: zu jeder Gruendung entsteht
+  automatisch ein Design-Konzeptbild (Pollinations.ai, kein API-Key) mit
+  verankertem Cyber-Neon-Design-System.
+- **Villa-Aufraeumen**: 5 versehentlich doppelt entstandene Duplikat-Villen
+  entfernt; 13 eindeutige Villen, 5 laufen parallel getestet.
+
 ## Neu in 1.32.0
 
 - **Ganzheitliches Cyber-Neon-Design**: Glas-Karten mit Neon-Gradient-Rändern

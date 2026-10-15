@@ -81,7 +81,8 @@ fun DashboardScreen(
     val open = s?.optJSONObject("tasks")?.optInt("open") ?: 0
     val done = s?.optJSONObject("tasks")?.optInt("done", 0) ?: 0
     val messages = s?.optInt("messages") ?: 0
-    val running = state.villas.count { it.status == "RUNNING" }
+    val running = state.villas.count { it.executing }
+    val waiting = state.villas.count { it.queued }
     val uptimeHours = (s?.optLong("uptimeSec", 0L) ?: 0L) / 3600
     val maturityScores = mutableListOf<Float>()
     val maturity = s?.optJSONArray("maturity")
@@ -195,7 +196,7 @@ fun DashboardScreen(
                         "$running", NeonPink
                     )
                     Spacer(Modifier.height(6.dp))
-                    Text("${state.villas.size} Villen · $running aktiv", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
+                    Text("${state.villas.size} Villen · $running aktiv · $waiting warten", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
                 }
             }
         }

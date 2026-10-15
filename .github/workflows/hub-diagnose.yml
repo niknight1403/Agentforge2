@@ -21,9 +21,18 @@ jobs:
           echo "$RESP" | tail -1
           TOK=$(echo "$RESP" | head -1 | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")
           [ -z "$TOK" ] && { echo "KEIN TOKEN - Login fehlgeschlagen"; echo "$RESP" | head -1 | cut -c1-200; exit 0; }
-          for P in /api/villas /api/routes /api/stats /api/evolution/pending; do
+          echo "== System-Audit (Selbstheilung) =="
+          curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/system/audit | python3 -c 'import json,sys; d=json.load(sys.stdin); print("AUDIT:", "GRUEN" if d["green"] else "ROT", "|", ", ".join(("OK " if a["green"] else "ROT ")+a["name"]+": "+a["detail"] for a in d["areas"]), "| Heil-Aktionen:", len(d["actions"]))'
+          for P in /api/villas /api/scheduler /api/routes /api/stats /api/evolution/pending; do
             curl -s -m 60 -o /tmp/r.json -w "$P: HTTP %{http_code} in %{time_total}s, %{size_download} Bytes\n" -H "Authorization: Bearer $TOK" $H$P
           done
+          echo "== Scheduler-Live: Slots / aktive Villen / Warteschlange =="
+          curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/scheduler | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          print('Slots:', d.get('slots'), '| aktiv:', d.get('active'), '| queued:', d.get('queued'))
+          print('Queue:', d.get('queue'))
+          print('Ranking:', [r.get('id') for r in (d.get('ranking') or [])][:13])" || true
           echo "== Ollama-Dienst direkt (lokal auf VM nicht erreichbar, daher ueber Hub-Routen) =="
           curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/routes | python3 -c "
           import json,sys
@@ -99,6 +108,11 @@ jobs:
               # echter Chat-Turn durch die Route-Kette
               ans, dt = post("/api/villas/%d/chat" % v.get("id"), {"message": "Sag nur: ok - kein Werkzeug, keine Aufgabe."}, tok, 420)
               print("CHAT-PROBE RAW:", json.dumps(ans)[:400], "| Dauer:", dt, "s")
+              villas = get("/api/villas", tok)
+              for v_ in (villas if isinstance(villas, list) else [])[:14]:
+                  print("VILLA-LIVE:", v_.get("name","")[:24], "| executing:", v_.get("executing"), "| queued:", v_.get("queued"), "| status:", v_.get("status"))
+              mres, mdt = post("/api/master/chat", {"message": "Kurztest: antworte in einem Satz mit dem Status der Villen, gruende KEINE Villa."}, tok, 180)
+              print("MASTER-PROBE:", json.dumps(mres)[:300], "| Dauer:", mdt, "s")
           PROBE
 
       - name: Villa-Aufgaben-Status via DB
@@ -111,13 +125,16 @@ jobs:
           cat > /tmp/vstat.mjs << 'VSTAT'
           import { DatabaseSync } from 'node:sqlite';
           const db = new DatabaseSync('server/data/villaforge.db');
-          const v = db.prepare('SELECT id, name, status FROM villas WHERE name LIKE ?').get('%Tarn%');
-          if (!v) { console.log('KEINE VILLA'); process.exit(0); }
-          console.log('VILLA:', v.name, v.status);
-          const t = db.prepare('SELECT status, COUNT(*) c FROM tasks WHERE villa_id = ? GROUP BY status').all(v.id);
-          console.log('AUFGABEN:', JSON.stringify(t));
-          const last = db.prepare("SELECT title, status, substr(result,1,110) r, datetime(updated_at/1000, 'unixepoch') u FROM tasks WHERE villa_id = ? ORDER BY updated_at DESC LIMIT 5").all(v.id);
-          for (const x of last) console.log('[', x.status, x.u, 'UTC]', x.title, '=>', x.r);
+          const now = Date.now();
+          const win = (min) => now - min * 60_000;
+          const upd30 = db.prepare('SELECT COUNT(*) c FROM tasks WHERE updated_at > ?').get(win(30)).c;
+          const upd5 = db.prepare('SELECT COUNT(*) c FROM tasks WHERE updated_at > ?').get(win(5)).c;
+          const done30 = db.prepare("SELECT COUNT(*) c FROM tasks WHERE updated_at > ? AND status = 'DONE'").get(win(30)).c;
+          console.log('AKTIVITAET: Updates letzte 5 Min:', upd5, '| 30 Min:', upd30, '| davon DONE:', done30);
+          const running = db.prepare("SELECT v.id, v.name, t.title, t.updated_at FROM tasks t JOIN villas v ON v.id = t.villa_id WHERE t.status = 'RUNNING' ORDER BY t.updated_at ASC LIMIT 8").all();
+          for (const r of running) console.log('RUNNING seit', Math.round((now - r.updated_at) / 60000), 'Min:', r.name.slice(0, 22), '|', r.title.slice(0, 40));
+          const perVilla = db.prepare("SELECT v.name, SUM(CASE WHEN t.status = 'DONE' THEN 1 ELSE 0 END) done, SUM(CASE WHEN t.status IN ('PENDING','RUNNING','READY') THEN 1 ELSE 0 END) open FROM villas v LEFT JOIN tasks t ON t.villa_id = v.id GROUP BY v.id ORDER BY open DESC LIMIT 6").all();
+          for (const x of perVilla) console.log('VILLA', x.name.slice(0, 24), '| offen:', x.open, '| done:', x.done);
           VSTAT
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/vstat.mjs ubuntu@92.5.177.159:/tmp/vstat.mjs
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "cd /opt/villaforge && sudo -u root node /tmp/vstat.mjs"

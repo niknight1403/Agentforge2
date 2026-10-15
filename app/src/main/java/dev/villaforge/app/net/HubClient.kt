@@ -21,7 +21,19 @@ data class Villa(
     val status: String,
     val maxAgents: Int,
     val sourcePath: String = "",
-    val mode: String = "BUILD"
+    val mode: String = "BUILD",
+    /** Live: haelt gerade einen Rechen-Slot (arbeitet wirklich). */
+    val executing: Boolean = false,
+    /** Live: Autonomie an, aber wartet auf einen freien Slot. */
+    val queued: Boolean = false,
+    /** Live: Titel der Aufgaben, die gerade laufen. */
+    val runningTasks: List<String> = emptyList(),
+    /** Live: offene Aufgaben. */
+    val openCount: Int = 0,
+    /** Live: geschaetzte Restdauer in Minuten (0 = nichts offen). */
+    val etaMin: Int = 0,
+    /** WAS genau am Ende verkauft wird (aus dem Umsatz-Plan der Agenten). */
+    val vision: String = ""
 )
 
 data class Agent(
@@ -52,7 +64,12 @@ data class ChatMessage(
     val role: String,
     val content: String,
     val createdAt: Long,
-    val agentId: Long = 0
+    val agentId: Long = 0,
+    /** Master-Agent: erzeugte Villa (0 = keine). */
+    val villaId: Long = 0,
+    val villaName: String = "",
+    /** Master-Agent: Design-Konzeptbild-URL (leer = keins). */
+    val designImage: String = ""
 )
 
 data class Report(
@@ -276,7 +293,16 @@ class HubClient(context: Context) {
                 name = o.getString("name"),
                 idea = o.optString("idea"),
                 status = o.optString("status"),
-                maxAgents = o.optInt("max_agents", 1000)
+                maxAgents = o.optInt("max_agents", 1000),
+                executing = o.optInt("executing", 0) == 1,
+                queued = o.optInt("queued", 0) == 1,
+                runningTasks = run {
+                    val a = o.optJSONArray("runningTasks") ?: JSONArray()
+                    (0 until a.length()).map { i -> a.optString(i) }
+                },
+                openCount = o.optInt("openCount", 0),
+                etaMin = o.optInt("etaMin", 0),
+                vision = o.optString("vision")
             )
         }
     }

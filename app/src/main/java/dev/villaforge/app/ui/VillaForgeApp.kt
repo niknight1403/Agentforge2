@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.HealthAndSafety
@@ -63,6 +64,7 @@ import dev.villaforge.app.ui.screens.DiagnosticsScreen
 import dev.villaforge.app.ui.screens.DetailScreen
 import dev.villaforge.app.ui.screens.LiveDot
 import dev.villaforge.app.ui.screens.LoginScreen
+import dev.villaforge.app.ui.screens.MasterChatScreen
 import dev.villaforge.app.ui.screens.SettingsScreen
 import dev.villaforge.app.ui.screens.VillaListScreen
 import dev.villaforge.app.ui.screens.muted
@@ -79,7 +81,7 @@ import dev.villaforge.app.ui.theme.TextMuted
  */
 private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, MASTER, DEV, SETTINGS, DIAGNOSTICS }
 
-private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.CHAT, Screen.MASTER, Screen.DIAGNOSTICS, Screen.SETTINGS)
+private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.MASTER, Screen.DIAGNOSTICS, Screen.SETTINGS)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -113,6 +113,13 @@ internal fun RowCard(title: String, subtitle: String, badge: String, trailing: (
     }
 }
 
+/** Anzeige-Status einer Villa: ARBEITET vs. WARTET statt pauschal gruenem RUNNING. */
+internal fun dev.villaforge.app.net.Villa.displayStatus(): String = when {
+    executing -> "ARBEITET"
+    queued -> "WARTET"
+    else -> status
+}
+
 @Composable
 internal fun Badge(text: String) {
     val color = statusColor(text)

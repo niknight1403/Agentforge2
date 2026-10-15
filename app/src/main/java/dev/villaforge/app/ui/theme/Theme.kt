@@ -52,6 +52,8 @@ val CyanBlueGradient = Brush.linearGradient(listOf(NeonCyan, ElectricBlue))
 /** Semantische Statusfarbe: zentrale Abbildung Villen-/Aufgaben-/Agentenzustaende. */
 fun statusColor(status: String): Color = when {
     status == "RUNNING" || status == "läuft" -> Aqua
+    status == "ARBEITET" -> Success
+    status == "WARTET" || status == "QUEUED" -> Warn
     status == "DONE" || status == "COMPLETED" || status == "Key vorhanden" || status == "ok" -> Success
     status == "FAILED" || status == "BLOCKED" || status == "ERROR" -> Danger
     status == "PAUSED" || status == "PLANNING" || status == "STOPPING" ||

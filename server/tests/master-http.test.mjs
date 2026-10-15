@@ -10,6 +10,10 @@ const port=34000+Math.floor(Math.random()*3000),base=`http://127.0.0.1:${port}`;
 let child;
 async function call(path,body){const r=await fetch(base+path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return {status:r.status,body:await r.json()};}
 before(async()=>{
+ process.env.VF_DB=join(dir,'hub.db');
+ const {db}=await import('../db.mjs');
+ db.prepare('INSERT INTO routes(name,provider,base_url,model,enabled) VALUES (?,?,?,?,?)').run('test-offline','offline','','offline',1);
+ db.close();
  child=spawn(process.execPath,['server/server.mjs'],{cwd:resolve(import.meta.dirname,'../..'),env:{...process.env,VF_DB:join(dir,'hub.db'),VF_WORKSPACE:join(dir,'work'),HOST:'127.0.0.1',PORT:String(port),VF_RESUME:'0',VF_OPEN_MODE:'1',VF_RATE_WAIT_MS:'1'},stdio:'ignore'});
  for(let i=0;i<150;i++){try{if((await fetch(base+'/api/health')).ok)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw new Error('Hub startup failed');
 });

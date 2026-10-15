@@ -1,0 +1,67 @@
+name: villa-failures
+on:
+  workflow_dispatch:
+    inputs:
+      rerun_villa:
+        description: 'Neuesten FAILED-Task dieser Villa-ID zurueck in die Warteschlange (0 = aus)'
+        required: false
+        default: '0'
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Feinanalyse fehlgeschlagener Aufgaben
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          RERUN: ${{ github.event.inputs.rerun_villa }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/fails.js <<'JS'
+          const { DatabaseSync } = require("node:sqlite");
+          const db = new DatabaseSync("/opt/villaforge/server/data/villaforge.db");
+          const DAY = 24 * 60 * 60 * 1000;
+          const now = Date.now();
+          const rerun = Number(process.env.RERUN || 0);
+          if (rerun > 0) {
+            const t = db.prepare("SELECT id, title FROM tasks WHERE villa_id = ? AND status = 'FAILED' ORDER BY updated_at DESC LIMIT 1").get(rerun);
+            if (t) {
+              db.prepare("UPDATE tasks SET status = 'PENDING', retry_count = 0, updated_at = ? WHERE id = ?").run(now, t.id);
+              console.log("REQUEUED Task", t.id, JSON.stringify(t.title));
+            } else console.log("Kein FAILED-Task fuer Villa", rerun);
+          }
+          const hot = db.prepare("SELECT villa_id, COUNT(*) c FROM tasks WHERE status = 'FAILED' AND updated_at > ? GROUP BY villa_id HAVING c >= 2").all(now - DAY);
+          for (const h of hot) {
+            const v = db.prepare("SELECT name FROM villas WHERE id = ?").get(h.villa_id);
+            console.log("== VILLA", h.villa_id, v ? v.name : "?", "-", h.c, "Fehlschlaege (24 h)");
+            const fails = db.prepare("SELECT title, substr(result, 1, 120) r, updated_at FROM tasks WHERE villa_id = ? AND status = 'FAILED' AND updated_at > ? ORDER BY updated_at DESC LIMIT 4").all(h.villa_id, now - DAY);
+            for (const f of fails) console.log("  FAIL:", f.title, "|", (f.r || "").replace(/\s+/g, " "));
+            const done = db.prepare("SELECT MAX(updated_at) m FROM tasks WHERE villa_id = ? AND status = 'DONE'").get(h.villa_id);
+            const lastFail = fails.length ? Math.max(...fails.map((f) => f.updated_at)) : 0;
+            console.log("  Letzter FAIL:", new Date(lastFail).toISOString(), "| Letzter DONE:", done && done.m ? new Date(done.m).toISOString() : "keiner", done && done.m > lastFail ? "-> in Erholung" : "-> kein Fortschritt nach Fehler");
+            const rep = db.prepare("SELECT id, status FROM villa_proposals WHERE villa_id = ? AND kind = 'REPAIR' ORDER BY id DESC LIMIT 2").all(h.villa_id);
+            for (const r of rep) console.log("  REPARATUR-Vorschlag", r.id, r.status);
+            const st = db.prepare("SELECT status FROM villas WHERE id = ?").get(h.villa_id);
+            console.log("  Villa-Status:", st ? st.status : "?");
+            const run = db.prepare("SELECT id, title, updated_at FROM tasks WHERE villa_id = ? AND status = 'RUNNING'").all(h.villa_id);
+            for (const t of run) console.log("  RUNNING:", t.id, JSON.stringify(t.title), "seit", new Date(t.updated_at).toISOString());
+            const pend = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status = 'PENDING'").get(h.villa_id);
+            console.log("  PENDING-Aufgaben:", pend.c);
+            const recent = db.prepare("SELECT id, title, status, updated_at FROM tasks WHERE villa_id = ? AND status IN ('DONE','FAILED') ORDER BY updated_at DESC LIMIT 3").all(h.villa_id);
+            for (const t of recent) console.log("  Zuletzt:", t.status, JSON.stringify(t.title.slice(0, 60)), new Date(t.updated_at).toISOString());
+            const vrow = db.prepare("SELECT status, updated_at, auto_rounds FROM villas WHERE id = ?").get(h.villa_id);
+            console.log("  Villa-Zeile:", vrow.status, "aktualisiert", new Date(vrow.updated_at).toISOString(), "Runden:", vrow.auto_rounds);
+            const au = db.prepare("SELECT created_at, agent_id, tool, substr(args_json,1,60) a, substr(result_json,1,80) r FROM audit WHERE villa_id = ? ORDER BY id DESC LIMIT 6").all(h.villa_id);
+            for (const x of au) console.log("  AUDIT:", new Date(x.created_at).toISOString(), x.agent_id, x.tool, x.a, "=>", x.r);
+          }
+          if (!hot.length) console.log("Keine Villa mit Fehlerhaeufungen (24 h) - Aufgaben-Bereich GRUEN.");
+          const nulls = db.prepare("SELECT id, villa_id, kind, title FROM memories WHERE content IS NULL").all();
+          console.log("MEMORIES mit NULL-Inhalt:", nulls.length);
+          for (const n of nulls.slice(0, 20)) console.log("  NULLMEM id", n.id, "villa", n.villa_id, n.kind, JSON.stringify(n.title));
+          JS
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/fails.js ubuntu@92.5.177.159:/tmp/fails.js
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo RERUN=$RERUN node /tmp/fails.js"
+          echo "== Stack-Traces aus dem Hub-Log =="
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo journalctl -u villaforge -u villaforge.service -u villaforge-hub --since '2 hours ago' --no-pager 2>/dev/null | grep -A 12 'INTERNER FEHLER Task' | tail -30 || echo '(keine Stack-Traces in den letzten 2 h)'"

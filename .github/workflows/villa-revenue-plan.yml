@@ -1,0 +1,72 @@
+name: villa-revenue-plan
+on:
+  workflow_dispatch:
+    inputs:
+      villa_name:
+        description: 'Villa-Name (LIKE-Suche)'
+        required: false
+        default: 'CyberSarah'
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Umsatz-Plan anstossen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+          VILLA: ${{ github.event.inputs.villa_name }}
+        run: |
+          H=https://hub.cybersarah-ki.com
+          TOK=$(curl -s -m 30 -H "Content-Type: application/json" \
+            -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" "$H/api/auth/login" | jq -r .token)
+          if [ -z "$TOK" ] || [ "$TOK" = "null" ]; then echo "Login fehlgeschlagen"; exit 1; fi
+          echo "== Villa suchen: $VILLA =="
+          ID=$(curl -s -m 30 -H "Authorization: Bearer $TOK" "$H/api/villas" \
+            | jq -r --arg v "$VILLA" 'first(.[] | select((.name // "") | ascii_downcase | contains($v | ascii_downcase)) | .id) // empty')
+          if [ -z "$ID" ]; then echo "Villa nicht gefunden"; exit 1; fi
+          echo "Villa-ID: $ID"
+          echo "== REVENUE-Vorschlag anstossen =="
+          curl -s -m 150 -X POST -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+            -d '{"kind":"REVENUE"}' "$H/api/evolution/villas/$ID/propose" | head -c 600
+          echo ""
+          echo "== Vision der Villa =="
+          curl -s -m 30 -H "Authorization: Bearer $TOK" "$H/api/villas/$ID" | jq -r '.vision // ""' | head -c 300
+      - name: Vision-Backfill auf dem Hub
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/vback.js <<'JS'
+          const { DatabaseSync } = require("node:sqlite");
+          const db = new DatabaseSync(process.env.DBF);
+          const villas = db.prepare("SELECT id, name FROM villas").all();
+          for (const v of villas) {
+            const vis = db.prepare("SELECT vision FROM villas WHERE id = ?").get(v.id);
+            const bad = !vis || !vis.vision || String(vis.vision).includes("Standardplan") || String(vis.vision).includes("Kein Sprachmodell");
+            if (!bad) { console.log("VISION-OK villa", v.id, ":", String(vis.vision).slice(0, 80)); continue; }
+            const p = db.prepare("SELECT id, summary, extra FROM villa_proposals WHERE villa_id = ? AND kind = 'REVENUE' ORDER BY id DESC LIMIT 1").get(v.id);
+            console.log("VILLA", v.id, v.name, "| REVENUE-Vorschlag:", p ? "id " + p.id + " extra='" + String(p.extra || "").slice(0, 40) + "' summary='" + String(p.summary || "").slice(0, 60) + "'" : "keiner");
+            const vision = String(p && p.extra || "").trim() || (p && !String(p.summary || "").includes("Standardplan") && !String(p.summary || "").includes("Kein Sprachmodell") ? String(p.summary || "").slice(0, 200) : "");
+            if (vision) {
+              db.prepare("UPDATE villas SET vision = ?, updated_at = ? WHERE id = ?").run(vision, Date.now(), v.id);
+              console.log("VISION-SET villa", v.id, ":", vision.slice(0, 90));
+            } else if (vis && vis.vision) {
+              db.prepare("UPDATE villas SET vision = ?, updated_at = ? WHERE id = ?").run("", Date.now(), v.id);
+              console.log("VISION-CLEARED villa", v.id, "(Standardplan-Reste entfernt)");
+            }
+          }
+          JS
+          cat > /tmp/vback.sh <<'SH'
+          cd /opt/villaforge
+          for DBF in server/data/villaforge.db data/villaforge.db villaforge.db; do
+            [ -f "$DBF" ] && break
+          done
+          echo "DB: $DBF"
+          export DBF
+          node /tmp/vback.js
+          SH
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/vback.js /tmp/vback.sh ubuntu@92.5.177.159:/tmp/
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/vback.sh"

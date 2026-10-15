@@ -119,7 +119,7 @@ jobs:
           cat > "/etc/systemd/system/${UNIT}.d/zz-load.conf" <<'LOADCONF'
           [Service]
           Environment="VF_LLM_MAX_CONCURRENT=2"
-          Environment="VF_VILLA_SLOTS=2"
+          Environment="VF_VILLA_SLOTS=5"
           Environment="VF_CMD_MAX_CONCURRENT=1"
           LOADCONF
           systemctl daemon-reload
@@ -346,6 +346,79 @@ jobs:
           scp -q -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/isolate.sh ubuntu@92.5.177.159:/tmp/isolate.sh
           bash /tmp/sshcmd "sudo bash /tmp/isolate.sh"
 
+      - name: Villa-Wartung (villa-maint)
+        if: ${{ github.event.inputs.mode == 'villa-maint' }}
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/maint.mjs << 'MAINT'
+          import { DatabaseSync } from 'node:sqlite';
+          const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
+          const norm = (x) => String(x || '').toLowerCase().replace(/\s+/g, ' ').trim();
+          const villas = db.prepare('SELECT v.id, v.name, v.status, v.autonomy, v.created_at, substr(v.idea,1,90) pre, (SELECT COUNT(*) FROM tasks t WHERE t.villa_id = v.id AND t.status = \'DONE\') done, (SELECT COUNT(*) FROM tasks t WHERE t.villa_id = v.id) total FROM villas v ORDER BY v.id').all();
+          console.log('VORHER:', JSON.stringify(villas.map(v => ({ id: v.id, name: v.name.slice(0,30), st: v.status, done: v.done, total: v.total }))));
+          // Duplikate: gleicher normalisierter Name ODER identischer Idea-Anfang
+          const groups = new Map();
+          for (const v of villas) {
+            const key1 = 'N:' + norm(v.name);
+            const key2 = 'I:' + norm(v.pre);
+            for (const k of [key1, key2]) {
+              if (!groups.has(k)) groups.set(k, []);
+              groups.get(k).push(v);
+            }
+          }
+          const seen = new Set();
+          const toDelete = new Set();
+          for (const [key, list] of groups) {
+            if (list.length < 2 || key.startsWith('I:') && norm(list[0].pre).length < 15) continue;
+            const unique = list.filter(v => !seen.has(v.id));
+            if (unique.length < 2) continue;
+            // Behalten: fortschrittlichste Villa (done desc, dann aeltere id); Rest loeschen
+            unique.sort((a, b) => b.done - a.done || b.total - a.total || a.id - b.id);
+            const keep = unique[0];
+            unique.slice(1).forEach(v => { toDelete.add(v.id); seen.add(v.id); });
+            console.log('DUP-GRUPPE', JSON.stringify({ key: key.slice(0,40), keep: keep.id + ' (' + keep.done + ' done)', delete: unique.slice(1).map(v => v.id + ' (' + v.done + ' done)') }));
+          }
+          // Loeschen: ueber alle Tabellen mit villa_id-Spalte kaskadieren
+          const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name);
+          for (const id of [...toDelete]) {
+            for (const t of tables) {
+              if (t === 'villas') continue;
+              const cols = db.prepare('PRAGMA table_info(' + t + ')').all().map(c => c.name);
+              if (cols.includes('villa_id')) db.prepare('DELETE FROM ' + t + ' WHERE villa_id = ?').run(id);
+            }
+            db.prepare('DELETE FROM villas WHERE id = ?').run(id); // die Villa-Zeile selbst
+            console.log('GELOESCHT Villa', id);
+          }
+          const after = db.prepare('SELECT id, name, status FROM villas ORDER BY id').all();
+          console.log('NACHHER:', JSON.stringify(after.map(v => ({ id: v.id, name: v.name.slice(0,30), st: v.status }))));
+          MAINT
+          scp -q -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/maint.mjs ubuntu@92.5.177.159:/tmp/maint.mjs
+
+          cat > /tmp/slots.sh << 'SLOT'
+          #!/bin/bash
+          set -e
+          HUBENV=/opt/villaforge/hub.env
+          touch $HUBENV
+          # 5 Villen parallel, je max 2 gleichzeitige LLM-Anfragen (bleibt unter Free-Tier-Budget)
+          sed -i '/^VF_VILLA_SLOTS=/d; /^VF_MAX_CONCURRENCY=/d' $HUBENV
+          echo "VF_VILLA_SLOTS=5" >> $HUBENV
+          echo "VF_MAX_CONCURRENCY=2" >> $HUBENV
+          chmod 600 $HUBENV
+          grep -E "VF_VILLA_SLOTS|VF_MAX_CONCURRENCY" $HUBENV
+          UNIT=$(ls /etc/systemd/system | grep -iE 'villaforge|hub' | grep service | head -1 | sed 's/.service$//')
+          systemctl restart "$UNIT"
+          sleep 6
+          curl -sf -m 5 http://127.0.0.1:12000/api/health >/dev/null && echo SLOTS-NEUSTART-OK
+          SLOT
+          scp -q -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/slots.sh ubuntu@92.5.177.159:/tmp/slots.sh
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+          bash /tmp/sshcmd "sudo node --input-type=module -e 'import(\"/tmp/maint.mjs\")'" || true
+          bash /tmp/sshcmd "sudo bash /tmp/slots.sh"
       - name: Modelle + Fast-Route (pull)
         if: ${{ github.event.inputs.mode == 'pull' }}
         env:

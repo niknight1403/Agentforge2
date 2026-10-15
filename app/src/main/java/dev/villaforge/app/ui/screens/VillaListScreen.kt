@@ -95,7 +95,14 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
                 }
             }
             item {
+                val aktiv = state.villas.count { it.executing }
+                val warten = state.villas.count { it.queued }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    if (aktiv + warten > 0) {
+                        Text("$aktiv arbeiten", color = Aqua, style = muted(), fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                        Text(" · $warten warten", color = androidx.compose.ui.graphics.Color(0xFFFFB020), style = muted())
+                        Spacer(Modifier.width(10.dp))
+                    }
                     LiveDot(state.live)
                     Spacer(Modifier.width(7.dp))
                     Text(
@@ -130,7 +137,23 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
                 state.villas.isEmpty() -> item { EmptyState(title = "Noch keine Villa", hint = "Tippe unten auf „Deep Agent“ und starte deine erste autonome Entwicklung.") }
                 visible.isEmpty() -> item { EmptyState(title = "Kein Treffer", hint = "Passe Suche oder Status-Filter an, um alle Villen wieder zu sehen.") }
                 else -> items(visible, key = { it.id }) { villa ->
-                    Card(villa.name, villa.idea.take(140), villa.status, onClick = { onOpen(villa.id) }) {
+                    Card(villa.name, villa.idea.take(110), villa.displayStatus(), onClick = { onOpen(villa.id) }) {
+                        if (villa.executing) {
+                            Text(
+                                (villa.runningTasks.firstOrNull() ?: "arbeitet an Aufgaben") + "  ·  ≈ ${villa.etaMin} Min",
+                                style = muted(), color = Aqua, fontSize = 12.sp
+                            )
+                        } else if (villa.queued) {
+                            Text(
+                                "wartet auf freien Rechen-Slot  ·  ${villa.openCount} offen · ≈ ${villa.etaMin} Min",
+                                style = muted(), color = androidx.compose.ui.graphics.Color(0xFFFFB020), fontSize = 12.sp
+                            )
+                        } else if (villa.openCount > 0) {
+                            Text("${villa.openCount} offen · ≈ ${villa.etaMin} Min", style = muted(), color = TextMuted, fontSize = 12.sp)
+                        }
+                        if (villa.vision.isNotBlank()) {
+                            Text("Ziel: " + villa.vision, style = muted(), color = androidx.compose.ui.graphics.Color(0xFF00A3FF), fontSize = 12.sp, maxLines = 2)
+                        }
                         Text("Projekt öffnen", color = Aqua, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     }
                 }
