@@ -59,7 +59,7 @@ jobs:
           VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
         run: |
           python3 - << 'PROBE'
-          import json, time, urllib.request
+          import json, time, urllib.request, os
           BASE = "https://hub.cybersarah-ki.com"
           def post(path, data, tok=None, timeout=120):
               h = {"Content-Type": "application/json"}
@@ -75,7 +75,7 @@ jobs:
               req = urllib.request.Request(BASE + path, headers={"Authorization": "Bearer " + tok})
               with urllib.request.urlopen(req, timeout=30) as r:
                   return json.loads(r.read())
-          tok, dt = post("/api/auth/login", {"email": "", "password": ""}), None
+          tok, dt = post("/api/auth/login", {"email": os.environ.get("VF_ADMIN_EMAIL",""), "password": os.environ.get("VF_ADMIN_PASSWORD","")}), None
           tok = tok[0].get("token")
           if not tok:
               print("LLM-PROBE: LOGIN FEHLGESCHLAGEN"); raise SystemExit(0)
