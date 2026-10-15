@@ -113,13 +113,16 @@ jobs:
           cat > /tmp/vstat.mjs << 'VSTAT'
           import { DatabaseSync } from 'node:sqlite';
           const db = new DatabaseSync('server/data/villaforge.db');
-          const v = db.prepare('SELECT id, name, status FROM villas WHERE name LIKE ?').get('%Tarn%');
-          if (!v) { console.log('KEINE VILLA'); process.exit(0); }
-          console.log('VILLA:', v.name, v.status);
-          const t = db.prepare('SELECT status, COUNT(*) c FROM tasks WHERE villa_id = ? GROUP BY status').all(v.id);
-          console.log('AUFGABEN:', JSON.stringify(t));
-          const last = db.prepare("SELECT title, status, substr(result,1,110) r, datetime(updated_at/1000, 'unixepoch') u FROM tasks WHERE villa_id = ? ORDER BY updated_at DESC LIMIT 5").all(v.id);
-          for (const x of last) console.log('[', x.status, x.u, 'UTC]', x.title, '=>', x.r);
+          const now = Date.now();
+          const win = (min) => now - min * 60_000;
+          const upd30 = db.prepare('SELECT COUNT(*) c FROM tasks WHERE updated_at > ?').get(win(30)).c;
+          const upd5 = db.prepare('SELECT COUNT(*) c FROM tasks WHERE updated_at > ?').get(win(5)).c;
+          const done30 = db.prepare("SELECT COUNT(*) c FROM tasks WHERE updated_at > ? AND status = 'DONE'").get(win(30)).c;
+          console.log('AKTIVITAET: Updates letzte 5 Min:', upd5, '| 30 Min:', upd30, '| davon DONE:', done30);
+          const running = db.prepare("SELECT v.id, v.name, t.title, t.updated_at FROM tasks t JOIN villas v ON v.id = t.villa_id WHERE t.status = 'RUNNING' ORDER BY t.updated_at ASC LIMIT 8").all();
+          for (const r of running) console.log('RUNNING seit', Math.round((now - r.updated_at) / 60000), 'Min:', r.name.slice(0, 22), '|', r.title.slice(0, 40));
+          const perVilla = db.prepare("SELECT v.name, SUM(CASE WHEN t.status = 'DONE' THEN 1 ELSE 0 END) done, SUM(CASE WHEN t.status IN ('PENDING','RUNNING','READY') THEN 1 ELSE 0 END) open FROM villas v LEFT JOIN tasks t ON t.villa_id = v.id GROUP BY v.id ORDER BY open DESC LIMIT 6").all();
+          for (const x of perVilla) console.log('VILLA', x.name.slice(0, 24), '| offen:', x.open, '| done:', x.done);
           VSTAT
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/vstat.mjs ubuntu@92.5.177.159:/tmp/vstat.mjs
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "cd /opt/villaforge && sudo -u root node /tmp/vstat.mjs"
