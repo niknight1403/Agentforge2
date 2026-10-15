@@ -8,6 +8,14 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.33.1 — Live-Arbeitsstatus der Villen
+
+- **ARBEITET vs. WARTET**: Der Hub liefert jetzt den echten Rechen-Slot-Zustand.
+  Villen, die gerade arbeiten, pulsieren gruen (ARBEITET); Villen in der
+  Warteschleife zeigen bernstein WARTET - statt pauschal alles gruen.
+- Villen-Liste: Kopfzeile zaehlt "X arbeiten · Y warten".
+- Uebersicht: Villen-Karte zeigt aktiv und wartend getrennt.
+
 ## Neu in 1.33.0 — MASTER-AGENT mit eigenem Chatfenster
 
 - **Master-Agent-Chat**: eigener Tab „Master" — Wunsch reinschreiben (z.B.
