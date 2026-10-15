@@ -99,6 +99,8 @@ jobs:
               # echter Chat-Turn durch die Route-Kette
               ans, dt = post("/api/villas/%d/chat" % v.get("id"), {"message": "Sag nur: ok - kein Werkzeug, keine Aufgabe."}, tok, 420)
               print("CHAT-PROBE RAW:", json.dumps(ans)[:400], "| Dauer:", dt, "s")
+              mres, mdt = post("/api/master/chat", {"message": "Kurztest: antworte in einem Satz mit dem Status der Villen, gruende KEINE Villa."}, tok, 180)
+              print("MASTER-PROBE:", json.dumps(mres)[:300], "| Dauer:", mdt, "s")
           PROBE
 
       - name: Villa-Aufgaben-Status via DB

@@ -65,7 +65,11 @@ data class UiState(
     val needsLogin: Boolean = false,
     /** Ergebnis des Verbindungstests (Diagnose). */
     val connTest: List<String> = emptyList(),
-    val connTestRunning: Boolean = false
+    val connTestRunning: Boolean = false,
+    /** Master-Agent: Verlauf des Master-Chats. */
+    val masterMessages: List<dev.villaforge.app.net.ChatMessage> = emptyList(),
+    val masterBusy: Boolean = false,
+    val masterLoaded: Boolean = false
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -101,6 +105,47 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(connTestRunning = true, connTest = listOf("Test laeuft ...")) }
         val lines = try { client.connectionTest() } catch (e: Exception) { listOf("Test-FEHLER: ${e.javaClass.simpleName}: ${e.message}") }
         _state.update { it.copy(connTestRunning = false, connTest = lines) }
+    }
+
+    /** Master-Agent: Verlauf einmalig laden (beim Oeffnen des Chatfensters). */
+    fun loadMaster() = viewModelScope.launch {
+        if (_state.value.masterLoaded) return@launch
+        try {
+            val h = client.masterHistory()
+            _state.update { it.copy(masterMessages = h, masterLoaded = true) }
+        } catch (_: Exception) { /* naechster Versuch beim Senden */ }
+    }
+
+    /** Master-Agent: Wunsch senden; erzeugt ggf. autonom eine Villa. */
+    fun sendMaster(text: String) = viewModelScope.launch {
+        val t = text.trim()
+        if (t.isBlank() || _state.value.masterBusy) return@launch
+        val now = System.currentTimeMillis()
+        _state.update {
+            it.copy(masterMessages = it.masterMessages + dev.villaforge.app.net.ChatMessage("user", t, now),
+                masterBusy = true, error = null)
+        }
+        try {
+            val res = client.masterChat(t)
+            val reply = res.optString("reply", "(keine Antwort)")
+            val msg = dev.villaforge.app.net.ChatMessage(
+                role = "assistant",
+                content = reply,
+                createdAt = System.currentTimeMillis(),
+                villaId = res.optLong("villaId", 0),
+                villaName = res.optString("villaName"),
+                designImage = res.optString("designImage")
+            )
+            _state.update { it.copy(masterMessages = it.masterMessages + msg) }
+            if (res.optLong("villaId", 0) > 0) refreshAll()
+        } catch (e: Exception) {
+            _state.update {
+                it.copy(masterMessages = it.masterMessages + dev.villaforge.app.net.ChatMessage(
+                    "assistant", "Fehler: ${e.message ?: "Hub nicht erreichbar"}", System.currentTimeMillis()))
+            }
+        } finally {
+            _state.update { it.copy(masterBusy = false) }
+        }
     }
 
     /** Misst die Hub-Antwortzeit und meldet sie als Nachricht. */

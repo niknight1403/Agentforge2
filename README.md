@@ -8,6 +8,18 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.33.0 — MASTER-AGENT mit eigenem Chatfenster
+
+- **Master-Agent-Chat**: eigener Tab „Master" — Wunsch reinschreiben (z.B.
+  „aendere Bereich X" oder „baue mir Y"), der Master uebersetzt ihn in ein
+  professionelles Entwicklungs-Prompt, gruendet autonom die passende Villa und
+  startet die Entwicklung sofort. Erstellte Villa direkt aus dem Chat oeffenbar.
+- **Kostenloses App-Designer-Tool-Pack**: zu jeder Gruendung entsteht
+  automatisch ein Design-Konzeptbild (Pollinations.ai, kein API-Key) mit
+  verankertem Cyber-Neon-Design-System.
+- **Villa-Aufraeumen**: 5 versehentlich doppelt entstandene Duplikat-Villen
+  entfernt; 13 eindeutige Villen, 5 laufen parallel getestet.
+
 ## Neu in 1.32.0
 
 - **Ganzheitliches Cyber-Neon-Design**: Glas-Karten mit Neon-Gradient-Rändern

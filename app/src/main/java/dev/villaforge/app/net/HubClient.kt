@@ -52,7 +52,12 @@ data class ChatMessage(
     val role: String,
     val content: String,
     val createdAt: Long,
-    val agentId: Long = 0
+    val agentId: Long = 0,
+    /** Master-Agent: erzeugte Villa (0 = keine). */
+    val villaId: Long = 0,
+    val villaName: String = "",
+    /** Master-Agent: Design-Konzeptbild-URL (leer = keins). */
+    val designImage: String = ""
 )
 
 data class Report(
@@ -214,6 +219,26 @@ class HubClient(context: Context) {
         }
 
     suspend fun health(): JSONObject = JSONObject(execute("GET", "/api/health"))
+
+    /** Master-Agent: Verlauf des Master-Chats (aeltere zuerst). */
+    suspend fun masterHistory(): List<ChatMessage> {
+        val arr = JSONArray(execute("GET", "/api/master/history"))
+        return (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            ChatMessage(
+                role = o.optString("role", "assistant"),
+                content = o.optString("content"),
+                createdAt = o.optLong("createdAt"),
+                villaId = o.optLong("villaId", 0),
+                villaName = o.optString("villaName"),
+                designImage = o.optString("designImage")
+            )
+        }
+    }
+
+    /** Master-Agent: Wunsch senden -> autonom erstellte Villa zurueck. */
+    suspend fun masterChat(message: String): JSONObject =
+        JSONObject(execute("POST", "/api/master/chat", JSONObject().put("message", message)))
 
     /**
      * Verbindungstest fuer die Diagnose: DNS, TLS/HTTP-Health und Login einzeln mit

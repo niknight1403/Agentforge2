@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Chat
@@ -54,6 +55,7 @@ import dev.villaforge.app.ui.screens.DiagnosticsScreen
 import dev.villaforge.app.ui.screens.DetailScreen
 import dev.villaforge.app.ui.screens.LiveDot
 import dev.villaforge.app.ui.screens.LoginScreen
+import dev.villaforge.app.ui.screens.MasterChatScreen
 import dev.villaforge.app.ui.screens.SettingsScreen
 import dev.villaforge.app.ui.screens.VillaListScreen
 import dev.villaforge.app.ui.screens.muted
@@ -69,9 +71,9 @@ import dev.villaforge.app.ui.theme.TextMuted
  * leben in ui/screens/, Bausteine in ui/components/, der Parser in core/.
  * Hier bleibt nur die Navigation mit sanften uebergangen zurueck.
  */
-private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, DEV, SETTINGS, DIAGNOSTICS }
+private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, MASTER, DEV, SETTINGS, DIAGNOSTICS }
 
-private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.CHAT, Screen.DIAGNOSTICS, Screen.SETTINGS)
+private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.MASTER, Screen.DIAGNOSTICS, Screen.SETTINGS)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -124,12 +126,9 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     NavigationBarItem(selected = screen == Screen.DASHBOARD, onClick = { viewModel.closeDetail(); screen = Screen.DASHBOARD },
                         icon = { Icon(Icons.Filled.Dashboard, contentDescription = "Übersicht", tint = if (screen == Screen.DASHBOARD) NeonCyan else TextMuted) },
                         label = { Text("Übersicht") })
-                    NavigationBarItem(selected = screen == Screen.CHAT, onClick = {
-                            val target = state.villas.firstOrNull { it.status == "RUNNING" } ?: state.villas.firstOrNull()
-                            if (target != null) { viewModel.openVilla(target.id); screen = Screen.CHAT } else screen = Screen.LIST
-                        },
-                        icon = { Icon(Icons.Filled.Chat, contentDescription = "Chat", tint = if (screen == Screen.CHAT) NeonCyan else TextMuted) },
-                        label = { Text("Chat") })
+                    NavigationBarItem(selected = screen == Screen.MASTER, onClick = { viewModel.closeDetail(); screen = Screen.MASTER },
+                        icon = { Icon(Icons.Filled.AutoAwesome, contentDescription = "Master-Agent", tint = if (screen == Screen.MASTER) NeonCyan else TextMuted) },
+                        label = { Text("Master") })
                     NavigationBarItem(selected = screen == Screen.LIST, onClick = { viewModel.closeDetail(); screen = Screen.LIST },
                         icon = { Icon(Icons.Filled.Home, contentDescription = "Villen", tint = if (screen == Screen.LIST) NeonCyan else TextMuted) },
                         label = { Text("Villen") })
@@ -169,18 +168,15 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                         state, viewModel,
                         onOpen = { id -> viewModel.openVilla(id); screen = Screen.DETAIL },
                         onBack = { screen = Screen.LIST },
-                        onChat = {
-                            val target = state.villas.firstOrNull { it.status == "RUNNING" } ?: state.villas.firstOrNull()
-                            if (target != null) { viewModel.openVilla(target.id); screen = Screen.CHAT } else screen = Screen.LIST
-                        },
+                        onChat = { screen = Screen.MASTER },
                         onVillas = { viewModel.closeDetail(); screen = Screen.LIST },
                         onDiagnostics = { screen = Screen.DIAGNOSTICS },
                         onSettings = { screen = Screen.SETTINGS },
-                        onSuperagent = {
-                            val target = state.villas.firstOrNull { it.status == "RUNNING" } ?: state.villas.firstOrNull()
-                            if (target != null) { viewModel.openVilla(target.id); screen = Screen.DEV } else screen = Screen.CREATE
-                        }
+                        onSuperagent = { screen = Screen.MASTER }
                     )
+                    Screen.MASTER -> MasterChatScreen(state, viewModel, onOpenVilla = { id ->
+                        viewModel.openVilla(id); screen = Screen.DETAIL
+                    })
                     Screen.CREATE -> CreateVillaScreen(state, viewModel) { id ->
                         viewModel.openVilla(id)
                         screen = Screen.CHAT
