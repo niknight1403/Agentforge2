@@ -218,6 +218,23 @@ jobs:
           scp -q -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/llmfix.mjs /tmp/vfkeys.json ubuntu@92.5.177.159:/tmp/
           chmod +x /tmp/sshcmd && /tmp/sshcmd "sudo node /tmp/llmfix.mjs"
           echo "LLM-FIX-DURCH"
+      - name: Ollama-Ist-Zustand (ollama-peek)
+        if: ${{ github.event.inputs.mode == 'ollama-peek' }}
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+          bash /tmp/sshcmd "sudo bash -c '
+            echo \"== Ollama-Units ==\"; systemctl list-units \"*ollama*\" --no-legend --all 2>/dev/null
+            echo \"== Unit-Env ==\"; cat /etc/systemd/system/ollama.service.d/*.conf 2>/dev/null | grep -v PASSWORD
+            echo \"== Ports ==\"; ss -ltnp | grep -E \"11434|11435\" || echo keine
+            echo \"== Nginx Ollama-Site ==\"; grep -rn \"11434\|ollama\|proxy_pass\|limit_req\" /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null | grep -v \"#\" | head -30
+            echo \"== RAM/Modelle ==\"; free -h | head -2; curl -s -m 5 http://127.0.0.1:11434/api/tags | head -c 600
+          '"
       - name: Modelle + Fast-Route (pull)
         if: ${{ github.event.inputs.mode == 'pull' }}
         env:
