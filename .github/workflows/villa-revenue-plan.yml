@@ -1,0 +1,39 @@
+name: villa-revenue-plan
+on:
+  workflow_dispatch:
+    inputs:
+      villa_name:
+        description: 'Villa-Name (LIKE-Suche)'
+        required: false
+        default: 'CyberSarah'
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Umsatz-Plan anstossen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          H=https://hub.cybersarah-ki.com
+          TOK=$(curl -s -m 30 -H "Content-Type: application/json" \
+            -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" $H/api/auth/login | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
+          echo "== Villen suchen: ${VILLA:-CyberSarah} =="
+          VILLA="${{ github.event.inputs.villa_name }}"
+          ID=$(curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/villas | python3 -c "
+import json,sys
+vs = json.load(sys.stdin)
+m = [v for v in vs if '${VILLA}'.lower() in (v.get('name') or '').lower()]
+print(m[0]['id'] if m else '')")
+          if [ -z "$ID" ]; then echo "Villa nicht gefunden"; exit 1; fi
+          echo "Villa-ID: $ID"
+          echo "== REVENUE-Vorschlag anstossen =="
+          curl -s -m 150 -X POST -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+            -d '{"kind":"REVENUE"}' $H/api/evolution/villas/$ID/propose | head -c 600
+          echo ""
+          echo "== Vision der Villa =="
+          curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/villas/$ID | python3 -c "
+import json,sys
+v = json.load(sys.stdin)
+print('vision:', (v.get('vision') or '')[:200])"
