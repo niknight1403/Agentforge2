@@ -45,6 +45,9 @@ jobs:
             for (const r of rep) console.log("  REPARATUR-Vorschlag", r.id, r.status);
           }
           if (!hot.length) console.log("Keine Villa mit Fehlerhaeufungen (24 h) - Aufgaben-Bereich GRUEN.");
+          const nulls = db.prepare("SELECT id, villa_id, kind, title FROM memories WHERE content IS NULL").all();
+          console.log("MEMORIES mit NULL-Inhalt:", nulls.length);
+          for (const n of nulls.slice(0, 20)) console.log("  NULLMEM id", n.id, "villa", n.villa_id, n.kind, JSON.stringify(n.title));
           JS
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/fails.js ubuntu@92.5.177.159:/tmp/fails.js
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo RERUN=$RERUN node /tmp/fails.js"
