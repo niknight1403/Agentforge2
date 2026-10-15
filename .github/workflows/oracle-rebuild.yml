@@ -386,9 +386,11 @@ jobs:
           const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name);
           for (const id of [...toDelete]) {
             for (const t of tables) {
+              if (t === 'villas') continue;
               const cols = db.prepare('PRAGMA table_info(' + t + ')').all().map(c => c.name);
               if (cols.includes('villa_id')) db.prepare('DELETE FROM ' + t + ' WHERE villa_id = ?').run(id);
             }
+            db.prepare('DELETE FROM villas WHERE id = ?').run(id); // die Villa-Zeile selbst
             console.log('GELOESCHT Villa', id);
           }
           const after = db.prepare('SELECT id, name, status FROM villas ORDER BY id').all();
