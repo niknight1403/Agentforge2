@@ -101,6 +101,14 @@ jobs:
               print("CHAT-PROBE RAW:", json.dumps(ans)[:400], "| Dauer:", dt, "s")
           PROBE
 
+      - name: Workspace-Fortschritt der Villen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "echo '== Workspace-Dateien je Villa =='; for d in /opt/villaforge/workspace/*/; do n=\$(find \"\$d\" -type f -not -path '*/node_modules/*' 2>/dev/null | wc -l); echo \"\$n Dateien: \$(basename \"\$d\")\"; done; echo '== Neueste Dateien (Tarnsoftware) =='; find /opt/villaforge/workspace -type f -not -path '*/node_modules/*' -mmin -30 2>/dev/null | head -10"
       - name: LLM-Kette direkt auf der VM (echtes llm.mjs + DB-Keys)
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
