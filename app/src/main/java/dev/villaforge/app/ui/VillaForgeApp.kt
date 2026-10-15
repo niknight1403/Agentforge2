@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.HealthAndSafety
@@ -64,7 +63,6 @@ import dev.villaforge.app.ui.screens.DiagnosticsScreen
 import dev.villaforge.app.ui.screens.DetailScreen
 import dev.villaforge.app.ui.screens.LiveDot
 import dev.villaforge.app.ui.screens.LoginScreen
-import dev.villaforge.app.ui.screens.MasterChatScreen
 import dev.villaforge.app.ui.screens.SettingsScreen
 import dev.villaforge.app.ui.screens.VillaListScreen
 import dev.villaforge.app.ui.screens.muted
