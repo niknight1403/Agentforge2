@@ -304,6 +304,8 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
                     val kindLabel = when (kind) {
                         "PERFECT" -> "Perfektionierung"
                         "MARKETPLACE" -> "AI Marketplace"
+                        "REVENUE" -> "Weg zum Umsatz"
+                        "BIG_IDEA" -> "Neue Idee (Umsatz-Pivot)"
                         else -> "Nächste Phasen (Runde ${pr.optInt("round", 1)})"
                     }
                     val items = pr.optJSONArray("items")

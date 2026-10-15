@@ -31,7 +31,9 @@ data class Villa(
     /** Live: offene Aufgaben. */
     val openCount: Int = 0,
     /** Live: geschaetzte Restdauer in Minuten (0 = nichts offen). */
-    val etaMin: Int = 0
+    val etaMin: Int = 0,
+    /** WAS genau am Ende verkauft wird (aus dem Umsatz-Plan der Agenten). */
+    val vision: String = ""
 )
 
 data class Agent(
@@ -319,7 +321,8 @@ class HubClient(context: Context) {
                     (0 until a.length()).map { i -> a.optString(i) }
                 },
                 openCount = o.optInt("openCount", 0),
-                etaMin = o.optInt("etaMin", 0)
+                etaMin = o.optInt("etaMin", 0),
+                vision = o.optString("vision")
             )
         }
     }

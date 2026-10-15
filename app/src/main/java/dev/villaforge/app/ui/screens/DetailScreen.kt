@@ -87,6 +87,9 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(detail.villa.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             StatusBadge(if (detail.running) (if (detail.villa.executing) "ARBEITET" else detail.villa.status + " · läuft") else detail.villa.displayStatus())
+            if (detail.villa.vision.isNotBlank()) {
+                Text("Ziel: " + detail.villa.vision, style = androidx.compose.material3.MaterialTheme.typography.labelSmall, color = androidx.compose.ui.graphics.Color(0xFF00A3FF), fontSize = 11.sp, maxLines = 2)
+            }
             if (detail.villa.executing && detail.villa.runningTasks.isNotEmpty()) {
                 Text(detail.villa.runningTasks.first(), style = androidx.compose.material3.MaterialTheme.typography.labelSmall, color = androidx.compose.ui.graphics.Color(0xFF00E6C2), fontSize = 11.sp)
             }

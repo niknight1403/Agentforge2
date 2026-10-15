@@ -8,6 +8,20 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.35.0 — Umsatz-Fokus & Endprodukt-Vision
+
+- **Ziel sichtbar auf jeder Villa**: Die Agenten definieren WAS am Ende
+  konkret verkauft wird (Endprodukt mit Preis) - als "Ziel:"-Zeile auf
+  jeder Villen-Karte und im Detail.
+- **Weg zum Umsatz**: Neue Vorschlagsart mit konkreten Schritten bis zum
+  ersten Umsatz - Zielkunden, Preis in EUR, Verkaufspartner, Landingpage,
+  Zahlungslink. Bestaetigen legt priorisierte UMSATZ-Aufgaben an.
+- **Neue Idee (Umsatz-Pivot)**: Agenten pruefen nach dem Umsatz-Plan,
+  ob ein weitaus umsatzstaerkeres Produkt auf der Kernidee moeglich ist -
+  mit Umsatzschaetzung und MVP-Schritten.
+- **CCC = Hauptumsatzprojekt**: Der Master priorisiert Umsatzschritte
+  fuer das CyberSarah Control Center.
+
 ## Neu in 1.34.0 — Transparenz, Sprints & voller Master-Agent
 
 - **Was macht die Villa + wie lange?**: Jede Villa zeigt ihre aktuelle

@@ -141,6 +141,9 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
                         } else if (villa.openCount > 0) {
                             Text("${villa.openCount} offen · ≈ ${villa.etaMin} Min", style = muted(), color = TextMuted, fontSize = 12.sp)
                         }
+                        if (villa.vision.isNotBlank()) {
+                            Text("Ziel: " + villa.vision, style = muted(), color = androidx.compose.ui.graphics.Color(0xFF00A3FF), fontSize = 12.sp, maxLines = 2)
+                        }
                         Text("Projekt öffnen", color = Aqua, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     }
                 }
