@@ -101,14 +101,26 @@ jobs:
               print("CHAT-PROBE RAW:", json.dumps(ans)[:400], "| Dauer:", dt, "s")
           PROBE
 
-      - name: Villa-Aufgaben-Status (Tarnsoftware) via DB
+      - name: Villa-Aufgaben-Status via DB
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "cd /opt/villaforge && sudo -u root node -e 'const { DatabaseSync } = require(\"node:sqlite\"); const db = new DatabaseSync(\"server/data/villaforge.db\"); const v = db.prepare(\"SELECT id, name, status FROM villas WHERE name LIKE ?\").get(\"%Tarn%\"); if (!v) { console.log(\"KEINE VILLA\"); process.exit(0); } console.log(\"VILLA:\", v.name, v.status); const t = db.prepare(\"SELECT status, COUNT(*) c FROM tasks WHERE villa_id = ? GROUP BY status\").all(v.id); console.log(\"AUFGABEN:\", JSON.stringify(t)); const last = db.prepare(\"SELECT title, status, substr(result,1,120) r, datetime(updated_at/1000, \'unixepoch\') u FROM tasks WHERE villa_id = ? ORDER BY updated_at DESC LIMIT 5\").all(v.id); for (const x of last) console.log(\"[-\", x.status, x.u, \"UTC]\", x.title, \"=>\", x.r)'"
+          cat > /tmp/vstat.mjs << 'VSTAT'
+          import { DatabaseSync } from 'node:sqlite';
+          const db = new DatabaseSync('server/data/villaforge.db');
+          const v = db.prepare('SELECT id, name, status FROM villas WHERE name LIKE ?').get('%Tarn%');
+          if (!v) { console.log('KEINE VILLA'); process.exit(0); }
+          console.log('VILLA:', v.name, v.status);
+          const t = db.prepare('SELECT status, COUNT(*) c FROM tasks WHERE villa_id = ? GROUP BY status').all(v.id);
+          console.log('AUFGABEN:', JSON.stringify(t));
+          const last = db.prepare("SELECT title, status, substr(result,1,110) r, datetime(updated_at/1000, 'unixepoch') u FROM tasks WHERE villa_id = ? ORDER BY updated_at DESC LIMIT 5").all(v.id);
+          for (const x of last) console.log('[', x.status, x.u, 'UTC]', x.title, '=>', x.r);
+          VSTAT
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/vstat.mjs ubuntu@92.5.177.159:/tmp/vstat.mjs
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "cd /opt/villaforge && sudo -u root node /tmp/vstat.mjs"
       - name: Workspace-Fortschritt der Villen
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
