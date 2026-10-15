@@ -51,6 +51,10 @@ jobs:
             console.log("  PENDING-Aufgaben:", pend.c);
             const recent = db.prepare("SELECT id, title, status, updated_at FROM tasks WHERE villa_id = ? AND status IN ('DONE','FAILED') ORDER BY updated_at DESC LIMIT 3").all(h.villa_id);
             for (const t of recent) console.log("  Zuletzt:", t.status, JSON.stringify(t.title.slice(0, 60)), new Date(t.updated_at).toISOString());
+            const vrow = db.prepare("SELECT status, updated_at, auto_rounds FROM villas WHERE id = ?").get(h.villa_id);
+            console.log("  Villa-Zeile:", vrow.status, "aktualisiert", new Date(vrow.updated_at).toISOString(), "Runden:", vrow.auto_rounds);
+            const au = db.prepare("SELECT created_at, agent_id, tool, substr(args_json,1,60) a, substr(result_json,1,80) r FROM audit WHERE villa_id = ? ORDER BY id DESC LIMIT 6").all(h.villa_id);
+            for (const x of au) console.log("  AUDIT:", new Date(x.created_at).toISOString(), x.agent_id, x.tool, x.a, "=>", x.r);
           }
           if (!hot.length) console.log("Keine Villa mit Fehlerhaeufungen (24 h) - Aufgaben-Bereich GRUEN.");
           const nulls = db.prepare("SELECT id, villa_id, kind, title FROM memories WHERE content IS NULL").all();
