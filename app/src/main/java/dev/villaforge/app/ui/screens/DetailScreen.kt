@@ -85,7 +85,7 @@ fun DetailScreen(state: UiState, viewModel: MainViewModel, onChat: () -> Unit, o
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(detail.villa.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            StatusBadge(if (detail.running) detail.villa.status + " · läuft" else detail.villa.status)
+            StatusBadge(if (detail.running) (if (detail.villa.executing) "ARBEITET" else detail.villa.status + " · läuft") else detail.villa.displayStatus())
         }
         Text(detail.villa.idea, style = muted(), color = TextMuted)
         if (detail.villa.sourcePath.isNotBlank()) {

@@ -21,7 +21,11 @@ data class Villa(
     val status: String,
     val maxAgents: Int,
     val sourcePath: String = "",
-    val mode: String = "BUILD"
+    val mode: String = "BUILD",
+    /** Live: haelt gerade einen Rechen-Slot (arbeitet wirklich). */
+    val executing: Boolean = false,
+    /** Live: Autonomie an, aber wartet auf einen freien Slot. */
+    val queued: Boolean = false
 )
 
 data class Agent(
@@ -301,7 +305,9 @@ class HubClient(context: Context) {
                 name = o.getString("name"),
                 idea = o.optString("idea"),
                 status = o.optString("status"),
-                maxAgents = o.optInt("max_agents", 1000)
+                maxAgents = o.optInt("max_agents", 1000),
+                executing = o.optInt("executing", 0) == 1,
+                queued = o.optInt("queued", 0) == 1
             )
         }
     }

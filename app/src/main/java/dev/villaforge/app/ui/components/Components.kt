@@ -135,7 +135,7 @@ fun StatusPill(text: String, color: Color = NeonCyan) {
 @Composable
 fun StatusBadge(status: String) {
     val color = statusColor(status)
-    val pulsing = status == "RUNNING" || status == "läuft"
+    val pulsing = status == "RUNNING" || status == "läuft" || status == "ARBEITET"
     val pulse by if (pulsing) {
         rememberInfiniteTransition(label = "pulse").animateFloat(
             initialValue = 0.5f,
