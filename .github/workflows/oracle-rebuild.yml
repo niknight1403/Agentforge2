@@ -84,6 +84,268 @@ jobs:
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/setup.sh ubuntu@92.5.177.159:/tmp/setup.sh
           bash /tmp/sshcmd "sudo bash /tmp/setup.sh"
 
+      - name: Hub-Code aktualisieren (update)
+        if: ${{ github.event.inputs.mode == 'update' }}
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          GT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+          cat > /tmp/hubupdate.sh <<'UPD'
+          set -e
+          # Hub-Verzeichnis aus der systemd-Unit bestimmen (ExecStart-Pfad).
+          EXEC=$(systemctl show villaforge -p ExecStart --value 2>/dev/null | grep -oE '/[^ ]*server\.mjs' | head -1 || true)
+          HUBDIR=$(dirname "${EXEC:-/opt/villaforge/server/server.mjs}")
+          # Unit-Namen ermitteln (heisst nicht überall villaforge.service).
+          UNIT=$(systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -iE '^(hub|villaforge)' | head -1 || true)
+          UNIT=${UNIT:-villaforge.service}
+          echo "== Unit: $UNIT =="
+          cd "$(dirname "$HUBDIR")"
+          if [ -d .git ]; then
+            echo "== git pull in $PWD =="
+            git fetch -q origin && git reset -q --hard origin/main && git log -1 --oneline
+          else
+            echo "== kein Git-Klon in $PWD - Server-Code aus AgentForge ersetzen =="
+            VFNEW=$(mktemp -d)
+            git clone -q https://x-access-token:${GT}@github.com/niknight1403/AgentForge.git "$VFNEW/repo"
+            rsync -a --delete --exclude data --exclude node_modules "$VFNEW/repo/server/" ./server/
+          fi
+          echo "== Lastbegrenzung fuer 4 Kerne / ein Ollama (Drop-in) =="
+          mkdir -p "/etc/systemd/system/${UNIT}.d"
+          cat > "/etc/systemd/system/${UNIT}.d/zz-load.conf" <<'LOADCONF'
+          [Service]
+          Environment="VF_LLM_MAX_CONCURRENT=2"
+          Environment="VF_VILLA_SLOTS=2"
+          Environment="VF_CMD_MAX_CONCURRENT=1"
+          LOADCONF
+          systemctl daemon-reload
+          echo "== Hub neu starten =="
+          systemctl restart "$UNIT"
+          OK=0
+          for i in $(seq 1 45); do
+            sleep 2
+            curl -sf -m 2 http://127.0.0.1:12000/api/health >/dev/null 2>&1 && OK=1 && break
+          done
+          if [ "$OK" = 1 ]; then echo HUB-UPDATE-OK; else
+            echo HUB-NICHT-DA
+            journalctl -u "$UNIT" -n 25 --no-pager || true
+            systemctl status "$UNIT" --no-pager -l | head -20
+            exit 1
+          fi
+          UPD
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/hubupdate.sh ubuntu@92.5.177.159:/tmp/hubupdate.sh
+          bash /tmp/sshcmd "sudo GT=$GT bash /tmp/hubupdate.sh"
+      - name: Ollama neu starten (ollama-restart)
+        if: ${{ github.event.inputs.mode == 'ollama-restart' }}
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/ollrestart.sh <<'RST'
+          echo "== Ollama-Dienst auf 4 ARM-Kerne abstimmen (1 parallel, ein Modell geladen) =="
+          mkdir -p /etc/systemd/system/ollama.service.d
+          cat > /etc/systemd/system/ollama.service.d/zz-tuning.conf <<'DROPIN'
+          [Service]
+          Environment="OLLAMA_NUM_PARALLEL=1"
+          Environment="OLLAMA_MAX_LOADED_MODELS=1"
+          Environment="OLLAMA_KEEP_ALIVE=30m"
+          Environment="OLLAMA_MAX_QUEUE=8"
+          DROPIN
+          systemctl daemon-reload
+          echo "== Vorher: ollama ps =="; ollama ps 2>&1 | head -5
+          echo "== Haengende Runner beenden und Dienst neu starten =="
+          systemctl stop ollama || true
+          pkill -9 -f llama-server || true
+          sleep 3
+          systemctl start ollama
+          for i in $(seq 1 30); do curl -sf -m 2 http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && break; sleep 2; done
+          echo "== Modell warm laden + Antwortzeit =="
+          curl -s -m 120 -w "\nHTTP %{http_code} in %{time_total}s\n" http://127.0.0.1:11434/api/generate -d '{"model":"llama3.2:3b","prompt":"Sag nur: ok","stream":false,"keep_alive":"30m","options":{"num_predict":6}}' | tail -c 300
+          echo "== Zweite Anfrage (warm) =="
+          curl -s -m 60 -w "\nHTTP %{http_code} in %{time_total}s\n" http://127.0.0.1:11434/api/generate -d '{"model":"llama3.2:3b","prompt":"Nenne eine Farbe.","stream":false,"keep_alive":"30m","options":{"num_predict":10}}' | tail -c 300
+          echo "== Nachher: Last =="; uptime
+          RST
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/ollrestart.sh ubuntu@92.5.177.159:/tmp/ollrestart.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/ollrestart.sh"
+      - name: LLM-Kette reparieren (llm-fix)
+        if: ${{ github.event.inputs.mode == 'llm-fix' }}
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          VF_GEMINI_KEY: ${{ secrets.VF_GEMINI_KEY }}
+          VF_HFTOKEN: ${{ secrets.VF_HFTOKEN }}
+          VF_OPENROUTER_KEY: ${{ secrets.VF_OPENROUTER_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+          cat > /tmp/llmfix.mjs << 'EOF'
+          import { DatabaseSync } from 'node:sqlite';
+          import { readFileSync } from 'node:fs';
+          const K = JSON.parse(readFileSync('/tmp/vfkeys.json', 'utf8'));
+          const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
+          const t = Date.now();
+          for (const [name, value] of Object.entries(K)) {
+            if (!value) continue;
+            db.prepare('INSERT INTO secrets (name, value, updated_at) VALUES (?,?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at').run(name, value, t);
+          }
+          const gem = db.prepare("SELECT id FROM routes WHERE name LIKE '%Gemini%' OR provider='gemini'").get();
+          if (gem) {
+            db.prepare('UPDATE routes SET base_url=?, model=?, key_env=?, provider=?, priority=2, enabled=1, fail=0, cooldown_until=0, status=? WHERE id=?')
+              .run('https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-flash-lite-latest', 'GEMINI_API_KEY', 'gemini', 'ACTIVE', gem.id);
+          } else {
+            db.prepare('INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, status) VALUES (?,?,?,?,?,1,1,2,?)')
+              .run('Gemini Flash Lite (free tier)', 'gemini', 'https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-flash-lite-latest', 'GEMINI_API_KEY', 'ACTIVE');
+          }
+          if (K.HF_TOKEN) {
+            const hf = db.prepare("SELECT id FROM routes WHERE provider='huggingface' OR name LIKE '%Hugging%'").get();
+            if (hf) db.prepare('UPDATE routes SET key_env=?, enabled=1, fail=0, cooldown_until=0, status=? WHERE id=?').run('HF_TOKEN', 'ACTIVE', hf.id);
+          }
+          db.prepare('UPDATE routes SET cooldown_until=0, fail=0').run();
+          const rows = db.prepare('SELECT id, name, provider, model, priority, key_env, enabled, fail FROM routes ORDER BY priority').all();
+          const stored = db.prepare('SELECT name FROM secrets').all().map(r => r.name);
+          console.log('ROUTES ' + JSON.stringify(rows));
+          console.log('SECRETS ' + JSON.stringify(stored));
+          EOF
+          python3 -c 'import json,os; json.dump({"GEMINI_API_KEY":os.environ.get("VF_GEMINI_KEY",""),"HF_TOKEN":os.environ.get("VF_HFTOKEN",""),"OPENROUTER_API_KEY":os.environ.get("VF_OPENROUTER_KEY","")}, open("/tmp/vfkeys.json","w"))'
+          scp -q -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/llmfix.mjs /tmp/vfkeys.json ubuntu@92.5.177.159:/tmp/
+          chmod +x /tmp/sshcmd && /tmp/sshcmd "sudo node /tmp/llmfix.mjs"
+          echo "LLM-FIX-DURCH"
+      - name: Ollama-Ist-Zustand (ollama-peek)
+        if: ${{ github.event.inputs.mode == 'ollama-peek' }}
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+          bash /tmp/sshcmd "sudo bash -c '
+            echo \"== Ollama-Units ==\"; systemctl list-units \"*ollama*\" --no-legend --all 2>/dev/null
+            echo \"== Unit-Env ==\"; cat /etc/systemd/system/ollama.service.d/*.conf 2>/dev/null | grep -v PASSWORD
+            echo \"== Ports ==\"; ss -ltnp | grep -E \"11434|11435\" || echo keine
+            echo \"== Nginx Ollama-Site ==\"; grep -rn \"11434\|ollama\|proxy_pass\|limit_req\" /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null | grep -v \"#\" | head -30
+            echo \"== RAM/Modelle ==\"; free -h | head -2; curl -s -m 5 http://127.0.0.1:11434/api/tags | head -c 600
+          '"
+      - name: Ollama-Isolation (ollama-isolate)
+        if: ${{ github.event.inputs.mode == 'ollama-isolate' }}
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+
+          cat > /tmp/isolate.sh << 'ISO'
+          #!/bin/bash
+          set -e
+          echo "== 1) Externe Ollama-Instanz (Port 11435) anlegen =="
+          cat > /etc/systemd/system/ollama-ext.service << 'UNIT'
+          [Unit]
+          Description=Ollama fuer EXTERNE Projekte (isoliert, Port 11435, nur llama3.2:3b)
+          After=network-online.target
+          [Service]
+          ExecStart=/usr/local/bin/ollama serve
+          User=ollama
+          Group=ollama
+          Environment=OLLAMA_HOST=127.0.0.1:11435
+          Environment=OLLAMA_MODELS=/usr/share/ollama/.ollama-ext
+          Environment=OLLAMA_NUM_PARALLEL=1
+          Environment=OLLAMA_MAX_QUEUE=8
+          Environment=OLLAMA_MAX_LOADED_MODELS=1
+          Environment=OLLAMA_KEEP_ALIVE=15m
+          Environment=OLLAMA_FLASH_ATTENTION=1
+          Restart=always
+          RestartSec=5
+          MemoryMax=6G
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          echo "== 2) Modell-Store der externen Instanz: NUR llama3.2:3b kopieren =="
+          M=/usr/share/ollama/.ollama/models
+          E=/usr/share/ollama/.ollama-ext
+          mkdir -p $E/blobs $E/manifests/registry.ollama.ai/library
+          cp -r $M/manifests/registry.ollama.ai/library/llama3.2 $E/manifests/registry.ollama.ai/library/ 2>/dev/null || true
+          for MF in $(find $E/manifests/registry.ollama.ai/library/llama3.2 -type f 2>/dev/null); do
+            for D in $(grep -o 'sha256:[a-f0-9]*' "$MF" | sort -u); do
+              BLOB=$(echo "$D" | sed 's/sha256:/sha256-/')
+              cp -n "$M/blobs/$BLOB" "$E/blobs/" 2>/dev/null || echo "Blob fehlt: $BLOB"
+            done
+            ls -la $E/blobs/ | head -8
+          done
+          chown -R ollama:ollama $E
+          systemctl daemon-reload
+          systemctl enable --now ollama-ext.service
+          sleep 8
+          echo "== 3) Nginx: ollama.cybersarah-ki.com auf die externe Instanz umleiten =="
+          SITE=$(grep -rl 'ollama.cybersarah-ki.com' /etc/nginx 2>/dev/null | head -1)
+          echo "Site-Datei: $SITE"
+          if [ -n "$SITE" ]; then
+            cp "$SITE" "$SITE.bak-11435"
+            sed -i 's|127.0.0.1:11434|127.0.0.1:11435|g' "$SITE"
+            nginx -t
+            systemctl reload nginx
+          else
+            echo "WARNUNG: keine Nginx-Site-Datei gefunden - Proxy unveraendert!"
+          fi
+          echo "== 4) Watchdog: verklemmte Instanzen automatisch neu starten =="
+          cat > /usr/local/bin/ollama-guard.sh << 'GUARD'
+          #!/bin/bash
+          # Ollama-Guard: Probe je Instanz; zwei Fehlschlaege nacheinander => Neustart.
+          probe() {
+            local PORT=$1 UNIT=$2 R
+            R=$(curl -s -m 40 -o /dev/null -w '%{http_code}' http://127.0.0.1:$PORT/api/generate \
+              -d '{"model":"llama3.2:3b","prompt":"ping","stream":false,"options":{"num_predict":1}}' 2>/dev/null)
+            local ST=/tmp/ollama-guard.$PORT
+            if [ "$R" = "200" ]; then echo 0 > "$ST"; return; fi
+            echo $(( $(cat "$ST" 2>/dev/null || echo 0) + 1 )) > "$ST"
+            if [ "$(cat "$ST")" -ge 2 ]; then
+              logger -t ollama-guard "Port $PORT haengt (Probe: '$R') - Neustart $UNIT"
+              systemctl restart "$UNIT"; echo 0 > "$ST"
+            fi
+          }
+          probe 11434 ollama.service
+          probe 11435 ollama-ext.service
+          GUARD
+          chmod +x /usr/local/bin/ollama-guard.sh
+          cat > /etc/systemd/system/ollama-guard.service << 'GSVC'
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/ollama-guard.sh
+          GSVC
+          cat > /etc/systemd/system/ollama-guard.timer << 'GTIM'
+          [Timer]
+          OnBootSec=5min
+          OnUnitActiveSec=5min
+          [Install]
+          WantedBy=timers.target
+          GTIM
+          systemctl daemon-reload
+          systemctl enable --now ollama-guard.timer
+          echo "== 5) Hub-Routen: beide Ollama-Routen strikt lokal binden =="
+          node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/opt/villaforge/server/data/villaforge.db');db.prepare(\"UPDATE routes SET base_url='http://127.0.0.1:11434/v1' WHERE provider='ollama'\").run();console.log('Hub-Ollama-Routen lokal gebunden')"
+          echo "== 6) Verifikation =="
+          systemctl is-active ollama.service ollama-ext.service ollama-guard.timer
+          sleep 2; ss -ltn | grep -E '11434|11435'
+          echo "Probe 11434:"; curl -s -m 60 -o /dev/null -w 'HTTP %{http_code} in %{time_total}s\n' http://127.0.0.1:11434/api/generate -d '{"model":"llama3.2:3b","prompt":"ping","stream":false,"options":{"num_predict":1}}'
+          echo "Probe 11435:"; curl -s -m 60 -o /dev/null -w 'HTTP %{http_code} in %{time_total}s\n' http://127.0.0.1:11435/api/generate -d '{"model":"llama3.2:3b","prompt":"ping","stream":false,"options":{"num_predict":1}}'
+          echo "Modelle extern (nur 3b erlaubt):"; curl -s -m 10 http://127.0.0.1:11435/api/tags | head -c 300
+          echo; echo "OLLAMA-ISOLATION-FERTIG"
+          ISO
+
+          scp -q -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/isolate.sh ubuntu@92.5.177.159:/tmp/isolate.sh
+          bash /tmp/sshcmd "sudo bash /tmp/isolate.sh"
+
       - name: Modelle + Fast-Route (pull)
         if: ${{ github.event.inputs.mode == 'pull' }}
         env:

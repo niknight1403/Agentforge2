@@ -1,0 +1,71 @@
+name: Hub-Unit-Fix
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: ExecStart auf absoluten Pfad korrigieren und neu starten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/unitfix.sh <<'FIX'
+          set -e
+          UNIT=villaforge-hub
+          FRAG=$(systemctl show "$UNIT" -p FragmentPath --value 2>/dev/null | tr -d '"')
+          echo "Fragment: $FRAG"
+          echo "== Vorher =="
+          grep -E 'ExecStart|WorkingDirectory' "$FRAG" || true
+          WD=$(systemctl show "$UNIT" -p WorkingDirectory --value 2>/dev/null | tr -d '"')
+          [ -n "$WD" ] || WD=/opt/villaforge
+          # Relativen server.mjs-Pfad in ExecStart auf absolut aufloesen
+          python3 - "$FRAG" "$WD" <<'PY'
+          import re, sys
+          frag, wd = sys.argv[1], sys.argv[2]
+          lines = open(frag).read().splitlines()
+          changed = 0
+          out = []
+          for l in lines:
+              if l.startswith('ExecStart='):
+                  def to_abs(m):
+                      p = m.group(0)
+                      return p if p.startswith('/') else wd + '/' + p
+                  new = re.sub(r'[^ ;"=]*server\.mjs', to_abs, l)
+                  if new != l:
+                      changed += 1
+                  l = new
+              out.append(l)
+          open(frag, 'w').write('\n'.join(out) + '\n')
+          print('geaenderte Zeilen:', changed)
+          PY
+          echo "== Nachher =="
+          grep -E 'ExecStart|WorkingDirectory' "$FRAG"
+          systemctl daemon-reload
+          systemctl restart "$UNIT"
+          sleep 6
+          echo "== Dienststatus =="
+          systemctl is-active "$UNIT"
+          echo "== Aufgeloester ExecStart =="
+          systemctl show "$UNIT" -p ExecStart --value
+          echo "== Health/Version =="
+          curl -s -m 30 "http://127.0.0.1:3000/api/health" | head -c 300; echo
+          echo "UNIT-FIX-ENDE"
+          FIX
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/unitfix.sh ubuntu@92.5.177.159:/tmp/unitfix.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/unitfix.sh"
+
+      - name: Von aussen verifizieren
+        run: |
+          sleep 3
+          curl -s -m 60 -o /tmp/h.json -w "health: HTTP %{http_code} in %{time_total}s\n" https://hub.cybersarah-ki.com/api/health
+          python3 -c "
+          import json
+          d = json.load(open('/tmp/h.json'))
+          print('LIVE-VERSION:', d.get('version'), '| ok:', d.get('ok'))
+          assert d.get('ok') is True, 'Hub antwortet nicht ok!'
+          print('LIVE-OK')"

@@ -114,6 +114,15 @@ class HubClient(context: Context) {
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
+        // Harter Gesamt-Timeout je Aufruf: ein haengender DNS-/TLS-/Proxy-Schritt
+        // darf die App nie endlos auf "verbinde ..." stehen lassen.
+        .callTimeout(150, TimeUnit.SECONDS)
+        // IPv4 zuerst: der Hub hat nur eine A-Adresse; ein toter IPv6-Pfad
+        // (manche WLANs/Mobilfunk-Netze) wuerde sonst jeden Aufruf ausbremsen.
+        .dns(object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<java.net.InetAddress> =
+                okhttp3.Dns.SYSTEM.lookup(hostname).sortedBy { it is java.net.Inet6Address }
+        })
         .build()
 
     var baseUrl: String
@@ -205,6 +214,36 @@ class HubClient(context: Context) {
         }
 
     suspend fun health(): JSONObject = JSONObject(execute("GET", "/api/health"))
+
+    /**
+     * Verbindungstest fuer die Diagnose: DNS, TLS/HTTP-Health und Login einzeln mit
+     * Dauer und GENAUER Fehlerursache (statt endlos "verbinde ...").
+     */
+    suspend fun connectionTest(): List<String> = withContext(Dispatchers.IO) {
+        val out = mutableListOf<String>()
+        val host = runCatching { java.net.URI(baseUrl).host }.getOrNull().orEmpty()
+        var t = System.currentTimeMillis()
+        try {
+            val addrs = java.net.InetAddress.getAllByName(host).joinToString { it.hostAddress ?: "?" }
+            out += "DNS OK (${System.currentTimeMillis() - t} ms): $addrs"
+        } catch (e: Exception) { out += "DNS FEHLER: ${e.javaClass.simpleName}: ${e.message}" }
+        t = System.currentTimeMillis()
+        try {
+            val res = http.newBuilder().callTimeout(20, TimeUnit.SECONDS).build()
+                .newCall(Request.Builder().url(url("/api/health")).get().build()).execute()
+            res.use { out += "Health HTTP ${it.code} (${System.currentTimeMillis() - t} ms, ${it.protocol})" }
+        } catch (e: Exception) { out += "Health FEHLER nach ${System.currentTimeMillis() - t} ms: ${e.javaClass.simpleName}: ${e.message}" }
+        t = System.currentTimeMillis()
+        try {
+            val res = http.newBuilder().callTimeout(30, TimeUnit.SECONDS).build()
+                .newCall(Request.Builder().url(url("/api/villas")).apply {
+                    if (apiToken.isNotBlank()) header("Authorization", "Bearer $apiToken")
+                }.get().build()).execute()
+            res.use { out += "Villen HTTP ${it.code} (${System.currentTimeMillis() - t} ms, ${(it.body?.contentLength() ?: -1)} Bytes)" }
+        } catch (e: Exception) { out += "Villen FEHLER nach ${System.currentTimeMillis() - t} ms: ${e.javaClass.simpleName}: ${e.message}" }
+        out += "Token: ${if (apiToken.isBlank()) "keiner" else "vorhanden"} · Login gespeichert: $hasLogin"
+        out
+    }
 
     /** Misst die Hub-Antwortzeit in Millisekunden (null = nicht erreichbar). */
     suspend fun ping(): Long? {
@@ -504,6 +543,24 @@ class HubClient(context: Context) {
     /** Uebernimmt die Ratsvorschlaege einer Runde als Aufgaben (POST council/adopt). */
     suspend fun councilAdopt(villaId: Long, roundId: Long = 0L): org.json.JSONObject =
         org.json.JSONObject(execute("POST", "/api/villas/$villaId/council/adopt", JSONObject().put("round", roundId)))
+
+    /* ---- Villa-Evolution: jede Villa schlaegt selbst naechste Phasen, Perfektion und Marketplace vor ---- */
+
+    /** Evolutions-Status einer Villa inkl. offener Vorschlaege (GET /api/evolution/villas/:id). */
+    suspend fun evolution(villaId: Long): org.json.JSONObject =
+        org.json.JSONObject(execute("GET", "/api/evolution/villas/$villaId"))
+
+    /** Villa laesst sich einen Vorschlag der Art erzeugen: NEXT_PHASES | PERFECT | MARKETPLACE. */
+    suspend fun evolutionPropose(villaId: Long, kind: String): org.json.JSONObject =
+        org.json.JSONObject(execute("POST", "/api/evolution/villas/$villaId/propose", JSONObject().put("kind", kind)))
+
+    /** Vorschlag bestaetigen: wird zu echten Aufgaben und die Villa entwickelt weiter. */
+    suspend fun evolutionApprove(proposalId: Long): org.json.JSONObject =
+        org.json.JSONObject(execute("POST", "/api/evolution/proposals/$proposalId/approve", JSONObject()))
+
+    /** Vorschlag ablehnen. */
+    suspend fun evolutionReject(proposalId: Long): org.json.JSONObject =
+        org.json.JSONObject(execute("POST", "/api/evolution/proposals/$proposalId/reject", JSONObject()))
 
     companion object {
         // Vorgabe: Hub auf dem Entwickler-Rechner, aus dem Android-Emulator

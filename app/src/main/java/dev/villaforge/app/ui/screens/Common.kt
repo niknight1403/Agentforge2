@@ -32,6 +32,7 @@ import dev.villaforge.app.ui.theme.Surface1
 import dev.villaforge.app.ui.theme.Surface2
 import dev.villaforge.app.ui.theme.TextMain
 import dev.villaforge.app.ui.theme.TextMuted
+import androidx.compose.ui.graphics.Brush
 import dev.villaforge.app.ui.theme.statusColor
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -72,11 +73,11 @@ internal fun Card(title: String, subtitle: String, badge: String, onClick: (() -
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(18.dp))
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .border(1.dp, dev.villaforge.app.ui.theme.Border, RoundedCornerShape(16.dp))
-            .background(Surface1)
-            .padding(18.dp)
+            .border(0.9.dp, Brush.linearGradient(listOf(dev.villaforge.app.ui.theme.NeonCyan.copy(alpha = 0.38f), dev.villaforge.app.ui.theme.NeonPink.copy(alpha = 0.24f))), RoundedCornerShape(18.dp))
+            .background(Surface2.copy(alpha = 0.88f))
+            .padding(14.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
@@ -96,9 +97,10 @@ internal fun RowCard(title: String, subtitle: String, badge: String, trailing: (
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Surface1)
-            .padding(16.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .border(0.7.dp, Brush.linearGradient(listOf(dev.villaforge.app.ui.theme.NeonCyan.copy(alpha = 0.26f), dev.villaforge.app.ui.theme.NeonPink.copy(alpha = 0.16f))), RoundedCornerShape(16.dp))
+            .background(Surface2.copy(alpha = 0.86f))
+            .padding(12.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
@@ -173,4 +175,3 @@ internal fun EventRow(event: VillaEvent) {
 
 internal fun time(ts: Long): String =
     SimpleDateFormat("HH:mm", Locale.GERMANY).format(Date(if (ts > 0) ts else System.currentTimeMillis()))
-

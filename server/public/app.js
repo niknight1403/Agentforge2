@@ -22,7 +22,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}), ...opts.headers };
   try {
-    const res = await fetch(path, { ...opts, headers, signal: opts.signal ?? AbortSignal.timeout(90000), body: opts.body ? JSON.stringify(opts.body) : undefined });
+    const { timeoutMs = 90000, ...fetchOpts } = opts;
+    const res = await fetch(path, { ...fetchOpts, headers, signal: opts.signal ?? AbortSignal.timeout(timeoutMs), body: opts.body ? JSON.stringify(opts.body) : undefined });
     const text = await res.text();
     let data; try { data = JSON.parse(text); } catch { data = { error: text || `HTTP ${res.status}` }; }
     if (!res.ok && !data.error) data.error = `HTTP ${res.status}`;
@@ -39,6 +40,7 @@ let packState = null;
 let eventSource = null;
 let workspaceOpener = null;
 let villaLoadSequence = 0;
+let sectionObserver = null;
 
 /* ---------------------------- Rueckmeldungen ---------------------------- */
 
@@ -117,6 +119,33 @@ function setMsg(sel, text, err = false) {
   if (!el) return;
   el.textContent = text;
   el.className = `msg${err ? ' err' : ''}`;
+}
+
+function setActiveSection(id) {
+  document.querySelectorAll('[data-nav-section]').forEach((link) => {
+    const active = link.dataset.navSection === id || (id === 'routesSection' && link.dataset.navSection === 'packsSection');
+    link.classList.toggle('active', active);
+    if (active) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  });
+  document.querySelectorAll('.topnav a[href^="#"]').forEach((link) => {
+    const active = link.getAttribute('href') === `#${id}`;
+    link.classList.toggle('active', active);
+    if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
+  });
+}
+
+function connectSectionNavigation() {
+  const sections = ['top', 'createSection', 'villaSection', 'packsSection', 'routesSection']
+    .map((id) => document.getElementById(id)).filter(Boolean);
+  if (!('IntersectionObserver' in window) || !sections.length) return;
+  sectionObserver?.disconnect();
+  sectionObserver = new IntersectionObserver((entries) => {
+    const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActiveSection(visible.target.id);
+  }, { rootMargin: '-18% 0px -62% 0px', threshold: [0.1, 0.35, 0.7] });
+  sections.forEach((section) => sectionObserver.observe(section));
+  document.querySelectorAll('[data-nav-section]').forEach((link) => link.addEventListener('click', () => setActiveSection(link.dataset.navSection)));
 }
 
 /* -------------------------- Hub-Gesundheit ---------------------------- */
@@ -213,7 +242,7 @@ async function createVilla() {
 function openWorkspace() {
   if ($('#detailPanel').hidden) workspaceOpener = document.activeElement;
   $('#detailPanel').hidden = false;
-  document.querySelectorAll('.topbar, .dashboard, body > footer').forEach((el) => { el.inert = true; });
+  document.querySelectorAll('.topbar, #mobileNav, .dashboard, body > footer').forEach((el) => { el.inert = true; });
   document.body.classList.add('workspace-open');
   setTimeout(() => $('#chatMsg')?.focus(), 80);
 }
@@ -221,7 +250,7 @@ function openWorkspace() {
 function closeWorkspace() {
   $('#detailPanel').hidden = true;
   document.body.classList.remove('workspace-open');
-  document.querySelectorAll('.topbar, .dashboard, body > footer').forEach((el) => { el.inert = false; });
+  document.querySelectorAll('.topbar, #mobileNav, .dashboard, body > footer').forEach((el) => { el.inert = false; });
   currentVilla = null;
   currentAgentId = null;
   (workspaceOpener?.isConnected ? workspaceOpener : $('#openLatestBtn')).focus();
@@ -734,14 +763,7 @@ document.querySelectorAll('.side-tab').forEach((t, index, tabs) => {
     selectTab(next.dataset.tab); next.focus();
   });
 });
-function syncNavigation() {
-  const hash = location.hash || '#top';
-  document.querySelectorAll('.topnav a').forEach((a) => {
-    const active = a.getAttribute('href') === hash;
-    a.classList.toggle('active', active);
-    if (active) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
-  });
-}
+function syncNavigation() { setActiveSection((location.hash || '#top').slice(1)); }
 window.addEventListener('hashchange', syncNavigation);
 syncNavigation();
 document.addEventListener('keydown', (e) => {
@@ -762,6 +784,6 @@ loadSecrets();
 loadPacks();
 loadTools();
 connectEvents();
+connectSectionNavigation();
 setInterval(checkHealth, 20000);
 setInterval(loadStats, 30000);
-

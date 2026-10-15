@@ -9,6 +9,7 @@
  */
 import { db, now } from './db.mjs';
 import { emit } from './events.mjs';
+import { enqueueVillas, configureScheduler } from './scheduler.mjs';
 
 export function pruneOldData({ days, dryRun = false } = {}) {
   const d = Number(days);
@@ -68,7 +69,9 @@ export function autoResumeQuotaVillas({ orchestrate, isRunning } = {}) {
         blocked.length + ' kontingent-blockierte Aufgabe(n) automatisch erneut gestartet', 1);
     emit('tasks_requeued', { villaId: id, count: blocked.length, auto: true });
     if (typeof orchestrate === 'function') {
-      orchestrate(id, { concurrency: 4, maxTasks: 500, adaptive: true, maxRounds: 6 }).catch(() => {});
+      // Ueber den Scheduler: respektiert die Slot-Grenze und den Fortschrittsrang.
+      configureScheduler({ start: (vid) => orchestrate(vid, { concurrency: 4, maxTasks: 500, adaptive: true, maxRounds: 6 }) });
+      enqueueVillas([id]);
     }
     out.resumed.push(id);
   }

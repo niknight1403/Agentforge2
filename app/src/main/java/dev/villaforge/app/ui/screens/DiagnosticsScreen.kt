@@ -57,6 +57,13 @@ fun DiagnosticsScreen(state: UiState, viewModel: MainViewModel) {
             TextButton(onClick = { viewModel.clearCache() }) { Text("Offline-Cache leeren") }
         }
 
+        SectionCard("Verbindungstest") {
+            Button(onClick = { viewModel.runConnectionTest() }, enabled = !state.connTestRunning) {
+                Text(if (state.connTestRunning) "Test laeuft ..." else "Verbindung testen")
+            }
+            state.connTest.forEach { Text(it, style = muted(), color = TextMuted) }
+        }
+
         androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.refreshSecrets() }
 
         SectionCard("Hub-Secrets") {

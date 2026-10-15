@@ -2,6 +2,8 @@ package dev.villaforge.app.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
+import dev.villaforge.app.core.SelectedVilla
 import androidx.lifecycle.viewModelScope
 import dev.villaforge.app.net.ChatMessage
 import dev.villaforge.app.net.HubClient
@@ -30,6 +32,8 @@ data class UiState(
     val lastRefresh: Long = 0L,
     val villas: List<Villa> = emptyList(),
     val detail: VillaDetail? = null,
+    val selectedVillaId: Long? = null,
+    val villaLoading: Boolean = false,
     val messages: List<ChatMessage> = emptyList(),
     /** Aktueller Chat-Partner (Agent-ID), null = Root/Deep Agent. */
     val chatAgentId: Long? = null,
@@ -59,14 +63,20 @@ data class UiState(
     val activity: List<dev.villaforge.app.net.ChatMessage>? = null,
     /** Analyse-Vorschlaege des Innovations-Scouts. */
     val proposals: org.json.JSONArray? = null,
+    /** Villa-Evolution: Status der offenen Villa samt ihrer Vorschlaege. */
+    val evolution: org.json.JSONObject? = null,
     /** Hub verlangt Anmeldung (HTTP 401 ohne gespeicherte Zugangsdaten): Login-Screen zeigen. */
-    val needsLogin: Boolean = false
+    val needsLogin: Boolean = false,
+    /** Ergebnis des Verbindungstests (Diagnose). */
+    val connTest: List<String> = emptyList(),
+    val connTestRunning: Boolean = false
 )
 
-class MainViewModel(app: Application) : AndroidViewModel(app) {
+class MainViewModel(app: Application, savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
 
+    private val selectedVilla = SelectedVilla(savedStateHandle)
     private val client = HubClient(app)
-    private val _state = MutableStateFlow(UiState(serverUrl = client.serverUrl))
+    private val _state = MutableStateFlow(UiState(serverUrl = client.serverUrl, selectedVillaId = selectedVilla.id))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     /** Live-Ereignisstrom des Hubs (SSE), mit automatischem Nachverbinden. */
@@ -80,6 +90,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         loadSnapshot()
         startEventStream()
         refreshAll()
+        retrySelectedVilla()
     }
 
     /** Nach Netzwerk-Fehlern automatisch neu verbinden (45 s), bis der Hub wieder antwortet. */
@@ -89,6 +100,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             delay(45_000)
             if (!_state.value.online) refreshAll()
         }
+    }
+
+    /** Fuehrt den Verbindungstest aus und zeigt jede Stufe mit genauer Ursache. */
+    fun runConnectionTest() = viewModelScope.launch {
+        _state.update { it.copy(connTestRunning = true, connTest = listOf("Test laeuft ...")) }
+        val lines = try { client.connectionTest() } catch (e: Exception) { listOf("Test-FEHLER: ${e.javaClass.simpleName}: ${e.message}") }
+        _state.update { it.copy(connTestRunning = false, connTest = lines) }
     }
 
     /** Misst die Hub-Antwortzeit und meldet sie als Nachricht. */
@@ -179,7 +197,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     _state.update { it.copy(error = e.message ?: "Unbekannter Fehler") }
                 }
             } catch (e: Exception) {
-                _state.update { it.copy(error = e.message ?: "Unbekannter Fehler") }
+                val reason = "${e.javaClass.simpleName}: ${e.message ?: "unbekannt"}"
+                _state.update { it.copy(error = "Hub nicht erreichbar ($reason)", healthText = "Fehler: ${e.javaClass.simpleName}") }
                 scheduleReconnect()
             } finally {
                 _state.update { it.copy(busy = false) }
@@ -292,15 +311,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(detail = refreshed, message = "Quellprojekt gespeichert") }
     }
 
-    fun openVilla(id: Long) = run {
-        val detail = client.villaDetail(id)
-        val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
-        val msgs = client.messages(id, rootId)
-        val prod = fetchProduct(id)
-        val build = fetchBuild(id)
-        val preview = fetchPreview(id)
-        _state.update {
-            it.copy(detail = detail, messages = msgs, product = prod, chatAgentId = rootId, build = build, preview = preview)
+    fun retrySelectedVilla() {
+        _state.value.selectedVillaId?.let { openVilla(it) }
+    }
+
+    fun openVilla(id: Long) {
+        if (id <= 0) return
+        selectedVilla.select(id)
+        _state.update { it.copy(selectedVillaId = id, villaLoading = true, detail = null, messages = emptyList(), error = null) }
+        run {
+            try {
+                val detail = client.villaDetail(id)
+                val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
+                val msgs = client.messages(id, rootId)
+                val prod = fetchProduct(id)
+                val build = fetchBuild(id)
+                val preview = fetchPreview(id)
+                _state.update {
+                    if (it.selectedVillaId != id) it
+                    else it.copy(detail = detail, messages = msgs, product = prod, chatAgentId = rootId, build = build, preview = preview)
+                }
+            } finally {
+                _state.update { if (it.selectedVillaId == id) it.copy(villaLoading = false) else it }
+            }
         }
     }
 
@@ -462,6 +495,39 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         refreshProposals()
     }
 
+    /* ---- Villa-Evolution: naechste Phasen, Perfektion, Marketplace je Villa ---- */
+
+    /** Evolutions-Status der offenen Villa laden (Stufe + offene Vorschlaege). */
+    fun refreshEvolution(villaId: Long) = run {
+        val evo = try { client.evolution(villaId) } catch (e: Exception) { null }
+        _state.update { it.copy(evolution = evo) }
+    }
+
+    /** Villa einen neuen Vorschlag erzeugen lassen. kind: NEXT_PHASES | PERFECT | MARKETPLACE. */
+    fun proposeEvolution(villaId: Long, kind: String) = run {
+        val r = client.evolutionPropose(villaId, kind)
+        val note = if (r.optBoolean("fallback", false))
+            "Vorschlag aus Standardplan (kein Modell erreichbar) - bitte pruefen"
+        else "Neuer Vorschlag mit ${r.optInt("items", 0)} Aufgaben erstellt"
+        _state.update { it.copy(message = note) }
+        refreshEvolution(villaId)
+    }
+
+    /** Vorschlag bestaetigen: Aufgaben legen an und die Villa entwickelt weiter. */
+    fun approveEvolution(villaId: Long, proposalId: Long) = run {
+        val r = client.evolutionApprove(proposalId)
+        _state.update { it.copy(message = "Bestätigt: ${r.optInt("added", 0)} neue Aufgaben - die Villa entwickelt weiter") }
+        refreshEvolution(villaId)
+        refreshDetail()
+    }
+
+    /** Vorschlag ablehnen. */
+    fun rejectEvolution(villaId: Long, proposalId: Long) = run {
+        client.evolutionReject(proposalId)
+        _state.update { it.copy(message = "Vorschlag abgelehnt") }
+        refreshEvolution(villaId)
+    }
+
     /** Aktualisiert Build-Status und Vorschau-Info der offenen Villa. */
     fun refreshBuild() = run {
         val detail = _state.value.detail ?: return@run
@@ -499,7 +565,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(routes = routes) }
     }
 
-    fun closeDetail() = _state.update { it.copy(detail = null, messages = emptyList(), product = null, chatAgentId = null, build = null, preview = null) }
+    fun closeDetail() {
+        selectedVilla.clear()
+        _state.update { it.copy(selectedVillaId = null, villaLoading = false, detail = null, messages = emptyList(), product = null, chatAgentId = null, build = null, preview = null) }
+    }
 
     /** Leert den Live-Ereignis-Feed. */
     fun clearEvents() = _state.update { it.copy(events = emptyList()) }

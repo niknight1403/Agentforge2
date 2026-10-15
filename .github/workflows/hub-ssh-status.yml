@@ -1,0 +1,53 @@
+name: Hub-SSH-Status
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'status oder restart'
+        default: 'status'
+        required: true
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Hub-Dienst auf der VM pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          ACTION: ${{ github.event.inputs.action }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/hubstatus.sh <<'CHK'
+          ACTION="$1"
+          echo "== Uptime/Load =="; uptime
+          echo "== Speicher =="; free -m | head -2
+          echo "== Platz =="; df -h / | tail -1
+          echo "== Dienste =="
+          systemctl list-units --type=service --no-legend 2>/dev/null | awk '{print $1,$3,$4}' | grep -iE 'hub|villaforge|ollama|nginx|sync'
+          HUB=$(systemctl list-units --type=service --all --no-legend | awk '{print $1}' | grep -iE '^(hub|villaforge)' | head -1)
+          echo "== Hub-Unit: ${HUB:-nicht gefunden} =="
+          [ -n "$HUB" ] && systemctl status "$HUB" --no-pager -n 0 | head -12
+          echo "== Lauschende Ports =="; ss -tlnp 2>/dev/null | grep -E ':(80|443|11434|12000|3000)\b' | awk '{print $4,$6}'
+          echo "== Lokaler Health :12000 =="; curl -s -m 10 -w "\nHTTP %{http_code} in %{time_total}s\n" http://127.0.0.1:12000/api/health | tail -c 400
+          echo "== Git-Stand/Remote auf der VM =="; for D in /opt/villaforge /opt/villaforge/..; do [ -d "$D/.git" ] && { cd "$D"; git remote -v | head -1; git log -1 --format='%h %s' | cut -c1-120; break; }; done
+          echo "== Gate in laufendem Code? =="; grep -c "VF_LLM_MAX_CONCURRENT" /opt/villaforge/server/llm.mjs 2>/dev/null || echo "0 (kein Gate)"
+          echo "== Drop-ins =="; ls /etc/systemd/system/villaforge-hub.service.d/ 2>/dev/null
+          echo "== DB-Groessen =="; DB=$(ls /opt/villaforge/server/data/villaforge.db* 2>/dev/null); ls -la $DB 2>/dev/null | awk '{print $5, $9}'
+          which sqlite3 >/dev/null 2>&1 || apt-get install -y -qq sqlite3 >/dev/null 2>&1
+          for T in villas agents tasks memories messages audit reports council; do printf "%s: " $T; sqlite3 /opt/villaforge/server/data/villaforge.db "select count(*) from $T" 2>&1; done
+          echo "== Tasks je Villa/Status =="; sqlite3 /opt/villaforge/server/data/villaforge.db "select villa_id, status, count(*) from tasks group by villa_id, status order by villa_id, status" 2>&1 | tr '\n' ' ' | fold -w 150
+          echo; echo "== Villen =="; sqlite3 /opt/villaforge/server/data/villaforge.db "select id,name,status,autonomy from villas" 2>&1
+          echo "== Indizes =="; sqlite3 /opt/villaforge/server/data/villaforge.db "select name from sqlite_master where type='index' and name not like 'sqlite_%'" 2>&1 | head -20
+          echo "== Hub-Log (letzte 25) =="; [ -n "$HUB" ] && journalctl -u "$HUB" -n 25 --no-pager 2>&1 | cut -c1-220
+          echo "== nginx-Fehlerlog =="; tail -n 8 /var/log/nginx/error.log 2>/dev/null | cut -c1-220
+          echo "== OOM/Kill-Spuren =="; dmesg 2>/dev/null | grep -iE 'out of memory|killed process' | tail -3
+          if [ "$ACTION" = "restart" ] && [ -n "$HUB" ]; then
+            echo "== NEUSTART $HUB =="; systemctl restart "$HUB"; sleep 8
+            curl -s -m 15 -w "\nHTTP %{http_code} in %{time_total}s\n" http://127.0.0.1:12000/api/health | tail -c 300
+          fi
+          CHK
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/hubstatus.sh ubuntu@92.5.177.159:/tmp/hubstatus.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/hubstatus.sh $ACTION"

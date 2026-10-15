@@ -165,6 +165,28 @@ const INLINE_EVAL = new Set(['-e', '--eval', '-c', '--command', '-p', '--print']
 // Argumente, die Netzwerk, Verkettung oder Ausbruch ermoeglichen.
 const FORBIDDEN_ARGS = /(\|\||&&|;|`|\$\(|>|<|(^|\s)(--registry|--index-url|--extra-index-url|--global|-g|--force|--unsafe-perm|--ignore-scripts)(\s|$))|(https?:\/\/|git@)/i;
 
+
+/**
+ * Globale Obergrenze fuer gleichzeitige Projektbefehle (npm/gradle/node ...).
+ * Jede Villa verifiziert ihr Projekt mit "npm run build" und "npm test"
+ * (bis 180 s). Ohne Grenze starten bei vielen Villen parallel dutzende
+ * Build-Prozesse und verdraengen auf wenigen Kernen den Hub und Ollama.
+ */
+const CMD_MAX = Math.max(1, Number(process.env.VF_CMD_MAX_CONCURRENT ?? 1) || 1);
+let cmdActive = 0;
+const cmdWaiting = [];
+function cmdAcquire() {
+  if (cmdActive < CMD_MAX) { cmdActive += 1; return Promise.resolve(); }
+  return new Promise((r) => cmdWaiting.push(r));
+}
+function cmdRelease() {
+  const next = cmdWaiting.shift();
+  if (next) next(); else cmdActive = Math.max(0, cmdActive - 1);
+}
+export function cmdGateStatus() {
+  return { max: CMD_MAX, active: cmdActive, queued: cmdWaiting.length };
+}
+
 /**
  * Fuehrt einen Befehl im Projektordner aus. Der Aufruf dient dem Bauen und
  * Testen, nicht dem Nachladen fremder Software.
@@ -203,21 +225,25 @@ export function runCommand(root, binary, args = [], timeoutMs = 120_000) {
     const cwd = resolve(root);
     if (!existsSync(cwd)) return resolvePromise({ ok: false, error: 'Projektordner fehlt' });
 
-    execFile(bin, list, {
-      cwd,
-      timeout: timeoutMs,
-      maxBuffer: 2_000_000,
-      env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV, CI: '1' }
-    }, (err, stdout, stderr) => {
-      const out = `${stdout || ''}${stderr || ''}`.trim();
-      const hint = err?.killed
-        ? `Zeitlimit ueberschritten (${timeoutMs} ms)`
-        : err ? String(err.message || err) : null;
-      resolvePromise({
-        ok: !err,
-        code: err?.code ?? 0,
-        output: out.slice(-6000),
-        error: hint ? hint.slice(0, 400) : null
+    // Das Zeitlimit zaehlt ab dem tatsaechlichen Start, nicht ab dem Warten.
+    cmdAcquire().then(() => {
+      execFile(bin, list, {
+        cwd,
+        timeout: timeoutMs,
+        maxBuffer: 2_000_000,
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV, CI: '1' }
+      }, (err, stdout, stderr) => {
+        cmdRelease();
+        const out = `${stdout || ''}${stderr || ''}`.trim();
+        const hint = err?.killed
+          ? `Zeitlimit ueberschritten (${timeoutMs} ms)`
+          : err ? String(err.message || err) : null;
+        resolvePromise({
+          ok: !err,
+          code: err?.code ?? 0,
+          output: out.slice(-6000),
+          error: hint ? hint.slice(0, 400) : null
+        });
       });
     });
   });

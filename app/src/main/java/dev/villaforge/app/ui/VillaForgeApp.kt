@@ -42,6 +42,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material3.TextButton
+import dev.villaforge.app.ui.components.EmptyState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -73,14 +77,23 @@ import dev.villaforge.app.ui.theme.TextMuted
  */
 private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, DEV, SETTINGS, DIAGNOSTICS }
 
-private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.DIAGNOSTICS, Screen.SETTINGS)
+private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.CHAT, Screen.DIAGNOSTICS, Screen.SETTINGS)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VillaForgeApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var screen by rememberSaveable { mutableStateOf(Screen.LIST) }
+    var screen by rememberSaveable { mutableStateOf(Screen.DASHBOARD) }
 
+    val openChat: () -> Unit = {
+        val target = state.villas.firstOrNull { it.status == "RUNNING" } ?: state.villas.firstOrNull()
+        if (target != null) { viewModel.openVilla(target.id); screen = Screen.CHAT }
+        else screen = Screen.LIST
+    }
+    LaunchedEffect(screen, state.selectedVillaId, state.detail) {
+        if (screen in listOf(Screen.DETAIL, Screen.CHAT, Screen.DEV) &&
+            state.selectedVillaId == null && state.detail == null) screen = Screen.LIST
+    }
     val goBack: () -> Unit = {
         when (screen) {
             Screen.CHAT, Screen.DEV -> screen = Screen.DETAIL
@@ -90,7 +103,8 @@ fun VillaForgeApp(viewModel: MainViewModel) {
     BackHandler(enabled = screen != Screen.LIST && !state.needsLogin, onBack = goBack)
     val destinations = listOf(
         Triple(Screen.LIST, Icons.Filled.Home, "Villen"),
-        Triple(Screen.DASHBOARD, Icons.Filled.Dashboard, "Mission"),
+        Triple(Screen.DASHBOARD, Icons.Filled.Dashboard, "Übersicht"),
+        Triple(Screen.CHAT, Icons.Filled.Chat, "Chat"),
         Triple(Screen.DIAGNOSTICS, Icons.Filled.HealthAndSafety, "Diagnose"),
         Triple(Screen.SETTINGS, Icons.Filled.Settings, "System")
     )
@@ -113,7 +127,10 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     destinations.forEach { (target, icon, label) ->
                         NavigationRailItem(
                             selected = screen == target,
-                            onClick = { viewModel.closeDetail(); screen = target },
+                            onClick = {
+                                if (target == Screen.CHAT) openChat()
+                                else { viewModel.closeDetail(); screen = target }
+                            },
                             icon = { Icon(icon, contentDescription = null) },
                             label = { Text(label) }
                         )
@@ -161,7 +178,10 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                             destinations.forEach { (target, icon, label) ->
                                 NavigationBarItem(
                                     selected = screen == target,
-                                    onClick = { viewModel.closeDetail(); screen = target },
+                                    onClick = {
+                                if (target == Screen.CHAT) openChat()
+                                else { viewModel.closeDetail(); screen = target }
+                            },
                                     icon = { Icon(icon, contentDescription = null) },
                                     label = { Text(label) }
                                 )
@@ -182,6 +202,15 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                 Box(Modifier.fillMaxSize().padding(padding)) {
                     if (state.needsLogin) {
                         LoginScreen(state, viewModel)
+                    } else if (screen in listOf(Screen.DETAIL, Screen.CHAT, Screen.DEV) && state.detail == null) {
+                        Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            EmptyState(
+                                title = if (state.villaLoading) "Projekt wird geladen" else "Projekt konnte nicht geladen werden",
+                                hint = state.error ?: "Der gespeicherte Entwicklungsraum wird vom Hub geladen."
+                            )
+                            if (!state.villaLoading) TextButton(onClick = { viewModel.retrySelectedVilla() }) { Text("Erneut versuchen") }
+                            TextButton(onClick = { viewModel.closeDetail(); screen = Screen.LIST }) { Text("Zu den Villen") }
+                        }
                     } else AnimatedContent(
                         targetState = screen,
                         transitionSpec = {
@@ -195,7 +224,19 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                                 viewModel.openVilla(id)
                                 screen = Screen.DETAIL
                             }
-                            Screen.DASHBOARD -> DashboardScreen(state, viewModel, onOpen = { id -> viewModel.openVilla(id); screen = Screen.DETAIL }) { screen = Screen.LIST }
+                            Screen.DASHBOARD -> DashboardScreen(
+                                state, viewModel,
+                                onOpen = { id -> viewModel.openVilla(id); screen = Screen.DETAIL },
+                                onBack = { screen = Screen.LIST }, onChat = openChat,
+                                onVillas = { viewModel.closeDetail(); screen = Screen.LIST },
+                                onDiagnostics = { screen = Screen.DIAGNOSTICS },
+                                onSettings = { screen = Screen.SETTINGS },
+                                onSuperagent = {
+                                    val target = state.villas.firstOrNull { it.status == "RUNNING" } ?: state.villas.firstOrNull()
+                                    if (target != null) { viewModel.openVilla(target.id); screen = Screen.DEV }
+                                    else screen = Screen.CREATE
+                                }
+                            )
                             Screen.CREATE -> CreateVillaScreen(state, viewModel) { id ->
                                 viewModel.openVilla(id)
                                 screen = Screen.CHAT

@@ -8,6 +8,53 @@ Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern
 auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
 das System immer lauffähig bleibt.
 
+## Neu in 1.32.0
+
+- **Ganzheitliches Cyber-Neon-Design**: Glas-Karten mit Neon-Gradient-Rändern
+  jetzt auf ALLEN Screens (Villen, Details, Chat, Fertigstellung, Diagnose,
+  Einstellungen) — einheitliches Control-Center-Gefühl statt Mix aus Stilen.
+- **Hub-Qualitätssprung (OpenHands-Muster)**: Fail-Fast-Verifikation — nach
+  jeder Code-Batch läuft sofort ein Build-/Testlauf statt erst am Rundenende;
+  Fehler werden im selben Lauf als Prio-1-Aufgabe selbst geheilt. Der
+  Phasen-Planer kennt jetzt die echten Baustellen (Lessons Learned).
+- **LLM-Kette repariert (alle Villen)**: Gemini Flash Lite (verifiziert
+  arbeitendes Gratis-Modell) auf Priorität 2, HuggingFace + OpenRouter-Keys
+  im Hub-Secrets-Store, Cooldowns zurückgesetzt — keine „Kein Sprachmodell
+  erreichbar"-Standardpläne mehr.
+
+## Neu in 1.31.0 — Cyber-Neon-Redesign der Übersicht
+
+- **Komplett neue Übersicht** im Control-Center-Design: Kopfzeile mit VillaForge-Logo
+  und Benachrichtigungs-Glocke, Profil-Sektion mit Neon-Ring und Status-Badges,
+  Kennzahlen-Chips (Agenten, Provider, Uptime), drei Einstiegskarten mit
+  Fortschrittsringen (Systemstatus, KI-Chat, Villen), Aktivitäts-Karte mit
+  Live-Badge und Marktreife-Sparkline sowie der Superagent-Banner mit direktem
+  Zugang zur Villa-Evolution.
+- **Neue Navigation**: Übersicht · Chat · Villen · Konto — die Übersicht ist jetzt
+  Startbildschirm; Chat öffnet direkt die aktivste Villa.
+- **Neue Design-Bausteine**: Glas-Karten mit Neon-Rand, Fortschrittsringe,
+  Sparklines und Status-Chips (`ui/components/Neon.kt`), Neon-Palette in Theme.
+- Mobile-optimiert: klare Hierarchie, größere Touch-Ziele, ein Blick pro Karte.
+
+## Neu in 1.30.0
+
+- **Villa-Evolution**: Jede Villa schlägt nach erledigten Aufgaben selbst vor,
+  wie es weitergeht. Ist alles abgeschlossen, erzeugt sie einen Vorschlag für
+  die **nächsten Phasen** (bestätigen → die Villa entwickelt eigenständig
+  weiter, bis alle nötigen Phasen fertig sind). Danach schlägt sie Schritte zur
+  **Perfektionierung und Optimierung** vor, bis das Projekt optimal fertig
+  ist. Zusätzlich bekommt jede Villa einen eigenen **AI-Marketplace-Vorschlag**
+  für ihr Projekt. Nichts startet ohne Bestätigung des Besitzers.
+- **Ehrliche Fertigstellung**: „Alle Phasen 100 %“ zählt nur, wenn der
+  Projektordner echte Dateien enthält. Bei leerem Workspace verlangt der
+  Vorschlag zwingend echte Code-Aufgaben — der Build-Fehler „Workspace ist
+  leer“ wird damit an der Wurzel behoben.
+- App: Neuer Bereich „Villa-Evolution“ in der Fertigstellungs-Ansicht mit
+  Vorschlags-Karten, Bestätigen/Ablehnen und drei Anstoß-Buttons.
+- Hub-Routen: `/api/evolution/villas/:id`, `.../propose`,
+  `/api/evolution/proposals/:id/approve|reject`, `/api/evolution/pending`,
+  `/api/evolution/tick`; automatischer Takt alle 30 Minuten.
+
 ## Neu in 1.12.0
 
 - **Feature- und Werkzeug-Packs** sind jetzt serverseitig die eine Wahrheit

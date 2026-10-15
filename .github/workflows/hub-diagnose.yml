@@ -1,0 +1,139 @@
+name: Hub-Diagnose
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Endpunkte mit Login messen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          H=https://hub.cybersarah-ki.com
+          echo "== health (ohne Login) =="
+          curl -s -m 30 -o /dev/null -w "health: HTTP %{http_code} in %{time_total}s\n" $H/api/health
+          echo "== login =="
+          RESP=$(curl -s -m 30 -w "\nHTTP %{http_code} in %{time_total}s" -X POST -H "Content-Type: application/json" \
+            -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" $H/api/auth/login)
+          echo "$RESP" | tail -1
+          TOK=$(echo "$RESP" | head -1 | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")
+          [ -z "$TOK" ] && { echo "KEIN TOKEN - Login fehlgeschlagen"; echo "$RESP" | head -1 | cut -c1-200; exit 0; }
+          for P in /api/villas /api/routes /api/stats /api/evolution/pending; do
+            curl -s -m 60 -o /tmp/r.json -w "$P: HTTP %{http_code} in %{time_total}s, %{size_download} Bytes\n" -H "Authorization: Bearer $TOK" $H$P
+          done
+          echo "== Ollama-Dienst direkt (lokal auf VM nicht erreichbar, daher ueber Hub-Routen) =="
+          curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/routes | python3 -c "
+          import json,sys
+          for r in json.load(sys.stdin): print(r['id'], r['name'][:34], '| prio', r['priority'], '| key', r.get('hasKey'), '| enabled', r.get('enabled'))"
+          echo "== Hub-Chat-Test (Ollama/Route, 90s Limit) =="
+          curl -s -m 90 -o /tmp/c.json -w "chat-probe: HTTP %{http_code} in %{time_total}s\n" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"Antworte nur mit: ok"}]}' $H/api/chat || true
+          head -c 300 /tmp/c.json; echo
+
+      - name: Ollama-Last auf der VM analysieren (SSH)
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/ollcheck.sh <<'CHK'
+          echo "== Load =="; uptime
+          echo "== Top 8 CPU =="; ps -eo pid,ppid,pcpu,pmem,etime,args --sort=-pcpu | head -9 | cut -c1-210
+          echo "== Ollama-Prozesse (Anzahl llama-server) =="; pgrep -fc llama-server || true
+          echo "== Ollama-Umgebung (Service) =="; systemctl cat ollama 2>/dev/null | grep -E "Environment|ExecStart" | cut -c1-200
+          echo "== Parallele Anfragen der letzten 3 Min nach Quelle/Pfad =="
+          journalctl -u ollama --since "3 min ago" --no-pager 2>/dev/null | grep -E "GIN" | awk -F'|' '{print $2,$4,$5}' | sort | uniq -c | sort -rn | head -8
+          echo "== Wer ruft Ollama? (Hub-Verbindungen auf 11434) =="; ss -tnp 2>/dev/null | grep 11434 | awk '{print $1,$5,$6}' | head -8
+          echo "== Hub-Log: letzte Zeilen =="; journalctl -u $(systemctl list-units --type=service --no-legend | awk '{print $1}' | grep -iE '^(hub|villaforge)' | head -1) -n 15 --no-pager 2>&1 | cut -c1-200
+          echo "== CPU-Info =="; lscpu | grep -E "Model name|^CPU\(s\)|Thread" | head -3
+          CHK
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/ollcheck.sh ubuntu@92.5.177.159:/tmp/ollcheck.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/ollcheck.sh"
+
+      - name: LLM-Kette durch den Hub testen + Vorschlags-Alter
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          python3 - << 'PROBE'
+          import json, time, urllib.request, os
+          BASE = "https://hub.cybersarah-ki.com"
+          def post(path, data, tok=None, timeout=120):
+              h = {"Content-Type": "application/json"}
+              if tok: h["Authorization"] = "Bearer " + tok
+              req = urllib.request.Request(BASE + path, headers=h, data=json.dumps(data).encode(), method="POST")
+              t0 = time.time()
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as r:
+                      return json.loads(r.read()), round(time.time()-t0, 1)
+              except urllib.error.HTTPError as e:
+                  return {"http": e.code, "body": e.read().decode()[:200]}, round(time.time()-t0, 1)
+              except Exception as e:
+                  return {"exception": str(e)[:160]}, round(time.time()-t0, 1)
+          def get(path, tok):
+              req = urllib.request.Request(BASE + path, headers={"Authorization": "Bearer " + tok})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.loads(r.read())
+          tok, dt = post("/api/auth/login", {"email": os.environ.get("VF_ADMIN_EMAIL",""), "password": os.environ.get("VF_ADMIN_PASSWORD","")}), None
+          tok = tok[0].get("token")
+          if not tok:
+              print("LLM-PROBE: LOGIN FEHLGESCHLAGEN"); raise SystemExit(0)
+          villas = get("/api/villas", tok)
+          v = villas[0] if isinstance(villas, list) and villas else None
+          print("LLM-PROBE Villa:", v.get("name") if v else "keine", "| Status:", v.get("status") if v else "-")
+          if v:
+              # Vorschlaege mit Alter (Standardplan?) - ist der Fehler alt oder aktuell?
+              try:
+                  evo = get("/api/evolution/villas/%d" % v.get("id"), tok)
+                  props = evo.get("pending") or evo.get("proposals") or []
+                  import datetime
+                  for p_ in (props if isinstance(props, list) else [])[:4]:
+                      ca = p_.get("createdAt") or p_.get("created_at") or 0
+                      age = "alt" if ca < 1792000000000 - 3600000 else "neu"
+                      print("VORSCHLAG:", p_.get("kind"), "| Titel:", str(p_.get("title"))[:40], "| Standardplan:", p_.get("standardPlan") or p_.get("standard_plan") or (p_.get("title") or "").find("Standardplan") >= 0, "| Alter:", age, "| created:", str(ca)[:13])
+              except Exception as ex:
+                  print("EVO-READ:", str(ex)[:120])
+              # echter Chat-Turn durch die Route-Kette
+              ans, dt = post("/api/villas/%d/chat" % v.get("id"), {"message": "Sag nur: ok - kein Werkzeug, keine Aufgabe."}, tok, 420)
+              print("CHAT-PROBE RAW:", json.dumps(ans)[:400], "| Dauer:", dt, "s")
+          PROBE
+
+      - name: Villa-Aufgaben-Status via DB
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/vstat.mjs << 'VSTAT'
+          import { DatabaseSync } from 'node:sqlite';
+          const db = new DatabaseSync('server/data/villaforge.db');
+          const v = db.prepare('SELECT id, name, status FROM villas WHERE name LIKE ?').get('%Tarn%');
+          if (!v) { console.log('KEINE VILLA'); process.exit(0); }
+          console.log('VILLA:', v.name, v.status);
+          const t = db.prepare('SELECT status, COUNT(*) c FROM tasks WHERE villa_id = ? GROUP BY status').all(v.id);
+          console.log('AUFGABEN:', JSON.stringify(t));
+          const last = db.prepare("SELECT title, status, substr(result,1,110) r, datetime(updated_at/1000, 'unixepoch') u FROM tasks WHERE villa_id = ? ORDER BY updated_at DESC LIMIT 5").all(v.id);
+          for (const x of last) console.log('[', x.status, x.u, 'UTC]', x.title, '=>', x.r);
+          VSTAT
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/vstat.mjs ubuntu@92.5.177.159:/tmp/vstat.mjs
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "cd /opt/villaforge && sudo -u root node /tmp/vstat.mjs"
+      - name: Workspace-Fortschritt der Villen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "echo '== Workspace-Dateien je Villa =='; for d in /opt/villaforge/workspace/*/; do n=\$(find \"\$d\" -type f -not -path '*/node_modules/*' 2>/dev/null | wc -l); echo \"\$n Dateien: \$(basename \"\$d\")\"; done; echo '== Neueste Dateien (Tarnsoftware) =='; find /opt/villaforge/workspace -type f -not -path '*/node_modules/*' -mmin -30 2>/dev/null | head -10"
+      - name: LLM-Kette direkt auf der VM (echtes llm.mjs + DB-Keys)
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "cd /opt/villaforge && sudo -u root node --input-type=module -e 'import(\"./server/llm.mjs\").then(async (m) => { const t0 = Date.now(); try { const r = await m.chat([{ role: \"user\", content: \"Antworte mit genau einem Wort: ok\" }], { strategy: \"ROTATE\", maxTokens: 20, timeoutMs: 90000 }); console.log(\"LLM-DIREKT ok in\" + (Date.now()-t0) + \"ms:\", JSON.stringify(r).slice(0, 300)); } catch (e) { console.log(\"LLM-DIREKT FEHLER nach\" + (Date.now()-t0) + \"ms:\", String(e).slice(0, 200)); } })'"

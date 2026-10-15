@@ -40,6 +40,15 @@ val Border = Color(0xFF2B3649)
 /** Marken-Verlauf fuer Header und Highlights. */
 val BrandGradient = Brush.linearGradient(listOf(Violet, Aqua))
 
+/* Cyber-Neon-Palette (v1.31.0, Control-Center-Design): leuchtende Akzente
+ * auf tiefem Nachtblau, Glas-Karten mit duennem Neon-Rand. */
+val NeonCyan = Color(0xFF00FFD1)
+val NeonPink = Color(0xFFFF3DDB) // leuchtendes Magenta
+val ElectricBlue = Color(0xFF00A3FF)
+val Glass = Color(0x1AFFFFFF)          // halbtransparentes Weiss fuer Glas-Flaechen
+val NeonGradient = Brush.linearGradient(listOf(NeonCyan, NeonPink))
+val CyanBlueGradient = Brush.linearGradient(listOf(NeonCyan, ElectricBlue))
+
 /** Semantische Statusfarbe: zentrale Abbildung Villen-/Aufgaben-/Agentenzustaende. */
 fun statusColor(status: String): Color = when {
     status == "RUNNING" || status == "läuft" -> Aqua
@@ -81,7 +90,7 @@ private val display = TextStyle(
 private val typography = Typography(
     displayLarge = display,
     displayMedium = display.copy(fontSize = 24.sp),
-    headlineSmall = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = TextMain),
+    headlineSmall = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.Bold, color = TextMain),
     titleLarge = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = TextMain),
     titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextMain),
     bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp, color = TextMain),
@@ -104,4 +113,3 @@ fun VillaForgeTheme(content: @Composable () -> Unit) {
         content = content
     )
 }
-

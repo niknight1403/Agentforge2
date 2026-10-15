@@ -37,3 +37,11 @@ Benötigt JDK 17, Gradle 8.7 und das Android-SDK. Die APK verwendet weiterhin di
 Hub-, Browser- und Android-Workflows laufen auch bei Pull Requests. Sie haben Zeitlimits, minimale Leserechte und brechen überholte Läufe ab. Android-Prüfberichte und Browser-Screenshots werden als Actions-Artefakte gesichert. Der APK-Workflow ruft keine echten LLM-Provider mehr auf.
 
 Lokal bestehen 187 Tests; Syntax und Secret-Scan sind grün. Der erste Actions-Lauf bestätigt zusätzlich Hub-Tests, Android Lint und Android-Unit-Tests sowie 18 Browser-Funktionsprüfungen und einen Design-Audit ohne Befunde bei vier Bildschirmbreiten. Die abschließenden Actions-Läufe prüfen den finalen Stand; die maßgeblichen Ergebnisse stehen direkt im Pull Request.
+
+## Fortsetzung: Abgleich mit aktuellem Hauptstand
+
+Die nachträglich hinzugekommenen Scheduler-, Diagnose-, Dashboard- und Neon-Komponenten aus `main` wurden mit den Studio- und Qualitätsänderungen zusammengeführt.
+
+Android speichert die ausgewählte Villa-ID über `SavedStateHandle`. Nach einer Prozesswiederherstellung wird das Projekt neu geladen, bevor Chat, Detail oder Entwicklung bedient werden können. Ladefehler bieten Wiederholung und Rückkehr zur Villenliste; ohne gültige Projekt-ID wird die Villenliste geöffnet. Ein später eintreffendes Ergebnis eines bereits geschlossenen oder gewechselten Projekts überschreibt die aktuelle Auswahl nicht.
+
+Drei Android-Regressionstests prüfen gespeicherte Auswahl, Projektwechsel, Schließen und ungültige ältere IDs. Die zusammengeführte Node-Suite umfasst 198 Tests. CI-Ergebnisse des aktuellen Commits stehen im Pull Request.

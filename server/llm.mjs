@@ -128,6 +128,49 @@ export function isUsable(route) {
   return !!resolveKey(route.key_env);
 }
 
+
+/**
+ * Globale Obergrenze fuer gleichzeitige LLM-Aufrufe (prozessweit).
+ *
+ * Ohne diese Grenze startet jede laufende Villa ihre eigenen parallelen
+ * Agenten: 11 Villen x 4 Agenten = 44 gleichzeitige Aufrufe gegen EIN Ollama
+ * (NUM_PARALLEL=1) auf 4 Kernen. Der Hub steht dann im Dauerstau, die
+ * Anfragen laufen in Timeouts, und selbst /api/health antwortet nicht mehr.
+ * Jetzt warten die Aufrufe in einer FIFO-Schlange; der Hub bleibt ansprechbar.
+ */
+const MAX_CONCURRENT = Math.max(1, Number(process.env.VF_LLM_MAX_CONCURRENT ?? 2) || 2);
+let activeCalls = 0;
+const waiting = [];
+
+function acquireSlot() {
+  if (activeCalls < MAX_CONCURRENT) {
+    activeCalls += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => waiting.push(resolve));
+}
+
+function releaseSlot() {
+  const next = waiting.shift();
+  if (next) next(); // Slot geht direkt an den naechsten Wartenden
+  else activeCalls = Math.max(0, activeCalls - 1);
+}
+
+/** Momentaufnahme fuer Health/Diagnose. */
+export function llmGateStatus() {
+  return { max: MAX_CONCURRENT, active: activeCalls, queued: waiting.length };
+}
+
+/** Fuehrt fn aus, sobald ein Slot frei ist (immer wieder freigegeben). */
+async function withSlot(fn) {
+  await acquireSlot();
+  try {
+    return await fn();
+  } finally {
+    releaseSlot();
+  }
+}
+
 async function callOpenAiCompatible(route, messages, opts) {
   // Key-Pool: bei erschöpftem Kontingent (429/402) rotiert der Aufruf auf den
   // nächsten hinterlegten Key derselben Route, bevor die Route kippt.
@@ -136,7 +179,7 @@ async function callOpenAiCompatible(route, messages, opts) {
   const order = ready.length ? ready : keys;
   let quotaErr = null;
   for (const k of order) {
-    const out = await fetchOnce(route, k, messages, opts);
+    const out = await withSlot(() => fetchOnce(route, k, messages, opts));
     if (out.ok) return out.data;
     if ((out.status === 429 || out.status === 402) && k.name) {
       coolKey(k.name);
