@@ -184,17 +184,18 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
           cat > /tmp/llmfix.mjs << 'EOF'
           import { DatabaseSync } from 'node:sqlite';
+          import { readFileSync } from 'node:fs';
+          const K = JSON.parse(readFileSync('/tmp/vfkeys.json', 'utf8'));
           const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
-          const K = JSON.parse(process.env.VF_KEYS);
           const t = Date.now();
-          // 1) Keys in den Secrets-Store (liest der Hub vor der Umgebung)
           for (const [name, value] of Object.entries(K)) {
             if (!value) continue;
             db.prepare('INSERT INTO secrets (name, value, updated_at) VALUES (?,?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at').run(name, value, t);
           }
-          // 2) Gemini-Route auf das verifiziert arbeitende Modell setzen (oder anlegen)
           const gem = db.prepare("SELECT id FROM routes WHERE name LIKE '%Gemini%' OR provider='gemini'").get();
           if (gem) {
             db.prepare('UPDATE routes SET base_url=?, model=?, key_env=?, provider=?, priority=2, enabled=1, fail=0, cooldown_until=0, status=? WHERE id=?')
@@ -203,20 +204,19 @@ jobs:
             db.prepare('INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, status) VALUES (?,?,?,?,?,1,1,2,?)')
               .run('Gemini Flash Lite (free tier)', 'gemini', 'https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-flash-lite-latest', 'GEMINI_API_KEY', 'ACTIVE');
           }
-          // 3) HuggingFace-Route aktivieren
           if (K.HF_TOKEN) {
             const hf = db.prepare("SELECT id FROM routes WHERE provider='huggingface' OR name LIKE '%Hugging%'").get();
             if (hf) db.prepare('UPDATE routes SET key_env=?, enabled=1, fail=0, cooldown_until=0, status=? WHERE id=?').run('HF_TOKEN', 'ACTIVE', hf.id);
           }
-          // 4) Frischer Start fuer alle Routen: Cooldowns/Fehlerzaehler zuruecksetzen
           db.prepare('UPDATE routes SET cooldown_until=0, fail=0').run();
           const rows = db.prepare('SELECT id, name, provider, model, priority, key_env, enabled, fail FROM routes ORDER BY priority').all();
           const stored = db.prepare('SELECT name FROM secrets').all().map(r => r.name);
           console.log('ROUTES ' + JSON.stringify(rows));
           console.log('SECRETS ' + JSON.stringify(stored));
           EOF
-          scp -q -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/llmfix.mjs ubuntu@92.5.177.159:/tmp/llmfix.mjs
-          bash -c 'exec ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo VF_KEYS='"'"'$(python3 -c "import json,os;print(json.dumps({"GEMINI_API_KEY":os.environ["VF_GEMINI_KEY"],"HF_TOKEN":os.environ["VF_HFTOKEN"],"OPENROUTER_API_KEY":os.environ["VF_OPENROUTER_KEY"]}))")'"'"' node /tmp/llmfix.mjs"'
+          python3 -c 'import json,os; json.dump({"GEMINI_API_KEY":os.environ.get("VF_GEMINI_KEY",""),"HF_TOKEN":os.environ.get("VF_HFTOKEN",""),"OPENROUTER_API_KEY":os.environ.get("VF_OPENROUTER_KEY","")}, open("/tmp/vfkeys.json","w"))'
+          scp -q -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/llmfix.mjs /tmp/vfkeys.json ubuntu@92.5.177.159:/tmp/
+          chmod +x /tmp/sshcmd && /tmp/sshcmd "sudo node /tmp/llmfix.mjs"
           echo "LLM-FIX-DURCH"
       - name: Modelle + Fast-Route (pull)
         if: ${{ github.event.inputs.mode == 'pull' }}
