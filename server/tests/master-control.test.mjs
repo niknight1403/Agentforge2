@@ -91,3 +91,9 @@ test('App-weite Verwaltung lehnt Nicht-Administratoren vor jedem Zugriff ab', as
  await service.handle({method:'POST'},{},new URL('http://localhost/api/master/chat'),()=>{throw new Error('body must not be read');},(_,status,body)=>{response={status,body};},false);
  assert.equal(response.status,403);assert.equal(db.prepare('SELECT COUNT(*) c FROM control_turns').get().c,0);
 });
+test('Ein unaufgeforderter Start verhindert den gesamten Plan vor der ersten Änderung',async()=>{
+ const id=villa();
+ const {service}=control([{type:'set_setting',args:{key:'suggestionCount',value:8}},{type:'start_villa',args:{villaId:id}}]);
+ const out=await service.turn({message:'Ändere das Vorschlagslimit',requestId:'no-implicit-start-123'});
+ assert.equal(out.ok,false);assert.equal(out.steps.length,0);assert.equal(getSetting('suggestionCount'),4);
+});

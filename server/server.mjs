@@ -259,7 +259,7 @@ async function api(req, res, url) {
       version: VERSION,
       ts: now(),
       uptimeSec: Math.round(process.uptime()),
-      villas: count('villas'),
+      villas: one("SELECT COUNT(*) c FROM villas WHERE status != 'ARCHIVED'").c,
       agents: count('agents'),
       tasks: {
         total: count('tasks'),

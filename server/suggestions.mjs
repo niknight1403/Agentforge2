@@ -11,7 +11,7 @@ export function suggestions(villaId = null, isRunning = () => false) {
   if (villaId != null) {
     const villa = db.prepare('SELECT * FROM villas WHERE id=? AND status != ?').get(villaId, 'ARCHIVED');
     if (!villa) return [];
-    const failed = db.prepare("SELECT id,title FROM tasks WHERE villa_id=? AND status='FAILED' ORDER BY priority,id LIMIT 1").get(villaId);
+    const failed = db.prepare("SELECT id,title FROM tasks WHERE villa_id=? AND status IN ('FAILED','BLOCKED') ORDER BY priority,id LIMIT 1").get(villaId);
     if (failed) add('repair', 'Fehler gezielt beheben', `Aufgabe #${failed.id} ist fehlgeschlagen.`, `Analysiere den Fehler in Aufgabe #${failed.id} „${failed.title}“. Behebe die Ursache und prüfe das Ergebnis.`, failed.id);
     const pending = db.prepare("SELECT id,title,description FROM tasks WHERE villa_id=? AND status IN ('PENDING','READY') ORDER BY priority,id LIMIT 12").all(villaId);
     const seen = new Set();

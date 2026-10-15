@@ -178,6 +178,8 @@ export function createMasterControl(deps) {
       for (const a of validated) {
         if (a.type === 'archive_duplicates' && (!/dopp|dubletten|duplik/i.test(message) || !/archivier|bereinig|aufräum|aufraeum|entfern|rausnehm/i.test(message))) throw new Error('Dubletten nur auf ausdrücklichen Bereinigungsauftrag archivieren.');
         if (a.type === 'start_villa' && !/start|fortsetz|weiterlaufen|resume/i.test(message)) throw new Error('Ein Start benötigt einen ausdrücklichen Startwunsch.');
+      }
+      for (const a of validated) {
         try { steps.push(await execute(a)); }
         catch (error) { steps.push({type:a.type,ok:false,error:error.message}); break; }
       }

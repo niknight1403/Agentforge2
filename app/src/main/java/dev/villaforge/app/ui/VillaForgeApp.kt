@@ -232,11 +232,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                                 onVillas = { viewModel.closeDetail(); screen = Screen.LIST },
                                 onDiagnostics = { screen = Screen.DIAGNOSTICS },
                                 onSettings = { screen = Screen.SETTINGS },
-                                onSuperagent = {
-                                    val target = state.villas.firstOrNull { it.status == "RUNNING" } ?: state.villas.firstOrNull()
-                                    if (target != null) { viewModel.openVilla(target.id); screen = Screen.DEV }
-                                    else screen = Screen.CREATE
-                                }
+                                onSuperagent = { screen = Screen.MASTER }
                             )
                             Screen.CREATE -> CreateVillaScreen(state, viewModel) { id ->
                                 viewModel.openVilla(id)
