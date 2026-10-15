@@ -253,7 +253,10 @@ function closeWorkspace() {
   document.querySelectorAll('.topbar, #mobileNav, .dashboard, body > footer').forEach((el) => { el.inert = false; });
   currentVilla = null;
   currentAgentId = null;
-  (workspaceOpener?.isConnected ? workspaceOpener : $('#openLatestBtn')).focus();
+  const fallback = $('#openLatestBtn');
+  const target = workspaceOpener?.isConnected && workspaceOpener.getClientRects().length ? workspaceOpener : fallback;
+  target?.focus();
+  if (document.activeElement !== target) fallback?.focus();
 }
 
 async function openVilla(id) {
@@ -267,7 +270,7 @@ async function openVilla(id) {
   $('#dName').textContent = data.villa.name;
   $('#dIdea').textContent = data.villa.idea;
   renderAll(data);
-  renderSuggestions(data);
+  await renderSuggestions(data);
   await loadChat(id);
   $('#chatMsg').focus();
 }
@@ -309,15 +312,15 @@ function renderStats(d) {
 
 }
 
-function renderSuggestions(d) {
+async function renderSuggestions(d) {
   const tasks = d.tasks || [];
-  const open = tasks.filter((t) => ['PENDING', 'READY'].includes(t.status)).slice(0, 2);
-  const suggestions = [
-    { label: 'Plan schärfen', text: 'Prüfe den aktuellen Plan, nenne die drei wichtigsten Risiken und schlage konkrete Verbesserungen vor.' },
-    { label: 'Nächsten Schritt', text: open[0] ? `Bearbeite jetzt die Aufgabe: ${open[0].title}. Liefere ein prüfbares Ergebnis.` : 'Welche konkrete Aufgabe sollten wir als Nächstes umsetzen?' },
-    { label: 'Umsatzchance', text: 'Bewerte Zielgruppe, Preismodell und die schnellste realistische Umsatzchance für dieses Projekt.' }
+  const fallback = [
+    { title: 'Plan schärfen', prompt: 'Prüfe den aktuellen Plan, nenne die drei wichtigsten Risiken und schlage konkrete Verbesserungen vor.', rationale: 'Projektqualität erhöhen' },
+    { title: 'Nächsten Schritt', prompt: tasks.find((t) => ['PENDING', 'READY'].includes(t.status))?.title || 'Welche konkrete Aufgabe sollten wir als Nächstes umsetzen?', rationale: 'Arbeitsfluss fortsetzen' }
   ];
-  $('#suggestionList').innerHTML = suggestions.map((s) => `<button type="button" class="suggestion" data-prompt="${esc(s.text)}"><span>${esc(s.label)} ↗</span>${esc(s.text.slice(0, 72))}…</button>`).join('');
+  const out = await api(`/api/villas/${d.villa.id}/suggestions`);
+  const suggestions = Array.isArray(out) && out.length ? out : fallback;
+  $('#suggestionList').innerHTML = suggestions.map((s) => `<button type="button" class="suggestion" data-prompt="${esc(s.prompt)}"><span>${esc(s.title)} ↗</span>${esc(s.rationale || s.prompt.slice(0, 72))}</button>`).join('');
   document.querySelectorAll('.suggestion').forEach((b) => b.addEventListener('click', () => { $('#chatMsg').value = b.dataset.prompt; $('#chatMsg').focus(); }));
 }
 
@@ -419,7 +422,7 @@ async function refreshCurrent() {
   if (data.error) return;
   currentVilla = data;
   renderAll(data);
-  renderSuggestions(data);
+  await renderSuggestions(data);
   loadVillas();
 }
 
@@ -702,6 +705,33 @@ async function importVillaFile() {
   }
 }
 
+/* -------------------------- Globaler Master-Agent ----------------------- */
+function renderMasterMessages(messages) {
+  const log = $('#masterChatLog');
+  if (!log) return;
+  log.innerHTML = Array.isArray(messages) && messages.length
+    ? messages.map((m) => `<div class="bubble ${m.role === 'user' ? 'user' : 'assistant'}"><span class="meta">${m.role === 'user' ? 'Du' : 'Master Agent'}</span>${esc(m.content)}</div>`).join('')
+    : '<div class="bubble assistant"><span class="meta">Master Agent · bereit</span>Ich kann die gesamte VillaForge-Konfiguration steuern. Frage mich nach Status, Duplikaten, Vorschlägen, Villen, Packs oder Connectoren.</div>';
+  log.scrollTop = log.scrollHeight;
+}
+async function loadMasterChat() {
+  const messages = await api('/api/master/messages?limit=40');
+  if (!messages.error) renderMasterMessages(messages);
+}
+async function sendMasterChat(text = $('#masterChatMsg')?.value.trim()) {
+  if (!text) return;
+  $('#masterChatMsg').value = '';
+  const log = $('#masterChatLog');
+  log.insertAdjacentHTML('beforeend', `<div class="bubble user"><span class="meta">Du</span>${esc(text)}</div><div class="bubble assistant"><span class="meta">Master Agent · arbeitet …</span>Konfiguration wird geprüft …</div>`);
+  log.scrollTop = log.scrollHeight;
+  const out = await api('/api/master/chat', { method: 'POST', body: { message: text }, timeoutMs: 120000 });
+  if (out.error) { toast(`Master-Agent: ${out.error}`, 'err'); await loadMasterChat(); return; }
+  setMsg('#masterMsg', out.answer || 'Aktion verarbeitet.');
+  await loadMasterChat();
+  await Promise.all([loadVillas(), loadStats(), loadPacks()]);
+  if (out.villaId) openVilla(out.villaId);
+}
+
 /* -------------------------------- Tabs -------------------------------- */
 
 function selectTab(tab) {
@@ -738,6 +768,9 @@ $('#startBtn').addEventListener('click', startDevelopment);
 $('#stopBtn').addEventListener('click', stopDevelopment);
 $('#sendBtn').addEventListener('click', sendChat);
 $('#chatMsg').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); } });
+$('#masterSendBtn').addEventListener('click', () => sendMasterChat());
+$('#masterChatMsg').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMasterChat(); } });
+document.querySelectorAll('[data-master-prompt]').forEach((b) => b.addEventListener('click', () => sendMasterChat(b.dataset.masterPrompt)));
 $('#addRouteBtn').addEventListener('click', addRoute);
 $('#addSecretBtn').addEventListener('click', addSecret);
 $('#saveTokenBtn').addEventListener('click', saveToken);
@@ -785,5 +818,6 @@ loadPacks();
 loadTools();
 connectEvents();
 connectSectionNavigation();
+loadMasterChat();
 setInterval(checkHealth, 20000);
 setInterval(loadStats, 30000);

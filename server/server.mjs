@@ -16,6 +16,9 @@ import { pruneOldData, autoResumeQuotaVillas } from './maintenance.mjs';
 import { runCouncil, listCouncil, autoCouncil } from './council.mjs';
 import { packState, packSummary, setPackEnabled, packEnabled } from './packs.mjs';
 import { VERSION } from './version.mjs';
+import { duplicateSummary, removeDuplicates } from './villa-dedupe.mjs';
+import { villaSuggestions } from './suggestions.mjs';
+import { masterChat, masterMessages, masterState, setConnector } from './master-agent.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -430,6 +433,38 @@ async function api(req, res, url) {
     const result = await createVilla(v.value);
     log('Villa angelegt:', result.villaId, `"${v.value.name}"`);
     return json(res, 201, result);
+  }
+  // Duplikate zuerst nur analysieren; das Löschen akzeptiert ausschließlich
+  // IDs aus der aktuellen Vorschau und verlangt apply=true.
+  if (p === '/api/villas/duplicates' && m === 'GET') {
+    return json(res, 200, duplicateSummary());
+  }
+  if (p === '/api/villas/duplicates' && m === 'POST') {
+    const b = await readBody(req);
+    if (b?.apply !== true) return json(res, 200, { ok: true, dryRun: true, ...duplicateSummary() });
+    const out = removeDuplicates(b.ids, { isRunning });
+    emit('villas_deduplicated', { removed: out.applied.map((v) => v.id), skipped: out.skipped });
+    return json(res, 200, { ok: true, dryRun: false, result: out, summary: duplicateSummary() });
+  }
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'suggestions' && m === 'GET') {
+    const id = Number(parts[2]);
+    if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
+    return json(res, 200, villaSuggestions(id));
+  }
+  // Globaler Master-Agent: kein Villa-Kontext nötig, aber alle Antworten und
+  // Konfigurationsaktionen bleiben im eigenen Verlauf nachvollziehbar.
+  if (p === '/api/master/state' && m === 'GET') return json(res, 200, masterState());
+  if (p === '/api/master/messages' && m === 'GET') return json(res, 200, masterMessages(url.searchParams.get('limit')));
+  if (p === '/api/master/chat' && m === 'POST') {
+    const b = await readBody(req);
+    const out = await masterChat(b?.message, { isRunning });
+    return json(res, out.error ? 400 : 200, out);
+  }
+  if (parts[0] === 'api' && parts[1] === 'master' && parts[2] === 'connectors' && parts[3] && m === 'PATCH') {
+    const b = await readBody(req);
+    if (typeof b.enabled !== 'boolean') return json(res, 400, { error: 'enabled muss true oder false sein' });
+    const out = setConnector(parts[3], b.enabled);
+    return json(res, out.ok ? 200 : 404, out);
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'council' && m === 'GET') {
     return json(res, 200, listCouncil(Number(parts[2]), 10));

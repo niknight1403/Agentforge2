@@ -962,3 +962,13 @@ input::placeholder, textarea::placeholder { color: #97a5ba; }
   .topnav { order: 3; width: 100%; justify-content: center; }
   .status { margin-left: auto; min-width: 0; }
 }
+.master-panel { border-color: rgba(139,108,255,.35); background: linear-gradient(135deg, rgba(28,24,70,.78), rgba(8,18,36,.82)); }
+.master-chat-log { min-height: 120px; max-height: 260px; margin: 14px 0; }
+.master-quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.master-quick-actions .ghost { min-height: 44px; }
+@media (max-width: 640px) {
+  .master-panel { padding: 14px; }
+  .master-chat-log { max-height: 230px; }
+  .master-quick-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .master-quick-actions .ghost:last-child { grid-column: 1 / -1; }
+}

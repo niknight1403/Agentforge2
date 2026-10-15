@@ -45,6 +45,22 @@
       <div class="hero-visual" aria-hidden="true"><div class="hero-orb"><div class="orb-core">✦</div></div><span class="orbit-label">PLANEN · BAUEN · PRÜFEN</span></div>
     </section>
 
+    <section id="masterSection" class="panel-glass master-panel">
+      <div class="section-heading"><div><p class="eyebrow">MASTER AGENT</p><h2>Die ganze VillaForge-App steuern</h2></div><span class="section-count">00</span></div>
+      <p class="hint">Villen anlegen, Duplikate prüfen, Vorschläge verbessern und Packs oder Connector-Zustände konfigurieren – in einem klaren globalen Chat.</p>
+      <div id="masterChatLog" class="chat-log master-chat-log" role="log" aria-live="polite" aria-label="Master-Agent-Verlauf"></div>
+      <div class="chat-input">
+        <textarea id="masterChatMsg" aria-label="Nachricht an den Master Agent" rows="2" placeholder="z. B. Status anzeigen oder Villa erstellen, Name: …, Idee: …"></textarea>
+        <button id="masterSendBtn" class="send-button" type="button" aria-label="Master-Agent-Nachricht senden">↑</button>
+      </div>
+      <div class="master-quick-actions" aria-label="Master-Agent-Schnellaktionen">
+        <button type="button" class="ghost compact" data-master-prompt="Status und aktive Konfiguration anzeigen">Status</button>
+        <button type="button" class="ghost compact" data-master-prompt="Doppelte Villen anzeigen">Duplikate prüfen</button>
+        <button type="button" class="ghost compact" data-master-prompt="Welche Verbesserungen sind als Nächstes sinnvoll?">Optimierungsvorschläge</button>
+      </div>
+      <p id="masterMsg" class="msg" role="status" aria-live="polite"></p>
+    </section>
+
     <section class="metric-grid" aria-label="Systemübersicht">
       <article class="metric-card"><span class="metric-icon purple" aria-hidden="true">⌘</span><div><b id="metricVillas">—</b><small>Villen</small></div></article>
       <article class="metric-card"><span class="metric-icon cyan" aria-hidden="true">◈</span><div><b id="metricAgents">—</b><small>Agenten im Pool</small></div></article>

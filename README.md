@@ -374,7 +374,14 @@ POST   /api/villas/:id/orchestrate    { concurrency, maxTasks, adaptive } – En
 POST   /api/villas/:id/stop           Entwicklung stoppen
 GET    /api/villas/:id/messages?agentId=
 POST   /api/villas/:id/chat           { message, agentId }
+GET    /api/villas/:id/suggestions    datenbasierte nächste Schritte für die Villa
+GET    /api/villas/duplicates         Duplikat-Gruppen als sichere Vorschau
+POST   /api/villas/duplicates         { apply: true, ids: [...] } – nur bestätigte Kandidaten löschen
 POST   /api/agents/:id/chat           { message }
+GET    /api/master/state              globale Villen-, Pack- und Connector-Übersicht
+GET    /api/master/messages           globaler Master-Agent-Verlauf
+POST   /api/master/chat               { message } – App-Konfiguration per natürlicher Sprache
+PATCH  /api/master/connectors/:id     { enabled } – Connector-Zustand verwalten
 GET    /api/routes
 POST   /api/routes                    { name, provider, baseUrl, model, keyEnv, priority }
 PATCH  /api/routes/:id                { enabled, priority }
