@@ -370,7 +370,7 @@ GET    /api/villas/:id/audit           ?limit=, ?offset= – Werkzeug-Protokoll 
 POST   /api/villas/:id/source         { path } – Quellprojekt hinterlegen
 POST   /api/villas/:id/analyze        Projekt analysieren, Bericht + REBUILD/OPTIMIZE
 GET    /api/villas/:id/reports        Analyse- und Verifikationsberichte
-POST   /api/villas/:id/orchestrate    { concurrency, maxTasks, adaptive } – Entwicklung starten
+POST   /api/villas/:id/orchestrate    { concurrency, maxTasks, adaptive } – Entwicklung starten; manuelle Starts laufen durch den Villa-Scheduler
 POST   /api/villas/:id/stop           Entwicklung stoppen
 GET    /api/villas/:id/messages?agentId=
 POST   /api/villas/:id/chat           { message, agentId }
@@ -393,6 +393,12 @@ GET    /api/tool-packs                Werkzeug-Packs kompakt (fuer App und UI)
 PATCH  /api/packs/:id                 { enabled } – Pack schalten (sperrt/freigibt Werkzeuge)
 GET    /api/events                    Server-Sent Events
 ```
+
+Manuelle Starts werden standardmäßig auf `VF_VILLA_SLOTS` gleichzeitige Villen
+begrenzt (Vorgabe: 2). Weitere Villen bleiben sichtbar in der Warteschlange und
+rücken automatisch nach, sobald ein Slot frei wird. Die Web-Oberfläche zeigt
+Empfehlungen aus Aufgabenstatus, Fehlern, Fortschritt, Agentenauslastung,
+Quellprojekt, Berichten und dem letzten Chat-Kontext.
 
 ## Android-App (`app/`)
 

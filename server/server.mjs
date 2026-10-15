@@ -8,7 +8,7 @@ import { seedRoutes, syncCatalog } from './seed.mjs';
 import { validateRoute, validateSecret, validateVilla, validateVillaPatch, validateTaskPatch, TASK_STATUSES, validateMessage, validateOrchestrate } from './validate.mjs';
 import { chat, enabledRoutes, resolveKey, keyStatus, keyPools, llmGateStatus } from './llm.mjs';
 import { cmdGateStatus, projectSummary, projectTree, searchProject, readProjectFile, runCommand, ALLOWED } from './fs-tools.mjs';
-import { schedulerStatus, villaRanking } from './scheduler.mjs';
+import { schedulerStatus, villaRanking, configureScheduler, enqueueVillas } from './scheduler.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, listRunning, toolSpecs, memoryContext, setSource, analyzeProject, importVilla, sourceRoot } from './agents.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { bus, emit, eventsSince } from './events.mjs';
@@ -616,13 +616,8 @@ async function api(req, res, url) {
     if (isRunning(id)) return json(res, 202, { ok: true, alreadyRunning: true });
     const check = validateOrchestrate(b);
     if (!check.ok) return json(res, 400, { error: check.error });
-    orchestrate(id, {
-      concurrency: check.value.concurrency ?? 4,
-      maxTasks: check.value.maxTasks ?? 500,
-      adaptive: check.value.adaptive ?? true,
-      maxRounds: check.value.maxRounds ?? 6
-    }).catch(() => {});
-    return json(res, 202, { ok: true, started: true });
+    const schedule = enqueueVillas([id]);
+    return json(res, 202, { ok: true, started: schedule.active.includes(id), queued: !schedule.active.includes(id), scheduler: schedule });
   }
   // Gescheiterte Aufgabe zurueck in die Warteschlange und den Lauf fortsetzen.
   // Nach einem Offline-Durchhaenger (PAUSED mit FAILED-Aufgaben) ist das der
@@ -739,6 +734,11 @@ server.listen(PORT, HOST, () => {
   log(`UI:      http://localhost:${PORT}/`);
   log(`Health:  http://localhost:${PORT}/api/health`);
   if (API_TOKEN) log('API-Schutz aktiv (VF_TOKEN gesetzt).');
+
+  // Auch manuelle UI/API-Starts laufen durch dieselbe Slotbegrenzung wie
+  // Wiederaufnahmen. Dadurch überlasten vier gleichzeitige Villen den Hub
+  // nicht: standardmäßig arbeiten zwei, die übrigen warten nach Fortschritt.
+  configureScheduler({ start: (id) => orchestrate(id, { concurrency: 4, maxTasks: 500, adaptive: true, maxRounds: 6 }) });
 
   // Nach einem Neustart unterbrochene Laeufe fortsetzen (nur wenn erlaubt).
   if (process.env.VF_RESUME !== '0') {

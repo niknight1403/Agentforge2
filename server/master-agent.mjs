@@ -1,8 +1,7 @@
 import { db, now } from './db.mjs';
 import { createVilla } from './agents.mjs';
-import { packState, packSummary, setPackEnabled, TOOL_PACKS } from './packs.mjs';
+import { packState, setPackEnabled, TOOL_PACKS } from './packs.mjs';
 import { duplicateSummary, removeDuplicates } from './villa-dedupe.mjs';
-import { villaSuggestions } from './suggestions.mjs';
 
 const CONNECTORS = [
   { id: 'github', title: 'GitHub', kind: 'repository', description: 'Repositories, Branches, Pull Requests und Releases' },

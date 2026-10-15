@@ -320,7 +320,7 @@ async function renderSuggestions(d) {
   ];
   const out = await api(`/api/villas/${d.villa.id}/suggestions`);
   const suggestions = Array.isArray(out) && out.length ? out : fallback;
-  $('#suggestionList').innerHTML = suggestions.map((s) => `<button type="button" class="suggestion" data-prompt="${esc(s.prompt)}"><span>${esc(s.title)} ↗</span>${esc(s.rationale || s.prompt.slice(0, 72))}</button>`).join('');
+  $('#suggestionList').innerHTML = suggestions.map((s) => `<button type="button" class="suggestion" data-prompt="${esc(s.prompt)}"><span class="suggestion-title"><b>${esc(s.title)}</b><em>${esc(s.category || 'Empfehlung')} · ${esc(String(s.priority || ''))}</em></span><span class="suggestion-rationale">${esc(s.rationale || s.prompt.slice(0, 72))}</span>${Array.isArray(s.context) && s.context.length ? `<small>${esc(s.context.slice(0, 2).join(' · '))}</small>` : ''}</button>`).join('');
   document.querySelectorAll('.suggestion').forEach((b) => b.addEventListener('click', () => { $('#chatMsg').value = b.dataset.prompt; $('#chatMsg').focus(); }));
 }
 

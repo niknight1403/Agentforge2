@@ -515,7 +515,10 @@ footer {
   line-height: 1.4;
   background: rgba(31, 38, 73, 0.7);
 }
-.suggestion span { display: block; color: var(--cyan); font-size: var(--text-xs); margin-bottom: 3px; }
+.suggestion-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--cyan); font-size: var(--text-xs); margin-bottom: 4px; }
+.suggestion-title em { color: var(--muted); font-style: normal; font-size: 11px; white-space: nowrap; }
+.suggestion-rationale { display: block; color: var(--text); }
+.suggestion small { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; overflow-wrap: anywhere; }
 
 .side-tab {
   display: flex;
