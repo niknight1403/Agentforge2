@@ -98,6 +98,14 @@ jobs:
                   print("EVO-READ:", str(ex)[:120])
               # echter Chat-Turn durch die Route-Kette
               ans, dt = post("/api/villas/%d/chat" % v.get("id"), {"message": "Sag nur: ok - kein Werkzeug, keine Aufgabe."}, tok, 420)
-              print("CHAT-PROBE: Route:", ans.get("route") or ans.get("http"), "| Modell:", ans.get("model"), "| offline:", ans.get("offline"), "| Dauer:", dt, "s")
-              print("CHAT-ANTWORT:", str(ans.get("answer"))[:200])
+              print("CHAT-PROBE RAW:", json.dumps(ans)[:400], "| Dauer:", dt, "s")
           PROBE
+
+      - name: LLM-Kette direkt auf der VM (echtes llm.mjs + DB-Keys)
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "cd /opt/villaforge && sudo -u root node --input-type=module -e 'import(\"./server/llm.mjs\").then(async (m) => { const t0 = Date.now(); try { const r = await m.chat([{ role: \"user\", content: \"Antworte mit genau einem Wort: ok\" }], { strategy: \"ROTATE\", maxTokens: 20, timeoutMs: 90000 }); console.log(\"LLM-DIREKT ok in\" + (Date.now()-t0) + \"ms:\", JSON.stringify(r).slice(0, 300)); } catch (e) { console.log(\"LLM-DIREKT FEHLER nach\" + (Date.now()-t0) + \"ms:\", String(e).slice(0, 200)); } })'"
