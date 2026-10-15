@@ -1,0 +1,39 @@
+name: villa-failures
+on:
+  workflow_dispatch:
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Feinanalyse fehlgeschlagener Aufgaben
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/fails.js <<'JS'
+          const { DatabaseSync } = require("node:sqlite");
+          const db = new DatabaseSync("/opt/villaforge/server/data/villaforge.db");
+          const DAY = 24 * 60 * 60 * 1000;
+          const now = Date.now();
+          const hot = db.prepare("SELECT villa_id, COUNT(*) c FROM tasks WHERE status = 'FAILED' AND updated_at > ? GROUP BY villa_id HAVING c >= 2").all(now - DAY);
+          for (const h of hot) {
+            const v = db.prepare("SELECT name FROM villas WHERE id = ?").get(h.villa_id);
+            console.log("== VILLA", h.villa_id, v ? v.name : "?", "-", h.c, "Fehlschlaege (24 h)");
+            const fails = db.prepare("SELECT title, substr(result, 1, 120) r, updated_at FROM tasks WHERE villa_id = ? AND status = 'FAILED' AND updated_at > ? ORDER BY updated_at DESC LIMIT 5").all(h.villa_id, now - DAY);
+            for (const f of fails) console.log("  FAIL:", f.title, "|", (f.r || "").replace(/\s+/g, " "));
+            const done = db.prepare("SELECT MAX(updated_at) m FROM tasks WHERE villa_id = ? AND status = 'DONE'").get(h.villa_id);
+            const lastFail = fails.length ? Math.max(...fails.map((f) => f.updated_at)) : 0;
+            console.log("  Letzter DONE:", done && done.m ? new Date(done.m).toISOString() : "keiner", "| Letzter FAIL:", new Date(lastFail).toISOString(), done && done.m > lastFail ? "-> Villa produziert NACH dem Fehler wieder DONE" : "-> KEIN Fortschritt nach dem letzten Fehler");
+            const rep = db.prepare("SELECT id, status, created_at, decided_at FROM villa_proposals WHERE villa_id = ? AND kind = 'REPAIR' ORDER BY id DESC").all(h.villa_id);
+            for (const r of rep) console.log("  REPARATUR-Vorschlag", r.id, r.status, "erstellt", new Date(r.created_at).toISOString(), r.decided_at ? "genehmigt " + new Date(r.decided_at).toISOString() : "");
+            const repTasks = db.prepare("SELECT status, COUNT(*) c FROM tasks WHERE villa_id = ? AND title LIKE '[REPARATUR]%' GROUP BY status").all(h.villa_id);
+            for (const t of repTasks) console.log("  REPARATUR-Aufgaben:", t.status, t.c);
+            const pend = db.prepare("SELECT COUNT(*) c FROM villa_proposals WHERE villa_id = ? AND kind = 'REPAIR' AND created_at > ?").get(h.villa_id, now - DAY).c;
+            console.log("  Heil-Takt 24h-Sperre aktiv:", pend > 0 ? "JA (" + pend + " REPAIR in 24 h)" : "nein");
+          }
+          JS
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/fails.js ubuntu@92.5.177.159:/tmp/fails.js
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo node /tmp/fails.js"
