@@ -15,14 +15,14 @@ jobs:
           H=https://hub.cybersarah-ki.com
           echo "== health (ohne Login) =="
           curl -s -m 30 -o /dev/null -w "health: HTTP %{http_code} in %{time_total}s\n" $H/api/health
-          echo "== System-Audit (Selbstheilung) =="
-          curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/system/audit | jq -r '"AUDIT: " + (if .green then "GRUEN" else "ROT" end) + " | " + (.areas | map((if .green then "OK " else "ROT ") + .name + ": " + .detail) | join(", ")) + " | Heil-Aktionen: " + (.actions | length | tostring)'
           echo "== login =="
           RESP=$(curl -s -m 30 -w "\nHTTP %{http_code} in %{time_total}s" -X POST -H "Content-Type: application/json" \
             -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" $H/api/auth/login)
           echo "$RESP" | tail -1
           TOK=$(echo "$RESP" | head -1 | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || echo "")
           [ -z "$TOK" ] && { echo "KEIN TOKEN - Login fehlgeschlagen"; echo "$RESP" | head -1 | cut -c1-200; exit 0; }
+          echo "== System-Audit (Selbstheilung) =="
+          curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/system/audit | jq -r '"AUDIT: " + (if .green then "GRUEN" else "ROT" end) + " | " + (.areas | map((if .green then "OK " else "ROT ") + .name + ": " + .detail) | join(", ")) + " | Heil-Aktionen: " + (.actions | length | tostring)'
           for P in /api/villas /api/routes /api/stats /api/evolution/pending; do
             curl -s -m 60 -o /tmp/r.json -w "$P: HTTP %{http_code} in %{time_total}s, %{size_download} Bytes\n" -H "Authorization: Bearer $TOK" $H$P
           done
