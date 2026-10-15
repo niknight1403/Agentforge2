@@ -119,7 +119,7 @@ jobs:
           cat > "/etc/systemd/system/${UNIT}.d/zz-load.conf" <<'LOADCONF'
           [Service]
           Environment="VF_LLM_MAX_CONCURRENT=2"
-          Environment="VF_VILLA_SLOTS=2"
+          Environment="VF_VILLA_SLOTS=5"
           Environment="VF_CMD_MAX_CONCURRENT=1"
           LOADCONF
           systemctl daemon-reload
