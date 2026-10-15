@@ -52,3 +52,50 @@ jobs:
           CHK
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/ollcheck.sh ubuntu@92.5.177.159:/tmp/ollcheck.sh
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/ollcheck.sh"
+
+      - name: LLM-Kette durch den Hub testen + Vorschlags-Alter
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          python3 - << 'PROBE'
+          import json, time, urllib.request
+          BASE = "https://hub.cybersarah-ki.com"
+          def post(path, data, tok=None, timeout=120):
+              h = {"Content-Type": "application/json"}
+              if tok: h["Authorization"] = "Bearer " + tok
+              req = urllib.request.Request(BASE + path, headers=h, data=json.dumps(data).encode(), method="POST")
+              t0 = time.time()
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as r:
+                      return json.loads(r.read()), round(time.time()-t0, 1)
+              except urllib.error.HTTPError as e:
+                  return {"http": e.code, "body": e.read().decode()[:200]}, round(time.time()-t0, 1)
+          def get(path, tok):
+              req = urllib.request.Request(BASE + path, headers={"Authorization": "Bearer " + tok})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.loads(r.read())
+          tok, dt = post("/api/auth/login", {"email": "", "password": ""}), None
+          tok = tok[0].get("token")
+          if not tok:
+              print("LLM-PROBE: LOGIN FEHLGESCHLAGEN"); raise SystemExit(0)
+          villas = get("/api/villas", tok)
+          v = villas[0] if isinstance(villas, list) and villas else None
+          print("LLM-PROBE Villa:", v.get("name") if v else "keine", "| Status:", v.get("status") if v else "-")
+          if v:
+              # Vorschlaege mit Alter (Standardplan?) - ist der Fehler alt oder aktuell?
+              try:
+                  evo = get("/api/evolution/villas/%d" % v.get("id"), tok)
+                  props = evo.get("pending") or evo.get("proposals") or []
+                  import datetime
+                  for p_ in (props if isinstance(props, list) else [])[:4]:
+                      ca = p_.get("createdAt") or p_.get("created_at") or 0
+                      age = "alt" if ca < 1792000000000 - 3600000 else "neu"
+                      print("VORSCHLAG:", p_.get("kind"), "| Titel:", str(p_.get("title"))[:40], "| Standardplan:", p_.get("standardPlan") or p_.get("standard_plan") or (p_.get("title") or "").find("Standardplan") >= 0, "| Alter:", age, "| created:", str(ca)[:13])
+              except Exception as ex:
+                  print("EVO-READ:", str(ex)[:120])
+              # echter Chat-Turn durch die Route-Kette
+              ans, dt = post("/api/villas/%d/chat" % v.get("id"), {"message": "Sag nur: ok - kein Werkzeug, keine Aufgabe."}, tok, 180)
+              print("CHAT-PROBE: Route:", ans.get("route") or ans.get("http"), "| Modell:", ans.get("model"), "| offline:", ans.get("offline"), "| Dauer:", dt, "s")
+              print("CHAT-ANTWORT:", str(ans.get("answer"))[:200])
+          PROBE
