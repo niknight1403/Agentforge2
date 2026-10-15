@@ -23,9 +23,16 @@ jobs:
           [ -z "$TOK" ] && { echo "KEIN TOKEN - Login fehlgeschlagen"; echo "$RESP" | head -1 | cut -c1-200; exit 0; }
           echo "== System-Audit (Selbstheilung) =="
           curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/system/audit | python3 -c 'import json,sys; d=json.load(sys.stdin); print("AUDIT:", "GRUEN" if d["green"] else "ROT", "|", ", ".join(("OK " if a["green"] else "ROT ")+a["name"]+": "+a["detail"] for a in d["areas"]), "| Heil-Aktionen:", len(d["actions"]))'
-          for P in /api/villas /api/routes /api/stats /api/evolution/pending; do
+          for P in /api/villas /api/scheduler /api/routes /api/stats /api/evolution/pending; do
             curl -s -m 60 -o /tmp/r.json -w "$P: HTTP %{http_code} in %{time_total}s, %{size_download} Bytes\n" -H "Authorization: Bearer $TOK" $H$P
           done
+          echo "== Scheduler-Live: Slots / aktive Villen / Warteschlange =="
+          curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/scheduler | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          print('Slots:', d.get('slots'), '| aktiv:', d.get('active'), '| queued:', d.get('queued'))
+          print('Queue:', d.get('queue'))
+          print('Ranking:', [r.get('id') for r in (d.get('ranking') or [])][:13])" || true
           echo "== Ollama-Dienst direkt (lokal auf VM nicht erreichbar, daher ueber Hub-Routen) =="
           curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/routes | python3 -c "
           import json,sys
