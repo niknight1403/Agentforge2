@@ -1,14 +1,11 @@
 name: Build Android APK
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    tags: ['v*']
     paths:
       - "app/**"
-      - "*.gradle.kts"
-      - "gradle.properties"
-      - ".github/workflows/build-apk.yml"
-  workflow_dispatch:
 
 jobs:
   apk:
