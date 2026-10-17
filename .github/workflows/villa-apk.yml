@@ -128,6 +128,7 @@ jobs:
           VILLA_NAME: ${{ env.VILLA_NAME }}
         run: |
           APP="${{ inputs.app_name }}"; [ -z "$APP" ] && APP="$VILLA_NAME"
+          export APP
           SLUG=$(python3 -c "import re,os; print(re.sub(r'[^a-z0-9]+','-',os.environ['APP'].lower()).strip('-')[:30])")
           TAG="villa-$VILLA_ID-$(date +%Y%m%d)"
           OUT="Villa${VILLA_ID}-${SLUG}.apk"
