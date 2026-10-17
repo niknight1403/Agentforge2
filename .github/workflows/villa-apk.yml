@@ -1,0 +1,152 @@
+name: Villa-APK Baustrasse
+
+# Phase 2 des Studio-Konzepts (AgentForge docs/studio-konzept.md):
+# Baut das Web-Produkt einer Villa in ein installierbares Android-APK.
+# Nutzt das Hub-Build-Artefakt (GET /api/villas/{id}/build/download),
+# richtet einen lauffaehigen Web-Root, generiert ein App-Icon via
+# Pollinations und wrapped alles im villa-apk-template (WebView-Shell).
+# Ergebnis: Debug-signiertes APK als Workflow-Artefakt + GitHub-Release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      villa_id:
+        description: "Villa-ID im Hub (z. B. 12)"
+        required: true
+      app_name:
+        description: "Anzeigename der App (leer = Villa-Name aus dem Hub)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  villa-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle 8.7 einrichten
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Villa-Daten vom Hub laden (Login, Name, Build-Artefakt)
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+          VILLA_ID: ${{ inputs.villa_id }}
+        run: |
+          H=https://hub.cybersarah-ki.com
+          TOK=$(curl -s -m 30 -X POST -H "Content-Type: application/json" -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" $H/api/auth/login | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))')
+          [ -z "$TOK" ] && { echo "FEHLER: Hub-Login nicht moeglich"; exit 1; }
+          echo "TOK=$TOK" >> $GITHUB_ENV
+          echo "HUB=$H" >> $GITHUB_ENV
+          VILLA_NAME=$(curl -s -m 30 -H "Authorization: Bearer $TOK" "$H/api/villas" | python3 -c 'import json,os,sys; vid=int(os.environ["VILLA_ID"]); vs=json.load(sys.stdin); vs=vs if isinstance(vs,list) else vs.get("villas",[]); m=[v.get("name") for v in vs if v.get("id")==vid]; print(m[0] if m else "Villa %d"%vid)')
+          echo "VILLA_NAME=$VILLA_NAME" >> $GITHUB_ENV
+          echo "Villa: $VILLA_NAME"
+          ST=$(curl -s -m 30 -H "Authorization: Bearer $TOK" "$H/api/villas/$VILLA_ID/build" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status","none"))')
+          if [ "$ST" != "ready" ]; then
+            echo "Build nicht bereit ($ST) - starte Produkt-Build ..."
+            curl -s -m 60 -X POST -H "Authorization: Bearer $TOK" "$H/api/villas/$VILLA_ID/build" >/dev/null || true
+            for i in $(seq 1 24); do
+              sleep 5
+              ST=$(curl -s -m 30 -H "Authorization: Bearer $TOK" "$H/api/villas/$VILLA_ID/build" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status","none"))')
+              echo "  Build-Status: $ST"
+              if [ "$ST" = "ready" ] || [ "$ST" = "failed" ]; then break; fi
+            done
+          fi
+          if [ "$ST" = "ready" ]; then
+            curl -s -m 120 -H "Authorization: Bearer $TOK" -o /tmp/villa.zip "$H/api/villas/$VILLA_ID/build/download"
+            echo "Artefakt geladen: $(stat -c%s /tmp/villa.zip 2>/dev/null || echo 0) Bytes"
+          else
+            echo "Kein fertiges Hub-Artefakt ($ST) - Fallback-Landing-Page wird gebaut"
+          fi
+
+      - name: Web-Root fuer das APK herrichten
+        run: |
+          WWW=villa-apk-template/app/src/main/assets/www
+          rm -f $WWW/index.html
+          if [ -f /tmp/villa.zip ] && [ "$(stat -c%s /tmp/villa.zip)" -gt 100 ]; then
+            mkdir -p /tmp/art && unzip -qo /tmp/villa.zip -d /tmp/art
+            IDX=$(find /tmp/art -maxdepth 3 -name index.html | head -1)
+            if [ -n "$IDX" ]; then
+              echo "Nutze Web-Root: $IDX"
+              cp -r "$(dirname "$IDX")"/. $WWW/
+            else
+              PKG=$(find /tmp/art -maxdepth 2 -name package.json | head -1)
+              if [ -n "$PKG" ]; then
+                cd "$(dirname "$PKG")"
+                echo "Baue npm-Projekt: $(pwd)"
+                npm install --no-audit --no-fund >/dev/null 2>&1 || true
+                npm run build >/dev/null 2>&1 || true
+                DIST=$(find . -maxdepth 3 -type d -name dist | head -1)
+                [ -z "$DIST" ] && DIST=$(find . -maxdepth 3 -type d -name build | head -1)
+                if [ -n "$DIST" ] && [ -f "$DIST/index.html" ]; then
+                  echo "Nutze Build-Output: $DIST"
+                  cp -r "$DIST"/. "$GITHUB_WORKSPACE/$WWW/"
+                fi
+              fi
+            fi
+          fi
+          ls $WWW | head -5
+
+      - name: App-Name setzen, Icon-URL und Landing-Fallback vorbereiten
+        env:
+          VILLA_NAME: ${{ env.VILLA_NAME }}
+          APP_NAME: ${{ inputs.app_name }}
+        run: python3 scripts/villa_apk_prepare.py
+
+      - name: App-Icon generieren (Pollinations)
+        run: |
+          curl -s -m 60 -o /tmp/icon.png "$(cat /tmp/icon_url.txt)" || true
+          if [ -s /tmp/icon.png ] && file /tmp/icon.png 2>/dev/null | grep -qiE "PNG|JPEG"; then
+            cp /tmp/icon.png villa-apk-template/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+            echo "Pollinations-Icon gesetzt ($(stat -c%s /tmp/icon.png) Bytes)"
+          else
+            echo "Pollinations nicht erreichbar - Neon-Platzhalter-Icon bleibt"
+          fi
+
+      - name: APK bauen (WebView-Wrapper, Debug-signiert)
+        env:
+          VILLA_ID: ${{ inputs.villa_id }}
+        run: |
+          cd villa-apk-template
+          gradle :app:assembleDebug --no-daemon --stacktrace -PvillaId=$VILLA_ID
+          ls app/build/outputs/apk/debug/
+
+      - name: APK umbenennen
+        env:
+          VILLA_ID: ${{ inputs.villa_id }}
+          VILLA_NAME: ${{ env.VILLA_NAME }}
+        run: |
+          APP="${{ inputs.app_name }}"; [ -z "$APP" ] && APP="$VILLA_NAME"
+          SLUG=$(python3 -c "import re,os; print(re.sub(r'[^a-z0-9]+','-',os.environ['APP'].lower()).strip('-')[:30])")
+          TAG="villa-$VILLA_ID-$(date +%Y%m%d)"
+          OUT="Villa${VILLA_ID}-${SLUG}.apk"
+          cp villa-apk-template/app/build/outputs/apk/debug/app-debug.apk "$OUT"
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "OUT=$OUT" >> $GITHUB_ENV
+          echo "APK: $OUT ($(stat -c%s $OUT) Bytes)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: villa-apk-${{ inputs.villa_id }}
+          path: Villa${{ inputs.villa_id }}-*.apk
+          if-no-files-found: error
+
+      - name: GitHub-Release mit APK anlegen
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TAG }}
+          OUT: ${{ env.OUT }}
+          VILLA_NAME: ${{ env.VILLA_NAME }}
+        run: |
+          gh release create "$TAG" "$OUT" --title "Villa ${{ inputs.villa_id }}: $VILLA_NAME" --notes "Installierbares APK des Villa-Produkts '$VILLA_NAME' aus dem VillaForge Studio (Phase 2). WebView-Wrapper, Debug-signiert." || echo "Release vorhanden oder fehlgeschlagen - APK liegt als Workflow-Artefakt"
