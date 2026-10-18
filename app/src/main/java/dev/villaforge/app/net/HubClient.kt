@@ -268,7 +268,6 @@ class HubClient(context: Context) {
                 villaId = o.optLong("villaId", 0),
                 villaName = o.optString("villaName"),
                 designImage = o.optString("designImage")
-                designVariants = parseDesignVariants(o.optJSONArray("designVariants"))
             )
         }
     }

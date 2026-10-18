@@ -128,13 +128,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         try {
             val res = client.masterChat(t)
             val reply = res.optString("reply", "(keine Antwort)")
+            val parseDesignVariants: (org.json.JSONArray?) -> List<dev.villaforge.app.net.DesignVariant> = { arr ->
+                if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val url = o.optString("url")
+                    if (url.isBlank()) null
+                    else dev.villaforge.app.net.DesignVariant(o.optString("label").ifBlank { "Design ${i + 1}" }, o.optString("key"), url)
+                }
+            }
             val msg = dev.villaforge.app.net.ChatMessage(
                 role = "assistant",
                 content = reply,
                 createdAt = System.currentTimeMillis(),
                 villaId = res.optLong("villaId", 0),
                 villaName = res.optString("villaName"),
-                designImage = res.optString("designImage")
+                designImage = res.optString("designImage"),
+                designVariants = parseDesignVariants(res.optJSONArray("designVariants"))
             )
             _state.update { it.copy(masterMessages = it.masterMessages + msg) }
             if (res.optLong("villaId", 0) > 0) refreshAll()

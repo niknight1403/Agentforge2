@@ -86,9 +86,16 @@ fun DashboardScreen(
     val uptimeHours = (s?.optLong("uptimeSec", 0L) ?: 0L) / 3600
     val maturityScores = mutableListOf<Float>()
     val maturity = s?.optJSONArray("maturity")
+    val villaMaturity = mutableListOf<Triple<String, Int, String>>() // Name, Score, Phase
     if (maturity != null) {
-        (0 until maturity.length()).forEach { i -> maturityScores.add(maturity.optJSONObject(i)?.optInt("score", 0)?.toFloat() ?: 0f) }
+        (0 until maturity.length()).forEach { i ->
+            val m = maturity.optJSONObject(i) ?: return@forEach
+            val score = m.optInt("score", 0)
+            maturityScores.add(score.toFloat())
+            villaMaturity.add(Triple(m.optString("name", "?"), score, m.optString("currentPhase", "-")))
+        }
     }
+    val topVillas = villaMaturity.sortedByDescending { it.second }.take(3)
     val profileName = viewModel.loggedInEmail.substringBefore('@').replaceFirstChar { it.uppercase() }.ifBlank { "Chef" }
     val activeRoute = state.routes.filter { it.enabled }.minByOrNull { it.priority }?.name ?: "–"
 
@@ -197,6 +204,85 @@ fun DashboardScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text("${state.villas.size} Villen · $running aktiv · $waiting warten", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
+                }
+            }
+        }
+
+        /* ---- Top 3: die drei weitesten Villen (grafisch, unterhalb Villa-Anzahl/Systemstatus) ---- */
+        if (topVillas.isNotEmpty()) {
+            GlassCard(accent = NeonCyan, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text(
+                        "TOP 3 · DIE WEITESTEN VILLEN",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    val accents = listOf(NeonCyan, ElectricBlue, NeonPink)
+                    topVillas.forEachIndexed { idx, (vName, vScore, vPhase) ->
+                        val accent = accents.getOrElse(idx) { NeonCyan }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 5.dp)
+                        ) {
+                            Text(
+                                "${idx + 1}.",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = accent
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    vName,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    color = TextMain,
+                                    maxLines = 1
+                                )
+                                Spacer(Modifier.height(3.dp))
+                                /* Grafischer Fortschrittsbalken (Marktreife 0-100) */
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(TextMuted.copy(alpha = 0.18f))
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth(vScore.coerceIn(0, 100) / 100f)
+                                            .height(6.dp)
+                                            .clip(RoundedCornerShape(3.dp))
+                                            .background(accent)
+                                    )
+                                }
+                                Text(
+                                    vPhase,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextMuted,
+                                    fontSize = 9.sp
+                                )
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                "$vScore",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = accent
+                            )
+                            Text(
+                                "/100",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextMuted,
+                                fontSize = 9.sp
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -113,7 +113,7 @@ fun MasterChatScreen(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lon
                     }
                 }
             }
-            items(state.masterMessages) { MasterBubble(it, onOpenVilla) }
+            items(state.masterMessages) { MasterBubble(it, onOpenVilla, onSelectDesign = { label -> viewModel.sendMaster(label) }) }
             if (state.masterBusy) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(6.dp)) {
@@ -167,7 +167,7 @@ private fun SuggestionChip(text: String, icon: androidx.compose.ui.graphics.vect
 }
 
 @Composable
-private fun MasterBubble(msg: ChatMessage, onOpenVilla: (Long) -> Unit) {
+private fun MasterBubble(msg: ChatMessage, onOpenVilla: (Long) -> Unit, onSelectDesign: (String) -> Unit) {
     val mine = msg.role == "user"
     Box(Modifier.fillMaxWidth()) {
         Column(
@@ -209,7 +209,7 @@ private fun MasterBubble(msg: ChatMessage, onOpenVilla: (Long) -> Unit) {
                                     .background(if (selected) NeonCyan.copy(alpha = 0.16f) else androidx.compose.ui.graphics.Color.Transparent)
                                     .clickable {
                                         selectedKey = v.key
-                                        viewModel.sendMaster("Design-Auswahl: ${v.label}")
+                                        onSelectDesign("Design-Auswahl: ${v.label}")
                                     }
                                     .padding(6.dp)
                             ) {
