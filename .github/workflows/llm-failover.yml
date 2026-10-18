@@ -54,16 +54,16 @@ jobs:
         run: |
           /tmp/sshcmd 'bash -s' << 'EOS'
           set -e
-          if [ ! -d /opt/villaforge/litellm-venv ]; then
+          if [ ! -d /home/ubuntu/litellm-venv ]; then
             sudo apt-get -qq update >/dev/null 2>&1 || true
             sudo apt-get -qq install -y python3-venv python3-pip >/dev/null 2>&1 || true
-            python3 -m venv /opt/villaforge/litellm-venv
+            python3 -m venv /home/ubuntu/litellm-venv
           fi
           echo "== LiteLLM installieren/aktualisieren (evtl. einige Minuten) =="
-          /opt/villaforge/litellm-venv/bin/pip install -q --upgrade 'litellm[proxy]' 2>&1 | tail -2 || true
-          /opt/villaforge/litellm-venv/bin/litellm --version || echo "Versionsabfrage fehlgeschlagen - pruefe Installation"
+          /home/ubuntu/litellm-venv/bin/pip install -q --upgrade 'litellm[proxy]' 2>&1 | tail -2 || true
+          /home/ubuntu/litellm-venv/bin/litellm --version || echo "Versionsabfrage fehlgeschlagen - pruefe Installation"
           echo "== Kaskaden-Konfiguration schreiben =="
-          cat > /opt/villaforge/litellm.yaml << 'YAML'
+          cat > /home/ubuntu/litellm.yaml << 'YAML'
           model_list:
             # Stufe 1: kostenloser Cloud-Endpunkt (Groq Free Tier)
             - model_name: villa-kaskade
@@ -105,7 +105,7 @@ jobs:
           general_settings:
             master_key: sk-villaforge-local
           YAML
-          echo "Konfiguration: /opt/villaforge/litellm.yaml"
+          echo "Konfiguration: /home/ubuntu/litellm.yaml"
           EOS
 
       - name: 3) Systemd-Dienste + Watchdog (15-Sekunden-Health-Checks)
@@ -122,7 +122,7 @@ jobs:
           User=ubuntu
           EnvironmentFile=/opt/villaforge/hub.env
           Environment=BROKEN_TEST_KEY=gpt-invalid-failover-test
-          ExecStart=/opt/villaforge/litellm-venv/bin/litellm --config /opt/villaforge/litellm.yaml --port 4000 --host 127.0.0.1
+          ExecStart=/home/ubuntu/litellm-venv/bin/litellm --config /home/ubuntu/litellm.yaml --port 4000 --host 127.0.0.1
           Restart=always
           RestartSec=3
           [Install]
