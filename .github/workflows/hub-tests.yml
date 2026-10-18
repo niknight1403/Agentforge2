@@ -1,11 +1,14 @@
 name: Hub-Tests
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
       - "server/**"
       - "package.json"
+      - ".github/workflows/hub-deploy.yml"
       - ".github/workflows/hub-tests.yml"
   workflow_dispatch:
 
