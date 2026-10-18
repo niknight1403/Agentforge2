@@ -179,6 +179,37 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Foto/Video/Datei aus dem Android-Picker lesen und als Anhang hochladen. */
+    fun addDeepAttachmentFromUri(context: android.content.Context, projectId: Long, uri: android.net.Uri) = viewModelScope.launch {
+        _state.update { it.copy(busy = true, message = "Anhang wird geladen ...") }
+        try {
+            val resolver = context.contentResolver
+            var name = "anhang"
+            var mime = resolver.getType(uri) ?: "application/octet-stream"
+            resolver.query(uri, null, null, null, null)?.use { c ->
+                val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && c.moveToFirst() && !c.isNull(idx)) name = c.getString(idx)
+            }
+            val bytes = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                resolver.openInputStream(uri)?.use { it.readBytes() } ?: throw IllegalStateException("Datei nicht lesbar")
+            }
+            if (bytes.size > 12 * 1024 * 1024) throw IllegalStateException("Anhang zu gross (max. 12 MB)")
+            val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            val res = client.deepUploadFile(projectId, name, mime, base64)
+            val fileId = res.optLong("id", 0)
+            if (fileId > 0) {
+                _state.update {
+                    it.copy(deepPendingAttachments = it.deepPendingAttachments +
+                        DeepAttachment(kind = "file", fileId = fileId, name = res.optString("name", name)))
+                }
+            } else _state.update { it.copy(message = res.optString("error", "Upload fehlgeschlagen")) }
+        } catch (e: Exception) {
+            _state.update { it.copy(message = "Anhang fehlgeschlagen: " + (e.message ?: "unbekannt")) }
+        } finally {
+            _state.update { it.copy(busy = false) }
+        }
+    }
+
     /** Anhang vormerken ohne Upload (Repo/Link). */
     fun addDeepLink(kind: String, url: String) {
         if (url.isBlank()) return

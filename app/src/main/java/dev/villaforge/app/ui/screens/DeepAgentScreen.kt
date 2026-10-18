@@ -1,5 +1,9 @@
 package dev.villaforge.app.ui.screens
 
+import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -159,6 +164,16 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit)
     var showRepoDialog by remember { mutableStateOf(false) }
     var repoUrl by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    val projectId = project.id
+
+    /* Nativer Android-Picker: Fotos/Videos und beliebige Dateien */
+    val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) viewModel.addDeepAttachmentFromUri(context, projectId, uri)
+    }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.addDeepAttachmentFromUri(context, projectId, uri)
+    }
 
     LaunchedEffect(state.deepMessages.size) {
         if (state.deepMessages.isNotEmpty()) listState.animateScrollToItem(state.deepMessages.size - 1)
@@ -221,12 +236,18 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit)
                     Text("ANHANG HINZUFUEGEN", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AttachOption(Icons.Filled.Image, "Foto/Video") { showAttachMenu = false; showRepoDialog = false }
-                        AttachOption(Icons.Filled.Description, "Datei") { showAttachMenu = false; showRepoDialog = false }
+                        AttachOption(Icons.Filled.Image, "Foto/Video") {
+                            showAttachMenu = false
+                            mediaPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                        }
+                        AttachOption(Icons.Filled.Description, "Datei") {
+                            showAttachMenu = false
+                            filePicker.launch(arrayOf("*/*"))
+                        }
                         AttachOption(Icons.Filled.Link, "GitHub-Repo") { showAttachMenu = false; showRepoDialog = true }
                     }
                     Text(
-                        "Foto/Video/Datei: im Chat-Feld als Link teilen oder Datei-Pfad angeben. GitHub-Repo: URL angeben.",
+                        "Foto/Video und Dateien werden direkt hochgeladen (max. 12 MB). GitHub-Repo: URL angeben.",
                         style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 9.sp
                     )
                 }

@@ -11,8 +11,8 @@ android {
         applicationId = "dev.villaforge.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 37
-        versionName = "1.37.0"
+        versionCode = 38
+        versionName = "1.37.1"
     }
 
     buildTypes {
