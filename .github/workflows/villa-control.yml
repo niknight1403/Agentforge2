@@ -1,0 +1,52 @@
+name: Villa-Steuerung (Pause/Resume direkt in der DB)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'pause oder resume'
+        required: true
+        default: 'pause'
+      ids:
+        description: 'Villa-IDs, kommasepariert (z.B. 4,7,8)'
+        required: true
+
+jobs:
+  steuerung:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+
+      - name: Villa-Status in der Hub-DB setzen
+        run: |
+          MODE='${{ github.event.inputs.mode }}'
+          IDS='${{ github.event.inputs.ids }}'
+          /tmp/sshcmd 'bash -s' << EOS
+          set -e
+          tee /tmp/villa-control.mjs >/dev/null << 'NODEJS'
+          import { DatabaseSync } from 'node:sqlite';
+          const [mode, idsArg] = process.argv.slice(2);
+          const ids = idsArg.split(',').map((s) => s.trim()).filter(Boolean).map(Number);
+          if (!ids.length) { console.error('Keine gueltigen IDs'); process.exit(1); }
+          const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
+          const ph = ids.map(() => '?').join(',');
+          const sql = mode === 'resume'
+            ? \`UPDATE villas SET autonomy = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id IN (\${ph})\`
+            : \`UPDATE villas SET autonomy = 0, status = 'PAUSED', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id IN (\${ph})\`;
+          const r = db.prepare(sql).run(...ids);
+          const rows = db.prepare(\`SELECT id, name, status, autonomy FROM villas WHERE id IN (\${ph})\`).all(...ids);
+          for (const v of rows) console.log(\`[\${v.id}] \${v.name} | status: \${v.status} | autonomy: \${v.autonomy}\`);
+          if (r.changes !== ids.length) { console.error('Warnung: ' + r.changes + ' von ' + ids.length + ' Villen aktualisiert'); }
+          NODEJS
+          sudo node /tmp/villa-control.mjs "$MODE" "$IDS"
+          rm -f /tmp/villa-control.mjs
+          EOS
