@@ -70,7 +70,7 @@ jobs:
               litellm_params:
                 model: groq/llama-3.3-70b-versatile
                 api_key: os.environ/GROQ_API_KEY
-                timeout: 5
+                timeout: 10
                 max_retries: 0
             # Stufe 2: lokales Offline-Backup (Ollama, unbegrenzt, kostenlos)
             - model_name: villa-kaskade
@@ -78,20 +78,20 @@ jobs:
                 model: ollama_chat/llama3.2:3b
                 api_base: http://127.0.0.1:11434
                 keep_alive: -1
-                timeout: 5
+                timeout: 120
             # Nur fuer den Failover-Akzeptanztest: absichtlich kaputter Primaer-Schluesse
             - model_name: villa-failtest
               litellm_params:
                 model: groq/llama-3.3-70b-versatile
                 api_key: os.environ/BROKEN_TEST_KEY
-                timeout: 5
+                timeout: 10
                 max_retries: 0
             - model_name: villa-failtest
               litellm_params:
                 model: ollama_chat/llama3.2:3b
                 api_base: http://127.0.0.1:11434
                 keep_alive: -1
-                timeout: 5
+                timeout: 120
           litellm_settings:
             drop_params: true
             num_retries: 0
