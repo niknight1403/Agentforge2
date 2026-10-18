@@ -197,7 +197,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val userMsg = DeepMessage(
             id = System.currentTimeMillis(),
             role = "user",
-            content = text + (if (attachments.isEmpty()) "" else attachments.joinToString("") { "\n[Anhang: ${it.name.ifBlank { it.url }}] }),
+            content = text + (if (attachments.isEmpty()) "" else attachments.joinToString("") { "\n[Anhang: ${it.name.ifBlank { it.url }}]" }),
             createdAt = System.currentTimeMillis()
         )
         _state.update { it.copy(deepMessages = it.deepMessages + userMsg, deepPendingAttachments = emptyList(), busy = true) }
