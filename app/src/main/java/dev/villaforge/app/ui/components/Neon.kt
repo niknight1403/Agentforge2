@@ -1,11 +1,15 @@
 package dev.villaforge.app.ui.components
 
+import dev.villaforge.app.ui.theme.Gold
+import dev.villaforge.app.ui.theme.GoldGradient
+import dev.villaforge.app.ui.theme.PremiumInk
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -152,4 +156,63 @@ fun NeonIconPlate(icon: @Composable () -> Unit, accent: Color = NeonCyan, size: 
         Modifier.size(size).clip(CircleShape).background(accent.copy(alpha = 0.12f)).border(1.dp, accent.copy(alpha = 0.6f), CircleShape),
         contentAlignment = Alignment.Center
     ) { icon() }
+}
+
+/*
+ * Quality-Layer v2 — Premium-Aurora-Hintergrund: dreistufige radiale
+ * Lichtkoerper (Violett, Cyan, Gold) ueber tiefem Premium-Ink. Rein statisch
+ * gezeichnet (keine Animation) — stets fluessig auch auf aelteren Handys.
+ */
+@Composable
+fun AuroraBackground(modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize().background(PremiumInk)) {
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.radialGradient(
+                    colors = listOf(Color(0x33241A63), Color(0x0F1B1340), Color.Transparent),
+                    center = Offset(120f, 40f),
+                    radius = 1200f
+                )
+            )
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.radialGradient(
+                    colors = listOf(Color(0x2600A3FF), Color.Transparent),
+                    center = Offset(2800f, 2100f),
+                    radius = 1000f
+                )
+            )
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.radialGradient(
+                    colors = listOf(Color(0x1FE8C27A), Color.Transparent),
+                    center = Offset(600f, 2600f),
+                    radius = 900f
+                )
+            )
+        )
+    }
+}
+
+/*
+ * Quality-Layer v2 — GoldChip: exklusiver Elite-/Unlimited-Statusmarker
+ * mit Gold-Verlauf und feinem Rand (44dp-taugliche Grosse fuer Touch).
+ */
+@Composable
+fun GoldChip(text: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color(0x22E8C27A))
+            .border(1.dp, Color(0x66E8C27A), RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(6.dp).clip(CircleShape).background(Gold))
+            Spacer(Modifier.width(5.dp))
+            Text(text, color = Gold, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, letterSpacing = 1.2.sp)
+        }
+    }
 }

@@ -554,6 +554,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(detail = refreshed) }
     }
 
+    /* Quality-Layer v2 (2026-10-19, Nutzerdirektive): Villen einzeln starten
+     * und stoppen — direkt aus der Villen-Liste, ohne den Umweg ueber das
+     * Projekt-Detail. Der Fokus-Scheduler des Hubs (1 Slot) arbeitet danach
+     * jede gestartete Villa projektweise ab. */
+    fun startVilla(id: Long) = run {
+        client.orchestrate(id)
+        _state.update { it.copy(message = "Villa gestartet — der Fokus-Scheduler nimmt sie in die Reihe.") }
+        refreshAll()
+    }
+
+    fun stopVilla(id: Long) = run {
+        client.stop(id)
+        _state.update { it.copy(message = "Villa gestoppt.") }
+        refreshAll()
+    }
+
     /** Einzellne FAILED-Aufgabe zurueck in die Warteschlange und Lauf fortsetzen. */
     fun retryTask(taskId: Long) = run {
         val detail = _state.value.detail ?: return@run

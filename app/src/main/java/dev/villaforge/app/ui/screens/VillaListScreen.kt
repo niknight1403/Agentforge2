@@ -1,5 +1,10 @@
 package dev.villaforge.app.ui.screens
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import dev.villaforge.app.ui.theme.NeonCyan
+import dev.villaforge.app.ui.theme.Danger
+import dev.villaforge.app.ui.theme.Gold
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -154,7 +159,30 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
                         if (villa.vision.isNotBlank()) {
                             Text("Ziel: " + villa.vision, style = muted(), color = androidx.compose.ui.graphics.Color(0xFF00A3FF), fontSize = 12.sp, maxLines = 2)
                         }
-                        Text("Projekt öffnen", color = Aqua, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Projekt öffnen", color = Aqua, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Spacer(Modifier.weight(1f))
+                            if (viewModel != null) {
+                                val vid = villa.id
+                                if (villa.executing) {
+                                    Text(
+                                        "■  STOPP", color = Danger, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp,
+                                        modifier = Modifier.clip(RoundedCornerShape(50))
+                                            .background(Color(0x1AFF5F6D))
+                                            .clickable { viewModel.stopVilla(vid) }
+                                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                                    )
+                                } else {
+                                    Text(
+                                        "▶  START", color = NeonCyan, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp,
+                                        modifier = Modifier.clip(RoundedCornerShape(50))
+                                            .background(Color(0x1400FFD1))
+                                            .clickable { viewModel.startVilla(vid) }
+                                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -169,9 +197,9 @@ private fun ControlCenterHero() {
             .background(Brush.linearGradient(listOf(Color(0xFF241A63), Color(0xFF102F4E), Color(0xFF092A35))))
             .padding(20.dp)
     ) {
-        Box(Modifier.align(Alignment.TopEnd).size(116.dp).clip(CircleShape).background(Aqua.copy(alpha = 0.10f)))
+        Box(Modifier.align(Alignment.TopEnd).size(116.dp).clip(CircleShape).background(Gold.copy(alpha = 0.10f)))
         Column {
-            Text("DEEP-AGENT CONTROL CENTER", color = Aqua, style = MaterialTheme.typography.labelSmall)
+            Text("DEEP-AGENT CONTROL CENTER", color = Gold, style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.height(8.dp))
             Text("Deine Idee.", color = TextMain, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             Text("Deine Villa.", color = Color(0xFFB9A6FF), fontSize = 28.sp, fontWeight = FontWeight.Bold)

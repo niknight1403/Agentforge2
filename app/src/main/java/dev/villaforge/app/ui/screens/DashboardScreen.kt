@@ -1,5 +1,9 @@
 package dev.villaforge.app.ui.screens
 
+import dev.villaforge.app.ui.components.AuroraBackground
+import dev.villaforge.app.ui.components.GoldChip
+import dev.villaforge.app.ui.theme.Gold
+import dev.villaforge.app.ui.theme.GoldGradient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -105,10 +109,13 @@ fun DashboardScreen(
     val profileName = viewModel.loggedInEmail.substringBefore('@').replaceFirstChar { it.uppercase() }.ifBlank { "Chef" }
     val activeRoute = s?.optJSONObject("llm")?.optString("lastSuccessfulRoute")?.takeIf { it.isNotBlank() } ?: "Noch keine bestätigte Modellantwort"
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
+    /* Quality-Layer v2: Premium-Aurora-Hintergrund hinter dem Dashboard. */
+    Box(Modifier.fillMaxSize()) {
+        AuroraBackground(Modifier.fillMaxSize())
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
         state.error?.let { ErrorBanner(it) }
 
         /* ---- Kopfzeile: Logo links, Benachrichtigungs-Glocke rechts ---- */
@@ -118,6 +125,8 @@ fun DashboardScreen(
             Column(Modifier.weight(1f)) {
                 Text("VillaForge", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = TextMain)
                 Text("CONTROL CENTER", style = MaterialTheme.typography.labelSmall, color = TextMuted, letterSpacing = 2.sp)
+                Spacer(Modifier.height(4.dp))
+                GoldChip("ELITE · UNLIMITED")
             }
             Box(
                 Modifier
@@ -136,7 +145,7 @@ fun DashboardScreen(
         GlassCard(accent = NeonCyan) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(62.dp).clip(CircleShape).border(2.dp, NeonGradient, CircleShape).padding(3.dp),
+                    Modifier.size(62.dp).clip(CircleShape).border(2.dp, GoldGradient, CircleShape).padding(3.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
@@ -358,3 +367,4 @@ fun DashboardScreen(
         }
     }
 }
+    }

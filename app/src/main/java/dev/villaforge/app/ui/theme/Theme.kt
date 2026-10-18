@@ -49,6 +49,17 @@ val Glass = Color(0x1AFFFFFF)          // halbtransparentes Weiss fuer Glas-Flae
 val NeonGradient = Brush.linearGradient(listOf(NeonCyan, NeonPink))
 val CyanBlueGradient = Brush.linearGradient(listOf(NeonCyan, ElectricBlue))
 
+/*
+ * Quality-Layer v2 (2026-10-19, Nutzerdirektive: hochwertiger, exklusiver,
+ * bedienungsfreundlich): Premium-Gold als exklusiver Zweitakzent neben dem
+ * Cyber-Neon. Gold markiert Elite-/Unlimited-Status und verleiht Header,
+ * Avatar-Ringen und Chips die exklusive Signatur.
+ */
+val Gold = Color(0xFFE8C27A)
+val GoldBright = Color(0xFFF6E3B4)
+val GoldGradient = Brush.linearGradient(listOf(Color(0xFFF6E3B4), Color(0xFFE8C27A), Color(0xFFB98A45)))
+val PremiumInk = Color(0xFF060A17)
+
 /** Semantische Statusfarbe: zentrale Abbildung Villen-/Aufgaben-/Agentenzustaende. */
 fun statusColor(status: String): Color = when {
     status == "RUNNING" || status == "läuft" -> Aqua
