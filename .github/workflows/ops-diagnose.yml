@@ -32,6 +32,6 @@ jobs:
           MINUTES: ${{ github.event.inputs.minutes }}
           FILTER: ${{ github.event.inputs.filter }}
         run: |
-          /tmp/sshcmd 'bash -s' << 'EOS'
+          /tmp/sshcmd 'bash -s' << EOS
           sudo journalctl -u villaforge-hub.service --since "$MINUTES ago" --no-pager | grep -iE "$FILTER" | tail -40
           EOS
