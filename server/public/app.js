@@ -19,6 +19,37 @@ const setToken = (t) => { t ? localStorage.setItem('vf_token', t) : localStorage
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+const THEME_KEY = 'villaforge-theme';
+const THEMES = ['aurora', 'midnight', 'mint', 'ember', 'arctic'];
+const THEME_COLORS = { aurora: '#060916', midnight: '#090d15', mint: '#061412', ember: '#160b0a', arctic: '#07131e' };
+function applyTheme(name, announce = false) {
+  const theme = THEMES.includes(name) ? name : 'aurora';
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem(THEME_KEY, theme);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = THEME_COLORS[theme];
+  document.querySelectorAll('[data-theme-choice]').forEach((button) => {
+    const selected = button.dataset.themeChoice === theme;
+    button.setAttribute('aria-checked', selected ? 'true' : 'false');
+    button.tabIndex = selected ? 0 : -1;
+  });
+  if (announce) toast(`Design „${theme === 'aurora' ? 'Aurora Neon' : theme === 'midnight' ? 'Midnight Executive' : theme === 'mint' ? 'Cyber Mint' : theme === 'ember' ? 'Solar Ember' : 'Arctic Glass'}“ aktiviert`, 'info');
+}
+function initThemePicker() {
+  applyTheme(localStorage.getItem(THEME_KEY) || 'aurora');
+  document.querySelectorAll('[data-theme-choice]').forEach((button) => {
+    button.addEventListener('click', () => applyTheme(button.dataset.themeChoice, true));
+    button.addEventListener('keydown', (event) => {
+      if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(event.key)) return;
+      event.preventDefault();
+      const buttons = [...document.querySelectorAll('[data-theme-choice]')];
+      const index = buttons.indexOf(button);
+      const next = buttons[(index + (event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length];
+      applyTheme(next.dataset.themeChoice, true); next.focus();
+    });
+  });
+}
+
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}), ...opts.headers };
   try {
@@ -842,3 +873,4 @@ $('#mobileMasterBtn').addEventListener('click',openMaster);
 $('#masterCloseBtn').addEventListener('click',() => $('#masterDialog').close());
 $('#masterForm').addEventListener('submit',sendMaster);
 $('#masterInput').addEventListener('keydown',e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMaster(); } });
+initThemePicker();

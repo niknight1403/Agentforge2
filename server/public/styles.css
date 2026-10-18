@@ -993,3 +993,67 @@ input::placeholder, textarea::placeholder { color: #97a5ba; }
   .master-composer textarea { min-height: 60px; }
   .master-bubble { max-width: 96%; font-size: 14px; }
 }
+
+/* --------------------------------------------------------------------------
+   Design presets: every surface, hub, dialog, workspace and action follows
+   the selected token set. The default Aurora palette preserves the existing
+   VillaForge identity.
+   -------------------------------------------------------------------------- */
+html[data-theme="midnight"] {
+  --bg: #090d15; --bg-raised: #121925; --surface: #182231; --surface-2: #202c3c; --surface-3: #293647;
+  --line: rgba(164, 184, 211, .24); --line-strong: #8da8c8; --text: #f2f5f8; --muted: #aab7c8;
+  --purple: #92a8ff; --cyan: #8ed7e8; --green: #70dfb3; --pink: #d6a1ff; --warn: #f5ce7b; --danger: #ff8994;
+  --shadow-panel: 0 18px 60px rgba(0, 0, 0, .28);
+}
+html[data-theme="mint"] {
+  --bg: #061412; --bg-raised: #0b211d; --surface: #102e29; --surface-2: #164038; --surface-3: #1d5044;
+  --line: rgba(105, 232, 192, .24); --line-strong: #54d8b3; --text: #effff9; --muted: #a4cfc2;
+  --purple: #9e9cff; --cyan: #5eead4; --green: #8cf6bf; --pink: #e5a6ff; --warn: #f5d17b; --danger: #ff8f9d;
+  --shadow-panel: 0 18px 60px rgba(0, 36, 28, .38);
+}
+html[data-theme="ember"] {
+  --bg: #160b0a; --bg-raised: #261311; --surface: #351a16; --surface-2: #49231c; --surface-3: #5a2d24;
+  --line: rgba(255, 177, 126, .25); --line-strong: #ff9d68; --text: #fff6ef; --muted: #d8b5a7;
+  --purple: #d99cff; --cyan: #ffb27d; --green: #8de0af; --pink: #ff91bd; --warn: #ffd26e; --danger: #ff7e78;
+  --shadow-panel: 0 18px 60px rgba(44, 8, 0, .42);
+}
+html[data-theme="arctic"] {
+  --bg: #07131e; --bg-raised: #0e2433; --surface: #143246; --surface-2: #1b435a; --surface-3: #24556d;
+  --line: rgba(135, 215, 244, .28); --line-strong: #82d8ff; --text: #f2fbff; --muted: #abd0df;
+  --purple: #b6a8ff; --cyan: #79dcff; --green: #78efce; --pink: #ff9bc8; --warn: #f9d889; --danger: #ff879a;
+  --shadow-panel: 0 18px 60px rgba(0, 30, 52, .4);
+}
+html[data-theme="royal"] {
+  --bg: #100a20; --bg-raised: #1b1034; --surface: #28184a; --surface-2: #36215e; --surface-3: #442b73;
+  --line: rgba(203, 167, 255, .25); --line-strong: #c49aff; --text: #fbf5ff; --muted: #c9b5df;
+  --purple: #c69aff; --cyan: #71dfff; --green: #7ce3bc; --pink: #ff8ed8; --warn: #f6cf7b; --danger: #ff809b;
+  --shadow-panel: 0 18px 60px rgba(28, 5, 62, .42);
+}
+html[data-theme] body { background: var(--bg); }
+html[data-theme] .aurora { background: radial-gradient(55% 42% at 14% 4%, color-mix(in srgb, var(--purple) 34%, transparent), transparent 72%), radial-gradient(45% 38% at 86% 8%, color-mix(in srgb, var(--cyan) 18%, transparent), transparent 70%); }
+html[data-theme] .topbar, html[data-theme] .workspace-header, html[data-theme] .workspace-sidebar { background: var(--bg-raised); }
+html[data-theme] .panel-glass, html[data-theme] .master-dialog { background: var(--surface); border-color: var(--line); }
+html[data-theme] .hero { background: linear-gradient(115deg, color-mix(in srgb, var(--surface-2) 94%, var(--purple)), var(--surface)); }
+html[data-theme] .topnav a.active, html[data-theme] .master-nav, html[data-theme] .master-bubble.user { background: color-mix(in srgb, var(--purple) 24%, var(--surface)); color: var(--text); }
+html[data-theme] .primary { background: linear-gradient(135deg, var(--purple), color-mix(in srgb, var(--cyan) 72%, var(--purple))); color: #fff; }
+html[data-theme] .logo-mark { background: linear-gradient(135deg, var(--purple), var(--cyan)); }
+html[data-theme] .villa-card, html[data-theme] .metric-card, html[data-theme] input, html[data-theme] textarea, html[data-theme] select { background: var(--bg-raised); }
+html[data-theme] .suggestion, html[data-theme] .master-bubble { background: color-mix(in srgb, var(--surface-2) 86%, transparent); }
+html[data-theme] .theme-panel { background: color-mix(in srgb, var(--surface) 94%, var(--purple)); }
+.design-panel { grid-column: 1 / -1; }
+.theme-picker { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.theme-option { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 68px; padding: 10px; text-align: left; background: color-mix(in srgb, var(--surface-2) 74%, transparent); border: 1px solid var(--line); border-radius: 14px; color: var(--text); }
+.theme-option:hover, .theme-option[aria-checked="true"] { border-color: var(--line-strong); background: color-mix(in srgb, var(--purple) 18%, var(--surface-2)); }
+.theme-option[aria-checked="true"] { box-shadow: 0 0 0 2px color-mix(in srgb, var(--purple) 45%, transparent); }
+.theme-option > span:last-child { min-width: 0; }
+.theme-option b, .theme-option small { display: block; overflow-wrap: anywhere; }
+.theme-option b { font-size: 13px; }
+.theme-option small { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.theme-swatch { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; border: 1px solid rgba(255,255,255,.3); box-shadow: inset 0 0 12px rgba(255,255,255,.15); }
+.theme-swatch-aurora { background: linear-gradient(135deg, #866bff, #2fdcff 56%, #f06cd2); }
+.theme-swatch-midnight { background: linear-gradient(135deg, #202c3c, #8da8c8 58%, #70dfb3); }
+.theme-swatch-mint { background: linear-gradient(135deg, #164038, #5eead4 58%, #8cf6bf); }
+.theme-swatch-ember { background: linear-gradient(135deg, #49231c, #ff9d68 55%, #ff91bd); }
+.theme-swatch-arctic { background: linear-gradient(135deg, #143246, #79dcff 55%, #b6a8ff); }
+@media (max-width: 1050px) { .theme-picker { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .theme-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); } .theme-option { min-height: 62px; } .theme-option small { display: none; } }

@@ -147,6 +147,26 @@ async function run() {
 
   await safeShot('01-uebersicht-desktop');
 
+  await check('Fünf Dashboard-Designs wechseln und bleiben gespeichert', async () => {
+    const themes = ['aurora', 'midnight', 'mint', 'ember', 'arctic'];
+    const seen = [];
+    for (const theme of themes) {
+      const state = await page.evaluate(`
+        const button = document.querySelector('[data-theme-choice="${theme}"]');
+        button.click();
+        return { theme: document.documentElement.dataset.theme, checked: button.getAttribute('aria-checked') };
+      `);
+      if (state.theme !== theme || state.checked !== 'true') throw new Error(`Theme ${theme} wurde nicht aktiviert`);
+      seen.push(state.theme);
+    }
+    await page.navigate(`http://127.0.0.1:${PORT}/`);
+    await delay(450);
+    const persisted = await page.evaluate('return document.documentElement.dataset.theme;');
+    if (persisted !== 'arctic') throw new Error(`Theme wird nicht gespeichert: ${persisted}`);
+    await page.evaluate("document.querySelector('[data-theme-choice=aurora]').click(); return true;");
+    return `${seen.length} Presets geprüft, Arctic nach Reload erhalten`;
+  });
+
   let villaId = null;
   await check('Villa per UI anlegen oeffnet den Arbeitsbereich', async () => {
     await page.evaluate(`
@@ -397,4 +417,3 @@ function writeReport() {
   if (report.console.errors.length) console.log(`   ! Konsolenfehler: ${report.console.errors.length}`);
   process.exit(failed ? 1 : 0);
 })();
-
