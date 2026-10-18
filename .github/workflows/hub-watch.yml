@@ -38,6 +38,7 @@ jobs:
           now = datetime.datetime.now(datetime.timezone.utc)
           # 1) Hub von aussen (HTTPS via hub.cybersarah-ki.com)
           hub = {}
+          villas = []
           if tok:
               r, err = get('https://hub.cybersarah-ki.com/api/health',
                           {'Authorization': 'Bearer ' + tok}, 12)
@@ -54,28 +55,84 @@ jobs:
                   hub = {'state': 'DOWN', 'error': err[:120]}
           else:
               hub = {'state': 'DOWN', 'error': 'Login fehlgeschlagen'}
-          # 2) Sync-Frische (letzter CyberSarah-Commit)
-          r, _ = get('https://api.github.com/repos/niknight1403/CyberSarah-Control-Center/commits?per_page=1', ghauth, 15)
-          sync_age = None
-          if r:
-              c = json.load(r)[0]
-              d = datetime.datetime.fromisoformat(c['commit']['author']['date'].replace('Z', '+00:00'))
-              sync_age = int((now - d).total_seconds() / 60)
-          status = {'checked_at': now.isoformat(), 'hub': hub, 'sync_age_min': sync_age}
-          state = hub['state']
-          if state == 'UP' and (sync_age is None or sync_age > 25):
+
+          # 2) Hub-interne Aktivitaetsmetrik (Minuten seit max(updated_at) aller Villen)
+          # Option 1 (bevorzugt): GET /api/villas updated_at auswerten
+          villa_activity_min = None
+          max_updated_dt = None
+
+          for v in villas:
+              val = v.get('updated_at')
+              if val is None:
+                  continue
+              dt_val = None
+              if isinstance(val, (int, float)):
+                  ts_sec = val / 1000.0 if val > 1e11 else float(val)
+                  try:
+                      dt_val = datetime.datetime.fromtimestamp(ts_sec, datetime.timezone.utc)
+                  except Exception:
+                      pass
+              elif isinstance(val, str):
+                  val_s = val.strip()
+                  if val_s.isdigit():
+                      v_num = float(val_s)
+                      ts_sec = v_num / 1000.0 if v_num > 1e11 else v_num
+                      try:
+                          dt_val = datetime.datetime.fromtimestamp(ts_sec, datetime.timezone.utc)
+                      except Exception:
+                          pass
+                  else:
+                      try:
+                          dt_val = datetime.datetime.fromisoformat(val_s.replace('Z', '+00:00'))
+                          if dt_val.tzinfo is None:
+                              dt_val = dt_val.replace(tzinfo=datetime.timezone.utc)
+                      except Exception:
+                          pass
+              if dt_val:
+                  if max_updated_dt is None or dt_val > max_updated_dt:
+                      max_updated_dt = dt_val
+
+          if max_updated_dt:
+              villa_activity_min = int((now - max_updated_dt).total_seconds() / 60)
+
+          # Option 2 (Fallback): GET /api/stats nutzen, falls updated_at unbrauchbar/fehlt
+          if villa_activity_min is None and tok:
+              rs, err_s = get('https://hub.cybersarah-ki.com/api/stats',
+                              {'Authorization': 'Bearer ' + tok}, 12)
+              if rs:
+                  try:
+                      stats_data = json.load(rs)
+                      ts_val = stats_data.get('ts')
+                      if ts_val:
+                          ts_sec = ts_val / 1000.0 if ts_val > 1e11 else float(ts_val)
+                          stats_dt = datetime.datetime.fromtimestamp(ts_sec, datetime.timezone.utc)
+                          villa_activity_min = int((now - stats_dt).total_seconds() / 60)
+                  except Exception:
+                      pass
+
+          status = {'checked_at': now.isoformat(), 'hub': hub, 'villa_activity_min': villa_activity_min}
+          state = hub.get('state', 'DOWN')
+          if state == 'UP' and (villa_activity_min is None or villa_activity_min > 90):
               state = 'DEGRADED'
           status['state'] = state
           print(json.dumps(status, indent=2))
+
           # 3) Status nur bei Aenderung in HUB-WATCH.json schreiben
           r, _ = get('https://api.github.com/repos/niknight1403/Agentforge2/contents/HUB-WATCH.json', ghauth, 15)
           sha = None
+          old_data = {}
           if r:
-              old = json.load(r)
-              sha = old.get('sha')
-              if old.get('state') == state and (state == 'DOWN' or old.get('hub', {}).get('running') == hub.get('running')):
-                  print('Zustand unveraendert:', state, '- kein Update.')
-                  raise SystemExit(0 if state == 'UP' else 1)
+              res_obj = json.load(r)
+              sha = res_obj.get('sha')
+              if 'content' in res_obj:
+                  try:
+                      old_data = json.loads(base64.b64decode(res_obj['content']).decode('utf-8'))
+                  except Exception:
+                      old_data = {}
+          if old_data.get('state') == state and 'sync_age_min' not in old_data and (state == 'DOWN' or (old_data.get('hub', {}).get('running') == hub.get('running') and old_data.get('villa_activity_min') == villa_activity_min)):
+              print('Zustand unveraendert:', state, '- kein Update.')
+              raise SystemExit(0 if state == 'UP' else 1)
+
           body = json.dumps({'message': f'hub-watch: {state}', 'branch': 'main',
                              'sha': sha,
                              'content': base64.b64encode(json.dumps(status, indent=2).encode()).decode()}).encode()
