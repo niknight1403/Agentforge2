@@ -174,15 +174,15 @@ fun NeonIconPlate(icon: @Composable () -> Unit, accent: Color = NeonCyan, size: 
  */
 fun Modifier.auroraBg(): Modifier = drawBehind {
     drawRect(color = PremiumInk, size = size)
-    drawBrush(brush = Brush.radialGradient(
+    drawRect(brush = Brush.radialGradient(
         colors = listOf(Color(0x33241A63), Color(0x00241A63)),
         center = Offset(size.width * 0.12f, size.height * 0.05f),
         radius = size.width * 1.35f))
-    drawBrush(brush = Brush.radialGradient(
+    drawRect(brush = Brush.radialGradient(
         colors = listOf(Color(0x26007A7A), Color(0x00007A7A)),
         center = Offset(size.width * 0.95f, size.height * 0.55f),
         radius = size.width * 1.1f))
-    drawBrush(brush = Brush.radialGradient(
+    drawRect(brush = Brush.radialGradient(
         colors = listOf(Color(0x2EE8C27A), Color(0x00E8C27A)),
         center = Offset(size.width * 0.55f, size.height * 1.02f),
         radius = size.width * 0.9f))

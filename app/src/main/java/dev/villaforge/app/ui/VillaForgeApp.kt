@@ -85,9 +85,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf(Screen.DASHBOARD) }
 
-    /* Quality-Layer v2: EIN zentraler Aurora-Hintergrund auf App-Ebene —
-     * alle Screens (Dashboard, Villen, Master, Chat, Detail, Diagnose)
-     * erben den Premium-Look, der Scaffold selbst bleibt transparent. */
+    /* Quality-Layer v2: EIN zentraler Aurora-Hintergrund auf App-Ebene. */
     Box(Modifier.fillMaxSize().auroraBg()) {
         Scaffold(
         containerColor = Color.Transparent,
@@ -127,9 +125,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     actionIconContentColor = TextMain
                 )
             )
-        }
-    }
-,
+        },
         bottomBar = {
             if (topLevelScreens.contains(screen)) {
                 NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
@@ -208,4 +204,6 @@ fun VillaForgeApp(viewModel: MainViewModel) {
             }
         }
     }
+    }
+
 }
