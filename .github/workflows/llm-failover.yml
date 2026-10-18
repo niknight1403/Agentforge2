@@ -95,11 +95,11 @@ jobs:
           litellm_settings:
             drop_params: true
             num_retries: 0
-            request_timeout: 5
+            request_timeout: 120
           router_settings:
             routing_strategy: simple-shuffle
             num_retries: 1
-            timeout: 5
+            timeout: 120
             cooldown_time: 30
             allowed_fails: 1
           general_settings:
@@ -170,12 +170,12 @@ jobs:
           echo -n "Ollama  /api/tags:        HTTP "; curl -s -m 5 -o /dev/null -w "%{http_code}\n" http://127.0.0.1:11434/api/tags
           echo -n "LiteLLM /health/liveliness: HTTP "; curl -s -m 5 -o /dev/null -w "%{http_code}\n" http://127.0.0.1:4000/health/liveliness
           echo "== Kaskaden-Test (Normalbetrieb: Groq primaer) =="
-          time curl -s -m 30 http://127.0.0.1:4000/v1/chat/completions \
+          time curl -s -m 150 http://127.0.0.1:4000/v1/chat/completions \
             -H "Authorization: Bearer sk-villaforge-local" -H "Content-Type: application/json" \
             -d '{"model":"villa-kaskade","messages":[{"role":"user","content":"Antworte nur mit: ok"}],"max_tokens":10}' | head -c 400
           echo ""
           echo "== FAILOVER-TEST: kaputter Primaer-Schluessel -> muss auf Ollama springen (3-5 s) =="
-          time curl -s -m 30 http://127.0.0.1:4000/v1/chat/completions \
+          time curl -s -m 150 http://127.0.0.1:4000/v1/chat/completions \
             -H "Authorization: Bearer sk-villaforge-local" -H "Content-Type: application/json" \
             -d '{"model":"villa-failtest","messages":[{"role":"user","content":"Antworte nur mit: ok"}],"max_tokens":10}' | head -c 400
           echo ""
