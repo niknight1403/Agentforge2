@@ -1,0 +1,34 @@
+name: VM-Diagnose (Hub-Log auslesen)
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: 'Zeitfenster in Minuten'
+        required: false
+        default: '15'
+      filter:
+        description: 'grep-Filter (leer = letzte 40 Zeilen)'
+        required: false
+        default: 'route|HTTP|Error|error'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+
+      - name: Hub-Journal abfragen
+        run: |
+          MIN='${{ github.event.inputs.minutes }}'
+          FILTER='${{ github.event.inputs.filter }}'
+          /tmp/sshcmd "sudo journalctl -u villaforge-hub.service --since \"\$(date -d \"\$MIN min ago\" '+%Y-%m-%d %H:%M:%S')\" --no-pager | grep -iE \"$FILTER\" | tail -40"
