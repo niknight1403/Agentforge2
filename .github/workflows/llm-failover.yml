@@ -197,7 +197,36 @@ jobs:
           sudo systemctl --no-pager --lines=5 status litellm.service | head -8 || true
           EOS
 
-      - name: "4) Verifikation - Health-Checks + Failover-Akzeptanztest"
+      - name: "4) Hub-Lastbalance: Villa-Parallelitaet + Kaskaden-Bucket"
+        run: |
+          /tmp/sshcmd 'bash -s' << 'EOS'
+          set -e
+          echo "== Systemd-Drop-In: VF_MAX_CONCURRENCY=2 (Free-Tier-Kapazitaet) =="
+          UNIT=$(systemctl list-units --type=service --state=running --no-legend | awk '/villa/{print $1}' | head -1)
+          if [ -n "$UNIT" ]; then
+            sudo mkdir -p /etc/systemd/system/$UNIT.d
+            sudo tee /etc/systemd/system/$UNIT.d/limits.conf >/dev/null << 'DROPIN'
+            [Service]
+            Environment=VF_MAX_CONCURRENCY=2
+            DROPIN
+            sudo systemctl daemon-reload
+            sudo systemctl restart $UNIT
+            echo "Drop-In aktiv fuer $UNIT - Hub neu gestartet"
+          else
+            echo "WARNUNG: Villa-Hub-Unit nicht gefunden - Drop-In uebersprungen"
+          fi
+          echo "== Kaskaden-Routenname: Groq-Bucket statt Gemini-Bucket =="
+          tee /tmp/rename-route.mjs >/dev/null << 'NODEJS'
+          import { DatabaseSync } from 'node:sqlite';
+          const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
+          db.prepare("UPDATE routes SET name = 'LiteLLM Kaskade (Groq->Gemini->Ollama, lokal)' WHERE id = 11").run();
+          console.log('Route 11 umbenannt -> Groq-Bucket (20 RPM)');
+          NODEJS
+          sudo node /tmp/rename-route.mjs && rm -f /tmp/rename-route.mjs
+          sleep 8
+          EOS
+
+      - name: "5) Verifikation - Health-Checks + Failover-Akzeptanztest"
         run: |
           /tmp/sshcmd 'bash -s' << 'EOS'
           echo "== Health-Checks =="
