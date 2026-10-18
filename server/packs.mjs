@@ -10,6 +10,7 @@
  * protokolliert das im Audit als "blockiert".
  */
 import { db, now } from './db.mjs';
+import { toolEnabled } from './control-store.mjs';
 
 /** Reihenfolge = Anzeigereihenfolge in Weboberflaeche und App. */
 export const FEATURE_PACKS = [
@@ -44,6 +45,18 @@ export const FEATURE_PACKS = [
     caps: ['/api/villas/:id/council']
   },
   {
+    id: 'qualitaetstor',
+    title: 'Echter-Code-Qualitaetstor',
+    description: 'Code-Aufgaben muessen den Build/Test-Tor des echten Projekts passieren, bevor sie als erledigt gelten — nicht bestanden bleibt offen, bis die Prüfung besteht.',
+    caps: []
+  },
+  {
+    id: 'reflexion',
+    title: 'Reflexions-Loop',
+    description: 'Agenten pruefen und verbessern ihre eigene Antwort mit einem zweiten Modellauf, bevor sie abgeschlossen wird.',
+    caps: []
+  },
+  {
     id: 'werkzeuge',
     title: 'Werkzeug-Pack (Hauptschalter)',
     description: 'Schaltet alle Werkzeug-Packs frei oder sperrt sie. Aus = Agenten planen, aber arbeiten nicht am Projekt.',
@@ -76,10 +89,13 @@ export const MASTER_PACK = 'werkzeuge';
 export const TOOL_PACKS = [
   { id: 'gedaechtnis', title: 'Gedaechtnis', description: 'Wissen sichern und wiederfinden.', tools: ['memory_write', 'memory_search'] },
   { id: 'planung', title: 'Planung & Aufgaben', description: 'Aufgaben anlegen, fortschreiben und Agenten nachziehen.', tools: ['task_create', 'task_update', 'agent_spawn'] },
-  { id: 'projekt', title: 'Projektanalyse', description: 'Quellprojekt lesen, durchsuchen und ueberblicken.', tools: ['project_tree', 'project_search', 'project_read'] },
+  { id: 'projekt', title: 'Projektanalyse', description: 'Quellprojekt lesen, durchsuchen und ueberblicken.', tools: ['project_tree', 'project_search', 'project_read', 'studio_status', 'studio_designs', 'remote_worker'] },
   { id: 'ausfuehrung', title: 'Ausfuehrung', description: 'Builds und Tests im Projekt starten (nur erlaubte Programme).', tools: ['project_run'] },
   { id: 'artefakte', title: 'Artefakte', description: 'Dateien im Villa-Workspace schreiben und auflisten.', tools: ['artifact_write', 'artifact_list'] },
-  { id: 'recherche', title: 'Recherche', description: 'Seiten im Netz abrufen und auswerten.', tools: ['web_fetch'] },
+  { id: 'recherche', title: 'Recherche', description: 'Websuche (DuckDuckGo, keyless), Seitenabruf mit Jina-Reader-Kaskade und konfigurierte JSON-Connectoren.', tools: ['web_search', 'web_fetch', 'connector_read'] },
+  { id: 'medien', title: 'Medien (Fal.ai)', description: 'Bilder und Medien mit Fal.ai erzeugen und im Workspace ablegen.', tools: ['media_generate'] },
+  { id: 'extern', title: 'Externe Integrationen (Fireflies & Asana)', description: 'Meeting-Protokolle aus Fireflies und Aufgaben-Sync nach Asana — brauchen je einen Token im Secrets-Store (FIREFLIES_API_KEY, ASANA_PAT).', tools: ['fireflies_transcripts', 'asana_list_projects', 'asana_create_task'] },
+  { id: 'open-data', title: 'Offene Daten (keylos)', description: 'Wikipedia, Hacker News, Wetter, Waehrungen und Paket-Infos — alles ohne API-Key.', tools: ['wikipedia_search', 'hackernews_search', 'weather_lookup', 'currency_convert', 'package_info'] },
   { id: 'berichte', title: 'Berichte', description: 'Analyse-, Umsatz- und Review-Berichte ablegen.', tools: ['report_write'] }
 ];
 
@@ -123,6 +139,7 @@ export function setPackEnabled(id, enabled) {
  * Der Hauptschalter schlaegt alles; sonst entscheidet das eigene Werkzeug-Pack.
  */
 export function canUseTool(toolName) {
+  if (!toolEnabled(toolName)) return { allowed:false,reason:'Werkzeug wurde vom Master-Agent deaktiviert.' };
   if (!packEnabled(MASTER_PACK)) return { allowed: false, reason: 'Werkzeug-Pack (Hauptschalter) ist ausgeschaltet.' };
   const pack = toolPackOf(toolName);
   if (!pack) return { allowed: true }; // Werkzeuge ohne Pack bleiben erlaubt

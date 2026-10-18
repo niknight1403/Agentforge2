@@ -1,21 +1,37 @@
-import { db, now, pruneHistory } from './db.mjs';
-import { chat, derivePlan, readyRealRoutes } from './llm.mjs';
+import { studioStatus,proposeDesigns } from './studio.mjs';
+import { executeRemoteWorker } from './remote-worker.mjs';
+import { PROJECT_WORKSPACE,ownProjectDir,verifyProjectRuntime,ensureVerificationTasks } from './project-verification.mjs';
+import { db, now } from './db.mjs';
+import { maybeDeliverApk } from './builds.mjs';
+import { skillInstructions, readConnector } from './control-store.mjs';
+import { pruneHistory } from './maintenance.mjs';
+import { chat, enabledRoutes, resolveKey, derivePlan } from './llm.mjs';
 import { emit } from './events.mjs';
 import { mkdirSync, writeFileSync, readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { execSync,execFileSync } from 'node:child_process';
+import { resolve, join, dirname } from 'node:path';
 import { projectSummary, searchProject, readProjectFile, runCommand, safePath } from './fs-tools.mjs';
-import { canUseTool, toolPackOf } from './packs.mjs';
+import { canUseTool, toolPackOf, packEnabled } from './packs.mjs';
 
-export const WORKSPACE = resolve(process.env.VF_WORKSPACE || join(process.cwd(), 'server', 'data', 'workspace'));
+export const WORKSPACE = PROJECT_WORKSPACE;
 mkdirSync(WORKSPACE, { recursive: true });
 
-const ROLES = ['PLANNER', 'RESEARCHER', 'ARCHITECT', 'CODER', 'REVIEWER', 'TESTER', 'DOCUMENTER', 'CRITIC', 'INTEGRATOR', 'WORKER', 'BUSINESS', 'GROWTH'];
+/** v1.40.0 — Projektordner der Villa: hier entsteht der ECHTE Produktcode. */
+export function villaProjectDir(villaId) {
+  return ownProjectDir(villaId);
+}
+
+export const ROLES = ['PLANNER', 'RESEARCHER', 'ARCHITECT', 'CODER', 'REVIEWER', 'TESTER', 'DOCUMENTER', 'CRITIC', 'INTEGRATOR', 'WORKER', 'BUSINESS', 'GROWTH', 'STRATEGIST', 'REASONER', 'SYNTHESIZER', 'OPTIMIZER', 'VERIFIER'];
 
 /* ------------------------------------------------------------------ */
 /* Werkzeuge                                                           */
 /* ------------------------------------------------------------------ */
 
 const TOOLS = {
+  remote_worker:{description:'Einen begrenzten Rechenauftrag an den vom Administrator konfigurierten Remote-Worker senden. Erst nach Konfiguration nutzbar; keine GPU-Buchung.',schema:{task:'string',input:'object|array'},run:async(ctx,a)=>JSON.stringify(await executeRemoteWorker(a.task,a.input))},
+  studio_status:{description:'Echte Abnahmeblocker, nächste Schritte und Live-Vorschau dieses Projekts.',schema:{},run:ctx=>JSON.stringify(studioStatus(ctx.villaId))},
+  studio_designs:{description:'Zwei ideenspezifische UI-Designrichtungen mit Farben, Layout, Nutzerfluss und Abnahmekriterien vorschlagen. Noch keine Umsetzung.',schema:{},run:async ctx=>JSON.stringify(await proposeDesigns(ctx.villaId))},
+  connector_read: { description:'Liest JSON über einen konfigurierten HTTPS-Connector (GET).', schema:{connectorId:'string'}, run:async (ctx,a)=>JSON.stringify(await readConnector(String(a.connectorId))).slice(0,12000) },
   memory_write: {
     description: 'Schreibt einen dauerhaften Eintrag ins Gedaechtnis.',
     schema: { title: 'string', content: 'string', kind: 'FACT|DECISION|ARTIFACT|LESSON|IDEA|CONSTRAINT', importance: '1-10' },
@@ -34,19 +50,107 @@ const TOOLS = {
       const rows = db.prepare(
         'SELECT title, content FROM memories WHERE villa_id = ? AND (lower(title) LIKE ? OR lower(content) LIKE ?) ORDER BY importance DESC LIMIT 10'
       ).all(ctx.villaId, q, q);
-      return rows.length ? rows.map((r) => `- ${r.title}: ${r.content.slice(0, 200)}`).join('\n') : 'Keine Treffer.';
+      return rows.length ? rows.map((r) => `- ${r.title}: ${String(r.content || '').slice(0, 200)}`).join('\n') : 'Keine Treffer.';
     }
   },
   web_fetch: {
-    description: 'Laedt eine URL und gibt den Textinhalt zurueck (nur http/https).',
+    description: 'Laedt eine URL und gibt den Text zurueck - Kaskade: Jina Reader (Markdown, kostenlos) -> Direkt-Fetch (nur http/https).',
     schema: { url: 'string' },
     run: async (ctx, a) => {
       const url = String(a.url || '');
       if (!/^https?:\/\//i.test(url)) return 'Nur http/https erlaubt.';
+      /* Stufe 1: Jina Reader - sauberes Markdown ohne Key */
+      try {
+        const r = await fetch(`https://r.jina.ai/${url}`, {
+          signal: AbortSignal.timeout(25000),
+          headers: { 'User-Agent': 'VillaForge/1.0', 'Accept': 'text/plain' }
+        });
+        if (r.ok) {
+          const md = await r.text();
+          if (md && md.trim().length > 80) return `QUELLE: Jina Reader (Markdown)\n${md.slice(0, 4000)}`;
+        }
+      } catch { /* naechste Stufe */ }
+      /* Stufe 2: Direkt-Fetch mit Tag-Strip */
       const res = await fetch(url, { signal: AbortSignal.timeout(20000), headers: { 'User-Agent': 'VillaForge/1.0' } });
       const html = await res.text();
       const text = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
       return `HTTP ${res.status}\n${text.slice(0, 4000)}`;
+    }
+  },
+  web_search: {
+    description: 'Kostenlose Websuche ohne API-Key (Kaskade DuckDuckGo HTML -> DDG Lite). Liefert Titel, URLs und Snippets.',
+    schema: { query: 'string' },
+    run: async (ctx, a) => {
+      const q = String(a.query || '').trim();
+      if (!q) return 'Leere Suchanfrage.';
+      const decodeHref = (h) => {
+        try {
+          if (h.includes('uddg=')) return decodeURIComponent(h.split('uddg=')[1].split('&')[0]);
+          if (h.startsWith('//')) return 'https:' + h;
+          return h;
+        } catch { return h; }
+      };
+      /* Stufe 1: DuckDuckGo HTML (keyless) */
+      try {
+        const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, {
+          signal: AbortSignal.timeout(15000),
+          headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0' }
+        });
+        const html = await res.text();
+        const links = [...html.matchAll(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
+        const snips = [...html.matchAll(/class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/gi)];
+        const out = [];
+        for (let i = 0; i < links.length && out.length < 6; i++) {
+          const url = decodeHref(links[i][1]);
+          if (!/^https?:\/\//.test(url)) continue;
+          const title = links[i][2].replace(/<[^>]+>/g, '').trim();
+          const snip = (snips[i] ? snips[i][1].replace(/<[^>]+>/g, '').trim() : '').slice(0, 220);
+          out.push(`- ${title}\n  ${url}\n  ${snip}`);
+        }
+        if (out.length) return `WEB-SUCHE: "${q}" (${out.length} Treffer, DuckDuckGo)\n${out.join('\n')}`;
+      } catch { /* naechste Stufe */ }
+      /* Stufe 2: DDG Lite (POST, keyless) */
+      try {
+        const res = await fetch('https://lite.duckduckgo.com/lite/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0' },
+          body: 'q=' + encodeURIComponent(q),
+          signal: AbortSignal.timeout(15000)
+        });
+        const html = await res.text();
+        const links = [...html.matchAll(/<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
+        const out = [];
+        for (let i = 0; i < links.length && out.length < 6; i++) {
+          const url = decodeHref(links[i][1]);
+          if (url.includes('duckduckgo.com')) continue;
+          const title = links[i][2].replace(/<[^>]+>/g, '').trim();
+          out.push(`- ${title}\n  ${url}`);
+        }
+        if (out.length) return `WEB-SUCHE: "${q}" (${out.length} Treffer, DDG Lite)\n${out.join('\n')}`;
+      } catch { /* naechste Stufe */ }
+      return 'WEB-SUCHE: Alle Suchstufen blockiert (Rate-Limit?). Spaeter erneut versuchen oder web_fetch mit bekannter URL nutzen.';
+    }
+  },
+  artifact_patch: {
+    description: 'Ersetzt in einer Workspace-Datei einen Textabschnitt (schneller und guenstiger als artifact_write fuer kleine Aenderungen).',
+    schema: { name: 'string', find: 'string', replace: 'string', all: 'boolean' },
+    run: (ctx, a) => {
+      const safe = String(a.name || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const dir = join(WORKSPACE, `villa-${ctx.villaId}`);
+      const full = join(dir, safe);
+      if (!existsSync(full)) return `Datei nicht gefunden: ${safe}. Lege sie zuerst mit artifact_write an.`;
+      let text;
+      try { text = readFileSync(full, 'utf8'); } catch (err) { return `Lesefehler: ${err.message}`; }
+      const needle = String(a.find || '');
+      if (!needle || !text.includes(needle)) return 'Zu ersetzender Text nicht gefunden. Pruefe den Wortlaut (artifact_list/project_read).';
+      if (a.all) {
+        const outAll = text.split(needle).join(String(a.replace ?? ''));
+        writeFileSync(full, outAll, 'utf8');
+        return `${safe}: alle Vorkommen ersetzt.`;
+      }
+      const out = text.replace(needle, String(a.replace ?? ''));
+      writeFileSync(full, out, 'utf8');
+      return `${safe}: 1 Vorkommen ersetzt.`;
     }
   },
   task_create: {
@@ -66,6 +170,29 @@ const TOOLS = {
       db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ? AND villa_id = ?')
         .run(a.status || 'RUNNING', String(a.result || ''), now(), Number(a.id), ctx.villaId);
       return `Aufgabe #${a.id} -> ${a.status}`;
+    }
+  },
+  code_write: {
+    description: 'Schreibt eine echte Codedatei in den Projektordner der Villa (verschachtelte Pfade wie src/main.py, tests/test_app.py, requirements.txt werden angelegt). PFICHT fuer jede Code-Umsetzung: Reine Berichte reissen das Qualitaetstor.',
+    schema: { path: 'string', content: 'string' },
+    run: (ctx, a) => {
+      const rel = String(a.path || '').replace(/\\/g, '/').replace(/^\/+/, '');
+      if (!rel || rel.includes('..')) return 'Ungueltiger Pfad.';
+      const dir = villaProjectDir(ctx.villaId);
+      const target = safePath(dir, rel);
+      if (!target) return 'Ungueltiger Pfad.';
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, String(a.content || ''), 'utf8');
+      if (!sourceRoot(ctx.villaId)) setSource(ctx.villaId, dir);
+      return `Codedatei geschrieben: ${rel}`;
+    }
+  },
+  github_publish: {
+    description: 'Pusht den fertigen Projektstand der Villa in das passende GitHub-Produkt-Repo (legt es bei Bedarf an). Braucht GITHUB_TOKEN im Secrets-Store.',
+    schema: {},
+    run: async (ctx) => {
+      const r = await publishToGitHub(ctx.villaId, ctx.agentId, { title: 'Manueller Produkt-Push' });
+      return r.ok ? `Produkt gepusht: ${r.url}` : `Push nicht moeglich: ${r.error}`;
     }
   },
   agent_spawn: {
@@ -145,7 +272,7 @@ const TOOLS = {
     }
   },
   project_run: {
-    description: 'Fuehrt einen Build- oder Testbefehl im Projekt aus. Erlaubt sind npm, npx, node, python3, pip, gradle. Keine Shell, keine Netzwerk- oder Installationsschalter.',
+    description: 'Fuehrt einen Build-, Test- oder Git-Befehl im Projekt aus. Erlaubt: npm (run/test), node/python3 (Skriptdateien), gradle, git (status/diff/add/commit/log/restore). Kein Push, keine Shell, keine Installationen.',
     schema: { binary: 'string', args: 'string[]', timeoutMs: 'number' },
     run: async (ctx, a) => {
       const root = sourceRoot(ctx.villaId);
@@ -153,6 +280,204 @@ const TOOLS = {
       const r = await runCommand(root, a.binary, a.args, Number(a.timeoutMs) || 120000);
       if (r.error && !r.output) return `Nicht ausgefuehrt: ${r.error}`;
       return `Exit ${r.ok ? 0 : r.code}:\n${r.output || '(keine Ausgabe)'}`;
+    }
+  },
+  project_patch: {
+    description: 'Aendert eine Datei im ECHTEN Quellprojekt: ersetzt einen Textabschnitt. Sicherung der alten Fassung automatisch im Villa-Workspace. Nutze es fuer gezielte Verbesserungen am realen Code.',
+    schema: { path: 'string', find: 'string', replace: 'string', all: 'boolean' },
+    run: (ctx, a) => {
+      const root = sourceRoot(ctx.villaId);
+      if (!root) return 'Kein Quellprojekt hinterlegt.';
+      const full = safePath(root, String(a.path || ''));
+      if (!full || !existsSync(full)) return `Datei nicht gefunden oder ausserhalb des Projekts: ${a.path}`;
+      const text = readFileSync(full, 'utf8');
+      const needle = String(a.find || '');
+      if (!needle || !text.includes(needle)) return 'Zu ersetzender Text nicht gefunden. Pruefe mit project_read den exakten Wortlaut.';
+      const backups = join(WORKSPACE, `villa-${ctx.villaId}`, 'backups');
+      mkdirSync(backups, { recursive: true });
+      writeFileSync(join(backups, `${String(a.path).replace(/[^a-zA-Z0-9._-]/g, '_')}.${Date.now()}.bak`), text, 'utf8');
+      const out = a.all ? text.split(needle).join(String(a.replace ?? '')) : text.replace(needle, String(a.replace ?? ''));
+      writeFileSync(full, out, 'utf8');
+      return `${a.path}: ${a.all ? 'alle Vorkommen' : '1 Vorkommen'} ersetzt (Backup im Villa-Workspace).`;
+    }
+  },
+  project_write: {
+    description: 'Schreibt eine vollstaendige Datei ins ECHTE Quellprojekt (neu oder ueberschrieben, alte Fassung wird gesichert). Fuer neue Module, Tests und Konfiguration im realen Code.',
+    schema: { path: 'string', content: 'string' },
+    run: (ctx, a) => {
+      const root = sourceRoot(ctx.villaId);
+      if (!root) return 'Kein Quellprojekt hinterlegt.';
+      const full = safePath(root, String(a.path || ''));
+      if (!full) return `Ungueltiger Pfad oder ausserhalb des Projekts: ${a.path}`;
+      if (existsSync(full)) {
+        const backups = join(WORKSPACE, `villa-${ctx.villaId}`, 'backups');
+        mkdirSync(backups, { recursive: true });
+        writeFileSync(join(backups, `${String(a.path).replace(/[^a-zA-Z0-9._-]/g, '_')}.${Date.now()}.bak`), readFileSync(full, 'utf8'), 'utf8');
+      } else {
+        mkdirSync(dirname(full), { recursive: true });
+      }
+      writeFileSync(full, String(a.content || ''), 'utf8');
+      return `${a.path} im Projekt geschrieben (${String(a.content || '').length} Zeichen).`;
+    }
+  },
+  wikipedia_search: {
+    description: 'Durchsucht die Wikipedia (Artikel-Snippets mit Links) — fuer Fakten, Definitionen und Hintergrund.',
+    schema: { query: 'string', lang: 'string (de | en, Standard de)', limit: 'number' },
+    run: async (ctx, a) => {
+      const lang = a.lang === 'en' ? 'en' : 'de';
+      const res = await fetch(`https://${lang}.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=${Math.min(10, Number(a.limit) || 5)}&srsearch=${encodeURIComponent(String(a.query || ''))}`, { signal: AbortSignal.timeout(15000), headers: { 'User-Agent': 'VillaForge-Hub/1.37' } });
+      if (!res.ok) return `Wikipedia HTTP ${res.status}`;
+      const hits = (await res.json())?.query?.search || [];
+      if (!hits.length) return 'Keine Treffer.';
+      return hits.map((h) => `- ${h.title}: ${String(h.snippet || '').replace(/<[^>]+>/g, '')} (https://${lang}.wikipedia.org/wiki/${encodeURIComponent(String(h.title).replace(/ /g, '_'))})`).join('\n').slice(0, 4000);
+    }
+  },
+  hackernews_search: {
+    description: 'Durchsucht Hacker News — Tech-Diskussionen, Produktideen, Trends.',
+    schema: { query: 'string', limit: 'number' },
+    run: async (ctx, a) => {
+      const res = await fetch(`https://hn.algolia.com/api/v1/search?hitsPerPage=${Math.min(10, Number(a.limit) || 5)}&query=${encodeURIComponent(String(a.query || ''))}`, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) return `Hacker News HTTP ${res.status}`;
+      const hits = (await res.json())?.hits || [];
+      if (!hits.length) return 'Keine Treffer.';
+      return hits.map((h) => `- ${h.title || h.story_title} (${h.points ?? '?'} Punkte, ${h.num_comments ?? '?'} Kommentare): https://news.ycombinator.com/item?id=${h.objectID}`).join('\n').slice(0, 4000);
+    }
+  },
+  weather_lookup: {
+    description: 'Aktuelles Wetter und 3-Tage-Trend fuer einen Ort (Open-Meteo, ohne Key).',
+    schema: { location: 'string' },
+    run: async (ctx, a) => {
+      const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=1&language=de&name=${encodeURIComponent(String(a.location || ''))}`, { signal: AbortSignal.timeout(15000) });
+      const g = (await geo.json())?.results?.[0];
+      if (!g) return `Ort nicht gefunden: ${a.location}`;
+      const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${g.latitude}&longitude=${g.longitude}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&forecast_days=3`, { signal: AbortSignal.timeout(15000) });
+      const w = await res.json();
+      const cur = w?.current_weather || {};
+      const trend = (w?.daily?.time || []).map((d, i) => `${d}: ${w.daily.temperature_2m_min[i]}-${w.daily.temperature_2m_max[i]}°C, ${w.daily.precipitation_sum[i]} mm`).join(' | ');
+      return `Wetter in ${g.name}${g.country ? ', ' + g.country : ''}: ${cur.temperature ?? '?'}°C, Wind ${cur.windspeed ?? '?'} km/h. 3-Tage-Trend: ${trend}`;
+    }
+  },
+  currency_convert: {
+    description: 'Aktuelle Wechselkurse je Basiswaehrung (open.er-api.com, ohne Key).',
+    schema: { base: 'string (Standard EUR)' },
+    run: async (ctx, a) => {
+      const base = String(a.base || 'EUR').toUpperCase().slice(0, 3);
+      const res = await fetch(`https://open.er-api.com/v6/latest/${base}`, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) return `Kurse HTTP ${res.status}`;
+      const d = await res.json();
+      const rates = d?.rates || {};
+      const pick = ['USD', 'EUR', 'CHF', 'GBP', 'JPY', 'CNY'].filter((k) => k !== base);
+      return `1 ${base} = ${pick.map((k) => `${rates[k] ?? '?'} ${k}`).join(', ')} (Stand: ${d.time_last_update_utc || 'unbekannt'})`;
+    }
+  },
+  package_info: {
+    description: 'Versions- und Metadaten zu npm- oder Python-Paketen (Registry, ohne Key) — fuer Abhaengigkeits-Entscheidungen.',
+    schema: { name: 'string', registry: 'string (npm | pypi, Standard npm)' },
+    run: async (ctx, a) => {
+      const name = String(a.name || '').trim();
+      if (!name) return 'Paketname fehlt.';
+      if (a.registry === 'pypi') {
+        const res = await fetch(`https://pypi.org/pypi/${encodeURIComponent(name)}/json`, { signal: AbortSignal.timeout(15000) });
+        if (!res.ok) return `PyPI HTTP ${res.status}`;
+        const info = (await res.json())?.info || {};
+        return `PyPI ${info.name} ${info.version}: ${String(info.summary || '').slice(0, 300)}`;
+      }
+      const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) return `npm HTTP ${res.status}`;
+      const d = await res.json();
+      const latest = d['dist-tags']?.latest;
+      const v = d.versions?.[latest] || {};
+      return `npm ${d.name} ${latest}: ${String(v.description || d.description || '').slice(0, 300)} (Lizenz: ${v.license || d.license || '?'})`;
+    }
+  },
+  fireflies_transcripts: {
+    description: 'Liest die neuesten Meeting-Protokolle von Fireflies.ai (Titel, Datum, Aktionspunkte) — braucht FIREFLIES_API_KEY im Secrets-Store.',
+    schema: { limit: 'number' },
+    run: async (ctx, a) => {
+      const key = db.prepare('SELECT value FROM secrets WHERE name = ?').get('FIREFLIES_API_KEY')?.value;
+      if (!key) return 'Kein FIREFLIES_API_KEY hinterlegt. Token in Fireflies (Account → Integrations → API) erzeugen und im Hub als Secret FIREFLIES_API_KEY speichern.';
+      const limit = Math.min(20, Math.max(1, Number(a.limit) || 5));
+      const res = await fetch('https://api.fireflies.ai/graphql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ query: 'query($limit: Int!) { user { recent_transcripts(limit: $limit) { title date action_items { description } } } }', variables: { limit } }),
+        signal: AbortSignal.timeout(20000)
+      });
+      if (!res.ok) return `Fireflies HTTP ${res.status}`;
+      const data = await res.json();
+      if (data?.errors?.length) return `Fireflies-Fehler: ${data.errors[0].message || 'unbekannt'}`;
+      const list = data?.data?.user?.recent_transcripts || [];
+      if (!list.length) return 'Keine Meetings gefunden.';
+      return list.map((t) => {
+        const acts = (t.action_items || []).map((x) => x.description).filter(Boolean);
+        return `- ${t.title || '(ohne Titel)'} (${t.date || 'kein Datum'}): ${acts.length ? 'Aktionspunkte: ' + acts.join('; ').slice(0, 300) : 'keine Aktionspunkte'}`;
+      }).join('\n').slice(0, 4000);
+    }
+  },
+  asana_list_projects: {
+    description: 'Listet die Projekte des verbundenen Asana-Kontos — braucht ASANA_PAT (Personal Access Token) im Secrets-Store.',
+    schema: { limit: 'number' },
+    run: async (ctx, a) => {
+      const key = db.prepare('SELECT value FROM secrets WHERE name = ?').get('ASANA_PAT')?.value;
+      if (!key) return 'Kein ASANA_PAT hinterlegt. Token in Asana (Profilbild → Apps → Manage Developer Apps → Personal Access Token) erzeugen und im Hub als Secret ASANA_PAT speichern.';
+      const res = await fetch(`https://app.asana.com/api/1.0/projects?limit=${Math.min(50, Number(a.limit) || 20)}&opt_fields=name,gid,archived`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(20000) });
+      if (!res.ok) return `Asana HTTP ${res.status}`;
+      const rows = (await res.json())?.data || [];
+      if (!rows.length) return 'Keine Projekte sichtbar.';
+      return rows.map((pr) => `- ${pr.name} (gid ${pr.gid}${pr.archived ? ', archiviert' : ''})`).join('\n').slice(0, 4000);
+    }
+  },
+  asana_create_task: {
+    description: 'Erstellt eine Asana-Aufgabe: Name, Notizen, optional Projekt-GID (ohne GID landet die Aufgabe im ersten Workspace). Braucht ASANA_PAT im Secrets-Store.',
+    schema: { name: 'string', notes: 'string', project_gid: 'string (optional)' },
+    run: async (ctx, a) => {
+      const key = db.prepare('SELECT value FROM secrets WHERE name = ?').get('ASANA_PAT')?.value;
+      if (!key) return 'Kein ASANA_PAT hinterlegt. Token in Asana erzeugen und im Hub als Secret ASANA_PAT speichern.';
+      const data = { name: String(a.name || 'Neue Aufgabe').slice(0, 300), notes: String(a.notes || '').slice(0, 8000) };
+      if (a.project_gid) {
+        data.projects = [String(a.project_gid)];
+      } else {
+        const ws = await fetch('https://app.asana.com/api/1.0/workspaces?limit=1&opt_fields=name,gid', { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(20000) });
+        const w = (await ws.json())?.data?.[0];
+        if (!w) return 'Kein Asana-Workspace gefunden.';
+        data.workspace = w.gid;
+      }
+      const res = await fetch('https://app.asana.com/api/1.0/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ data }),
+        signal: AbortSignal.timeout(20000)
+      });
+      if (!res.ok) return `Asana HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`;
+      const t = (await res.json())?.data;
+      return `Asana-Aufgabe angelegt: ${t?.name} (gid ${t?.gid}).`;
+    }
+  },
+  media_generate: {
+    description: 'Erzeugt ein Bild mit Fal.ai (Mockups, Marketing, Icons, Illustrationen) und speichert es als Datei im Villa-Workspace.',
+    schema: { prompt: 'string', model: 'string (Standard fal-ai/flux/schnell)', filename: 'string' },
+    run: async (ctx, a) => {
+      const key = resolveKey('FAL_KEY');
+      if (!key) return 'Fal.ai nicht angebunden: hinterlege FAL_KEY unter Einstellungen > Routen.';
+      const model = String(a.model || process.env.FAL_IMAGE_MODEL || 'fal-ai/flux/schnell');
+      const res = await fetch(`https://fal.run/${model}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Key ${key}` },
+        body: JSON.stringify({ prompt: String(a.prompt || '').slice(0, 2000) }),
+        signal: AbortSignal.timeout(120000)
+      });
+      if (!res.ok) return `Fal.ai HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`;
+      const data = await res.json().catch(() => ({}));
+      const url = data?.images?.[0]?.url || data?.image?.url || data?.video?.url;
+      if (!url) return 'Fal.ai lieferte keine Medien-URL zurueck.';
+      const img = await fetch(url, { signal: AbortSignal.timeout(60000) });
+      const buf = Buffer.from(await img.arrayBuffer());
+      const ext = (url.match(/\.(png|jpg|jpeg|webp|mp4)/i)?.[1] || 'png').toLowerCase();
+      const safe = String(a.filename || 'medien-bild').replace(/[^a-zA-Z0-9._-]/g, '_').replace(new RegExp(ext + '$', 'i'), '') + '.' + ext;
+      const dir = join(WORKSPACE, `villa-${ctx.villaId}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, safe), buf);
+      return `Medium gespeichert: villa-${ctx.villaId}/${safe} (${buf.length} B, Modell: ${model})`;
     }
   },
   report_write: {
@@ -163,24 +488,40 @@ const TOOLS = {
         .run(ctx.villaId, String(a.kind || 'ANALYSIS').toUpperCase(), String(a.title || 'Bericht'), String(a.content || ''), JSON.stringify(a.data || {}), now()).lastInsertRowid;
       return `Bericht #${id} gespeichert: ${a.title}`;
     }
+  },
+  maturity_check: {
+    description: 'Zeigt die Marktreife der Villa (0-100), die aktuelle Produktphase und welche Pflicht-Aufgaben noch fehlen. Nutze es vor jeder Planung.',
+    schema: {},
+    run: async (ctx) => {
+      const { maturity } = await import('./product.mjs');
+      const m = maturity(ctx.villaId);
+      const lines = m.phases.map((ph) => `${ph.id} ${Math.round(ph.ratio * 100)}%: ` + ph.items.map((i) => `${i.title} [${i.state}]`).join('; '));
+      return `Marktreife ${m.score}/100 (${m.stage}), aktuelle Phase: ${m.currentPhase}\n${lines.join('\n')}`;
+    }
+  },
+  council_convene: {
+    description: 'Beruft den Rat der Agenten ein: mehrere Agenten tauschen Erkenntnisse aus, ihre Vorschlaege werden zu neuen Aufgaben. Hoechstens einmal je Lauf nutzen.',
+    schema: { participants: '2-5' },
+    run: async (ctx, a) => {
+      const { runCouncil } = await import('./council.mjs');
+      const out = await runCouncil(ctx.villaId, { participants: Math.min(5, Math.max(2, Number(a.participants) || 3)) });
+      return `Rat Runde ${out.round}: ${out.proposals} Vorschlaege, ${out.tasksCreated} neue Aufgaben, Marktreife ${out.maturity}/100 (Phase ${out.phase})`;
+    }
+  },
+  backlog_review: {
+    description: 'Listet offene Aufgaben der Villa nach Prioritaet (niedrige Zahl = wichtig), damit die naechsten Schritte gezielt gewaehlt werden.',
+    schema: { limit: '1-30' },
+    run: (ctx, a) => {
+      const rows = db.prepare("SELECT id, title, status, priority FROM tasks WHERE villa_id = ? AND status IN ('PENDING','READY','RUNNING','REVIEW') ORDER BY priority ASC, id ASC LIMIT ?")
+        .all(ctx.villaId, Math.min(30, Math.max(1, Number(a.limit) || 10)));
+      return rows.length ? rows.map((r) => `#${r.id} [P${r.priority}] ${r.title} (${r.status})`).join('\n') : 'Keine offenen Aufgaben.';
+    }
   }
 };
 
-/**
- * Statischer Werkzeugkatalog (Name, Beschreibung, Schema, Pack). Bewusst ohne
- * Freigabe-Flag: der Katalog ist konstant, die Freigabe haengt am jeweiligen
- * Pack-Zustand und wird von toolSpecs() frisch dazugerechnet. Ein eingefrorenes
- * Flag wuerde nach dem Umschalten eines Packs veralten.
- */
 export const TOOL_SPECS = Object.entries(TOOLS).map(([name, t]) => {
   const pack = toolPackOf(name);
-  return {
-    name,
-    description: t.description,
-    schema: t.schema,
-    pack: pack?.id || null,
-    packTitle: pack?.title || null
-  };
+  return { name, description: t.description, schema: t.schema, pack: pack?.id || null, packTitle: pack?.title || null };
 });
 
 /** Werkzeugkatalog inklusive aktueller Freigabe — fuer API und Oberflaeche. */
@@ -207,14 +548,14 @@ export function setSource(villaId, path) {
 
 function audit(villaId, agentId, tool, args, result, allowed = 1) {
   db.prepare('INSERT INTO audit (ts, villa_id, agent_id, tool, args, result, allowed) VALUES (?,?,?,?,?,?,?)')
-    .run(now(), villaId, agentId, tool, JSON.stringify(args).slice(0, 500), String(result).slice(0, 500), allowed);
+    .run(now(), villaId, agentId, tool, String(JSON.stringify(args ?? null)).slice(0, 500), String(result).slice(0, 500), allowed);
 }
 
 export async function runTool(ctx, name, args) {
   const tool = TOOLS[name];
   if (!tool) { audit(ctx.villaId, ctx.agentId, name, args, 'unbekanntes Werkzeug', 0); return `Unbekanntes Werkzeug: ${name}`; }
-  // Werkzeug-Packs sind ein echter Schalter, keine Deko: ist das Pack aus,
-  // arbeitet der Agent nicht am Projekt — und der Versuch steht im Audit.
+  // Packs sind echte Schalter: ist das Werkzeug-Pack aus, blockiert der Hub
+  // das Werkzeug im Lauf und protokolliert den Versuch im Audit.
   const gate = canUseTool(name);
   if (!gate.allowed) {
     audit(ctx.villaId, ctx.agentId, name, args, `blockiert: ${gate.reason}`, 0);
@@ -288,7 +629,7 @@ export async function analyzeProject(villaId, rootId) {
     '{"decision":"REBUILD|OPTIMIZE","summary":"...","rationale":"...","keep":["..."],"replace":["..."],',
     ' "risks":["..."],"revenue":"...","tasks":[{"role":"CODER","title":"...","description":"...","priority":1}]}',
     'Regeln: decision REBUILD nur, wenn die Grundlage technisch nicht tragfaehig ist. Sonst OPTIMIZE.',
-    'Erzeuge 10-16 Aufgaben. Nutze auch die Rollen BUSINESS und GROWTH fuer Umsatzfragen.'
+    'Erzeuge 10-16 Aufgaben mit je einem pruefbaren Akzeptanzkriterium am Ende der description ("Akzeptanz: ..."). Nutze auch die Rollen BUSINESS und GROWTH fuer Umsatzfragen.'
   ].join('\n');
 
   const res = await runAgent(agent, prompt, { maxSteps: 6, villaId, mode: 'analysis' });
@@ -328,44 +669,59 @@ export async function analyzeProject(villaId, rootId) {
 /* ------------------------------------------------------------------ */
 
 const ROLE_BRIEF = {
-  ROOT: 'Du bist der Deep Agent und leitest die Villa. Du planst, delegierst, pruefst Ergebnisse und fuehrst die Idee zum Abschluss. Du erkennst Luecken selbst und legst fehlende Aufgaben an.',
-  PLANNER: 'Du zerlegst die Idee in klare, priorisierte Teilaufgaben mit messbarem Ergebnis und Akzeptanzkriterium. Liefere eine nummerierte Liste.',
-  RESEARCHER: 'Du recherchierst Fakten, Technologien, Kosten und vergleichbare Loesungen. Trenne belegte Fakten von Annahmen und nenne Quellen.',
-  ARCHITECT: 'Du entwirfst Architektur, Datenmodell, Schnittstellen und Deployment. Liefere Komponenten, Verantwortlichkeiten und den Ablauf in Textform.',
-  CODER: 'Du implementierst konkreten, lauffaehigen Code. Gib vollstaendige Dateien mit Pfad an und erklaere die wichtigsten Entscheidungen.',
-  REVIEWER: 'Du pruefst Qualitaet, Lesbarkeit, Sicherheit und Fehlerbehandlung. Nenne konkrete Fundstellen und Verbesserungen.',
-  TESTER: 'Du entwirfst Tests inklusive Randfaellen und Fehlerszenarien. Liefere Testfaelle mit Eingabe und erwartetem Ergebnis.',
-  DOCUMENTER: 'Du schreibst klare Dokumentation: Zweck, Nutzung, Beispiele und Betrieb.',
-  CRITIC: 'Du suchst Luecken, Risiken, Widersprueche und unklare Annahmen. Sei direkt und begruende jeden Punkt.',
-  INTEGRATOR: 'Du fuehrst Teilergebnisse zu einem stimmigen Gesamtergebnis zusammen und pruefst die Vollstaendigkeit.',
-  WORKER: 'Du erledigst die zugewiesene Teilaufgabe praezise und lieferst ein verwertbares Ergebnis statt einer Absichtserklaerung.',
-  BUSINESS: 'Du bewertest das Geschaeftsmodell: Zielgruppe, Zahlungsbereitschaft, Preise, Kosten, Marge und rechtliche Risiken. Nenne konkrete Zahlen und Annahmen.',
-  GROWTH: 'Du planst Umsatzwachstum: Akquise-Kanaele, Aktivierung, Bindung, Empfehlungen und Messgroessen. Liefere einen 90-Tage-Plan mit Aufwand und erwarteter Wirkung.'
+  ROOT: 'Du bist der Deep Agent und leitest die Villa wie ein erfahrener CTO. Vor jeder Planung prufst du studio_status, maturity_check und backlog_review. Bei UI-Ideen nutzt du studio_designs für zwei konkrete Designrichtungen; speichere die Nutzerentscheidung als Vorgabe. Zeige die vorhandene Vorschau und prüfbare nächste Schritte. Behaupte keine Live-Ansicht, wenn kein Web-Build existiert. Du delegierst klar (Rolle + Akzeptanzkriterium), pruefst Ergebnisse gegen das Kriterium und legst selbst fehlende Aufgaben an. Jeder Abschluss nennt: was konkret geleistet wurde, was als naechstes folgt und welche Risiken bleiben.',
+  PLANNER: 'Du zerlegst Ziele in scharf umrissene Teilaufgaben. Jede Aufgabe nennt: das konkrete Artefakt (Datei, Bericht, Code), ein pruefbares Akzeptanzkriterium ("Akzeptanz: ..."), die passende Rolle und einen Aufwandsschaetz. Verboten sind vage Aufgaben wie "verbessern" oder "untersuchen" ohne messbares Ziel.',
+  RESEARCHER: 'Du recherchierst belegbar: mindestenens drei Quellen via web_search/web_fetch, Fakten mit Quelle und Datum, Annahmen ausdruecklich als solche markiert, Zahlen mit Spanne statt Scheinpraezision. Am Ende steht eine Quellenliste und eine klare Trennung: belegt / wahrscheinlich / unklar.',
+  ARCHITECT: 'Du entwirfst Architektur im ADR-Stil: Komponenten mit Verantwortlichkeiten, Schnittstellen, Datenmodell, Deployment, bewertete Alternativen mit Begrundung und Fehlermodi (was passiert, wenn X ausfaellt). Vor dem Entwurf liest du mit project_tree/project_read die echte Basis, statt im Blauen zu entwerfen.',
+  CODER: 'Du schreibst produktionsreifen Code: vollstaendige Dateien, Fehler- und Eingabebehandlung, klare Namen, keine Stubs und keine TODOs. Bevor du abschliesst, verifizierst du mit project_run (Build und Tests) und iterierst bis es gruen ist. Bevorzugte Arbeitesweise: echtes Projekt patchen (project_patch/project_write) statt alles neu zu schreiben; in Git-Repos committe du deine Aenderung.',
+  REVIEWER: 'Du pruefst wie ein Senior-Reviewer: jede Fundstelle mit Datei:Zeile, Schweregrad (kritisch/wichtig/kosmetisch) und einer konkreten Loesung, nicht nur dem Befund. Du belegst jeden Befund am echten Code (project_read), nie aus Erinnerung. Security-Checkliste: Injektion, Authentifizierung, Secrets im Code, Fehlerbehandlung.',
+  TESTER: 'Du lieferst echte Tests: happy path, Randfaelle, Fehler- und Timeout-Szenarien, je mit Eingabe und erwartetem Ergebnis. Besteht ein echtes Projekt, schreibst du echte Testdateien (project_write) und fuehrst sie mit project_run aus, statt nur Testfaelle zu beschreiben.',
+  DOCUMENTER: 'Du schreibst Dokumentation, die ein Neuling ohne Nachfragen nutzen kann: Zweck, Schnellstart in max. 5 Schritten, Nutzungsbeispiele, Betrieb und Stolperfallen. Kein Fuelltext, keine Selbstverstaendlichkeiten.',
+  CRITIC: 'Du bist der Advocatus Diaboli: Risiken, Widersprueche, unvalidierte Annahmen und Single Points of Failure. Jeder Punkt: Schweregrad, Beleg (Datei/Bericht/Quelle) und Gegenmassnahme. Du bist direkt, nie destruktiv: dein Ziel ist, Aussetzer vor dem Launch zu finden.',
+  INTEGRATOR: 'Du fuehrst Teilergebnisse zu einem Release-faehigen Ganzen: Vollstaendigkeitspruefung gegen alle Akzeptanzkriterien, Zusammenfuehren der Artefakte, Build und Tests via project_run, am Ende ein klarer Release-Stand mit offenen Restpunkten.',
+  WORKER: 'Du erledigst die zugewiesene Teilaufgabe praeszise und lieferst ein sofort verwertbares Artefakt statt einer Absichtserklaerung. Offene Punkte benennst du ausdruecklich, statt sie zu uebergehen.',
+  BUSINESS: 'Du arbeitest mit konkreten Zahlen: Zielgruppe, Zahlungsbereitschaft, Preisstufen, Kosten, Marge, Break-even. Jede Zahl nennt ihre Annahme und Rechnung, jede Einschaetzung einen Vertrauensbereich. Rechtliche Risiken (DSGVO, Impressum, Lizenzen) pruefst du mit.',
+  GROWTH: 'Du planst Wachstum messbar: 90-Tage-Plan mit Kanaelen, je nach Aufwand, Kosten und erwarteter Wirkung (Range statt Punkt). Aktivierung, Bindung, Empfehlung und ein Messplan (welche KPI, wie gemessen). Ohne Messgroesse gilt ein Vorschlag als unvollstaendig.',
+  STRATEGIST: 'Du denkst in Szenarien und Entscheidungsbaeumen: Zielzustand in 6/12 Monaten, drei Wege dorthin mit Kosten, Risiken und Abbruchkriterien, klarer Weg-Empfehlung mit Begruendung. Du entscheidest, du laberst nicht: jede Analyse endet mit EINER Empfehlung und dem naechsten konkreten Schritt.',
+  REASONER: 'Du zerlegst Probleme in ihre Bausteine: Annahmen, Abhaengigkeiten, Kausalitaeten. Du arbeitest schrittweise von known facts zu unknowns, kennzeichnest jede Ableitung (belegt / gefolgert / spekulativ) und beendest mit dem schwchesten Glied der Argumentation. Ziel: tiefere Antworten als die Frage gestellt hat.',
+  SYNTHESIZER: 'Du verbindest Disziplinen: Technik, Markt, Design und Kosten zu EINEM stimmigen Ganzen. Du erkennst Muster ueber Bereichsgrenzen hinweg, loest Begriffs-Widersprueche zwischen Teilergebnissen auf und machst Kompromisse explizit (was opfern wir wofuer).',
+  OPTIMIZER: 'Du findest den Engpass und hebelt ihn: messbar (vorher/nachher), mit Aufwand-Nutzen-Verhaeltnis und Nebenwirkungen. Du optimierst erst Messbarkeit, dann Durchsatz, dann Kosten — nie auf einer Vermutung, sondern am Profil (project_read, audit, stats).',
+  VERIFIER: 'Du pruefst Behauptungen gegen die Wirklichkeit: jede Aussage kriegt ein Pruefverfahren (wo nachsehen, wie nachmessen, welcher Gegenbeweis wuerde sie umstossen). Nicht verifizierbar heisst "offen", nie "wahr". Du lieferst am Ende eine Tabelle: Behauptung — Pruefung — Ergebnis.'
 };
 
 /** Welche Werkzeuge eine Rolle sinnvoll nutzt - schaerft die Agenten-Prompts. */
 const ROLE_TOOLS = {
-  PLANNER: 'task_create, memory_write, project_tree',
-  RESEARCHER: 'web_fetch, memory_write, project_search',
+  PLANNER: 'maturity_check, backlog_review, task_create, memory_write, project_tree',
+  RESEARCHER: 'web_search, web_fetch, memory_write, project_search',
   ARCHITECT: 'memory_write, artifact_write, project_read',
-  CODER: 'artifact_write, artifact_list, project_read, project_search, project_run',
-  REVIEWER: 'memory_search, memory_write, project_read, project_run',
-  TESTER: 'artifact_write, memory_write, project_run',
+  CODER: 'project_patch, project_write, artifact_write, artifact_patch, artifact_list, project_read, project_search, project_run',
+  REVIEWER: 'memory_search, memory_write, project_read, project_patch, project_run',
+  TESTER: 'project_write, project_patch, artifact_write, artifact_patch, memory_write, project_run',
   DOCUMENTER: 'artifact_write, project_read',
   CRITIC: 'memory_search, memory_write, project_read',
-  INTEGRATOR: 'artifact_list, memory_write, project_run',
-  WORKER: 'artifact_write, memory_write',
-  BUSINESS: 'report_write, memory_write',
-  GROWTH: 'report_write, memory_write, web_fetch',
-  ROOT: 'memory_write, memory_search, task_create, agent_spawn, report_write'
+  INTEGRATOR: 'artifact_list, artifact_write, artifact_patch, project_patch, project_write, memory_write, project_run',
+  WORKER: 'artifact_write, artifact_patch, memory_write',
+  BUSINESS: 'report_write, memory_write, web_search',
+  GROWTH: 'report_write, memory_write, web_search, web_fetch',
+  ROOT: 'maturity_check, council_convene, backlog_review, memory_write, memory_search, task_create, agent_spawn, report_write',
+  STRATEGIST: 'maturity_check, backlog_review, memory_write, report_write, project_tree',
+  REASONER: 'memory_search, memory_write, project_read, project_search, report_write',
+  SYNTHESIZER: 'memory_search, memory_write, artifact_write, report_write, backlog_review',
+  OPTIMIZER: 'project_read, project_search, project_patch, project_run, memory_write, report_write',
+  VERIFIER: 'project_read, project_search, project_run, web_search, memory_write, report_write'
 };
 
 /** Gemeinsamer Qualitaetsauftrag fuer alle Agenten. */
 const QUALITY_RULES = [
-  'Arbeite ergebnisorientiert: liefere konkrete Inhalte, keine Absichtserklaerungen.',
-  'Pruefe deine Arbeit am Ende gegen die Aufgabenstellung und benenne offene Punkte.',
-  'Speichere wichtige Ergebnisse und Entscheidungen ueber memory_write.',
-  'Antworte auf Deutsch, gut lesbar, mit kurzen Absaetzen und Aufzaehlungen.'
+  'Ergebnis statt Absicht: Jede Antwort liefert ein verwertbares Artefakt (Code, Bericht oder Plan mit Zahlen).',
+  'Behaupte nur Geprueftes: Pruefe Fakten mit Werkzeugen (project_read, web_search, memory_search), bevor du sie aussprichst. Erfundene Zahlen oder Quellen sind ein Fehler.',
+  'Verifiziere dich selbst: Bei Code und Aenderungen am Projekt laeuft vor dem Abschluss project_run (Build/Tests). Nur gruen gilt als fertig.',
+  'Speichere Entscheidungen und Lehren mit memory_write, damit das Team davon profitiert.',
+  'Ehrlichkeit ueber Vollstaendigkeit: Benenne offen gebliebene Punkte und Risiken am Ende ausdruecklich.',
+  'Antworte auf Deutsch, klar gegliedert, mit kurzen Absaetzen und Aufzaehlungen.',
+  'Produktstandard (Nutzerdirektive): Alles was du lieferst ist professionell und veroeffentlichungsreif - keine Platzhalter, kein Lorem Ipsum, kein "Coming Soon", sondern echte, finale Inhalte, professionelle Formulierungen und ein ansprechendes, konsistentes Erscheinungsbild.',
+  'Lieferbarkeit: Nach jedem groesseren Schritt steht ein lauffaehiger Stand (lauffaehige index.html bzw. lauffaehiges Projekt), damit die APK-Baustrasse jederzeit eine installierbare APK liefern kann.',
+  'Fokus: Die Villa entwickelt EIN Produkt pro Projekt konsequent zu Ende - Vollstaendigkeit und Fertigstellung haben Vorrang vor neuen Nebenideen.'
 ].join('\n- ');
 
 export function agentCount(villaId) {
@@ -375,19 +731,42 @@ function maxAgents(villaId) {
   return db.prepare('SELECT max_agents m FROM villas WHERE id = ?').get(villaId)?.m ?? 1000;
 }
 
-export function insertAgent(villaId, name, role, parentId = null, isRoot = 0) {
-  const t = now();
+/** Version der Prompt-Vorlage: Bei Erhoehung frischt der Hub beim Start alle Agenten-Prompts auf. */
+export const PROMPT_VERSION = 4;
+
+/** Zentraler Prompt-Bau: eine Quelle der Wahrheit fuer Neuanlage UND Migration. */
+export function buildSystemPrompt(role) {
   const tools = ROLE_TOOLS[role] || ROLE_TOOLS.WORKER;
-  const sys = [
+  return [
     ROLE_BRIEF[role] || ROLE_BRIEF.WORKER,
     `Rolle: ${role}.`,
     `Bevorzugte Werkzeuge: ${tools}.`,
     `Qualitaetsregeln:\n- ${QUALITY_RULES}`,
     'Schliesse jede Aufgabe mit einem pruefbaren Ergebnis ab.'
   ].join('\n');
+}
+
+/**
+ * Migration: setzt ALLE Agenten aller Villen auf die aktuelle Prompt-Version.
+ * Idempotent - Agenten mit aktuellem Prompt bleiben unberuehrt. So profitieren
+ * auch laufende Villen sofort von verbesserten Rollen-Anweisungen.
+ */
+export function refreshAgentPrompts() {
+  const rows = db.prepare('SELECT id, role, system_prompt FROM agents').all();
+  const upd = db.prepare('UPDATE agents SET system_prompt = ? WHERE id = ?');
+  let n = 0;
+  for (const a of rows) {
+    const fresh = buildSystemPrompt(a.role);
+    if (a.system_prompt !== fresh) { upd.run(fresh, a.id); n++; }
+  }
+  return n;
+}
+
+export function insertAgent(villaId, name, role, parentId = null, isRoot = 0) {
+  const t = now();
   return db.prepare(
     'INSERT INTO agents (villa_id, name, role, system_prompt, status, is_root, parent_id, permissions, autonomy_level, created_at, last_active_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(villaId, name, role, sys, 'IDLE', isRoot, parentId, 127, 3, t, t).lastInsertRowid;
+  ).run(villaId, name, role, buildSystemPrompt(role), 'IDLE', isRoot, parentId, 127, 3, t, t).lastInsertRowid;
 }
 
 export function memoryContext(villaId, agentId, limit = 12) {
@@ -395,7 +774,7 @@ export function memoryContext(villaId, agentId, limit = 12) {
     'SELECT kind, title, content FROM memories WHERE villa_id = ? ORDER BY importance DESC, id DESC LIMIT ?'
   ).all(villaId, limit);
   if (!rows.length) return '';
-  return '\n\nBekanntes Gedaechtnis:\n' + rows.map((r) => `- [${r.kind}] ${r.title}: ${r.content.slice(0, 300)}`).join('\n');
+  return '\n\nBekanntes Gedaechtnis:\n' + rows.map((r) => `- [${r.kind}] ${r.title}: ${String(r.content || '').slice(0, 300)}`).join('\n');
 }
 
 function openTasks(villaId) {
@@ -405,37 +784,33 @@ function openTasks(villaId) {
 }
 
 /** Fuehrt einen Agenten in einem begrenzten ReAct-Loop aus. */
-export async function runAgent(agent, userPrompt, { maxSteps = 8, villaId = agent.villa_id, mode = 'agent' } = {}) {
+export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 1500, temperature, villaId = agent.villa_id, mode = 'agent', reflect } = {}) {
   const ctx = { villaId, agentId: agent.id };
   const context = statusContext(villaId);
   const history = [
-    { role: 'system', content: `${agent.system_prompt}${memoryContext(villaId, agent.id)}\n\nWerkzeuge: ${JSON.stringify(TOOL_SPECS)}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
+    { role: 'system', content: `${agent.system_prompt}\nEigene Skills:\n${skillInstructions()}${memoryContext(villaId, agent.id)}\n\nWerkzeuge: ${JSON.stringify(TOOL_SPECS)}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
     { role: 'user', content: userPrompt }
   ];
 
   const trace = [];
-  // Gratis-Kontingente (z. B. Groq 8000 TPM) sind Minuten-Fenster: ist kein
-  // Modell erreichbar, ist Warten + Wiederholen die richtige Reaktion statt
-  // sofortigem Aufgabe. Zwei Warte-Runden pro Lauf, danach ehrlich offline.
-  // VF_RATE_WAIT_MS macht die Wartezeit in Tests steuerbar.
-  const RATE_WAIT_MS = Number(process.env.VF_RATE_WAIT_MS ?? 45_000);
-  let offlineRetries = 0;
   for (let step = 0; step < maxSteps; step++) {
     let out;
     try {
-      out = await chat(history, { json: true, mode, context, temperature: 0.4, maxTokens: 1500 });
+      out = await chat(history, {
+        json: true, mode, context,
+        // Rollen-Qualitaetsrouting: Code-/Fuehrungsrollen bekommen die beste Route
+        // (FALLBACK = hoechste Prioritaet zuerst) statt der Rotation.
+        role: agent.role,
+        temperature: temperature ?? (agent.role === 'CODER' ? 0.3 : 0.4),
+        maxTokens
+      });
     } catch (err) {
-      return { error: String(err.message || err), trace };
-    }
-    if (out.offline && !out.intentional && offlineRetries < 2) {
-      offlineRetries++;
-      trace.push({ step, note: 'Kein Sprachmodell erreichbar, warte 45 s und versuche den Schritt erneut.' });
-      await new Promise((r) => setTimeout(r, RATE_WAIT_MS));
-      step--; // gleicher Schritt, gleicher Stand: nur die Zeit soll vergehen
-      continue;
+      return { error: String(err.message || err), code:err.code, trace };
     }
     let parsed = null;
-    try { parsed = JSON.parse(out.content); } catch { /* Freitext */ }
+    // JSON-Reparatur: Modelle antworten gelegentlich mit Code-Fences um das JSON.
+    const raw = String(out.content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    try { parsed = JSON.parse(raw); } catch { /* Freitext */ }
 
     if (parsed && parsed.tool && TOOLS[parsed.tool]) {
       const result = await runTool(ctx, parsed.tool, parsed.args);
@@ -446,19 +821,74 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, villaId = agen
     }
 
     // Freitext statt JSON: weiterarbeiten statt den Lauf abzubrechen.
-    const looksJson = out.content.trim().startsWith('{');
+    const looksJson = raw.startsWith('{');
     if (!parsed && !looksJson && step < maxSteps - 1 && out.offline === undefined) {
       trace.push({ step, note: 'Antwort war kein JSON, Anfrage wiederholt.' });
-      history.push({ role: 'assistant', content: out.content.slice(0, 400) });
+      history.push({ role: 'assistant', content: String(out.content || '').slice(0, 400) });
       history.push({ role: 'user', content: 'Deine Antwort war kein gueltiges JSON. Antworte erneut mit genau einem Objekt: {"tool":"...","args":{...}} oder {"final":"..."}.' });
       continue;
     }
 
     const final = parsed?.final ?? out.content;
+
+    /* Reflexions-Loop: mit echtem Modell prueft der Agent seine eigene
+       Antwort noch einmal gegen die Aufgabe und verbessert sie bei Bedarf.
+       Offline-Antworten werden nicht reflektiert (kein Modell, kein Nutzen),
+       ein Fehler im Reflexions-Pass faellt sanft auf die Original-Antwort
+       zurueck. Schaltbar: Feature-Pack "reflexion" und VF_REFLECTION=off. */
+    const doReflect = (reflect ?? true)
+      && !out.offline
+      && process.env.VF_REFLECTION !== 'off'
+      && packEnabled('reflexion');
+    if (doReflect) {
+      try {
+        const refl = await chat([
+          ...history,
+          { role: 'assistant', content: String(final) },
+          { role: 'user', content: 'REFLEXION: Pruefe deine Antwort strikt gegen die urspruengliche Aufgabe. Vollstaendig? Konkret? Korrekt? Antworte NUR mit JSON: {"verdict":"OK","final":"<deine Antwort, leicht geglaettet>"} oder {"verdict":"IMPROVE","final":"<deutlich verbesserte Antwort>"}.' }
+        ], { json: true, mode, context, role: agent.role, temperature: 0.2, maxTokens });
+        const rraw = String(refl.content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+        const rp = JSON.parse(rraw);
+        if (rp?.verdict === 'IMPROVE' && rp.final && String(rp.final).trim()) {
+          trace.push({ step, reflection: 'improved' });
+          return { answer: prettify(String(rp.final)), route: out.route, model: out.model, reflection: 'improved', trace, offline: false };
+        }
+        trace.push({ step, reflection: rp?.verdict === 'OK' ? 'ok' : 'ignored', final: true });
+        return { answer: prettify(String(final)), route: out.route, model: out.model, reflection: rp?.verdict === 'OK' ? 'ok' : 'ignored', trace, offline: !!out.offline };
+      } catch {
+        trace.push({ step, reflection: 'skipped', final: true });
+      }
+    }
     trace.push({ step, final: true });
-    return { answer: prettify(String(final)), route: out.route, model: out.model, trace, offline: !!out.offline, intentional: !!out.intentional };
+    return { answer: prettify(String(final)), route: out.route, model: out.model, reflection: doReflect ? 'off' : undefined, trace, offline: !!out.offline };
   }
   return { answer: 'Ich habe die maximale Schrittzahl erreicht. Bitte formuliere die Aufgabe kleiner oder starte die autonome Ausführung.', trace };
+}
+
+/**
+ * Projektspezifischer Kontext: Entscheidung (OPTIMIZE/REBUILD), zentrale
+ * Erkenntnisse und Technik-Stack. Wird in jeden Aufgaben-Prompt eingebaut,
+ * damit jeder Agent das Beste aus DEM Projekt herausholt, nicht generisch arbeitet.
+ */
+export function projectProfile(villaId, maxChars = 1600) {
+  const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(villaId);
+  if (!villa) return '';
+  const lines = [`Ziel: ${String(villa.idea || '').slice(0, 300)}`];
+  if (villa.mode && villa.mode !== 'BUILD') {
+    lines.push(`Vorgehen: ${villa.mode} - bestehende Substanz erhalten und gezielt verbessern, kein Neubau ohne Not.`);
+  }
+  const core = db.prepare(
+    "SELECT title, content FROM memories WHERE villa_id = ? AND kind IN ('DECISION','CONSTRAINT') ORDER BY importance DESC, id DESC LIMIT 6"
+  ).all(villaId);
+  for (const m of core) lines.push(`- ${m.title}: ${String(m.content || '').replace(/\s+/g, ' ').slice(0, 240)}`);
+  const root = sourceRoot(villaId);
+  if (root) {
+    const s = projectSummary(root);
+    if (s.exists) {
+      lines.push(`Technik-Stack: ${s.languages.slice(0, 6).map((l) => `${l.ext} (${l.count})`).join(', ')} bei ${s.files} Dateien.`);
+    }
+  }
+  return lines.join('\n').slice(0, maxChars);
 }
 
 /** Kurzer, lesbarer Statusbericht der Villa fuer den Chat-Kontext. */
@@ -489,13 +919,25 @@ export function prettify(text) {
   }
   return s
     .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/^\s*[*+-]\s+/gm, '• ')
+    .replace(/^\s*[*+]\s+/gm, '• ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
 /** Erstellt eine Villa samt Root-Agent, Plan und Agentenpool. */
+let planningChat=chat;
+export function _setPlanningChat(fn){planningChat=fn||chat;}
+async function requestPlan(idea,wanted){
+ const out=await planningChat([
+  {role:'system',content:'Erstelle einen umsetzbaren Entwicklungsplan. Antworte JSON {"summary":"...","tasks":[{"role":"CODER","title":"...","description":"... Akzeptanz: ..."}]}. Keine bloßen Absichten: lauffähiger Code, Tests, Build und wichtigster Nutzerfluss.'},
+  {role:'user',content:`Idee: ${idea}\nErzeuge konkrete Teilaufgaben für ${wanted} Agenten.`}
+ ],{json:true,mode:'plan',agentCount:wanted});
+ let plan;try{plan=JSON.parse(out.content);}catch{}
+ if(out.offline||!Array.isArray(plan?.tasks)||!plan.tasks.length||plan.tasks.some(t=>typeof t.title!=='string'||typeof t.description!=='string'))throw Object.assign(new Error('Kein gültiger LLM-Projektplan erhalten; keine Scheinaufgaben angelegt.'),{code:'LLM_PLAN_INVALID',statusCode:503});
+ return plan;
+}
 export async function createVilla({ name, idea, agentCount: wanted = 12, sourcePath = '', mode = 'BUILD' }) {
+  let plan = sourcePath ? null : await requestPlan(idea,wanted);
   const t = now();
   const villaId = db.prepare(
     'INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?,?)'
@@ -509,30 +951,24 @@ export async function createVilla({ name, idea, agentCount: wanted = 12, sourceP
     db.prepare('UPDATE villas SET mode = ? WHERE id = ?').run(mode || 'ANALYZE', villaId);
   }
 
-  const planRaw = await chat(
-    [
-      { role: 'system', content: 'Du bist ein erfahrener Projektplaner. Antworte ausschliesslich mit JSON: {"summary":"...","tasks":[{"role":"PLANNER","title":"...","description":"..."}]}.' },
-      { role: 'user', content: `Idee: ${idea}\nErzeuge 8-14 praezise Teilaufgaben mit passender Rolle aus ${ROLES.join(', ')}.` }
-    ],
-    { json: true, mode: 'plan', temperature: 0.5, agentCount: wanted }
-  );
-
-  let plan;
-  try { plan = JSON.parse(planRaw.content); } catch { plan = derivePlan(idea, wanted); }
-  if (!plan.tasks || !plan.tasks.length) plan = derivePlan(idea, wanted);
-
-  db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
-    .run(villaId, rootId, 'villa', 'DECISION', 'Projektplan', plan.summary || `Plan fuer ${idea}`, 9, now());
-
-  // Analyse-Modus: erst das bestehende Projekt verstehen, dann entscheiden.
+  // Bei bestehendem Projekt: Analyse ERST, Plan danach (spart einen LLM-Aufruf
+  // und der Plan beruht dann auf echten Projekt-Fakten statt nur auf der Idee).
   if (sourcePath) {
     const analysis = await analyzeProject(villaId, rootId);
     plan = analysis.plan;
   }
 
+  if (!plan?.tasks?.length) {
+    try { plan=await requestPlan(idea,wanted); }
+    catch(error){db.prepare("UPDATE villas SET status='PAUSED',autonomy=0 WHERE id=?").run(villaId);ensureVerificationTasks(Number(villaId));throw error;}
+  }
+
+  db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
+    .run(villaId, rootId, 'villa', 'DECISION', 'Projektplan', plan.summary || `Plan fuer ${idea}`, 9, now());
+
   for (const task of plan.tasks) {
     db.prepare('INSERT INTO tasks (villa_id, title, description, status, priority, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
-      .run(villaId, String(task.title || 'Aufgabe'), String(task.description || ''), 'PENDING', Number(task.priority) || 5, now(), now());
+      .run(villaId, String(task.title || 'Aufgabe'), `${String(task.description || '')}\nRolle: ${ROLES.includes(task.role)?task.role:'WORKER'}.`, 'PENDING', Number(task.priority) || 5, now(), now());
   }
 
   // Agentenpool: mindestens 1 Agent je Rolle, Rest als WORKER, hart begrenzt auf max_agents.
@@ -550,183 +986,15 @@ export async function createVilla({ name, idea, agentCount: wanted = 12, sourceP
 }
 
 /**
- * Import einer Villa aus einem Export-JSON (GET /api/villas/:id/export).
- * Alle Datensaetze bekommen neue IDs: Agenten zuerst (wegen parent_id),
- * dann Aufgaben, Gedaechnis, Berichte und die letzten Nachrichten.
- * Fuer jeden Datensatz gelten harte Obergrenzen, damit ein manipuliertes
- * oder riesiges Exportfile den Hub nicht ueberlaeuft.
- */
-const IMPORT_LIMITS = { agents: 500, tasks: 2000, memories: 500, reports: 100, messages: 1000 };
-
-export function importVilla(payload, { nameOverride = '' } = {}) {
-  if (!payload || typeof payload !== 'object' || !payload.villa || typeof payload.villa !== 'object') {
-    return { ok: false, error: 'Export-Format ungueltig: villa-Objekt fehlt (erwartet wird ein Export aus GET /api/villas/:id/export)' };
-  }
-  const idea = String(payload.villa.idea || '').trim();
-  if (!idea) return { ok: false, error: 'idea fehlt im Export' };
-  if (idea.length > 2000) return { ok: false, error: 'idea zu lang (max. 2000 Zeichen)' };
-  const name = String(nameOverride || payload.villa.name || 'Importierte Villa').trim().slice(0, 120) || 'Importierte Villa';
-  const maxAgents = Math.min(Math.max(Number(payload.villa.max_agents) || 1000, 3), 1000);
-
-  const lists = {};
-  for (const key of Object.keys(IMPORT_LIMITS)) {
-    const arr = Array.isArray(payload[key]) ? payload[key] : [];
-    lists[key] = arr.slice(0, IMPORT_LIMITS[key]);
-  }
-
-  const t = now();
-  const villaId = db.prepare(
-    "INSERT INTO villas (name, idea, status, max_agents, autonomy, source_path, mode, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)"
-  ).run(name, idea, 'CREATED', maxAgents, 1, String(payload.villa.source_path || '').slice(0, 1024), 'BUILD', t, t).lastInsertRowid;
-
-  // Agenten zuerst: neue IDs merken, parent_id und agent_id spaeter umsetzen.
-  const agentMap = new Map();
-  let rootSeen = false;
-  for (const a of lists.agents) {
-    if (!a || typeof a !== 'object' || !a.name) continue;
-    const isRoot = a.is_root ? 1 : 0;
-    if (isRoot && rootSeen) continue; // hoechstens ein Wurzel-Agent
-    if (isRoot) rootSeen = true;
-    const newId = insertAgent(
-      villaId,
-      String(a.name).slice(0, 120),
-      String(a.role || 'WORKER').slice(0, 40),
-      null,
-      isRoot
-    );
-    agentMap.set(Number(a.id), newId);
-    if (a.system_prompt) db.prepare('UPDATE agents SET system_prompt = ? WHERE id = ?').run(String(a.system_prompt).slice(0, 4000), newId);
-    if (a.autonomy_level != null) db.prepare('UPDATE agents SET autonomy_level = ? WHERE id = ?').run(Math.min(Math.max(Number(a.autonomy_level) || 3, 0), 5), newId);
-  }
-  if (!rootSeen) {
-    // Ohne Wurzel-Agent ist keine Villa bedienbar (Chat leitet an is_root).
-    const rootId = insertAgent(villaId, 'DeepAgent', 'ROOT', null, 1);
-    agentMap.set(0, rootId);
-  }
-
-  for (const task of lists.tasks) {
-    if (!task || typeof task !== 'object' || !task.title) continue;
-    const status = ['PENDING', 'RUNNING', 'DONE', 'FAILED', 'BLOCKED'].includes(task.status) ? task.status : 'PENDING';
-    db.prepare('INSERT INTO tasks (villa_id, agent_id, title, description, status, priority, result, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
-      .run(
-        villaId,
-        agentMap.get(Number(task.agent_id)) ?? null,
-        String(task.title).slice(0, 300),
-        String(task.description || '').slice(0, 4000),
-        status,
-        Math.min(Math.max(Number(task.priority) || 5, 1), 9),
-        String(task.result || '').slice(0, 20000),
-        Number(task.created_at) || t,
-        Number(task.updated_at) || t
-      );
-  }
-
-  for (const m of lists.memories) {
-    if (!m || typeof m !== 'object' || !m.title) continue;
-    db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
-      .run(
-        villaId,
-        agentMap.get(Number(m.agent_id)) ?? null,
-        ['villa', 'agent'].includes(m.scope) ? m.scope : 'villa',
-        String(m.kind || 'FACT').slice(0, 40),
-        String(m.title).slice(0, 300),
-        String(m.content || '').slice(0, 20000),
-        Math.min(Math.max(Number(m.importance) || 5, 1), 10),
-        Number(m.created_at) || t
-      );
-  }
-
-  for (const r of lists.reports) {
-    if (!r || typeof r !== 'object' || !r.title) continue;
-    db.prepare('INSERT INTO reports (villa_id, kind, title, content, data, created_at) VALUES (?,?,?,?,?,?)')
-      .run(
-        villaId,
-        String(r.kind || 'ANALYSIS').slice(0, 40),
-        String(r.title).slice(0, 300),
-        String(r.content || '').slice(0, 50000),
-        String(r.data || '').slice(0, 100000),
-        Number(r.created_at) || t
-      );
-  }
-
-  for (const msg of lists.messages) {
-    if (!msg || typeof msg !== 'object' || !msg.content) continue;
-    const agentId = agentMap.get(Number(msg.agent_id)) ?? agentMap.get(0);
-    if (agentId == null) continue;
-    db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, tool, created_at) VALUES (?,?,?,?,?,?)')
-      .run(
-        villaId,
-        agentId,
-        msg.role === 'user' ? 'user' : 'assistant',
-        String(msg.content).slice(0, 20000),
-        msg.tool ? String(msg.tool).slice(0, 80) : null,
-        Number(msg.created_at) || t
-      );
-  }
-
-  emit('villa_imported', { villaId, agents: agentMap.size, tasks: lists.tasks.length });
-  return {
-    ok: true,
-    villaId,
-    counts: {
-      agents: agentMap.size,
-      tasks: lists.tasks.length,
-      memories: lists.memories.length,
-      reports: lists.reports.length,
-      messages: lists.messages.length
-    }
-  };
-}
-
-/**
  * Verifikation: laeuft ein echtes Projekt vorliegt, werden die hinterlegten
  * Build- und Testbefehle ausgefuehrt. Das Ergebnis landet als Bericht und, bei
  * Fehlern, als neue Aufgabe in der Villa.
  */
-async function verifyProject(villaId) {
-  const root = sourceRoot(villaId);
-  if (!root) return { ok: true, skipped: true, note: 'Kein Quellprojekt hinterlegt.' };
-
-  const steps = [];
-  const pkgPath = join(root, 'package.json');
-  if (existsSync(pkgPath)) {
-    let scripts = {};
-    try { scripts = JSON.parse(readFileSync(pkgPath, 'utf8')).scripts || {}; } catch { scripts = {}; }
-    if (scripts.build) steps.push(['npm', ['run', 'build']]);
-    if (scripts.test) steps.push(['npm', ['test']]);
-  }
-  const gradlew = join(root, 'gradlew');
-  if (existsSync(gradlew) && !steps.length) steps.push(['gradle', ['--offline', 'test']]);
-
-  if (!steps.length) {
-    db.prepare('INSERT INTO reports (villa_id, kind, title, content, data, created_at) VALUES (?,?,?,?,?,?)')
-      .run(villaId, 'REVIEW', 'Verifikation uebersprungen', 'Im Projekt wurde kein bekannter Build- oder Testbefehl gefunden (package.json mit build/test oder gradlew).', '{}', now());
-    return { ok: true, skipped: true };
-  }
-
-  const lines = [];
-  let ok = true;
-  for (const [bin, args] of steps) {
-    const r = await runCommand(root, bin, args, 180_000);
-    lines.push(`$ ${bin} ${args.join(' ')}`);
-    lines.push(`Exit ${r.ok ? 0 : r.code}`);
-    lines.push((r.output || r.error || '(keine Ausgabe)').slice(-2500));
-    lines.push('');
-    if (!r.ok) { ok = false; break; }
-  }
-
-  const text = lines.join('\n');
-  db.prepare('INSERT INTO reports (villa_id, kind, title, content, data, created_at) VALUES (?,?,?,?,?,?)')
-    .run(villaId, 'REVIEW', ok ? 'Verifikation bestanden' : 'Verifikation fehlgeschlagen', text, JSON.stringify({ steps: steps.map((s) => s.join(' ')) }), now());
-  db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
-    .run(villaId, null, 'villa', ok ? 'LESSON' : 'CONSTRAINT', ok ? 'Build und Tests laufen' : 'Build oder Tests schlagen fehl', text.slice(0, 1500), ok ? 7 : 10, now());
-  emit('report', { villaId, kind: 'REVIEW', ok });
-
-  if (!ok) {
-    db.prepare('INSERT INTO tasks (villa_id, title, description, status, priority, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
-      .run(villaId, 'Build- und Testfehler beheben', `Die Verifikation ist fehlgeschlagen. Fehlerausgabe:\n${text.slice(0, 3000)}`, 'PENDING', 1, now(), now());
-  }
-  return { ok };
+export async function verifyProject(villaId) {
+ const result=await verifyProjectRuntime(villaId);
+ if(!result.ok)ensureVerificationTasks(villaId);
+ emit('report',{villaId,kind:'REVIEW',ok:result.ok});
+ return result;
 }
 
 /* ------------------------------------------------------------------ */
@@ -734,9 +1002,46 @@ async function verifyProject(villaId) {
 /* ------------------------------------------------------------------ */
 
 const running = new Map(); // villaId -> { stop, processed, concurrency }
+const verifyThrottle = new Map(); // villaId -> letzter Fail-Fast-Verifikationszeitpunkt
+
+/**
+ * Waehlt die Parallelitaet automatisch nach den verfuegbaren LLM-Routen:
+ * - nur selbst gehostetes Ollama (ARM-CPU): vorsichtig parallelisieren
+ * - schnelle Cloud-Routen (Groq & Co.): grosszuegig parallelisieren
+ * - Offline-Planer: praktisch kostenlos, hoch parallel
+ */
+export function pickConcurrency() {
+  const usable = enabledRoutes().filter((r) => r.provider !== 'offline');
+  const fast = usable.filter((r) => r.provider !== 'ollama').length;
+  // Free-Tier-Deckel: Cloud-Routen mit geteilten Kontingenten (Gemini, Groq,
+  // OpenRouter) verglasen bei zuvielen gleichzeitigen Anfragen mit 429 oder
+  // laufen in lokale Drosseln. Wirksamer Durchsatz entsteht durch MAESSIGE
+  // Parallelitaet (VF_MAX_CONCURRENCY, Default 3), nicht durch Sturzbett.
+  const cap = Math.max(1, Number(process.env.VF_MAX_CONCURRENCY) || 3);
+  if (!usable.length) return Math.min(8, cap);
+  if (fast) return Math.min(cap, fast * 2);
+  return 1; // Nur Ollama: CPU-Instanz mit 1 paralleler Anfrage
+}
 
 export function isRunning(villaId) { return !!running.get(villaId); }
-export function listRunning() { return [...running.keys()]; }
+
+/**
+ * Zombie-Reaper: Aufgaben, die laenger als 35 Minuten auf RUNNING stehen,
+ * haengen in einem nie zurueckkehrenden Werkzeug-/Warteschlangen-Await fest.
+ * Sie blockieren ihre Batch (Promise.all) und damit die GESAMTE Villa. Der
+ * Reaper begraebt sie als FAILED mit ehrlicher Begrundung; die Evolution
+ * plant sie in der naechsten Runde neu. Laeuft im 30-Min-Takt + beim Start.
+ */
+export function reapZombies(maxMin = 35) {
+  const cutoff = now() - maxMin * 60_000;
+  const zombies = db.prepare("SELECT id, villa_id, title FROM tasks WHERE status = 'RUNNING' AND updated_at < ?").all(cutoff);
+  if (!zombies.length) return 0;
+  db.prepare("UPDATE tasks SET status = 'FAILED', result = ?, updated_at = ? WHERE status = 'RUNNING' AND updated_at < ?")
+    .run('Automatisch abgebrochen (Zombie-Reaper): Aufgabe hing ueber 35 Min fest. Wird von der Evolution neu geplant.', now(), cutoff);
+  for (const z of zombies) emit('task', { villaId: z.villa_id, taskId: z.id, status: 'FAILED', title: z.title, answer: '' });
+  console.log(`[villaforge] Zombie-Reaper: ${zombies.length} haengende Aufgabe(n) beendet.`);
+  return zombies.length;
+}
 
 export function stopVilla(villaId) {
   const job = running.get(villaId);
@@ -746,10 +1051,26 @@ export function stopVilla(villaId) {
   return true;
 }
 
-export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, adaptive = true, maxRounds = 6 } = {}) {
+export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, adaptive = true, maxRounds = 6 } = {}) {
+  if (db.prepare('SELECT status FROM villas WHERE id=?').get(villaId)?.status === 'ARCHIVED') return;
   if (running.get(villaId)) return;
-  const job = { stop: false, processed: 0, concurrency: Math.max(1, Math.min(Number(concurrency) || 4, 12)), retries: new Map() };
+  // concurrency 0 = automatisch je nach Routen (schnelle Cloud-Routen -> mehr parallel)
+  const auto = Number(concurrency) > 0 ? Number(concurrency) : pickConcurrency();
+  const hardCap = Math.max(1, Number(process.env.VF_MAX_CONCURRENCY) || 3);
+  const job = { stop: false, processed: 0, concurrency: Math.max(1, Math.min(auto, hardCap)) };
   running.set(villaId, job);
+  // Lauf-Budget: Im 24/7-Dauerbetrieb endet die Schleife nie von selbst - ohne
+  // Budget belegt eine Villa ihren Slot STUNDENLANG und die restlichen Villen
+  // verhungern in der Scheduler-Queue. Nach dem Budget endet der Lauf planmaessig
+  // (PAUSED), der Slot rotiert fair zur naechsten Villa (Least-Recently-Started).
+  const runStart = now();
+  // v1.42.0 — Fokus-Modus: Die fokussierte Villa bekommt ein lange Lauf-Budget
+  // (min. 120 Min), damit sie ihr Projekt abschliessen kann, bevor der Slot
+  // weiterzieht. Nutzerdirektive: Projekt fuer Projekt fertigstellen.
+  const focusRun = process.env.VF_FOCUS_MODE !== '0';
+  const budgetMs = focusRun
+    ? Math.max(120 * 60_000, Number(process.env.VF_RUN_BUDGET_MIN || 20) * 60_000)
+    : Math.max(5 * 60_000, Number(process.env.VF_RUN_BUDGET_MIN || 20) * 60_000);
   // Verwaiste Aufgaben aus einem abgebrochenen Lauf zurueck auf PENDING setzen.
   // Beim Start eines Laufs kann keine Aufgabe legitim auf RUNNING stehen: dieser
   // Prozess hat noch keine gestartet. Solche Eintraege stammen aus einem Absturz
@@ -760,11 +1081,19 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
   }
   // Rundenstand auf 0 setzen: die Obergrenze gilt je Lauf, nicht ueber Laeufe hinweg.
   db.prepare('UPDATE villas SET status = ?, auto_rounds = 0, updated_at = ? WHERE id = ?').run('RUNNING', now(), villaId);
+  // Haengende RUNNING-Aufgaben eines abgestuerzten Vorgaengerlaufs zurueckstellen
+  // (max. 3 Versuche je Aufgabe, dann bleibt sie FAILED und blockiert nicht).
+  const staleRows = db.prepare("SELECT id FROM tasks WHERE villa_id = ? AND status = 'RUNNING'").all(villaId);
+  for (const t of staleRows) {
+    db.prepare("UPDATE tasks SET status = 'PENDING', retry_count = retry_count + 1, updated_at = ? WHERE id = ?").run(now(), t.id);
+  }
+  if (staleRows.length) emit('progress', { villaId, note: staleRows.length + ' haengende Aufgabe(n) zurueckgestellt' });
   emit('villa', { villaId, status: 'RUNNING', concurrency: job.concurrency });
 
   try {
-    while (job.processed < maxTasks) {
+    while (true) { // 24/7-Dauerbetrieb: endet durch Stopp, Autonomie-Aus, Fehler oder Budget
       if (job.stop) break;
+      if (now() - runStart > budgetMs) break; // Slot fair rotieren lassen
 
       const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(villaId);
       if (!villa || villa.autonomy === 0) break;
@@ -775,12 +1104,33 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
       // Die Runden sind gedeckelt und liegen in der Villa, damit ein Neustart
       // nicht wieder bei null beginnt und der Lauf garantiert endet.
       if (!tasks.length) {
+        // Fehlgeschlagenes zuerst automatisch wieder aufnehmen (max. 3 Versuche).
+        const requeued = requeueFailed(villaId);
+        if (requeued > 0) {
+          emit('progress', { villaId, processed: job.processed, requeued, note: 'Fehlgeschlagene Aufgabe(n) wieder aufgenommen' });
+          continue;
+        }
         const rounds = Number(villa.auto_rounds || 0);
         if (adaptive && rounds < maxRounds) {
           db.prepare('UPDATE villas SET auto_rounds = auto_rounds + 1, updated_at = ? WHERE id = ?').run(now(), villaId);
+          // Rueckmeldung aus dem echten Projekt: Build-/Testlauf pro Runde,
+          // Fehler werden sofort als Aufgabe behandelt (schnelle Selbstheilung).
+          if (sourceRoot(villaId)) {
+            const v = await verifyProject(villaId);
+            emit('progress', { villaId, processed: job.processed, verification: v?.skipped ? 'skipped' : (v?.ok ? 'passed' : 'failed'), round: rounds + 1, maxRounds });
+            if (v && v.ok === false) continue; // Fix-Aufgabe wurde angelegt, Pool erneut pruefen
+          }
           const added = await reviewAndExpand(villaId);
           emit('progress', { villaId, processed: job.processed, open: 0, added, round: rounds + 1, maxRounds });
           if (added > 0) continue;
+        }
+        // 24/7: kein Stillstand. Ohne offene Aufgaben kommt sofort die
+        // naechste Welle (Phasen-Pflichten, sonst Verbesserungswelle).
+        const { developCycle } = await import('./product.mjs');
+        const wave = developCycle(villaId);
+        if (wave.added > 0) {
+          emit('progress', { villaId, processed: job.processed, wave: wave.added, maturity: wave.maturity.score, phase: wave.maturity.currentPhase, note: 'Naechste Welle' });
+          continue;
         }
         break;
       }
@@ -788,72 +1138,74 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
       // Rollenpassende Aufgaben zuerst, damit Agenten nicht fachfremd arbeiten.
       tasks.sort((a, b) => (guessRole(a) === guessRole(b) ? a.priority - b.priority : 0));
 
-      // Adaptive Batching: die Parallelitaet sinkt mit den bereitstehenden
-      // ECHTEN Routen. Nur Offline-Planer uebrig => Volldurchlauf (der ist
-      // nie rate-limited), eine Route uebrig => eine Aufgabe auf einmal.
-      const ready = readyRealRoutes();
-      const batchLimit = ready === 0 ? job.concurrency : Math.max(1, Math.min(job.concurrency, ready));
-      emit('batch', { villaId, concurrency: batchLimit, readyRoutes: ready });
-      const batch = tasks.slice(0, batchLimit);
+      const batch = tasks.slice(0, job.concurrency);
       for (const task of batch) {
-        db.prepare("UPDATE tasks SET status = 'RUNNING', attempts = attempts + 1, updated_at = ? WHERE id = ?").run(now(), task.id);
+        db.prepare("UPDATE tasks SET status = 'RUNNING', updated_at = ? WHERE id = ?").run(now(), task.id);
       }
 
-      await Promise.all(batch.map((task) => executeTask(villaId, task)));
-      job.processed += batch.length;
-
-      // Offline gescheiterte Aufgaben gehoeren zurueck in die Warteschlange,
-      // nicht in den Friedhof: Rate-Limit-Fenster sind Minuten-Sache. Zwei
-      // Extraversuche je Aufgabe, danach bleibt es beim ehrlichen FAILED.
-      let requeued = 0;
-      for (const task of batch) {
-        const row = db.prepare('SELECT status, result FROM tasks WHERE id = ?').get(task.id);
-        if (row?.status === 'FAILED' && /Aufgabe NICHT erledigt/.test(String(row.result || ''))) {
-          const n = (job.retries.get(task.id) || 0) + 1;
-          if (n <= 2) {
-            job.retries.set(task.id, n);
-            db.prepare("UPDATE tasks SET status = 'PENDING', updated_at = ? WHERE id = ?").run(now(), task.id);
-            requeued++;
-          }
+      const batchStart = now();
+      await Promise.all(batch.map((task) => executeTask(villaId, task).catch((e) => {
+        // Eine Ausnahme in EINER Aufgabe beendet nicht den ganzen Lauf:
+        // Aufgabe wird FAILED markiert (Befund im Ergebnis) und automatisch
+        // ueber requeueFailed bis zu 3x neu aufgenommen.
+        if(e.code==='LLM_UNAVAILABLE') {
+          job.stop=true;
+          db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run('LLM_UNAVAILABLE: Warte auf echte Modellverbindung.',now(),task.id);
+          emit('task',{villaId,taskId:task.id,status:'PENDING',code:e.code});
+          return;
         }
-      }
-      if (requeued > 0) {
-        emit('progress', { villaId, processed: job.processed, requeued, hint: 'Modell-Kontingent pausiert, Wiederholung nach Wartezeit' });
-        // TPM-Fenster entleeren lassen, bevor die naechste Runde anfaengt.
-        await new Promise((r) => setTimeout(r, Number(process.env.VF_RATE_WAIT_MS ?? 45_000) * 1.25));
-      }
+        const msg = String(e?.message || e).slice(0, 300);
+        // Stack in den Hub-Log: Damit ist der Fundort interner Fehler exakt
+        // rueckverfolgbar und die Selbstheilung kann die Ursache beheben.
+        console.error(new Date().toISOString(), '[villaforge] INTERNER FEHLER Task', task.id, JSON.stringify(task.title), '\n' + (e?.stack || String(e)));
+        db.prepare("UPDATE tasks SET status = 'FAILED', result = ?, updated_at = ? WHERE id = ?")
+          .run('Interner Fehler: ' + msg, now(), task.id);
+        emit('task', { villaId, taskId: task.id, agentId: task.agent_id || null, status: 'FAILED', error: msg });
+      })));
+      if(job.stop)break;
+      job.processed += batch.length;
+      if (job.processed >= maxTasks) job.processed = 0; // rollierendes Fenster im Dauerbetrieb
       emit('progress', { villaId, processed: job.processed, open: openTasks(villaId).length });
+
+      // Fail-Fast-Verifikation (OpenHands-Muster): enthaelt die Batch echte Code-
+      // Arbeit, laeuft sofort ein Build-/Testlauf statt erst am Rundenende.
+      // Fehler landen als Prio-1-Aufgabe im selben Lauf (Selbstheilung), statt
+      // dass fehlerhafter Code als 'erledigt' liegen bleibt. Gedrosselt auf
+      // hoechstens alle 3 Minuten, damit die 4 VM-Kerne nicht astaephyxieren.
+      const hadCode = batch.some((t) => ['CODER', 'TESTER', 'ARCHITECT'].includes(guessRole(t)));
+      const lastVerify = verifyThrottle.get(villaId) || 0;
+      if (hadCode && sourceRoot(villaId) && now() - lastVerify > 180_000) {
+        verifyThrottle.set(villaId, now());
+        const fast = await verifyProject(villaId);
+        emit('progress', { villaId, processed: job.processed, fastVerification: fast?.skipped ? 'skipped' : (fast?.ok ? 'passed' : 'failed') });
+        if (fast && fast.ok === false) continue; // Fix-Aufgabe liegt an -> Pool neu laden
+      }
+      // Sanftes Tempo, wenn ein Durchlauf nichts Fertiges brachte (Routen
+      // gedrosselt/ohne Key): 60 Sekunden Pause statt endloses Haemmern.
+      const freshDone = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status = 'DONE' AND updated_at >= ?").get(villaId, batchStart).c;
+      if (freshDone === 0) await new Promise((r) => setTimeout(r, 60_000));
     }
 
-    // History-Rotation: vollendete Laeufe kuerzen audit/memories auf Fenster.
+    // Der Lauf endet nur durch Stopp, Autonomie-Aus oder Fehler. Ein
+    // 'COMPLETED' gibt es im 24/7-Betrieb nicht - die Projektpruefung
+    // laeuft regelmaessig in den adaptiven Runden innerhalb der Schleife.
+    const status = 'PAUSED';
+
+    // History-Rotation am Lauf-Ende: audit/memories je Villa auf Fenster
+    // kuerzen (wichtige Erinnerungen ueberleben). Haelt die DB dauerhaft
+    // schnell, statt mit jedem Lauf zu wachsen.
     const pruned = pruneHistory(villaId);
 
-    const open = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status IN ('PENDING','READY','RUNNING','REVIEW')").get(villaId).c;
-    const failed = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status = 'FAILED'").get(villaId).c;
-    // Nur-429-Fehler brauchen keinen Klick: der Hub setzt den Lauf selbst
-    // fort, sobald das Tageslimit voraussichtlich wieder frei ist.
-    const quotaFailed = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status = 'FAILED' AND quota_blocked = 1").get(villaId).c;
-    // COMPLETED nur, wenn wirklich alles durchgelaufen ist; gescheiterte
-    // Aufgaben sind kein Erfolg, auch wenn nichts mehr offen steht.
-    let status = job.stop ? 'PAUSED' : (open === 0 && failed === 0 ? 'COMPLETED' : 'PAUSED');
-
-    // Bei fertigem Lauf das echte Projekt bauen und testen.
-    if (status === 'COMPLETED' && adaptive) {
-      const v = await verifyProject(villaId);
-      if (v && v.ok === false) {
-        emit('progress', { villaId, verification: 'failed' });
-        status = 'PAUSED';
-      } else {
-        emit('progress', { villaId, verification: v?.skipped ? 'skipped' : 'passed' });
-      }
-    }
-
-    const autoRetryAt = status === 'PAUSED' && failed > 0 && quotaFailed === failed ? now() + AUTO_RETRY_MS : 0;
-    db.prepare('UPDATE villas SET status = ?, auto_retry_at = ?, updated_at = ? WHERE id = ?').run(status, autoRetryAt, now(), villaId);
-    emit('villa', { villaId, status, processed: job.processed, autoRetryAt });
+    db.prepare('UPDATE villas SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), villaId);
+    emit('villa', { villaId, status, processed: job.processed, pruned });
+    // v1.42.0 — APK-Bereitstellung (Nutzerdirektive 2026-10-18): Hat die Villa
+    // alle Aufgaben erledigt, stoesst der Hub die APK-Baustrasse einmalig an -
+    // die fertige APK landet als GitHub-Release und ist abrufbar.
+    maybeDeliverApk(villaId).catch((e) => console.error('[villaforge] APK-Delivery Villa ' + villaId + ' fehlgeschlagen:', String(e?.message || e)));
   } catch (err) {
-    db.prepare('UPDATE villas SET status = ?, updated_at = ? WHERE id = ?').run('FAILED', now(), villaId);
-    emit('villa', { villaId, status: 'FAILED', error: String(err.message || err) });
+    console.error('[villaforge] Villa ' + villaId + ' Lauf abgestuerzt:', err);
+    db.prepare('UPDATE villas SET status = ?, updated_at = ? WHERE id = ?').run(err.code==='LLM_UNAVAILABLE'?'PAUSED':'FAILED', now(), villaId);
+    emit('villa', { villaId, status: err.code==='LLM_UNAVAILABLE'?'PAUSED':'FAILED', code:err.code,error: String(err.message || err) });
   } finally {
     running.delete(villaId);
   }
@@ -863,19 +1215,38 @@ export async function orchestrate(villaId, { concurrency = 4, maxTasks = 500, ad
  * Der Deep Agent prueft den Gesamtstand und ergaenzt fehlende Aufgaben.
  * Das macht die Villa selbstheilend, ohne in eine Endlosschleife zu laufen.
  */
+/**
+ * Fehlgeschlagene Aufgaben automatisch zurueckstellen: bis zu 5 je Zyklus,
+ * hoechstens 3 Versuche je Aufgabe. Danach bleibt sie FAILED (sichtbar im
+ * Audit) und blockiert den Dauerbetrieb nicht.
+ */
+function requeueFailed(villaId) {
+  const rows = db.prepare("SELECT id FROM tasks WHERE villa_id = ? AND status = 'FAILED' AND retry_count < 3 ORDER BY updated_at ASC LIMIT 5").all(villaId);
+  for (const t of rows) {
+    db.prepare("UPDATE tasks SET status = 'PENDING', retry_count = retry_count + 1, updated_at = ? WHERE id = ?").run(now(), t.id);
+  }
+  return rows.length;
+}
+
 async function reviewAndExpand(villaId) {
   const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(villaId);
   const root = db.prepare('SELECT * FROM agents WHERE villa_id = ? AND is_root = 1').get(villaId);
   if (!villa || !root) return 0;
+
+  // Produkt-Pipeline zuerst: fehlende Pflichten der aktuellen Phase entstehen
+  // deterministisch (kein LLM-Aufruf noetig) - die Villa laeuft Richtung Marktreife.
+  const { ensurePhaseTasks } = await import('./product.mjs');
+  const phaseAdded = ensurePhaseTasks(villaId);
+  if (phaseAdded > 0) return phaseAdded;
 
   const done = db.prepare("SELECT title, result FROM tasks WHERE villa_id = ? AND status = 'DONE' ORDER BY id ASC LIMIT 40").all(villaId);
   const summary = done.map((t) => `- ${t.title}: ${String(t.result || '').slice(0, 160)}`).join('\n');
 
   const res = await runAgent(
     root,
-    `Idee: ${villa.idea}\n\nBisher erledigte Aufgaben:\n${summary || '(keine)'}\n\n` +
-      'Pruefe, ob die Idee damit vollstaendig und umsetzbar ist. Lege fehlende Aufgaben mit task_create an (hoechstens 5). ' +
-      'Wenn nichts fehlt, antworte mit {"final":"Fertig"} ohne Werkzeugaufruf.',
+    `Idee: ${villa.idea}\n\nProjekt-Kontext:\n${projectProfile(villaId, 1000)}\n\nBisher erledigte Aufgaben:\n${summary || '(keine)'}\n\n` +
+      'Pruefe, ob die Idee damit vollstaendig und umsetzbar ist. Lege NUR fehlende, noch nicht erledigte Aufgaben mit task_create an (hoechstens 5, jeweils mit Akzeptanzkriterium). ' +
+      'Wiederhole keine bereits erledigte Aufgabe. Wenn nichts fehlt, antworte mit {"final":"Fertig"} ohne Werkzeugaufruf.',
     { maxSteps: 6, villaId }
   );
 
@@ -887,21 +1258,105 @@ async function reviewAndExpand(villaId) {
   return created;
 }
 
-/**
- * Reine Kontingent-Erschoepfung? Alle echten Routen haben nur mit 429
- * geantwortet — der Schluessel ist gueltig, das Tageslimit ist leer.
- * Kein inhaltlicher Fehlschlag: der Hub darf das automatisch neu anstossen.
- */
-export function isQuotaOnlyFailure(res) {
-  const w = String(res?.warning || '');
-  return !!res?.offline && !res?.error && !res?.intentional && /HTTP 429/.test(w) && !/HTTP 40[13]/.test(w);
+
+/** Echter-Code-Qualitaetstor (v1.37.0): Code-Aufgaben am echten Projekt
+ *  muessen den Build/Test-Tor (npm test) passieren, bevor sie als DONE
+ *  gelten. Nichtbestehen schiebt die Aufgabe mit [Q-GATE]-Marker genau
+ *  einmal zurueck ins Backlog. Ohne Projekt oder Test-Script wird der Tor
+ *  uebersprungen (keine False-Bounces). */
+export async function runQualityGate(villaId, task, answer) {
+  if (!packEnabled('qualitaetstor')) return { passed: true, annotated: answer, skipped: 'pack' };
+
+  // v1.40.0: Das Tor bewertet auch Eigentwicklungen im Villa-Projektordner —
+  // erledigte Aufgaben duerfen keine reinen Berichte mehr sein.
+  const root = sourceRoot(villaId) || villaProjectDir(villaId);
+  const EMPTY = 'Qualitaetstor: Der Projektordner ist leer — die Umsetzung muss als echte Dateien mit code_write in den Projektordner (z.B. src/, tests/, package.json, requirements.txt). Ein Bericht allein zaehlt nicht als Umsetzung.';
+  const countFiles = (dir) => {
+    try {
+      return readdirSync(dir, { recursive: true }).filter((f) => {
+        const parts = String(f).split('/');
+        return !parts.some((p) => p.startsWith('.') || p === 'node_modules');
+      }).length;
+    } catch { return 0; }
+  };
+  if (!existsSync(root) || countFiles(root) === 0) return { passed: false, output: EMPTY, annotated: answer };
+  let hasPkg = false; let hasTest = false;
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+    hasPkg = true; hasTest = !!pkg?.scripts?.test;
+  } catch { /* kein npm-Projekt */ }
+  if (hasPkg && hasTest) {
+    const gate = await runTool({ villaId, agentId: 0 }, 'project_run', { binary: 'npm', args: ['test', '--silent'], timeoutMs: 180000 });
+    const passed = /^Exit 0/.test(String(gate));
+    return { passed, output: String(gate), annotated: passed ? `${answer}\n\n[Qualitaetstor: npm test gruen.]` : answer };
+  }
+  if (hasPkg && !hasTest) return { passed:false,annotated:answer,output:'Tests fehlen: npm test muss echte Fehlerfälle prüfen.' };
+  // Python-Projekte: Syntax-Tor (py_compile) ueber alle .py-Dateien
+  let pys = [];
+  try {
+    pys = readdirSync(root, { recursive: true }).map(String)
+      .filter((f) => f.endsWith('.py') && !f.split('/').some((p) => p.startsWith('.') || p === 'node_modules'))
+      .slice(0, 40);
+  } catch { pys = []; }
+  if (pys.length) {
+    let out = ''; let passed = true;
+    try {
+      execFileSync('python3',['-m','py_compile',...pys],{cwd:root,stdio:'pipe',timeout:120000});
+    } catch (e) {
+      passed = false;
+      out = String(e?.stdout || '') + String(e?.stderr || '');
+    }
+    return { passed, output: `Exit ${passed ? 0 : 1}:\n${out || '(keine Ausgabe)'}`, annotated: passed ? `${answer}\n\n[Qualitaetstor: py_compile gruen.]` : answer };
+  }
+  return { passed:false,annotated:answer,output:'Keine ausführbare Testprüfung gefunden.' };
 }
 
-// Nach einem reinen Kontingent-Aus pausierter Lauf: der Hub wartet eine
-// Stunde und versucht es dann von selbst wieder (429er kosten nichts).
-export const AUTO_RETRY_MS = 60 * 60_000;
 
-async function executeTask(villaId, task) {
+/** v1.40.0 — Autonomes Produkt-Repo: Der fertige Projektstand einer Villa
+ *  wird in ein passendes GitHub-Repository gepusht (wird bei Bedarf angelegt).
+ *  Token: Hub-Secret GITHUB_TOKEN. */
+export async function publishToGitHub(villaId, agentId, task, { exec, fetchFn } = {}) {
+  const run = exec || ((cmd) => { try { execSync(cmd, { stdio: 'pipe', timeout: 60_000 }); return null; } catch (e) { return String(e?.message || e).slice(0, 300); } });
+  const doFetch = fetchFn || ((...a) => fetch(...a));
+  const root = sourceRoot(villaId) || villaProjectDir(villaId);
+  if (!existsSync(root)) return { ok: false, error: 'Projektordner ist leer — nichts zu pushen.' };
+  const token = db.prepare('SELECT value FROM secrets WHERE name = ?').get('GITHUB_TOKEN')?.value;
+  if (!token) return { ok: false, error: 'Kein GITHUB_TOKEN im Secrets-Store hinterlegt.' };
+  const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(villaId) || {};
+  const slug = String(villa.name || 'villa').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'villa';
+  const repo = `villaforge-${slug}`;
+  const hdrs = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' };
+  let me;
+  try { me = await doFetch('https://api.github.com/user', { headers: hdrs, signal: AbortSignal.timeout(15000) }); }
+  catch (e) { return { ok: false, error: 'GitHub nicht erreichbar: ' + String(e?.message || e) }; }
+  if (!me.ok) return { ok: false, error: `GitHub HTTP ${me.status}` };
+  const owner = (await me.json()).login;
+  const create = await doFetch('https://api.github.com/user/repos', {
+    method: 'POST', headers: hdrs,
+    body: JSON.stringify({ name: repo, description: `VillaForge-Produkt: ${String(villa.idea || villa.name || '').slice(0, 120)}`, private: false }),
+    signal: AbortSignal.timeout(20000)
+  });
+  if (!create.ok && create.status !== 422) return { ok: false, error: `Repo-Anlage HTTP ${create.status}` };
+  if (!existsSync(join(root, '.gitignore'))) writeFileSync(join(root, '.gitignore'), 'node_modules/\n__pycache__/\n*.pyc\n.env\n.venv/\ndist/\n', 'utf8');
+  const q = JSON.stringify(root);
+  if (!existsSync(join(root, '.git'))) run(`git -C ${q} init -q -b main`);
+  run(`git -C ${q} add -A`);
+  run(`git -C ${q} -c user.name=VillaForge-Hub -c user.email=hub@villaforge.local commit -q --allow-empty -m ${JSON.stringify(String(task?.title || 'Produktstand').slice(0, 100))}`);
+  run(`git -C ${q} remote remove origin`);
+  const remoteUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
+  const pushErr = run(`git -C ${q} push -q --force ${JSON.stringify(remoteUrl)} main`);
+  if (pushErr) return { ok: false, error: `Git-Push fehlgeschlagen: ${pushErr}` };
+  return { ok: true, url: `https://github.com/${owner}/${repo}`, repo: `${owner}/${repo}` };
+}
+
+/** Selbst-Lern-Loop (v1.38.0): Fehlschlaege und Tor-Risse werden als
+ *  LESSON-Erinnerung (Wichtigkeit 7) fuers ganze Team verewigt. */
+export function recordLesson(villaId, agentId, title, content) {
+  db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
+    .run(villaId, agentId, 'villa', 'LESSON', String(title).slice(0, 200), String(content).slice(0, 1500), 7, now());
+}
+
+export async function executeTask(villaId, task) {
   const role = guessRole(task);
   // Bevorzugt einen freien Agenten der passenden Rolle, damit parallele
   // Aufgaben nicht denselben Agenten doppelt belegen.
@@ -918,42 +1373,91 @@ async function executeTask(villaId, task) {
   emit('task', { villaId, taskId: task.id, agentId: agent.id, status: 'RUNNING', title: task.title });
 
   const idea = db.prepare('SELECT idea FROM villas WHERE id = ?').get(villaId)?.idea;
+  const profile = projectProfile(villaId);
+  const recent = db.prepare(
+    "SELECT title, result FROM tasks WHERE villa_id = ? AND status = 'DONE' ORDER BY id DESC LIMIT 4"
+  ).all(villaId).map((t) => `- ${t.title}: ${String(t.result || '').replace(/\s+/g, ' ').slice(0, 160)}`).join('\n');
+  const codeRole = ['CODER', 'REVIEWER', 'TESTER', 'ARCHITECT', 'INTEGRATOR'].includes(role);
   const prompt = [
     `Villa-Idee: ${idea}`,
     '',
+    'Projekt-Kontext (richtet deine Arbeit an diesem Projekt aus):',
+    profile,
+    '',
+    recent ? `Kuerzlich erledigt (baue darauf auf, wiederhole nichts):\n${recent}\n` : '',
     `Deine Teilaufgabe: ${task.title}`,
     `Beschreibung: ${task.description}`,
     '',
-    'Vorgehen:',
-    '1. Pruefe zuerst mit memory_search, ob es bereits verwertbare Ergebnisse gibt.',
-    '2. Erledige die Aufgabe inhaltlich vollstaendig.',
-    '3. Speichere das Ergebnis mit memory_write und, wenn sinnvoll, als Datei mit artifact_write.',
-    '4. Schliesse mit {"final":"..."} ab. Das Ergebnis muss ohne Nachfragen verwendbar sein.'
-  ].join('\n');
+    codeRole
+      ? 'Liefere ECHTEN CODE: Schreibe die Umsetzung als echte Dateien mit code_write in den Projektordner (z.B. src/main.py, tests/, package.json, requirements.txt). Reine Berichte ohne neue Dateien reissen das Qualitaetstor. Nutze project_read/project_search/project_run zum Pruefen und sichere Ergebnisnotizen zusaetzlich mit artifact_write/artifact_patch.'
+      : 'Pruefe zuerst mit memory_search verwertbare Vorarbeiten, dann erledige die Aufgabe vollstaendig.',
+    'Speichere das Ergebnis mit memory_write (Titel = Aufgabe, Inhalt = Kernresultat).',
+    'Schliesse mit {"final":"..."} ab. Das Ergebnis muss ohne Nachfragen verwendbar sein.'
+  ].filter(Boolean).join('\n');
 
-  const res = await runAgent(agent, prompt, { maxSteps: 7, villaId });
-
-  // Offline-Rettefall: kein echtes Modell war erreichbar. So eine Antwort
-  // ist keine erledigte Aufgabe — sie wuerde nur Plannertext als Ergebnis
-  // vortaeschen. Stattdessen ehrlich FAILED und spaeter neu starten.
-  const offline = !!res.offline && !res.error && !res.intentional;
-  const quotaBlocked = isQuotaOnlyFailure(res) ? 1 : 0;
-  const answer = offline
-    ? `${res.answer}\n\n(Hinweis: Aufgabe NICHT erledigt — kein Sprachmodell erreichbar, Offline-Planer hat geantwortet. Route erneut starten, wenn die Anbindung wieder frei ist.)`
-    : (res.answer || res.error || 'Kein Ergebnis.');
-  const status = res.error || offline ? 'FAILED' : 'DONE';
-  db.prepare('UPDATE tasks SET status = ?, quota_blocked = ?, result = ?, updated_at = ? WHERE id = ?').run(status, quotaBlocked, answer.slice(0, 4000), now(), task.id);
-  db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(villaId, agent.id, 'assistant', answer.slice(0, 4000), now());
-  if (!offline) {
-    db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
-      .run(villaId, agent.id, 'villa', 'ARTIFACT', `Ergebnis: ${task.title}`, answer.slice(0, 2000), 6, now());
+  // Rollenbasierte Budgets: Code-Rollen brauchen mehr Schritte und Tokens,
+  // einfache Rollen weniger - das beschleunigt den Lauf spuerbar.
+  const maxSteps = ['CODER', 'ARCHITECT', 'INTEGRATOR'].includes(role) ? 12 : codeRole ? 8 : 6;
+  const maxTokens = ['CODER', 'ARCHITECT', 'DOCUMENTER', 'INTEGRATOR'].includes(role) ? 3500 : 1400;
+  let res;
+  try { res = await runAgent(agent,prompt,{maxSteps,villaId,maxTokens}); }
+  catch(error){
+    db.prepare("UPDATE agents SET status='IDLE',last_active_at=? WHERE id=?").run(now(),agent.id);
+    db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run(error.code==='LLM_UNAVAILABLE'?'LLM_UNAVAILABLE: Warte auf echte Modellverbindung.':'Agentenlauf unterbrochen.',now(),task.id);
+    if(error.code==='LLM_UNAVAILABLE')db.prepare("UPDATE villas SET status='PAUSED',updated_at=? WHERE id=?").run(now(),villaId);
+    throw error;
   }
+
+  if(res.code==='LLM_UNAVAILABLE'||res.offline){
+    db.prepare("UPDATE agents SET status='IDLE',last_active_at=? WHERE id=?").run(now(),agent.id);
+    db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run('LLM_UNAVAILABLE: Warte auf echte Modellverbindung.',now(),task.id);
+    throw Object.assign(new Error('Kein echtes Modell erreichbar; Aufgabe bleibt offen.'),{code:'LLM_UNAVAILABLE',statusCode:503});
+  }
+  let answer = res.answer || res.error || 'Kein Ergebnis.';
+
+  // Qualitaetstor: Code-Aufgaben muessen den echten Test-Tor passieren.
+  if (!res.error && codeRole) {
+    const gate = await runQualityGate(villaId, task, answer);
+    if (!gate.passed) {
+      db.prepare('UPDATE tasks SET status = ?, result = ?, priority = MAX(1,priority - 1), retry_count=COALESCE(retry_count,0)+1, updated_at = ? WHERE id = ?')
+        .run(Number(task.retry_count||0)>=2?'FAILED':'PENDING', `Qualitaetstor nicht bestanden, Retry angefordert:\n${gate.output.slice(0, 1200)}\n\n${answer}`.slice(0, 4000), now(), task.id);
+      db.prepare("UPDATE tasks SET title = title || ' [Q-GATE]' WHERE id = ? AND title NOT LIKE '%[Q-GATE]%'").run(task.id);
+      db.prepare('UPDATE agents SET status = ?, last_active_at = ? WHERE id = ?').run('IDLE', now(), agent.id);
+      // Selbst-Lern-Loop: Der Tor-Riss wird als Lehre verewigt, damit kein
+      // Team-Mitglied denselben Fehler zweimal macht.
+      recordLesson(villaId, agent.id, `Lehre: ${task.title}`, `npm test scheiterte nach der Umsetzung — erst Build/Test-Tor gruen, dann abschliessen. Auszug:\n${String(gate.output).slice(0, 600)}`);
+      emit('task', { villaId, taskId: task.id, agentId: agent.id, status: 'GATE_RETRY', title: `${task.title} [Q-GATE]` });
+      return;
+    }
+    answer = gate.annotated;
+    // v1.40.0 — Autonomer Produkt-Push: Bei gruenem Tor wandert der fertige
+    // Stand ins GitHub-Produkt-Repo der Villa (fehlertolerant).
+    const pub = await publishToGitHub(villaId, agent.id, task).catch((e) => ({ ok: false, error: String(e?.message || e) }));
+    if (pub?.ok) {
+      answer += `\n\n[Produkt-Push: ${pub.url}]`;
+      db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
+        .run(villaId, agent.id, 'villa', 'ARTIFACT', `Produkt-Push: ${task.title}`, `Fertiger Stand im GitHub-Produkt-Repo: ${pub.url}`, 8, now());
+      emit('task', { villaId, taskId: task.id, agentId: agent.id, status: 'PUSHED', url: pub.url });
+    } else if (pub && !pub.ok && !/leer|GITHUB_TOKEN/.test(pub.error || '')) {
+      recordLesson(villaId, agent.id, `Lehre: Push ${task.title}`, `GitHub-Push schlug fehl: ${String(pub.error).slice(0, 400)}`);
+    }
+  }
+
+  db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?').run(res.error ? 'FAILED' : 'DONE', answer.slice(0, 4000), now(), task.id);
+  if (res.error) {
+    recordLesson(villaId, agent.id, `Lehre: ${task.title}`, `Aufgabe schlug fehl. Ursache analysieren und beim naechsten Versuch zuerst beheben:\n${String(res.error).slice(0, 600)}`);
+  }
+  db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(villaId, agent.id, 'assistant', answer.slice(0, 4000), now());
+  db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
+    .run(villaId, agent.id, 'villa', 'ARTIFACT', `Ergebnis: ${task.title}`, answer.slice(0, 2000), 6, now());
   db.prepare('UPDATE agents SET status = ?, last_active_at = ? WHERE id = ?').run('IDLE', now(), agent.id);
 
-  emit('task', { villaId, taskId: task.id, agentId: agent.id, status, offline, title: task.title, answer: answer.slice(0, 500) });
+  emit('task', { villaId, taskId: task.id, agentId: agent.id, status: res.error ? 'FAILED' : 'DONE', title: task.title, answer: answer.slice(0, 500) });
 }
 
 export function guessRole(task) {
+  const assigned=String(task.role||String(task.description||'').match(/\bRolle:\s*([A-Z_]+)/i)?.[1]||'').toUpperCase();
+  if(ROLES.includes(assigned))return assigned;
   const t = `${task.title} ${task.description}`.toLowerCase();
   if (/plan|anforder|ziel/.test(t)) return 'PLANNER';
   if (/umsatz|monetar|preis|zahl|geschaeft|business|erlös|erloes|marge/.test(t)) return 'BUSINESS';
@@ -966,5 +1470,10 @@ export function guessRole(task) {
   if (/dokument|readme/.test(t)) return 'DOCUMENTER';
   if (/risiko|kritik/.test(t)) return 'CRITIC';
   if (/integrat|release|zusammen/.test(t)) return 'INTEGRATOR';
+  if (/strategie|szenario|entscheidung|roadmap|priorisier/.test(t)) return 'STRATEGIST';
+  if (/analyse|begr|ursache|zusammenhang|denk|argument/.test(t)) return 'REASONER';
+  if (/verbind|synthes|querschnitt|abstimm|kompromiss/.test(t)) return 'SYNTHESIZER';
+  if (/optimier|engpass|leistung|durchsatz|verbesser/.test(t)) return 'OPTIMIZER';
+  if (/verifiz|pruef|beleg|fakten|nachweis/.test(t)) return 'VERIFIER';
   return 'WORKER';
 }

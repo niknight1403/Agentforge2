@@ -1,0 +1,2 @@
+# VillaForge Watchdog — alle 2 Minuten
+*/2 * * * * root /opt/villaforge/server/scripts/villa-watchdog.sh >/dev/null 2>&1

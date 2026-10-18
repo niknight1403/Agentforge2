@@ -2,234 +2,216 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#060916" />
-  <meta name="color-scheme" content="dark" />
-  <meta name="description" content="VillaForge Control Center — Deep Agents planen, bauen und pruefen ein Vorhaben in einer Villa, mit Werkzeug-Packs, LLM-Routen-Rotator und Gedaechtnis." />
-  <title>VillaForge · Control Center</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07090E" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>CyberSarah · Control Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 </head>
 <body>
-  <div class="aurora"></div>
+  <div class="aurora" aria-hidden="true"></div>
 
+  <!-- ============ KOPFZEILE (sticky, Handy-optimiert) ============ -->
   <header class="topbar">
-    <a class="brand" href="#top" aria-label="VillaForge Startseite"><span class="logo-mark" aria-hidden="true">✦</span><span><strong>VillaForge</strong><small>CONTROL CENTER</small></span></a>
-    <nav class="topnav" aria-label="Hauptnavigation"><a class="active" href="#top">Übersicht</a><a href="#villaSection">Villen</a><a href="#routesSection">System</a></nav>
-    <div class="status"><span id="healthDot" class="dot" aria-hidden="true"></span><span id="healthText" role="status" aria-live="polite">verbinde…</span></div>
+    <div class="brand"><span class="logo-mark" aria-hidden="true">✦</span><span><strong>CyberSarah</strong><small>CONTROL CENTER</small></span></div>
+    <button id="masterOpenBtn" class="master-nav" type="button" aria-label="Master-Agent öffnen">✦</button><div class="topbar-status"><span id="healthDot" class="dot"></span><span id="healthText">verbinde…</span></div>
   </header>
 
-  <nav id="mobileNav" class="mobile-nav" aria-label="Mobile Hauptnavigation">
-    <a class="active" href="#top" data-nav-section="top"><span aria-hidden="true">⌂</span><small>Übersicht</small></a>
-    <a href="#createSection" data-nav-section="createSection"><span aria-hidden="true">＋</span><small>Neue Villa</small></a>
-    <a href="#villaSection" data-nav-section="villaSection"><span aria-hidden="true">◈</span><small>Villen</small></a>
-    <a href="#packsSection" data-nav-section="packsSection"><span aria-hidden="true">⚒</span><small>System</small></a>
-  </nav>
-
-  <div id="offlineBanner" class="offline-banner" hidden role="alert">
-    <span aria-hidden="true">⚠</span>
-    <span id="offlineText">Der Hub antwortet nicht. Prüfe, ob der Server läuft.</span>
-    <button id="offlineRetry" class="ghost compact" type="button">Erneut versuchen</button>
-  </div>
-
-  <main id="top" class="dashboard">
-    <section class="hero panel-glass">
-      <div>
-        <p class="eyebrow">DEEP-AGENT CONTROL CENTER</p>
-        <h1>Deine Idee.<br /><span>Deine Villa.</span></h1>
-        <p class="hero-copy">Ein fokussierter Entwicklungsraum für Planung, Chat und Umsetzung – mit genau den Informationen, die du gerade brauchst.</p>
-        <button id="heroCreateBtn" class="primary large" type="button">Neue Villa starten <span aria-hidden="true">→</span></button>
+  <!-- ============ ANSICHT: ÜBERSICHT ============ -->
+  <main id="view-home" class="view active" aria-label="Übersicht">
+    <section class="profile-card">
+      <div class="avatar" aria-hidden="true">S</div>
+      <div class="profile-text">
+        <h1>Willkommen zurück,<br /><span>Sarah</span></h1>
+        <div class="profile-badges"><span class="badge role">Administrator</span><span class="badge online">● Online</span></div>
       </div>
-      <div class="hero-orb" aria-hidden="true"><div class="orb-core">✦</div></div>
     </section>
 
-    <section class="metric-grid" aria-label="Systemübersicht">
-      <article class="metric-card"><span class="metric-icon purple" aria-hidden="true">⌘</span><div><b id="metricVillas">0</b><small>Villen</small></div></article>
-      <article class="metric-card"><span class="metric-icon cyan" aria-hidden="true">◈</span><div><b id="metricAgents">0</b><small>Agenten aktiv</small></div></article>
-      <article class="metric-card"><span class="metric-icon green" aria-hidden="true">✓</span><div><b id="metricTasks">0%</b><small>Aufgabenfortschritt</small></div></article>
-      <article class="metric-card"><span class="metric-icon pink" aria-hidden="true">⚡</span><div><b id="metricRoutes">0</b><small>LLM-Routen</small></div></article>
+    <section class="stats-row" aria-label="Systemübersicht">
+      <article class="stat-tile"><b id="metricAgents">0</b><small>Agenten</small></article>
+      <article class="stat-tile"><b id="metricRoutes">0</b><small>LLM-Routen</small></article>
+      <article class="stat-tile"><b id="metricUptime">–</b><small>Uptime</small></article>
     </section>
 
-    <section id="createSection" class="panel-glass create-panel">
-      <div class="section-heading"><div><p class="eyebrow">STARTER</p><h2>Eine neue Villa aufbauen</h2></div><span class="section-count">01</span></div>
-      <p class="hint">Beschreibe dein Ziel. Nach dem Erstellen öffnet sich automatisch der Chat-Entwicklungsraum mit Vorschlägen und dem Deep Agent.</p>
-      <div class="form-grid">
-        <label>Titel der Villa<input id="villaName" placeholder="z. B. Mein Produkt-Launch" /></label>
-        <label>Agentenpool<input id="agentCount" type="number" min="3" max="1000" value="24" /></label>
+    <section class="card active-villa" id="activeVillaCard" role="button" tabindex="0" aria-label="Aktive Villa öffnen">
+      <div class="card-head">
+        <p class="eyebrow">AKTIVE VILLA</p>
+        <span id="activeChip" class="chip">–</span>
       </div>
-      <label>Idee / Ziel<textarea id="idea" rows="4" placeholder="Was soll gebaut, verbessert oder analysiert werden? Zielgruppe, Funktionen, Rahmenbedingungen …"></textarea></label>
-      <details class="advanced">
-        <summary>Erweitert · bestehende App analysieren</summary>
-        <label>Quellpfad, optional<input id="sourcePath" placeholder="/pfad/zur/bestehenden/app" /></label>
-      </details>
-      <div class="actions">
-        <button id="createBtn" class="primary" type="button">Villa erstellen <span aria-hidden="true">→</span></button>
-        <button id="refreshBtn" class="ghost" type="button">Aktualisieren</button>
+      <div class="villa-progress">
+        <div class="ring-wrap"><svg viewBox="0 0 80 80" class="ring" aria-hidden="true"><defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00E5FF"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs><circle class="ring-bg" cx="40" cy="40" r="34" /><circle id="ringFg" class="ring-fg" cx="40" cy="40" r="34" /></svg><b id="ringPct">0%</b></div>
+        <div class="villa-info"><h2 id="activeName">Keine Villa aktiv</h2><p id="activeIdea">Starte deine erste Villa – deine Agenten warten.</p><span class="tap-hint">Antippen zum Öffnen →</span></div>
       </div>
-      <p id="createMsg" class="msg" role="status" aria-live="polite"></p>
     </section>
 
-    <section id="villaSection" class="panel-glass">
-      <div class="section-heading"><div><p class="eyebrow">WORKSPACE</p><h2>Deine Villen</h2></div><button id="openLatestBtn" class="ghost compact" type="button">Letzte öffnen</button></div>
-      <div id="villaList" class="villa-list"><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
-      <div class="actions">
-        <input id="importFile" type="file" accept="application/json,.json" hidden />
-        <button id="importBtn" class="ghost" type="button">Villa importieren</button>
-        <button id="backupBtn" class="ghost" type="button">Hub-Backup laden</button>
-        <button id="pruneBtn" class="ghost" type="button">Protokolle aufräumen</button>
+    <div class="duo-grid">
+      <section class="card quality-card" aria-label="Qualitätstor">
+        <div class="card-head"><p class="eyebrow">QUALITÄTSTOR</p><span class="chip ok" id="gateChip">AKTIV</span></div>
+        <p class="card-big"><span class="ok-ico" aria-hidden="true">✓</span> Echter Code erzwungen</p>
+        <p class="card-sub">npm-Test &amp; Python-Tor prüfen jede Aufgabe</p>
+      </section>
+      <section class="card products-card" aria-label="GitHub-Produkte">
+        <div class="card-head"><p class="eyebrow">GITHUB-PRODUKTE</p><span class="chip push" id="pushChip">0</span></div>
+        <div id="productList" class="product-list"><p class="card-sub">Noch kein Produkt gepusht – nach jedem grünen Tor erscheint hier das fertige Repo.</p></div>
+      </section>
+    </div>
+
+    <section class="card activity-card" aria-label="Aktivität">
+      <div class="card-head">
+        <div><p class="eyebrow">AKTIVITÄT</p><h2 id="activityCount">0</h2><small class="activity-sub">erledigte Aufgaben · <span class="live-dot">● LIVE</span></small></div>
+        <svg id="activitySpark" viewBox="0 0 120 40" class="spark" aria-hidden="true"><polyline id="sparkLine" points="0,38 120,38" /></svg>
       </div>
-      <p id="maintMsg" class="msg" role="status" aria-live="polite"></p>
-      <p id="statsBar" class="msg" role="status" aria-live="polite"></p>
     </section>
 
-    <section id="packsSection" class="panel-glass system-section">
-      <div class="section-heading"><div><p class="eyebrow">AUSSTATTUNG</p><h2>Feature- &amp; Werkzeug-Packs</h2></div><button id="packsRefreshBtn" class="ghost compact" type="button">Neu laden</button></div>
-      <p class="hint">Packs schalten echte Fähigkeiten: ein abgeschaltetes Werkzeug-Pack sperrt die zugehörigen Werkzeuge der Agenten – der Versuch landet als „blockiert“ im Audit.</p>
-      <div id="packList" class="pack-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
-      <p id="packMsg" class="msg" role="status" aria-live="polite"></p>
+    <section class="card superagent-card" aria-label="Superagent">
+      <div class="robot-glow" aria-hidden="true">◉</div>
+      <div class="superagent-text"><p class="eyebrow">SUPERAGENT</p><h2>Autonomer KI-Assistent</h2><span id="superagentStatus" class="chip ok">LIVE · AKTIV</span></div>
+      <button id="superagentOpen" class="chevron-btn" aria-label="Superagent öffnen">Öffnen ›</button>
     </section>
 
-    <section id="routesSection" class="panel-glass system-section">
-      <div class="section-heading"><div><p class="eyebrow">SYSTEM</p><h2>LLM-Routen &amp; Schlüssel</h2></div><span class="section-count">02</span></div>
-      <p class="hint">Der Router nutzt aktive Routen mit Failover. Schlüssel bleiben serverseitig und werden nie angezeigt.</p>
-      <div id="routeList" class="list"><div class="skeleton"></div><div class="skeleton"></div></div>
-      <details class="advanced">
-        <summary>Neue Route hinzufügen</summary>
-        <form id="routeForm" class="form-grid" autocomplete="off">
-          <label>Name<input id="rName" placeholder="Mein Endpunkt" /></label>
-          <label>Provider<input id="rProvider" placeholder="openai-compatible" /></label>
-          <label>Base URL<input id="rUrl" placeholder="https://api.example.com/v1" /></label>
-          <label>Modell<input id="rModel" placeholder="model-name" /></label>
-          <label>Key-Variable<input id="rKeyEnv" placeholder="MY_API_KEY" /></label>
-          <label>Priorität<input id="rPrio" type="number" value="10" /></label>
-        </form>
-        <button id="addRouteBtn" class="primary" type="button">Route speichern</button>
-      </details>
-      <details class="advanced">
-        <summary>API-Key hinterlegen</summary>
-        <form id="secretForm" class="form-grid" autocomplete="off">
-          <label>Name<input id="sName" placeholder="GROQ_API_KEY" /></label>
-          <label>Wert<input id="sValue" type="password" autocomplete="new-password" placeholder="wird sicher gespeichert" /></label>
-        </form>
-        <button id="addSecretBtn" class="primary" type="button">Key speichern</button>
-        <div id="secretList" class="list"></div>
-      </details>
-      <details class="advanced">
-        <summary>Hub-Token (falls der Hub mit VF_TOKEN läuft)</summary>
-        <form id="tokenForm" autocomplete="off">
-          <label>Bearer-Token<input id="tokenInput" type="password" autocomplete="off" placeholder="leer lassen = kein Schutz" /></label>
-        </form>
-        <button id="saveTokenBtn" class="primary" type="button">Token speichern</button>
-        <p class="hint">Wird nur lokal im Browser gehalten (localStorage). Health bleibt ohne Token offen.</p>
-      </details>
+    <section class="section-block" aria-label="Deine Villen">
+      <div class="section-head"><h2>Deine Villen</h2><span id="villaCount" class="section-pill">0</span></div>
+      <div id="villaList" class="villa-list"><div class="skeleton"></div><div class="skeleton"></div></div>
     </section>
+    <div class="spacer"></div>
   </main>
 
-  <section id="detailPanel" class="workspace-overlay" hidden aria-label="Villa Entwicklungsfenster">
-    <div class="workspace-shell">
-      <header class="workspace-header">
-        <div class="workspace-title">
-          <button id="closeDetail" class="icon-button" type="button" aria-label="Entwicklungsfenster schließen">←</button>
-          <div><p class="eyebrow">AKTIVER ENTWICKLUNGSRAUM</p><h2 id="dName">—</h2><p id="dIdea" class="workspace-idea"></p></div>
-        </div>
-        <div class="workspace-actions">
-          <span id="workspaceStatus" class="status-pill">bereit</span>
-          <button id="editBtn" class="ghost compact" type="button">Bearbeiten</button>
-          <button id="exportBtn" class="ghost compact" type="button">Exportieren</button>
-          <button id="startBtn" class="primary" type="button">Entwicklung starten</button>
-          <button id="stopBtn" class="danger" type="button" hidden>Stoppen</button>
-          <button id="deleteBtn" class="danger compact" type="button" hidden>Löschen</button>
-        </div>
-      </header>
-      <div class="workspace-body">
-        <aside class="workspace-sidebar">
-          <div class="sidebar-section">
-            <p class="eyebrow">FORTSCHRITT</p>
-            <div id="dStats" class="stats"></div>
-            <div class="progress-track" role="progressbar" aria-label="Fortschritt" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressTrack"><span id="progressBar"></span></div>
-            <p id="progressLabel" class="progress-label">0% abgeschlossen</p>
-          </div>
-          <div class="sidebar-section">
-            <p class="eyebrow">VORSCHLÄGE</p>
-            <p class="suggestion-note">Starte direkt mit einem klaren nächsten Schritt.</p>
-            <div id="suggestionList" class="suggestion-list"></div>
-          </div>
-          <div class="sidebar-section sidebar-links" role="tablist" aria-label="Bereiche im Entwicklungsraum">
-            <button class="side-tab active" data-tab="chat" type="button" role="tab" aria-selected="true"><span aria-hidden="true">◌</span> Chat &amp; Entwicklung</button>
-            <button class="side-tab" data-tab="tasks" type="button" role="tab" aria-selected="false"><span aria-hidden="true">✓</span> Aufgaben <em id="taskCount">0</em></button>
-            <button class="side-tab" data-tab="agents" type="button" role="tab" aria-selected="false"><span aria-hidden="true">◈</span> Agenten <em id="agentCountLabel">0</em></button>
-            <button class="side-tab" data-tab="packs" type="button" role="tab" aria-selected="false"><span aria-hidden="true">⚒</span> Werkzeuge <em id="packCountLabel">0</em></button>
-            <button class="side-tab" data-tab="reports" type="button" role="tab" aria-selected="false"><span aria-hidden="true">▤</span> Berichte</button>
-            <button class="side-tab" data-tab="memory" type="button" role="tab" aria-selected="false"><span aria-hidden="true">◇</span> Gedächtnis</button>
-            <button class="side-tab" data-tab="audit" type="button" role="tab" aria-selected="false"><span aria-hidden="true">⌁</span> Audit</button>
-          </div>
-        </aside>
-        <section class="workspace-main">
-          <div class="tabpane active" data-pane="chat">
-            <div class="chat-heading"><div><p class="eyebrow">DEEP AGENT</p><h3>Gemeinsam entwickeln</h3></div><span class="live-dot">● live</span></div>
-            <div id="chatLog" class="chat-log" role="log" aria-live="polite" aria-label="Chatverlauf"></div>
-            <div class="chat-input">
-              <textarea id="chatMsg" rows="2" placeholder="Schreibe eine Anweisung oder frage nach dem nächsten Schritt …"></textarea>
-              <button id="sendBtn" class="send-button" type="button" aria-label="Nachricht senden">↑</button>
-            </div>
-            <p class="chat-help">Enter zum Senden · Shift+Enter für neue Zeile</p>
-          </div>
-          <div class="tabpane" data-pane="tasks">
-            <div class="pane-heading">
-              <h3>Aufgabenplan</h3>
-              <select id="taskFilter" aria-label="Aufgaben nach Status filtern">
-                <option value="">Alle</option>
-                <option value="PENDING">Offen</option>
-                <option value="RUNNING">Läuft</option>
-                <option value="DONE">Erledigt</option>
-                <option value="FAILED">Fehlgeschlagen</option>
-                <option value="BLOCKED">Blockiert</option>
-              </select>
-            </div>
-            <button id="retryFailedBar" class="ghost compact" type="button" hidden>Fehlgeschlagene Aufgaben erneut starten</button>
-            <div id="taskList" class="list"></div>
-          </div>
-          <div class="tabpane" data-pane="agents">
-            <div class="pane-heading"><h3>Agentenpool</h3><span class="pane-caption">Rollen und Status</span></div>
-            <div id="agentList" class="list"></div>
-          </div>
-          <div class="tabpane" data-pane="packs">
-            <div class="pane-heading"><h3>Werkzeuge &amp; Packs</h3><span class="pane-caption">Was die Agenten benutzen dürfen</span></div>
-            <div id="workspacePackList" class="pack-grid"></div>
-            <div id="toolList" class="list"></div>
-          </div>
-          <div class="tabpane" data-pane="reports">
-            <div class="pane-heading"><h3>Berichte</h3><span class="pane-caption">Analyse, Umsatz und Verifikation</span></div>
-            <div id="reportList" class="list"></div>
-          </div>
-          <div class="tabpane" data-pane="memory">
-            <div class="pane-heading"><h3>Gedächtnis</h3><span class="pane-caption">Entscheidungen und Fakten</span></div>
-            <div id="memList" class="list"></div>
-          </div>
-          <div class="tabpane" data-pane="audit">
-            <div class="pane-heading"><h3>Audit</h3><span class="pane-caption">Werkzeugaufrufe</span></div>
-            <div id="auditList" class="list"></div>
-          </div>
-        </section>
+  <!-- ============ ANSICHT: CHAT ============ -->
+  <main id="view-chat" class="view" aria-label="Chat">
+    <section class="section-block"><div class="section-head"><h2>KI-Chat</h2></div>
+      <p class="hint">Wähle eine Villa – der Deep Agent wartet auf deine Anweisung.</p>
+      <div id="chatPickList" class="villa-list"><div class="skeleton"></div></div>
+    </section>
+    <div class="spacer"></div>
+  </main>
+
+  <!-- ============ ANSICHT: AGENTEN ============ -->
+  <main id="view-agents" class="view" aria-label="Agenten">
+    <section class="section-block"><div class="section-head"><h2>Agenten-Fleet</h2><span id="fleetCount" class="section-pill">0</span></div>
+      <p class="hint" id="fleetVilla">–</p>
+      <div id="fleetList" class="list"><div class="skeleton"></div></div>
+    </section>
+    <div class="spacer"></div>
+  </main>
+
+  <!-- ============ ANSICHT: KONTO ============ -->
+  <main id="view-konto" class="view" aria-label="Konto">
+    <section class="profile-card compact"><div class="avatar" aria-hidden="true">S</div><div class="profile-text"><h1>Sarah</h1><p class="hint" style="margin:0">CyberSarah Administrator · dein Konto</p></div></section>
+    <section class="section-block"><div class="section-head"><h2>LLM-Routen</h2><span id="routeCount" class="section-pill">0</span></div>
+      <div id="routeList" class="list"></div>
+      <details class="advanced"><summary>Neue Route hinzufügen</summary><label>Name<input id="rName" placeholder="Mein Endpunkt" /></label><label>Base URL<input id="rUrl" type="url" placeholder="https://api.example.com/v1" /></label><label>Modell<input id="rModel" placeholder="model-name" /></label><label>Key-Variable<input id="rKeyEnv" placeholder="MY_API_KEY" /></label><button id="addRouteBtn" class="primary block">Route speichern</button></details>
+    </section>
+    <section class="section-block"><div class="section-head"><h2>API-Keys</h2></div>
+      <div id="secretList" class="list"></div>
+      <details class="advanced"><summary>Neuen Key hinterlegen</summary><label>Name<input id="sName" placeholder="GROQ_API_KEY" /></label><label>Wert<input id="sValue" type="password" placeholder="wird sicher gespeichert" /></label><button id="addSecretBtn" class="primary block">Key speichern</button></details>
+    </section>
+    <section class="section-block"><div class="section-head"><h2>System</h2></div>
+      <div class="list" id="healthDetails"></div>
+      <p class="foot-note">CyberSarah Control Center · VillaForge Hub v<span id="verNum">–</span></p>
+    </section>
+    <div class="spacer"></div>
+  </main>
+
+  <!-- ============ NEUE-VILLA-SHEET (Bottom-Sheet, Handy-first) ============ -->
+  <div id="createSheet" class="sheet" hidden>
+    <div class="sheet-backdrop" id="createBackdrop"></div>
+    <div class="sheet-panel" role="dialog" aria-label="Neue Villa erstellen">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <div class="section-head"><h2>Neue Villa starten</h2></div>
+      <label>Titel<input id="villaName" placeholder="z. B. AI Marketplace" /></label>
+      <label>Idee / Ziel<textarea id="idea" rows="4" placeholder="Was soll gebaut werden? Zielgruppe, Funktionen …"></textarea></label>
+      <details class="advanced"><summary>Erweitert</summary><label>Agentenpool<input id="agentCount" type="number" min="3" max="1000" inputmode="numeric" value="24" /></label><label>Quellpfad (optional)<input id="sourcePath" placeholder="/pfad/zur/app" /></label></details>
+      <button id="createBtn" class="primary block">Villa erstellen →</button>
+      <p id="createMsg" class="msg" role="status"></p>
+    </div>
+  </div>
+
+  <!-- ============ VILLA-ARBEITSRAUM (Vollbild auf dem Handy) ============ -->
+  <section id="detailPanel" class="workspace-overlay" hidden aria-label="Villa Entwicklungsraum">
+    <header class="workspace-header">
+      <button id="closeDetail" class="icon-button" aria-label="Zurück">←</button>
+      <div class="workspace-title"><h2 id="dName">—</h2><span id="workspaceStatus" class="chip">bereit</span></div>
+      <button id="studioOpenBtn" class="primary slim">Design & Live</button>
+      <button id="startBtn" class="primary slim">Start</button>
+      <button id="stopBtn" class="danger slim" hidden>Stop</button>
+    </header>
+    <div class="workspace-stats" id="dStats"></div>
+    <div class="progress-track"><span id="progressBar"></span></div>
+    <p id="progressLabel" class="progress-label">0% abgeschlossen</p>
+    <nav class="tab-chips" role="tablist">
+      <button class="tab-chip active" data-tab="chat">Chat</button>
+      <button class="tab-chip" data-tab="tasks">Aufgaben <em id="taskCount">0</em></button>
+      <button class="tab-chip" data-tab="agents">Agenten <em id="agentCountLabel">0</em></button>
+      <button class="tab-chip" data-tab="reports">Berichte</button>
+      <button class="tab-chip" data-tab="memory">Gedächtnis</button>
+      <button class="tab-chip" data-tab="audit">Audit</button>
+    </nav>
+    <div class="workspace-main">
+      <div class="tabpane active" data-pane="chat">
+        <section id="suggestionList" class="chat-suggestions" aria-label="Konkrete nächste Schritte"></section>
+        <div id="chatLog" class="chat-log"></div>
+        <div class="chat-input"><textarea id="chatMsg" rows="1" placeholder="Anweisung schreiben …"></textarea><button id="sendBtn" class="send-button" aria-label="Senden">↑</button></div>
       </div>
+      <div class="tabpane" data-pane="tasks"><div id="taskList" class="list"></div></div>
+      <div class="tabpane" data-pane="agents"><div id="agentList" class="list"></div></div>
+      <div class="tabpane" data-pane="reports"><div id="reportList" class="list"></div></div>
+      <div class="tabpane" data-pane="memory"><div id="memList" class="list"></div></div>
+      <div class="tabpane" data-pane="audit"><div id="auditList" class="list"></div></div>
     </div>
   </section>
 
-  <footer>VillaForge · privat &amp; lokal · fokussierte Agenten-Entwicklung</footer>
+  <!-- ============ BOTTOM-NAVIGATION (Daumen-reichweitentauglich) ============ -->
+  <nav class="bottomnav" role="navigation" aria-label="Hauptnavigation">
+    <button class="nav-item active" data-view="home"><span class="nav-ico">◈</span>Übersicht</button>
+    <button class="nav-item" data-view="chat"><span class="nav-ico">◌</span>Chat</button>
+    <button class="nav-item" data-view="agents"><span class="nav-ico">⌘</span>Agenten</button>
+    <button class="nav-item" data-view="konto"><span class="nav-ico">◉</span>Konto</button>
+    <button class="nav-item fab" id="newVillaBtn" aria-label="Neue Villa">＋</button>
+  </nav>
 
-  <div id="toastWrap" class="toast-wrap" aria-live="polite" aria-atomic="false"></div>
+  <!-- ============ LOGIN ============ -->
+  <div id="loginOverlay" hidden aria-label="Anmeldung">
+    <div class="login-panel">
+      <div><p class="eyebrow">Anmeldung</p><h2>CyberSarah Login</h2><p class="hint">Melde dich an, um weiterzuarbeiten.</p></div>
+      <label>E-Mail<input id="loginEmail" type="email" autocomplete="username" placeholder="du@example.com" /></label>
+      <label>Passwort<input id="loginPassword" type="password" autocomplete="current-password" placeholder="Passwort" /></label>
+      <button id="loginBtn" class="primary block">Anmelden →</button>
+      <p id="loginMsg" class="msg" role="status"></p>
+    </div>
+  </div>
 
-  <dialog id="modal" class="modal" aria-labelledby="modalTitle">
-    <h2 id="modalTitle">Sicher?</h2>
-    <p id="modalText"></p>
-    <div id="modalFields" class="form-grid"></div>
-    <p id="modalMsg" class="msg err" role="status" aria-live="polite"></p>
-    <div class="actions">
-      <button id="modalCancel" class="ghost" type="button">Abbrechen</button>
-      <button id="modalOk" class="primary" type="button">Bestätigen</button>
+  <div id="toast" class="toast" hidden role="status"></div>
+  <dialog id="studioDialog" class="studio-dialog" aria-labelledby="studioTitle">
+    <header class="studio-heading"><div><p class="hint">DEEP AGENT · ENTWICKLUNGSSTUDIO</p><h2 id="studioTitle">Projekt</h2><p id="studioEvidence" role="status"></p></div><button id="studioCloseBtn" class="icon-button" aria-label="Entwicklungsstudio schließen">✕</button></header>
+    <div class="studio-layout">
+      <section><h3>Was fehlt wirklich?</h3><ul id="studioBlockers"></ul><h3>Konkrete nächste Schritte</h3><div id="studioSteps"></div>
+        <div class="section-head"><h3>Design gemeinsam entscheiden</h3><button id="studioGenerate" class="primary">2 Designrichtungen vorschlagen</button></div><div id="studioDesigns" class="studio-design-grid"></div>
+      </section>
+      <section class="studio-live-panel"><div class="section-head"><h3>Live-Vorschau</h3><button id="studioRefresh" class="icon-button" aria-label="Vorschau aktualisieren">↻</button></div><label class="studio-live-toggle"><input id="studioLive" type="checkbox" checked> Live aktualisieren</label><p id="studioPreviewHint" class="hint"></p><iframe id="studioPreview" title="Isolierte Projektvorschau" sandbox="allow-scripts" referrerpolicy="no-referrer" hidden></iframe>
+        <form id="studioFeedbackForm"><label for="studioFeedback">Direktes Feedback oder Entwicklungsauftrag</label><textarea id="studioFeedback" maxlength="6000" rows="3" required placeholder="Zum Beispiel: Vergrößere die Hauptaktion und zeige bei Verbindungsfehlern eine Wiederholen-Taste."></textarea><button id="studioSend" class="primary">An Deep Agent senden</button></form><p id="studioMessage" role="status" aria-live="polite"></p><p id="studioFeedbackResult" class="studio-result"></p>
+      </section>
     </div>
   </dialog>
 
   <script src="/app.js"></script>
+  <script src="/studio.js"></script>
+  <dialog id="masterDialog" class="master-dialog" aria-labelledby="masterTitle">
+    <div class="master-shell">
+      <header class="master-heading"><div><p class="eyebrow">APP-WEITE VERWALTUNG</p><h2 id="masterTitle">Master-Agent</h2><p class="hint">Konfiguriere VillaForge mit deinen Nachrichten.</p></div><button id="masterCloseBtn" class="ghost" type="button" aria-label="Master-Agent schließen">✕</button></header>
+      <p id="masterSummary" class="hint" role="status"></p>
+      <details class="master-capabilities"><summary>Was kann der Master-Agent?</summary><p>Villen und Projektprompts erstellen, Packs und Werkzeuge schalten, eigene Skills speichern, HTTP-JSON-Connectoren konfigurieren und prüfen, Einstellungen ändern und Dubletten archivieren. OAuth- und MCP-Verbindungen benötigen ihre jeweilige Einrichtung. Keine Schlüsselwerte in den Chat eingeben.</p><div id="masterCatalog"></div></details>
+      <div id="masterSuggestions" class="master-suggestions" aria-label="Passende Vorschläge"></div>
+      <div id="masterLog" class="master-log" role="log" aria-live="polite" aria-label="Master-Agent Verlauf"></div>
+      <p id="masterMsg" class="msg" role="status" aria-live="polite"></p>
+      <form id="masterForm" class="master-composer"><label class="visually-hidden" for="masterInput">Nachricht an den Master-Agent</label><textarea id="masterInput" rows="2" maxlength="8000" required placeholder='Zum Beispiel: Erstelle Villa "Musikstudio": Eine mobile Live-Performance-App'></textarea><button id="masterSendBtn" class="primary" type="submit">Senden</button></form>
+      <p class="chat-help">Enter senden · Shift+Enter neue Zeile · Änderungen werden mit Ergebnis protokolliert</p>
+    </div>
+  </dialog>
+  <script src="/master-ui.js"></script>
 </body>
 </html>

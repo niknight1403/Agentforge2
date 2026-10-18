@@ -81,16 +81,6 @@ try {
 
   console.log('Antwort-Route:', chatRes.route, '| offline:', chatRes.offline);
   if (chatRes.offline) {
-    // 429 mit hinterlegtem Key beweist, dass der Key gueltig ist und das
-    // Modell existiert — nur das Gratis-Kontingent ist leer. Das ist kein
-    // Regressionsfehler und darf den Bau nicht rot machen; 401/Netzfehler
-    // dagegen schon.
-    const rateLimited = /HTTP 429/.test(log);
-    if (rateLimited && !/HTTP 40[13]/.test(log)) {
-      console.log('PASS (Kontingent): alle echten Routen im Tages-/Minutenlimit, Keys aber gueltig (429).');
-      console.log('Hub-Log (Auszug):\n' + log.slice(-1500));
-      cleanup(0);
-    }
     console.error('FEHLER: keine echte LLM-Route zustande gekommen (Key ungueltig/Limit erreicht?).');
     console.error('Hub-Log (Auszug):\n' + log.slice(-1500));
     cleanup(1);

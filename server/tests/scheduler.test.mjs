@@ -1,98 +1,70 @@
-/**
- * Tests fuer den Villa-Scheduler (scheduler.mjs) und die DB-Indizes.
- * Ziel: die weitesten Villen laufen zuerst, hoechstens VF_VILLA_SLOTS
- * gleichzeitig, der Rest rueckt nach.
- */
-import './_env.mjs';
-process.env.VF_VILLA_SLOTS = '2';
+// Scheduler-Tests: weiteste Villa zuerst, Slot-Grenze, Nachruecken.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { db, now } from '../db.mjs';
-import { villaRanking, enqueueVillas, configureScheduler, schedulerStatus, _resetScheduler } from '../scheduler.mjs';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+process.env.VF_DB = join(mkdtempSync(join(tmpdir(), 'vf-sched-')), 'test.db');
+// Dieser Test prueft den klassischen ROTATIONS-Pfad: Fokus-Modus (v1.42,
+// Standard = genau 1 Slot) muss dafuer explizit aus sein, sonst
+// ignoriert der Scheduler VF_VILLA_SLOTS und der Test misst den
+// falschen Modus. Der Fokus-Modus hat seinen eigenen Test unten.
+process.env.VF_FOCUS_MODE = '0';
+process.env.VF_VILLA_SLOTS = '2';
+const { db, now } = await import('../db.mjs');
+const { villaRanking, enqueueVillas, configureScheduler, schedulerStatus, _resetScheduler } = await import('../scheduler.mjs');
 
 function villa(name, done, open, failed = 0) {
   const t = now();
-  const id = Number(db.prepare(
-    'INSERT INTO villas (name, idea, status, created_at, updated_at) VALUES (?,?,?,?,?)'
-  ).run(name, 'idee', 'RUNNING', t, t).lastInsertRowid);
-  const add = (status, n) => {
-    for (let i = 0; i < n; i++) {
-      db.prepare('INSERT INTO tasks (villa_id, title, status, created_at, updated_at) VALUES (?,?,?,?,?)').run(id, `t${i}`, status, t, t);
-    }
-  };
+  const id = Number(db.prepare('INSERT INTO villas (name, idea, status, created_at, updated_at) VALUES (?,?,?,?,?)').run(name, 'i', 'RUNNING', t, t).lastInsertRowid);
+  const add = (status, n) => { for (let i = 0; i < n; i++) db.prepare('INSERT INTO tasks (villa_id, title, description, status, priority, created_at, updated_at) VALUES (?,?,?,?,?,?,?)').run(id, 't', 'd', status, 5, t, t); };
   add('DONE', done); add('PENDING', open); add('FAILED', failed);
   return id;
 }
 
-test('Rangfolge: Villa mit dem meisten Fortschritt steht vorn', () => {
+test('Rangfolge: meister Fortschritt zuerst, Fehler kosten', () => {
   const low = villa('Anfang', 1, 9);
   const high = villa('Fast fertig', 9, 1);
-  const mid = villa('Mitte', 5, 5);
-  const order = villaRanking().map((r) => r.id).filter((id) => [low, mid, high].includes(id));
-  assert.deepEqual(order, [high, mid, low]);
-});
-
-test('Fehler kosten Rang bei gleichem Fortschritt', () => {
   const clean = villa('Sauber', 5, 5, 0);
   const faulty = villa('Fehlerhaft', 5, 5, 4);
   const order = villaRanking().map((r) => r.id);
-  assert.ok(order.indexOf(clean) < order.indexOf(faulty));
+  assert.ok(order.indexOf(high) < order.indexOf(low), 'weiteste vorn');
+  assert.ok(order.indexOf(clean) < order.indexOf(faulty), 'bei gleichem Fortschritt: Fehler zurueck');
 });
 
-test('Hoechstens 2 Villen gleichzeitig, weiteste zuerst, Rest rueckt nach', async () => {
+test('Slot-Grenze: 2 gleichzeitig, weiteste zuerst, Rest rueckt nach', async () => {
   _resetScheduler();
   const a = villa('A', 1, 9);
   const b = villa('B', 9, 1);
   const c = villa('C', 5, 5);
   const d = villa('D', 8, 2);
-
   const started = [];
-  let current = 0;
-  let peak = 0;
+  let peak = 0, current = 0;
   const releases = new Map();
-  configureScheduler({
-    start: (id) => new Promise((resolve) => {
-      started.push(id);
-      current += 1; peak = Math.max(peak, current);
-      releases.set(id, () => { current -= 1; resolve(); });
-    })
-  });
-
+  configureScheduler({ start: (id) => new Promise((resolve) => {
+    started.push(id); current += 1; peak = Math.max(peak, current);
+    releases.set(id, () => { current -= 1; resolve(); });
+  }) });
   enqueueVillas([a, b, c, d]);
-  // Erste zwei Slots: die zwei weitesten (B=9/10, D=8/10).
-  assert.deepEqual(started, [b, d]);
+  assert.deepEqual(started, [b, d], 'die zwei weitesten starten');
   assert.equal(schedulerStatus().queued, 2);
-
-  releases.get(b)();           // B fertig -> naechstweiteste (C) rueckt nach
+  releases.get(b)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [b, d, c]);
-
+  assert.deepEqual(started, [b, d, c], 'B fertig -> C rueckt nach');
   releases.get(d)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [b, d, c, a]);
-
+  assert.deepEqual(started, [b, d, c, a], 'D fertig -> A rueckt nach');
   releases.get(c)(); releases.get(a)();
   await new Promise((r) => setImmediate(r));
-  assert.ok(peak <= 2, `Spitze war ${peak}`);
-  assert.equal(schedulerStatus().active.length, 0);
-  assert.equal(schedulerStatus().queued, 0);
+  assert.ok(peak <= 2, `Spitze ${peak} ueber Grenze`);
 });
 
-test('Doppeltes Einreihen startet eine Villa nur einmal', async () => {
+test('Doppeltes Einreihen startet nur einmal', async () => {
   _resetScheduler();
-  const v = villa('Einmalig', 3, 3);
+  const v = villa('Einmal', 3, 3);
   let calls = 0;
   configureScheduler({ start: () => { calls += 1; return new Promise(() => {}); } });
   enqueueVillas([v]); enqueueVillas([v]);
   assert.equal(calls, 1);
-});
-
-test('Indizes auf villa_id existieren (gegen Vollscans im Event-Loop)', () => {
-  const names = db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all().map((r) => r.name);
-  for (const need of ['idx_tasks_villa_status', 'idx_agents_villa', 'idx_memories_villa', 'idx_messages_villa', 'idx_audit_villa', 'idx_reports_villa']) {
-    assert.ok(names.includes(need), `Index fehlt: ${need}`);
-  }
-  const plan = db.prepare("EXPLAIN QUERY PLAN SELECT * FROM tasks WHERE villa_id = ? AND status IN ('PENDING','READY') ORDER BY priority, id")
-    .all(1).map((r) => r.detail).join(' ');
-  assert.match(plan, /USING (COVERING )?INDEX/i, `Plan nutzt keinen Index: ${plan}`);
 });

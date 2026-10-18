@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { readdirSync, readFileSync, statSync, existsSync, realpathSync, lstatSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative, resolve, extname } from 'node:path';
 
 /**
@@ -25,33 +25,11 @@ const TEXT_EXT = new Set([
 
 /** Loest einen Pfad auf und erzwingt, dass er innerhalb der Wurzel liegt. */
 export function safePath(root, candidate) {
-  let rootAbs;
-  try {
-    rootAbs = realpathSync(resolve(root));
-  } catch {
-    return null; // Wurzel existiert nicht (oder ist ein kaputter Link).
-  }
+  const rootAbs = resolve(root);
   const target = resolve(rootAbs, String(candidate || '.').replace(/^\/+/, ''));
-  // Symlink-Haertung: ein Link IM Projekt, der nach aussen zeigt, wuerde
-  // ohne Aufloesung als gueltiger relativer Pfad durchgehen. realpath
-  // loest die komplette Kette auf; unvollstaendige Pfade werden geprueft,
-  // sobald sie existieren.
-  let realTarget = target;
-  if (existsSync(target) || lstatExists(target)) {
-    try {
-      realTarget = realpathSync(target);
-    } catch {
-      return null; // haengender Link oder Link-Schleife (ELOOP): ablehnen.
-    }
-  }
-  const rel = relative(rootAbs, realTarget);
-  if (rel.startsWith('..') || (rel !== '' && resolve(rootAbs, rel) !== realTarget)) return null;
-  return realTarget;
-}
-
-/** true, wenn der Pfad als Eintrag existiert — auch wenn er ein haengender Link ist. */
-function lstatExists(p) {
-  try { lstatSync(p); return true; } catch { return false; }
+  const rel = relative(rootAbs, target);
+  if (rel.startsWith('..') || (rel !== '' && resolve(rootAbs, rel) !== target)) return null;
+  return target;
 }
 
 export function isTextFile(path) {
@@ -130,7 +108,6 @@ export function readProjectFile(root, relPath, maxBytes = 40_000) {
   const full = safePath(root, relPath);
   if (!full || !existsSync(full)) return { ok: false, error: 'Datei nicht gefunden' };
   if (!statSync(full).isFile()) return { ok: false, error: 'Kein regulaerer Datei-Pfad' };
-  if (!isTextFile(full)) return { ok: false, error: 'Nur Textdateien koennen gelesen werden' };
   try {
     const text = readFileSync(full, 'utf8');
     return { ok: true, content: text.slice(0, maxBytes), truncated: text.length > maxBytes };
@@ -148,15 +125,19 @@ export function readProjectFile(root, relPath, maxBytes = 40_000) {
  *
  * Bewusst NICHT erlaubt sind Befehle, die Software nachladen (npm install,
  * npx, pip install). Damit kann ein Agent zwar bauen und testen, aber keine
- * fremden Pakete in das Projekt ziehen. Es gibt keine Shell und keine
- * Verkettung, Argumente werden nicht interpretiert.
+ * fremden Pakete in das Projekt ziehen. Git ist mit Lese- und Commit-Befehlen
+ * erlaubt (auch fuer den MRR-Wellenauftrag "Feature + Commit-Verifikation"),
+ * aber ohne Push/Pull: Fernoperationen bleiben beim Menschen.
+ * Es gibt keine Shell und keine Verkettung, Argumente werden nicht interpretiert.
  */
 const COMMAND_POLICY = {
   npm: ['run', 'test', 'run-script', 'ls', 'list', 'why'],
   node: 'SCRIPT',
   python3: 'SCRIPT',
   python: 'SCRIPT',
-  gradle: ['test', 'build', 'assemble', 'check', 'tasks']
+  gradle: ['test', 'build', 'assemble', 'check', 'tasks'],
+  // Git fuer echte Commits aus der Villa heraus: bewusst KEIN push/pull/fetch/remote.
+  git: ['status', 'diff', 'add', 'commit', 'log', 'restore', 'show', 'branch', 'rev-parse']
 };
 
 // Inline-Auswertung umgeht jede Pfadpruefung und ist daher gesperrt.
@@ -168,9 +149,9 @@ const FORBIDDEN_ARGS = /(\|\||&&|;|`|\$\(|>|<|(^|\s)(--registry|--index-url|--ex
 
 /**
  * Globale Obergrenze fuer gleichzeitige Projektbefehle (npm/gradle/node ...).
- * Jede Villa verifiziert ihr Projekt mit "npm run build" und "npm test"
- * (bis 180 s). Ohne Grenze starten bei vielen Villen parallel dutzende
- * Build-Prozesse und verdraengen auf wenigen Kernen den Hub und Ollama.
+ * Die Dauerentwicklung jeder Villa stoesst Builds und Tests an (bis 180 s).
+ * Ohne Grenze verdraengen dutzende parallela Build-Prozesse auf wenigen
+ * Kernen den Hub und Ollama. FIFO-Schlange, Default 1 gleichzeitig.
  */
 const CMD_MAX = Math.max(1, Number(process.env.VF_CMD_MAX_CONCURRENT ?? 1) || 1);
 let cmdActive = 0;
@@ -235,14 +216,11 @@ export function runCommand(root, binary, args = [], timeoutMs = 120_000) {
       }, (err, stdout, stderr) => {
         cmdRelease();
         const out = `${stdout || ''}${stderr || ''}`.trim();
-        const hint = err?.killed
-          ? `Zeitlimit ueberschritten (${timeoutMs} ms)`
-          : err ? String(err.message || err) : null;
         resolvePromise({
           ok: !err,
           code: err?.code ?? 0,
           output: out.slice(-6000),
-          error: hint ? hint.slice(0, 400) : null
+          error: err ? String(err.message || err).slice(0, 400) : null
         });
       });
     });

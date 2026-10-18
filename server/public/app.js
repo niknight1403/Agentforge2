@@ -1,732 +1,351 @@
-/* VillaForge Web-Oberflaeche
-   ----------------------------------------------------------------------------
-   Grundsaetze dieses Skripts:
-   - Keine blockierenden Browser-Dialoge (alert/confirm/prompt): alles laeuft
-     ueber eigene Toasts und ein <dialog>-Modal. Die sind gestaltbar, mit der
-     Tastatur bedienbar und brechen in Kiosk-/PWA-Umgebungen nicht weg.
-   - Genau eine SSE-Verbindung. Wird der Token gewechselt, wird die alte
-     Verbindung geschlossen, sonst sammeln sich offene Streams an.
-   - Fehler werden angezeigt, nicht verschluckt: eine Antwort ohne `ok` ist
-     kein Erfolg, auch wenn HTTP 200 zurueckkommt.
-*/
+/* CyberSarah Control Center · Mobile-First App-Logik (v1.41.0)
+   Übersicht / Chat / Agenten / Konto + Vollbild-Arbeitsraum.
+   Alle Touch-Targets ≥44px, SSE-Live-Updates, Offline-freundlich. */
 const $ = (s) => document.querySelector(s);
-
-// Optionaler Hub-Token (VF_TOKEN): wird in localStorage gehalten und als
-// Bearer-Header mitgeschickt. EventSource kann keine Header, dort laeuft
-// der Token als URL-Parameter.
-const getToken = () => localStorage.getItem('vf_token') || '';
-const setToken = (t) => { t ? localStorage.setItem('vf_token', t) : localStorage.removeItem('vf_token'); };
-
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-async function api(path, opts = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}) };
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), opts.timeoutMs || 30_000);
-  const { timeoutMs: _timeoutMs, ...fetchOpts } = opts;
-  let res;
-  try {
-    res = await fetch(path, { headers, ...fetchOpts, signal: controller.signal, body: opts.body ? JSON.stringify(opts.body) : undefined });
-  } finally {
-    clearTimeout(timeout);
-  }
-  const text = await res.text();
-  let data; try { data = JSON.parse(text); } catch { data = { error: text || `HTTP ${res.status}` }; }
-  if (!res.ok && !data.error) data.error = `HTTP ${res.status}`;
-  return data;
-}
-
+let vfToken = localStorage.getItem('vf_token') || '';
 let currentVilla = null;
 let currentAgentId = null;
 let latestVillas = [];
-let packState = null;
-let eventSource = null;
-let sectionObserver = null;
+let activityTicks = [];
 
-/* ---------------------------- Rueckmeldungen ---------------------------- */
+const api = async (path, opts = {}) => {
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json', ...(vfToken ? { Authorization: 'Bearer ' + vfToken } : {}) }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const text = await res.text();
+  let data; try { data = JSON.parse(text); } catch { data = { error: text }; }
+  if (!res.ok && !data.error) data.error = `HTTP ${res.status}`;
+  if (res.status === 401) { vfToken = ''; localStorage.removeItem('vf_token'); showLogin('Login erforderlich.'); }
+  return data;
+};
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(window.vfToastT); window.vfToastT = setTimeout(() => { t.hidden = true; }, 2600); }
 
-/** Kurze Rueckmeldung unten rechts. Fehler bleiben laenger stehen. */
-function toast(text, kind = 'ok') {
-  const wrap = $('#toastWrap');
-  if (!wrap) return;
-  const el = document.createElement('div');
-  el.className = `toast ${kind}`;
-  el.setAttribute('role', kind === 'err' ? 'alert' : 'status');
-  el.innerHTML = `<span aria-hidden="true">${kind === 'err' ? '⚠' : kind === 'info' ? 'ℹ' : '✓'}</span><span>${esc(text)}</span>`;
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.setAttribute('aria-label', 'Meldung schliessen');
-  close.textContent = '✕';
-  close.addEventListener('click', () => el.remove());
-  el.appendChild(close);
-  wrap.appendChild(el);
-  setTimeout(() => el.remove(), kind === 'err' ? 9000 : 4500);
+/* ---------- Login ---------- */
+function showLogin(msg = 'Melde dich an, um weiterzuarbeiten.') { const o = $('#loginOverlay'); if (o) { o.hidden = false; $('#loginMsg').textContent = msg; } }
+function hideLogin() { const o = $('#loginOverlay'); if (o) o.hidden = true; }
+async function doLogin() {
+  const email = $('#loginEmail').value.trim(), password = $('#loginPassword').value;
+  if (!email || !password) { $('#loginMsg').textContent = 'Bitte E-Mail und Passwort eingeben.'; return; }
+  $('#loginBtn').disabled = true; $('#loginMsg').textContent = 'Anmeldung läuft …';
+  try {
+    const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+    const out = await res.json();
+    if (out.token) { vfToken = out.token; localStorage.setItem('vf_token', vfToken); hideLogin(); $('#loginMsg').textContent = ''; $('#loginPassword').value = ''; boot(); }
+    else { $('#loginMsg').textContent = out.error || 'Anmeldung fehlgeschlagen.'; }
+  } catch (e) { $('#loginMsg').textContent = String(e); }
+  finally { $('#loginBtn').disabled = false; }
+}
+async function checkSession() { try { const me = await api('/api/auth/me'); if (me.user) hideLogin(); } catch {} }
+
+/* ---------- Navigation (Bottom-Tabs) ---------- */
+function selectView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+  document.querySelectorAll('.bottomnav .nav-item[data-view]').forEach(n => n.classList.toggle('active', n.dataset.view === name));
+  window.scrollTo({ top: 0 });
 }
 
-/**
- * Modal mit <dialog>. Wird fuer Bestaetigungen und kleine Formulare benutzt
- * und ersetzt confirm()/prompt(). Liefert bei Abbruch null.
- * @param {{title:string,text?:string,ok?:string,fields?:Array<{id:string,label:string,value?:string,type?:string,hint?:string}>}} opts
- */
-function openModal({ title, text = '', ok = 'Bestätigen', fields = [] }) {
-  const dlg = $('#modal');
-  if (!dlg) return Promise.resolve(null);
-  $('#modalTitle').textContent = title;
-  $('#modalText').textContent = text;
-  $('#modalText').hidden = !text;
-  $('#modalMsg').textContent = '';
-  $('#modalOk').textContent = ok;
-  const box = $('#modalFields');
-  box.innerHTML = fields.map((f) => `<label>${esc(f.label)}<input id="modal_${esc(f.id)}" type="${esc(f.type || 'text')}" value="${esc(f.value ?? '')}" ${f.hint ? `placeholder="${esc(f.hint)}"` : ''} /></label>`).join('');
-  box.hidden = !fields.length;
-
-  return new Promise((resolve) => {
-    let settled = false;
-    const settle = (value) => {
-      if (settled) return;
-      settled = true;
-      $('#modalOk').removeEventListener('click', submit);
-      dlg.removeEventListener('cancel', onCancel);
-      dlg.removeEventListener('close', onClose);
-      resolve(value);
-    };
-    const submit = () => {
-      const out = {};
-      fields.forEach((f) => { out[f.id] = $(`#modal_${f.id}`)?.value ?? ''; });
-      dlg.close('ok');
-      settle(out);
-    };
-    const onCancel = (e) => { e.preventDefault(); dlg.close('cancel'); settle(null); };
-    const onClose = () => settle(null);
-    $('#modalOk').addEventListener('click', submit);
-    dlg.addEventListener('cancel', onCancel);
-    dlg.addEventListener('close', onClose);
-    dlg.showModal();
-    (box.querySelector('input') || $('#modalOk')).focus();
-  });
-}
-
-/** Bestaetigung mit Modal. Liefert bei Bestaetigung ein leeres Objekt, sonst null. */
-const confirmAction = (title, text, ok = 'Bestätigen') => openModal({ title, text, ok });
-
-/* ------------------------------- Zustand ------------------------------- */
-
-function statusLabel(status) {
-  return ({ RUNNING: 'läuft', COMPLETED: 'fertig', PLANNING: 'plant', PAUSED: 'pausiert', STOPPING: 'stoppt', FAILED: 'Fehler' })[status] || status || 'bereit';
-}
-
-function setMsg(sel, text, err = false) {
-  const el = $(sel);
-  if (!el) return;
-  el.textContent = text;
-  el.className = `msg${err ? ' err' : ''}`;
-}
-
-function setActiveSection(id) {
-  document.querySelectorAll('[data-nav-section]').forEach((link) => {
-    const active = link.dataset.navSection === id;
-    link.classList.toggle('active', active);
-    if (active) link.setAttribute('aria-current', 'page');
-    else link.removeAttribute('aria-current');
-  });
-  document.querySelectorAll('.topnav a[href^="#"]').forEach((link) => {
-    const active = link.getAttribute('href') === `#${id}` || (id === 'packsSection' && link.getAttribute('href') === '#routesSection');
-    link.classList.toggle('active', active);
-  });
-}
-
-function connectSectionNavigation() {
-  const sections = ['top', 'createSection', 'villaSection', 'packsSection', 'routesSection']
-    .map((id) => document.getElementById(id)).filter(Boolean);
-  if (!('IntersectionObserver' in window) || !sections.length) return;
-  sectionObserver?.disconnect();
-  sectionObserver = new IntersectionObserver((entries) => {
-    const visible = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-    if (visible) setActiveSection(visible.target.id);
-  }, { rootMargin: '-18% 0px -62% 0px', threshold: [0.1, 0.35, 0.7] });
-  sections.forEach((section) => sectionObserver.observe(section));
-  document.querySelectorAll('[data-nav-section]').forEach((link) => link.addEventListener('click', () => setActiveSection(link.dataset.navSection)));
-}
-
-/* -------------------------- Hub-Gesundheit ---------------------------- */
-
+/* ---------- Health & Kennzahlen ---------- */
 async function checkHealth() {
-  const dot = $('#healthDot');
-  const banner = $('#offlineBanner');
   try {
     const h = await api('/api/health');
-    // Wichtig: api() wirft bei HTTP-Fehlern nicht — hier muss der Inhalt zaehlen.
-    if (h.error || h.ok !== true) throw new Error(h.error || 'Health meldet kein ok');
-    dot.className = 'dot ok';
-    $('#healthText').textContent = `Hub online · ${h.routes} Routen`;
-    $('#metricRoutes').textContent = h.routes;
-    banner.hidden = true;
-  } catch (err) {
-    dot.className = 'dot err';
-    $('#healthText').textContent = 'Hub nicht erreichbar';
-    $('#offlineText').textContent = `Der Hub antwortet nicht (${String(err.message || err).slice(0, 90)}). Prüfe, ob der Server läuft.`;
-    banner.hidden = false;
+    $('#healthDot').className = 'dot ok';
+    $('#healthText').textContent = `Hub online · ${h.routes} Routen · v${h.version || ''}`;
+    $('#metricRoutes').textContent = h.routes ?? '–';
+    const up = h.uptime || {}; const sys = Math.round(up.systemSec / 3600);
+    $('#metricUptime').textContent = up.systemSec ? (sys >= 24 ? Math.floor(sys / 24) + 'd' : sys + 'h') : '–';
+    $('#superagentStatus').className = 'chip ok'; $('#superagentStatus').textContent = 'LIVE · AKTIV';
+    $('#healthDetails').innerHTML = [
+      ['Version', 'v' + (h.version || '–')], ['Routen', h.routes ?? '–'],
+      ['System-Uptime', up.systemSec ? Math.round(up.systemSec / 3600) + ' h' : '–'],
+      ['CPU-Kerne', h.cpu?.cores ?? '–']
+    ].map(([k, v]) => `<div class="row" style="display:flex;justify-content:space-between"><span style="color:var(--muted)">${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
+    $('#verNum').textContent = h.version || '–';
+  } catch {
+    $('#healthDot').className = 'dot err'; $('#healthText').textContent = 'Hub nicht erreichbar';
+    $('#superagentStatus').className = 'chip'; $('#superagentStatus').textContent = 'OFFLINE';
   }
 }
 
-/* -------------------------------- Villen ------------------------------ */
+/* ---------- Villen ---------- */
+const statusLabel = (status) => ({ RUNNING: 'läuft', COMPLETED: 'fertig', PLANNING: 'plant', PAUSED: 'pausiert', STOPPING: 'stoppt', FAILED: 'Fehler' })[status] || status || 'bereit';
 
+function villaCardHtml(v) {
+  return `<button class="villa-card" data-id="${v.id}"><div><b>${esc(v.name)}</b><small>${esc((v.idea || '').slice(0, 105))}</small></div><div style="display:flex;align-items:center;gap:8px"><span class="badge status ${esc(v.status)}">${esc(statusLabel(v.status))}</span><span class="chev">›</span></div></button>`;
+}
+
+function renderOverview(villas) {
+  const active = villas.find(v => v.status === 'RUNNING') || villas.find(v => v.status === 'PLANNING') || villas[0] || null;
+  const totalDone = villas.reduce((n, v) => n + (v.tasks_done || 0), 0);
+  $('#metricAgents').textContent = active ? (villas.length ? villas.reduce((n, v) => n + (v.agents_count || v.max_agents && 0), 0) || (active.agents_count ?? '–') : '0') : '0';
+  $('#villaCount').textContent = villas.length;
+  if (active) {
+    $('#activeName').textContent = active.name;
+    $('#activeIdea').textContent = (active.idea || '').slice(0, 120);
+    $('#activeChip').textContent = statusLabel(active.status).toUpperCase();
+    $('#activeChip').className = 'chip ' + (active.status === 'RUNNING' ? 'ok' : '');
+    $('#activeVillaCard').dataset.id = active.id;
+  } else {
+    $('#activeName').textContent = 'Keine Villa aktiv';
+    $('#activeIdea').textContent = 'Tippe auf ＋ und starte deine erste Villa.';
+    $('#activeChip').textContent = 'LEER';
+    $('#ringPct').textContent = '0%';
+    $('#ringFg').style.strokeDashoffset = 213.6;
+    $('#activeVillaCard').removeAttribute('data-id');
+  }
+  $('#villaList').innerHTML = villas.length
+    ? villas.slice(0, 12).map(villaCardHtml).join('')
+    : '<p class="empty-state">Noch keine Villa. Tippe unten auf ＋.</p>';
+  $('#chatPickList').innerHTML = villas.length
+    ? villas.map(villaCardHtml).join('')
+    : '<p class="empty-state">Erst eine Villa erstellen, dann chattest du mit deinem Deep Agent.</p>';
+  document.querySelectorAll('.villa-card').forEach(el => el.addEventListener('click', () => openVilla(Number(el.dataset.id))));
+  updateActivity(totalDone);
+}
+
+/* Fortschrittsring + Produktpushes der aktiven Villa nachladen */
+async function loadActiveDetail() {
+  const active = latestVillas.find(v => v.status === 'RUNNING') || latestVillas[0];
+  if (!active) return;
+  try {
+    const d = await api(`/api/villas/${active.id}`);
+    if (d.error) return;
+    const tasks = d.tasks || [];
+    const done = tasks.filter(t => t.status === 'DONE').length;
+    const pct = tasks.length ? Math.round(done / tasks.length * 100) : 0;
+    $('#ringPct').textContent = pct + '%';
+    $('#ringFg').style.strokeDashoffset = 213.6 * (1 - pct / 100);
+    $('#metricAgents').textContent = (d.agents || []).length;
+    const pushes = (d.memories || []).filter(m => String(m.title || '').startsWith('Produkt-Push:')).slice(0, 3);
+    $('#pushChip').textContent = pushes.length;
+    $('#productList').innerHTML = pushes.length
+      ? pushes.map(m => `<div class="product-row"><span class="ok-ico" style="width:18px;height:18px;font-size:10px">↑</span>${esc(String(m.content || '').replace('Fertiger Stand im GitHub-Produkt-Repo: https://github.com/', ''))}</div>`).join('')
+      : '<p class="card-sub">Noch kein Produkt gepusht – nach jedem grünen Tor erscheint hier das fertige Repo.</p>';
+    renderFleet(d);
+  } catch {}
+}
+
+/* ---------- Agenten-Ansicht ---------- */
+function renderFleet(d) {
+  $('#fleetCount').textContent = (d.agents || []).length;
+  $('#fleetVilla').textContent = 'Villa: ' + (d.villa?.name || '–');
+  $('#fleetList').innerHTML = (d.agents || []).length
+    ? d.agents.map(a => `<div class="row"><div class="head"><b>${esc(a.name)}${a.is_root ? ' · Deep Agent' : ''}</b><span class="badge ${esc(a.status)}">${esc(a.status)}</span></div><div class="sub">Rolle: ${esc(a.role)} · Autonomie: ${esc(a.autonomy_level)}</div></div>`).join('')
+    : '<p class="empty-state">Keine Agenten vorhanden.</p>';
+}
+async function loadFleet() {
+  const active = latestVillas.find(v => v.status === 'RUNNING') || latestVillas[0];
+  if (!active) { $('#fleetList').innerHTML = '<p class="empty-state">Erst eine Villa erstellen, dann siehst du hier dein Agenten-Team.</p>'; $('#fleetCount').textContent = '0'; return; }
+  const d = await api(`/api/villas/${active.id}`);
+  if (!d.error) renderFleet(d);
+}
+
+/* ---------- Aktivität (Sparkline, SSE-getrieben) ---------- */
+function updateActivity(totalDone) {
+  $('#activityCount').textContent = totalDone || (activityTicks.length ? 'LIVE' : 0);
+  activityTicks.push(totalDone);
+  if (activityTicks.length > 24) activityTicks.shift();
+  const max = Math.max(...activityTicks, 1), min = Math.min(...activityTicks, 0);
+  const pts = activityTicks.map((v, i) => {
+    const x = (i / Math.max(activityTicks.length - 1, 1)) * 120;
+    const y = 36 - ((v - min) / Math.max(max - min, 1)) * 32;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  $('#sparkLine').setAttribute('points', pts || '0,38 120,38');
+}
+
+/* ---------- Villen laden / erstellen ---------- */
 async function loadVillas() {
   const villas = await api('/api/villas');
-  if (villas.error || !Array.isArray(villas)) {
-    $('#villaList').innerHTML = '<p class="empty-state">Villen konnten nicht geladen werden.</p>';
-    return;
-  }
-  latestVillas = villas;
-  $('#metricVillas').textContent = latestVillas.length;
-  if (!latestVillas.length) {
-    $('#villaList').innerHTML = '<p class="empty-state">Noch keine Villa erstellt. Starte oben deine erste Entwicklungsumgebung.</p>';
-    return;
-  }
-  $('#villaList').innerHTML = latestVillas.map((v) => `<button type="button" class="villa-card" data-id="${v.id}"><span><b>${esc(v.name)}</b><small>${esc((v.idea || '').slice(0, 105))}</small></span><span class="badge ${esc(v.status)}">${esc(statusLabel(v.status))}</span></button>`).join('');
-  document.querySelectorAll('.villa-card').forEach((el) => el.addEventListener('click', () => openVilla(Number(el.dataset.id))));
-  const active = latestVillas.find((v) => v.status === 'RUNNING');
-  $('#metricAgents').textContent = active ? 'aktiv' : '0';
+  latestVillas = Array.isArray(villas) ? villas : [];
+  renderOverview(latestVillas);
+  loadActiveDetail();
 }
-
+function setMsg(text, err = false) { const el = $('#createMsg'); el.textContent = text; el.className = 'msg' + (err ? ' err' : ''); }
 async function createVilla() {
   const idea = $('#idea').value.trim();
-  if (!idea) { setMsg('#createMsg', 'Bitte zuerst eine Idee eingeben.', true); $('#idea').focus(); return; }
-  const btn = $('#createBtn');
-  btn.disabled = true;
-  setMsg('#createMsg', 'Villa wird geplant und der Entwicklungsraum vorbereitet …');
+  if (!idea) { setMsg('Bitte zuerst eine Idee eingeben.', true); $('#idea').focus(); return; }
+  const btn = $('#createBtn'); btn.disabled = true; setMsg('Villa wird geplant …');
   try {
-    const out = await api('/api/villas', {
-      method: 'POST',
-      body: {
-        name: $('#villaName').value.trim() || 'Neue Villa', idea,
-        agentCount: Number($('#agentCount').value) || 24,
-        sourcePath: $('#sourcePath').value.trim()
-      }
-    });
-    if (out.error) { setMsg('#createMsg', out.error, true); toast(out.error, 'err'); return; }
-    $('#idea').value = '';
-    $('#sourcePath').value = '';
-    setMsg('#createMsg', `Villa #${out.villaId} bereit. Entwicklungsraum wird geöffnet …`);
-    toast(`Villa #${out.villaId} erstellt`);
-    await loadVillas();
-    await openVilla(out.villaId);
-  } catch (err) {
-    setMsg('#createMsg', String(err.message || err), true);
-    toast(`Anlegen fehlgeschlagen: ${String(err.message || err)}`, 'err');
-  } finally {
-    btn.disabled = false;
-  }
+    const out = await api('/api/villas', { method: 'POST', body: { name: $('#villaName').value.trim() || 'Neue Villa', idea, agentCount: Number($('#agentCount').value) || 24, sourcePath: $('#sourcePath').value.trim() } });
+    if (out.error) { setMsg(out.error, true); return; }
+    $('#idea').value = ''; $('#sourcePath').value = '';
+    closeSheet(); toast(`Villa #${out.villaId} erstellt`);
+    await loadVillas(); await openVilla(out.villaId);
+  } catch (e) { setMsg(String(e), true); } finally { btn.disabled = false; }
 }
+function openSheet() { $('#createSheet').hidden = false; setTimeout(() => $('#idea').focus(), 250); }
+function closeSheet() { $('#createSheet').hidden = true; setMsg(''); }
 
-function openWorkspace() {
-  $('#detailPanel').hidden = false;
-  document.body.classList.add('workspace-open');
-  setTimeout(() => $('#chatMsg')?.focus(), 80);
+/* ---------- Arbeitsraum (Vollbild) ---------- */
+function selectTab(tab) {
+  document.querySelectorAll('.tab-chip').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.workspace-main .tabpane').forEach(p => p.classList.toggle('active', p.dataset.pane === tab));
 }
-
-function closeWorkspace() {
-  $('#detailPanel').hidden = true;
-  document.body.classList.remove('workspace-open');
-  $('#closeDetail')?.focus();
-}
-
-async function openVilla(id) {
+async function openVilla(id, tab = 'chat') {
   const data = await api(`/api/villas/${id}`);
-  if (data.error) { toast(data.error, 'err'); return; }
+  if (data.error) { toast(data.error); return; }
   currentVilla = data;
-  const agents = data.agents || [];
-  currentAgentId = agents.find((a) => a.is_root)?.id ?? agents[0]?.id ?? null;
-  openWorkspace();
+  currentAgentId = data.agents.find(a => a.is_root)?.id ?? data.agents[0]?.id ?? null;
+  $('#detailPanel').hidden = false;
   $('#dName').textContent = data.villa.name;
-  $('#dIdea').textContent = data.villa.idea;
-  renderAll(data);
-  renderSuggestions(data);
-  await loadChat(id);
-  $('#chatMsg').focus();
+  selectTab(tab);
+  renderAll(data); renderSuggestions(data); await loadChat(id);
 }
-
-function renderAll(data) {
-  renderStats(data);
-  renderReports(data.reports);
-  renderTasks(data.tasks);
-  renderAgents(data.agents);
-  renderMemories(data.memories);
-  renderAudit(data.audit);
-}
-
-function renderStats(d) {
-  const tasks = d.tasks || [];
-  const agents = d.agents || [];
-  const done = tasks.filter((t) => t.status === 'DONE').length;
-  const total = tasks.length;
-  const open = tasks.filter((t) => ['PENDING', 'READY', 'RUNNING', 'REVIEW'].includes(t.status)).length;
-  const pct = total ? Math.round((done / total) * 100) : 0;
+function closeWorkspace() { $('#detailPanel').hidden = true; }
+async function refreshCurrent() { if (!currentVilla) return; const data = await api(`/api/villas/${currentVilla.villa.id}`); if (data.error) return; currentVilla = data; renderAll(data); loadVillas(); }
+function renderAll(d) {
+  const done = d.tasks.filter(t => t.status === 'DONE').length, total = d.tasks.length;
+  const open = d.tasks.filter(t => ['PENDING', 'READY', 'RUNNING', 'REVIEW'].includes(t.status)).length;
+  const pct = total ? Math.round(done / total * 100) : 0;
   const active = d.running || ['RUNNING', 'STOPPING'].includes(d.villa.status);
-  $('#startBtn').hidden = active; $('#startBtn').disabled = false;
-  $('#stopBtn').hidden = !active;
-  $('#stopBtn').textContent = d.villa.status === 'STOPPING' ? 'Stoppt …' : 'Stoppen';
-  $('#deleteBtn').hidden = active;
-  $('#workspaceStatus').textContent = active ? 'Entwicklung läuft' : statusLabel(d.villa.status);
-  $('#workspaceStatus').className = `status-pill ${active ? 'RUNNING' : esc(d.villa.status)}`;
-  const autoAt = Number(d.villa.auto_retry_at || 0);
-  const autoTile = autoAt && d.villa.status === 'PAUSED'
-    ? `<div class="stat"><b>~${new Date(autoAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</b>Auto-Fortsetzung</div>`
-    : '';
-  $('#dStats').innerHTML = `<div class="stat"><b>${statusLabel(d.villa.status)}</b>Status</div><div class="stat"><b>${agents.length}</b>Agenten</div><div class="stat"><b>${done}/${total}</b>erledigt</div><div class="stat"><b>${open}</b>offen</div>${autoTile}`;
-  $('#progressBar').style.width = `${pct}%`;
+  $('#startBtn').hidden = active; $('#stopBtn').hidden = !active;
+  $('#workspaceStatus').textContent = active ? '● läuft' : statusLabel(d.villa.status);
+  $('#workspaceStatus').className = 'chip ' + (active ? 'ok' : '');
+  $('#dStats').innerHTML = `<div class="stat"><b>${done}/${total}</b>erledigt</div><div class="stat"><b>${open}</b>offen</div><div class="stat"><b>${d.agents.length}</b>Agenten</div>`;
+  $('#progressBar').style.width = pct + '%';
   $('#progressLabel').textContent = `${pct}% abgeschlossen · ${open} nächste Schritte`;
-  const track = $('#progressTrack');
-  if (track) track.setAttribute('aria-valuenow', String(pct));
-  $('#taskCount').textContent = total;
-  $('#agentCountLabel').textContent = agents.length;
-  $('#metricAgents').textContent = agents.length;
-  $('#metricTasks').textContent = `${pct}%`;
+  $('#taskCount').textContent = total; $('#agentCountLabel').textContent = d.agents.length;
+  renderTasks(d.tasks); renderAgents(d.agents); renderMemories(d.memories); renderReports(d.reports); renderAudit(d.audit);
 }
-
-function renderSuggestions(d) {
-  const tasks = d.tasks || [];
-  const open = tasks.filter((t) => ['PENDING', 'READY'].includes(t.status)).slice(0, 2);
-  const suggestions = [
-    { label: 'Plan schärfen', text: 'Prüfe den aktuellen Plan, nenne die drei wichtigsten Risiken und schlage konkrete Verbesserungen vor.' },
-    { label: 'Nächsten Schritt', text: open[0] ? `Bearbeite jetzt die Aufgabe: ${open[0].title}. Liefere ein prüfbares Ergebnis.` : 'Welche konkrete Aufgabe sollten wir als Nächstes umsetzen?' },
-    { label: 'Umsatzchance', text: 'Bewerte Zielgruppe, Preismodell und die schnellste realistische Umsatzchance für dieses Projekt.' }
-  ];
-  $('#suggestionList').innerHTML = suggestions.map((s) => `<button type="button" class="suggestion" data-prompt="${esc(s.text)}"><span>${esc(s.label)} ↗</span>${esc(s.text.slice(0, 72))}…</button>`).join('');
-  document.querySelectorAll('.suggestion').forEach((b) => b.addEventListener('click', () => { $('#chatMsg').value = b.dataset.prompt; $('#chatMsg').focus(); }));
+async function renderSuggestions(d) {
+  const id = d.villa.id;
+  const rows = await api(`/api/master/suggestions?villaId=${id}`);
+  if (currentVilla?.villa.id !== id) return;
+  if (!Array.isArray(rows)) { $('#suggestionList').textContent = 'Vorschläge gerade nicht verfügbar.'; return; }
+  $('#suggestionList').innerHTML = rows.length ? rows.map(r => `<button type="button" class="suggestion" data-prompt="${esc(r.prompt)}"><span>${esc(r.title)} ↗</span>${esc(r.reason)}</button>`).join('') : '<p class="hint">Keine neuen passenden Vorschläge.</p>';
+  document.querySelectorAll('#suggestionList .suggestion').forEach(b => b.addEventListener('click', () => { selectTab('chat'); $('#chatMsg').value = b.dataset.prompt; $('#chatMsg').focus(); }));
 }
 
 function renderTasks(tasks) {
-  const all = Array.isArray(tasks) ? tasks : [];
-  const f = $('#taskFilter')?.value || '';
-  const shown = f ? all.filter((t) => t.status === f) : all;
-  $('#taskList').innerHTML = shown.length
-    ? shown.map((t) => `<div class="row"><div class="head"><b>${esc(t.title)}</b><span class="badge ${esc(t.status)}">${esc(t.status)}${t.attempts > 1 ? ` · Versuch ${esc(String(t.attempts))}` : ''}</span></div><div class="sub">${esc(t.description || '')}${t.result ? `\n→ ${esc(String(t.result).slice(0, 500))}` : ''}</div>${t.status === 'FAILED' ? `<button type="button" data-retry="${esc(String(t.id))}" class="compact">Neu starten</button>` : ''}</div>`).join('')
-    : '<p class="empty-state">Keine Aufgaben in dieser Ansicht.</p>';
-  const bar = $('#retryFailedBar');
-  if (bar) bar.hidden = !all.some((x) => x.status === 'FAILED');
-  document.querySelectorAll('[data-retry]').forEach((b) => b.addEventListener('click', () => retryTask(b.dataset.retry)));
+  $('#taskList').innerHTML = tasks.length
+    ? tasks.slice(0, 60).map(t => `<div class="row"><div class="head"><b>${esc(t.title)}</b><span class="badge ${esc(t.status)}">${esc(t.status)}</span></div><div class="sub">${esc(t.description || '')}${t.result ? '\n→ ' + esc(t.result.slice(0, 400)) : ''}</div></div>`).join('')
+    : '<p class="empty-state">Keine Aufgaben vorhanden.</p>';
 }
-
-async function retryTask(taskId) {
-  if (!currentVilla) return;
-  const out = await api(`/api/villas/${currentVilla.villa.id}/tasks/${taskId}/retry`, { method: 'POST' });
-  if (out.error) { toast(`Neustart fehlgeschlagen: ${out.error}`, 'err'); return; }
-  toast(`Aufgabe #${taskId} wieder in der Warteschlange`);
-  await refreshCurrent();
-}
-
-async function retryFailedAll() {
-  if (!currentVilla) return;
-  const out = await api(`/api/villas/${currentVilla.villa.id}/retry-failed`, { method: 'POST' });
-  if (out.error) { toast(`Sammel-Neustart fehlgeschlagen: ${out.error}`, 'err'); return; }
-  toast(out.requeued ? `${out.requeued} Aufgaben erneut gestartet` : 'Keine fehlgeschlagenen Aufgaben', out.requeued ? 'ok' : 'info');
-  await refreshCurrent();
-}
-
 function renderAgents(agents) {
-  const list = Array.isArray(agents) ? agents : [];
-  $('#agentList').innerHTML = list.length
-    ? list.map((a) => `<div class="row"><div class="head"><b>${esc(a.name)}${a.is_root ? ' · Deep Agent' : ''}</b><span class="badge ${esc(a.status)}">${esc(a.status)}</span></div><div class="sub">Rolle: ${esc(a.role)} · Autonomie: ${esc(a.autonomy_level)}</div></div>`).join('')
-    : '<p class="empty-state">Keine Agenten angelegt.</p>';
+  $('#agentList').innerHTML = agents.map(a => `<div class="row"><div class="head"><b>${esc(a.name)}${a.is_root ? ' · Deep Agent' : ''}</b><span class="badge ${esc(a.status)}">${esc(a.status)}</span></div><div class="sub">Rolle: ${esc(a.role)} · Autonomie: ${esc(a.autonomy_level)}</div></div>`).join('') || '<p class="empty-state">Keine Agenten.</p>';
 }
-
 function renderMemories(memories) {
-  const list = Array.isArray(memories) ? memories : [];
-  $('#memList').innerHTML = list.length
-    ? list.map((m) => `<div class="row"><div class="head"><b>${esc(m.title)}</b><span class="badge">${esc(m.kind)} · <span class="num">${esc(m.importance)}</span>/10</span></div><div class="sub">${esc((m.content || '').slice(0, 500))}</div></div>`).join('')
+  $('#memList').innerHTML = memories?.length
+    ? memories.slice(0, 40).map(m => `<div class="row"><div class="head"><b>${esc(m.title)}</b><span class="badge">${esc(m.kind)} · ${esc(m.importance)}/10</span></div><div class="sub">${esc((m.content || '').slice(0, 400))}</div></div>`).join('')
     : '<p class="empty-state">Noch kein Gedächtnis.</p>';
 }
-
 function renderReports(reports) {
-  const list = Array.isArray(reports) ? reports : [];
-  $('#reportList').innerHTML = list.length
-    ? list.map((r) => `<details class="row"><summary><b>${esc(r.title)}</b> <span class="badge">${esc(r.kind)}</span></summary><div class="sub">${esc(r.content)}</div></details>`).join('')
+  $('#reportList').innerHTML = reports?.length
+    ? reports.slice(0, 30).map(r => `<details class="row"><summary><b>${esc(r.title)}</b> <span class="badge">${esc(r.kind)}</span></summary><div class="sub">${esc(r.content)}</div></details>`).join('')
     : '<p class="empty-state">Noch keine Berichte.</p>';
 }
-
 function renderAudit(entries) {
-  const list = Array.isArray(entries) ? entries : [];
-  $('#auditList').innerHTML = list.length
-    ? list.map((e) => `<div class="row"><div class="head"><b>${esc(e.tool)}</b><span class="badge ${e.allowed ? 'RUNNING' : 'FAILED'}">${e.allowed ? 'erlaubt' : 'blockiert'}</span></div><div class="sub">${esc(e.args)}\n→ ${esc(e.result)}</div></div>`).join('')
+  $('#auditList').innerHTML = entries?.length
+    ? entries.slice(0, 40).map(e => `<div class="row"><div class="head"><b>${esc(e.tool)}</b><span class="badge ${e.allowed ? 'RUNNING' : 'FAILED'}">${e.allowed ? 'erlaubt' : 'blockiert'}</span></div><div class="sub">${esc(e.args)}\n→ ${esc(e.result)}</div></div>`).join('')
     : '<p class="empty-state">Keine Werkzeugaufrufe protokolliert.</p>';
 }
 
+/* ---------- Chat ---------- */
 async function loadChat(villaId) {
   const msgs = await api(`/api/villas/${villaId}/messages?agentId=${currentAgentId}`);
   const log = $('#chatLog');
   log.innerHTML = Array.isArray(msgs) && msgs.length
-    ? msgs.map((m) => `<div class="bubble ${m.role}"><span class="meta">${m.role === 'user' ? 'Du' : 'Deep Agent'} · ${new Date(m.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>${esc(m.content)}</div>`).join('')
-    : '<div class="bubble assistant"><span class="meta">Deep Agent · bereit</span>Ich bin dein Entwicklungsleiter. Wähle links einen Vorschlag oder beschreibe direkt, was als Nächstes gebaut werden soll.</div>';
-  log.scrollTop = log.scrollHeight;
+    ? msgs.map(m => `<div class="bubble ${m.role}"><span class="meta">${m.role === 'user' ? 'Du' : 'Deep Agent'} · ${new Date(m.created_at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</span>${esc(m.content)}</div>`).join('')
+    : `<div class="bubble assistant"><span class="meta">Deep Agent · bereit</span>Ich bin dein Entwicklungsleiter. Beschreibe, was als Nächstes gebaut werden soll.</div>${(window.vfSuggestions || []).map(s => `<button class="suggestion" data-prompt="${esc(s.text)}"><span>${esc(s.label)} ↗</span>${esc(s.text.slice(0, 80))}</button>`).join('')}`;
+  bindSuggestions(); log.scrollTop = log.scrollHeight;
 }
-
+function bindSuggestions() {
+  document.querySelectorAll('.suggestion').forEach(b => b.addEventListener('click', () => { $('#chatMsg').value = b.dataset.prompt; $('#chatMsg').focus(); }));
+}
 async function sendChat() {
   const msg = $('#chatMsg').value.trim();
   if (!msg || !currentVilla) return;
-  const btn = $('#sendBtn');
-  btn.disabled = true;
-  $('#chatMsg').value = '';
+  const btn = $('#sendBtn'); btn.disabled = true; $('#chatMsg').value = '';
   const log = $('#chatLog');
   log.insertAdjacentHTML('beforeend', `<div class="bubble user"><span class="meta">Du</span>${esc(msg)}</div>`);
   const pending = document.createElement('div');
   pending.className = 'bubble assistant';
   pending.innerHTML = '<span class="meta">Deep Agent · denkt …</span>';
-  log.appendChild(pending);
-  log.scrollTop = log.scrollHeight;
+  log.appendChild(pending); log.scrollTop = log.scrollHeight;
   try {
     const out = await api(`/api/villas/${currentVilla.villa.id}/chat`, { method: 'POST', body: { message: msg, agentId: currentAgentId } });
-    if (out.error) throw new Error(out.error);
-    pending.innerHTML = `<span class="meta">Deep Agent · ${esc(out.route || 'Offline-Planer')}</span>${esc(out.answer || 'Keine Antwort.')}`;
-  } catch (err) {
-    pending.innerHTML = `<span class="meta">Fehler</span>${esc(String(err.message || err))}`;
-    toast(`Chat fehlgeschlagen: ${String(err.message || err)}`, 'err');
-  } finally {
-    btn.disabled = false;
-    log.scrollTop = log.scrollHeight;
-    await refreshCurrent();
-  }
+    pending.innerHTML = `<span class="meta">Deep Agent · ${esc(out.route || (out.code==='LLM_UNAVAILABLE'?'Modellverbindung unterbrochen':'Keine Modellantwort'))}</span>${esc(out.answer || out.error || 'Keine Antwort.')}`;
+  } catch (e) { pending.innerHTML = `<span class="meta">Fehler</span>${esc(String(e))}`; }
+  finally { btn.disabled = false; log.scrollTop = log.scrollHeight; refreshCurrent(); }
 }
+async function startDevelopment() { if (!currentVilla) return; $('#startBtn').disabled = true; await api(`/api/villas/${currentVilla.villa.id}/orchestrate`, { method: 'POST', body: { concurrency: 4, maxTasks: 500, adaptive: true } }); await refreshCurrent(); toast('Entwicklung gestartet'); }
+async function stopDevelopment() { if (!currentVilla) return; await api(`/api/villas/${currentVilla.villa.id}/stop`, { method: 'POST' }); await refreshCurrent(); toast('Entwicklung gestoppt'); }
 
-async function refreshCurrent() {
-  if (!currentVilla) return;
-  const data = await api(`/api/villas/${currentVilla.villa.id}`);
-  if (data.error) return;
-  currentVilla = data;
-  renderAll(data);
-  renderSuggestions(data);
-  loadVillas();
-}
-
-async function startDevelopment() {
-  if (!currentVilla) return;
-  $('#startBtn').disabled = true;
-  const out = await api(`/api/villas/${currentVilla.villa.id}/orchestrate`, { method: 'POST', body: { concurrency: 4, maxTasks: 500, adaptive: true } });
-  if (out.error) toast(out.error, 'err'); else toast('Entwicklung gestartet');
-  await refreshCurrent();
-}
-
-async function stopDevelopment() {
-  if (!currentVilla) return;
-  const out = await api(`/api/villas/${currentVilla.villa.id}/stop`, { method: 'POST' });
-  if (out.error) toast(out.error, 'err'); else toast('Lauf gestoppt');
-  await refreshCurrent();
-}
-
-async function deleteVilla() {
-  if (!currentVilla) return;
-  const ok = await confirmAction('Villa löschen?', `„${currentVilla.villa.name}" wird mitsamt allen Agenten, Aufgaben und Berichten gelöscht. Das lässt sich nicht rückgängig machen.`, 'Endgültig löschen');
-  if (!ok) return;
-  const out = await api(`/api/villas/${currentVilla.villa.id}`, { method: 'DELETE' });
-  if (out.error) { toast(out.error, 'err'); return; }
-  toast('Villa gelöscht', 'info');
-  closeWorkspace();
-  loadVillas();
-}
-
-async function exportVilla() {
-  if (!currentVilla) return;
-  const id = currentVilla.villa.id;
-  const res = await fetch(`/api/villas/${id}/export`, { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {} });
-  if (!res.ok) { toast(`Export fehlgeschlagen (HTTP ${res.status})`, 'err'); return; }
-  const blob = await res.blob();
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `villa-${id}.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  toast(`Villa #${id} exportiert`, 'info');
-}
-
-async function editVilla() {
-  if (!currentVilla) return;
-  const v = currentVilla.villa;
-  const out = await openModal({
-    title: 'Villa bearbeiten',
-    text: 'Name und Idee lassen sich jederzeit anpassen.',
-    ok: 'Speichern',
-    fields: [
-      { id: 'name', label: 'Name', value: v.name },
-      { id: 'idea', label: 'Idee / Ziel', value: v.idea }
-    ]
-  });
-  if (!out) return;
-  const patch = {};
-  if (out.name.trim() && out.name.trim() !== v.name) patch.name = out.name.trim();
-  if (out.idea.trim() && out.idea.trim() !== v.idea) patch.idea = out.idea.trim();
-  if (!Object.keys(patch).length) { toast('Keine Änderung erkannt', 'info'); return; }
-  const res = await api(`/api/villas/${v.id}`, { method: 'PATCH', body: patch });
-  if (res.error) { toast(`Speichern fehlgeschlagen: ${res.error}`, 'err'); return; }
-  toast('Villa aktualisiert');
-  await refreshCurrent();
-  loadVillas();
-}
-
-/* ------------------------------- Routen ------------------------------- */
-
+/* ---------- Routen & Keys (Konto) ---------- */
 async function loadRoutes() {
   const routes = await api('/api/routes');
-  if (!Array.isArray(routes)) { $('#routeList').innerHTML = '<p class="empty-state">Routen konnten nicht geladen werden.</p>'; return; }
-  $('#routeList').innerHTML = routes.length
-    ? routes.map((r) => `<div class="row"><div class="head"><b>${esc(r.name)}</b><span class="badge ${r.hasKey || r.provider === 'offline' ? 'RUNNING' : 'PAUSED'}">${r.provider === 'offline' ? 'offline' : r.hasKey ? 'Key vorhanden' : 'kein Key'}</span></div><div class="sub">${esc(r.provider)} · ${esc(r.model)} · Prio <span class="num">${esc(r.priority)}</span> · ok <span class="num">${esc(r.ok)}</span> / fail <span class="num">${esc(r.fail)}</span></div><button type="button" data-toggle="${r.id}" data-enabled="${r.enabled}" class="compact">${r.enabled ? 'Deaktivieren' : 'Aktivieren'}</button></div>`).join('')
-    : '<p class="empty-state">Noch keine Routen angelegt.</p>';
-  document.querySelectorAll('[data-toggle]').forEach((b) => b.addEventListener('click', async () => {
-    await api(`/api/routes/${b.dataset.toggle}`, { method: 'PATCH', body: { enabled: b.dataset.enabled !== '1' } });
-    loadRoutes();
-  }));
+  if (!Array.isArray(routes)) return;
+  $('#routeCount').textContent = routes.length;
+  $('#routeList').innerHTML = routes.map(r => {
+    const st = r.ok > 0 ? 'OK' : (r.fail > 0 ? 'ERROR' : 'NEW');
+    const stL = r.ok > 0 ? 'aktiv' : (r.fail > 0 ? 'Fehler' : 'bereit');
+    const keyL = r.provider === 'offline' ? 'offline' : r.hasKey ? 'Key' : 'kein Key';
+    const keyC = (r.provider === 'offline' || r.hasKey) ? 'RUNNING' : 'PAUSED';
+    return `<div class="row route-row${r.enabled ? '' : ' off'}"><div class="head"><b><i class="rdot rdot-${st.toLowerCase()}"></i>${esc(r.name)}</b><span class="badge ${st}">${stL}</span></div><div class="sub">${esc(r.model)} · Prio ${esc(r.priority)} · <span class="okc">ok ${esc(r.ok)}</span> · <span class="failc">fail ${esc(r.fail)}</span></div><div class="row-actions"><span class="badge ${keyC}">${keyL}</span><button data-toggle="${r.id}" data-enabled="${r.enabled}" class="compact">${r.enabled ? 'Deaktivieren' : 'Aktivieren'}</button></div></div>`;
+  }).join('');
+  document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', async () => { await api(`/api/routes/${b.dataset.toggle}`, { method: 'PATCH', body: { enabled: b.dataset.enabled !== '1' } }); loadRoutes(); }));
 }
-
 async function addRoute() {
-  const out = await api('/api/routes', {
-    method: 'POST',
-    body: {
-      name: $('#rName').value.trim() || 'Route',
-      provider: $('#rProvider').value.trim() || 'openai-compatible',
-      baseUrl: $('#rUrl').value.trim(),
-      model: $('#rModel').value.trim(),
-      keyEnv: $('#rKeyEnv').value.trim(),
-      priority: Number($('#rPrio').value) || 10
-    }
-  });
-  if (out.error) { toast(`Route nicht gespeichert: ${out.error}`, 'err'); return; }
-  toast('Route gespeichert');
-  loadRoutes();
+  const name = $('#rName').value.trim(); const url = $('#rUrl').value.trim();
+  if (!name || !url) { toast('Name und Base URL angeben'); return; }
+  await api('/api/routes', { method: 'POST', body: { name, provider: 'openai-compatible', baseUrl: url, model: $('#rModel').value.trim(), keyEnv: $('#rKeyEnv').value.trim(), priority: 10 } });
+  toast('Route gespeichert'); loadRoutes();
 }
-
 async function loadSecrets() {
   const list = await api('/api/secrets');
   $('#secretList').innerHTML = Array.isArray(list) && list.length
-    ? list.map((s) => `<div class="row"><div class="head"><b>${esc(s.name)}</b><span class="badge RUNNING">gesetzt</span></div></div>`).join('')
-    : '<p class="hint">Noch kein Key hinterlegt. Der Offline-Planer bleibt verfügbar.</p>';
+    ? list.map(s => `<div class="row" style="display:flex;justify-content:space-between;align-items:center"><b>${esc(s.name)}</b><span class="badge RUNNING">gesetzt</span></div>`).join('')
+    : '<p class="hint">Noch kein Key hinterlegt.</p>';
 }
-
 async function addSecret() {
-  const name = $('#sName').value.trim();
-  const value = $('#sValue').value;
-  if (!name || !value) { toast('Name und Wert sind nötig', 'err'); return; }
-  const out = await api('/api/secrets', { method: 'POST', body: { name, value } });
-  if (out.error) { toast(`Key nicht gespeichert: ${out.error}`, 'err'); return; }
-  $('#sValue').value = '';
-  toast(`Key ${name} gespeichert (Wert wird nie angezeigt)`);
-  loadSecrets();
-  loadRoutes();
+  const name = $('#sName').value.trim(), value = $('#sValue').value;
+  if (!name || !value) { toast('Name und Wert angeben'); return; }
+  await api('/api/secrets', { method: 'POST', body: { name, value } });
+  $('#sValue').value = ''; toast('Key gespeichert'); loadSecrets(); loadRoutes();
 }
 
-/* --------------------------- Packs & Werkzeuge -------------------------- */
-
-function packCard(p, kind) {
-  const off = p.enabled === false;
-  const chips = kind === 'tool' && Array.isArray(p.tools)
-    ? `<div class="chip-row">${p.tools.map((t) => `<span class="tool-chip ${p.effective === false ? '' : 'on'}">${esc(t)}</span>`).join('')}</div>`
-    : '';
-  const blocked = p.effective === false && p.enabled === true
-    ? '<p class="msg err">Wirkungslos: der Hauptschalter „Werkzeuge“ ist aus.</p>' : '';
-  return `<article class="pack-card ${off ? 'off' : ''}">
-    <div class="pack-head"><strong>${esc(p.title)}</strong>
-      <button type="button" class="toggle" data-pack="${esc(p.id)}" data-enabled="${p.enabled ? '1' : '0'}" aria-pressed="${p.enabled ? 'true' : 'false'}"><span class="knob" aria-hidden="true"></span>${p.enabled ? 'an' : 'aus'}</button>
-    </div>
-    <p>${esc(p.description)}</p>${chips}${blocked}
-  </article>`;
-}
-
-async function loadPacks() {
-  const state = await api('/api/packs');
-  if (state.error || !Array.isArray(state.features)) {
-    $('#packList').innerHTML = '<p class="empty-state">Packs konnten nicht geladen werden.</p>';
-    return;
-  }
-  packState = state;
-  $('#packList').innerHTML = state.features.map((f) => packCard(f, 'feature')).join('');
-  const enabledTools = state.tools.filter((t) => t.effective).length;
-  $('#packCountLabel').textContent = `${enabledTools}/${state.tools.length}`;
-  setMsg('#packMsg', state.blocked.length
-    ? `${state.blocked.length} Werkzeug-Pack(s) gesperrt: ${state.blocked.join(', ')} — die Agenten können diese Werkzeuge nicht benutzen.`
-    : `${enabledTools} von ${state.tools.length} Werkzeug-Packs aktiv · Hauptschalter ${state.master.enabled ? 'frei' : 'gesperrt'}`, state.blocked.length > 0);
-  if ($('#workspacePackList')) {
-    $('#workspacePackList').innerHTML = state.tools.map((t) => packCard(t, 'tool')).join('')
-      + `<article class="pack-card"><div class="pack-head"><strong>Hauptschalter</strong><span class="badge ${state.master.enabled ? 'RUNNING' : 'FAILED'}">${state.master.enabled ? 'freigegeben' : 'gesperrt'}</span></div><p>Der Hauptschalter „Werkzeuge“ gibt alle Werkzeug-Packs frei. Ist er aus, blockiert der Hub jeden Werkzeugaufruf und protokolliert das im Audit.</p></article>`;
-  }
-  document.querySelectorAll('[data-pack]').forEach((b) => b.addEventListener('click', () => togglePack(b.dataset.pack, b.dataset.enabled !== '1')));
-}
-
-async function togglePack(id, enabled) {
-  const out = await api(`/api/packs/${id}`, { method: 'PATCH', body: { enabled } });
-  if (out.error) { toast(`Pack nicht geändert: ${out.error}`, 'err'); return; }
-  toast(`Pack ${id} ${enabled ? 'aktiviert' : 'deaktiviert'}`, enabled ? 'ok' : 'info');
-  await loadPacks();
-  loadTools();
-  loadStats();
-}
-
-async function loadTools() {
-  const tools = await api('/api/tools');
-  const box = $('#toolList');
-  if (!box) return;
-  if (!Array.isArray(tools)) { box.innerHTML = '<p class="empty-state">Werkzeuge konnten nicht geladen werden.</p>'; return; }
-  const blocked = tools.filter((t) => !t.enabled).length;
-  box.innerHTML = (blocked ? `<p class="msg err">${blocked} von ${tools.length} Werkzeugen sind gerade gesperrt.</p>` : '')
-    + tools.map((t) => `<div class="row"><div class="head"><b>${esc(t.name)}</b><span class="badge ${t.enabled ? 'RUNNING' : 'FAILED'}">${t.enabled ? 'frei' : 'gesperrt'}</span></div><div class="sub">${esc(t.description)}${t.packTitle ? `\nPack: ${esc(t.packTitle)}` : ''}</div></div>`).join('');
-}
-
-/* ---------------------------- Statistik & SSE --------------------------- */
-
-async function loadStats() {
-  const s = await api('/api/stats');
-  if (s.error) return;
-  let h = `Villen ${s.villas} · Agenten ${s.agents} · Aufgaben offen ${s.tasks.open}/${s.tasks.total} · laufende Villen ${s.runningVillas ? s.runningVillas.length : 0} · Hub v${s.version}`;
-  if (s.routesHealth) {
-    const rh = s.routesHealth;
-    h += ` · Routen ok/fail ${rh.ok}/${rh.fail}`;
-    if (rh.cooling && rh.cooling.length) h += ` · Cooldown: ${rh.cooling.join(', ')}`;
-  }
-  if (s.packs && s.packs.blocked && s.packs.blocked.length) h += ` · gesperrte Werkzeug-Packs: ${s.packs.blocked.join(', ')}`;
-  $('#statsBar').textContent = h;
-}
-
-/**
- * Genau eine SSE-Verbindung: eine bestehende wird vor dem Neuaufbau
- * geschlossen, sonst haengen nach jedem Token-Wechsel weitere Streams offen.
- */
+/* ---------- SSE (Live-Updates mit Selbstheilung) ---------- */
 function connectEvents() {
-  if (eventSource) { try { eventSource.close(); } catch { /* schon zu */ } eventSource = null; }
-  const t = getToken();
-  const es = new EventSource(t ? `/api/events?token=${encodeURIComponent(t)}` : '/api/events');
-  eventSource = es;
-  es.onopen = () => { if (eventSource === es) $('#healthDot').className = 'dot ok'; };
-  es.onerror = () => { if (eventSource === es) checkHealth(); };
-  // Nur Statusaenderungen loesen einen Refresh aus; Schwellwertereignisse
-  // (task/chat/tool) werden gebuendelt, damit ein Lauf die API nicht flutet.
-  let refreshTimer = null;
-  es.onmessage = (ev) => {
-    let e = {};
-    try { e = JSON.parse(ev.data); } catch { /* kein JSON — ignorieren */ }
-    if (!['villa', 'progress', 'report', 'pack_updated'].includes(e.type)) return;
-    if (refreshTimer) return;
-    refreshTimer = setTimeout(() => {
-      refreshTimer = null;
-      loadVillas();
-      loadStats();
-      if (currentVilla) refreshCurrent();
-      if (e.type === 'pack_updated') { loadPacks(); loadTools(); }
-    }, 900);
+  if (window.vfES) { try { window.vfES.close(); } catch (e) {} }
+  if (window.vfBeatTimer) clearInterval(window.vfBeatTimer);
+  const es = new EventSource('/api/events'); window.vfES = es;
+  let lastBeat = Date.now();
+  es.onopen = () => { lastBeat = Date.now(); };
+  es.onmessage = () => {
+    lastBeat = Date.now();
+    activityTicks.push(Date.now());
+    if (activityTicks.length > 24) activityTicks.shift();
+    loadVillas();
+    if (currentVilla) refreshCurrent();
   };
+  es.onerror = () => { try { es.close(); } catch (e) {} setTimeout(connectEvents, 5000); };
+  window.vfBeatTimer = setInterval(() => { if (Date.now() - lastBeat > 45000) { try { window.vfES.close(); } catch (e) {} connectEvents(); } }, 15000);
 }
 
-function saveToken() {
-  setToken($('#tokenInput').value.trim());
-  $('#tokenInput').value = '';
-  toast('Token gespeichert', 'info');
-  loadRoutes();
-  loadSecrets();
-  connectEvents();
-  checkHealth();
-}
-
-/* ------------------------------ Wartung ------------------------------- */
-
-async function downloadBackup() {
-  const out = await api('/api/backup');
-  if (out.error) { setMsg('#maintMsg', `Backup fehlgeschlagen: ${out.error}`, true); return; }
-  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `villaforge-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-  setMsg('#maintMsg', `Backup geladen (${out.villas.length} Villen, Hub ${out.version})`);
-}
-
-async function pruneAudit() {
-  const input = await openModal({
-    title: 'Protokolle aufräumen',
-    text: 'Audit-Einträge und Nachrichten, die älter als die angegebene Zahl von Tagen sind, werden entfernt. Zuerst läuft ein Trockenlauf.',
-    ok: 'Trockenlauf',
-    fields: [{ id: 'days', label: 'Älter als (Tage)', value: '90', type: 'number' }]
-  });
-  if (!input) return;
-  const days = Number(input.days) || 90;
-  const dry = await api('/api/maintenance/prune', { method: 'POST', body: { days, dryRun: true } });
-  if (dry.error) { setMsg('#maintMsg', `Wartung fehlgeschlagen: ${dry.error}`, true); return; }
-  const ok = await confirmAction('Aufräumen bestätigen?', `Trockenlauf: ${dry.deleted.audit} Audit-Einträge und ${dry.deleted.messages} Nachrichten älter als ${days} Tage würden entfernt.`, 'Jetzt aufräumen');
-  if (!ok) { setMsg('#maintMsg', 'Aufräumen abgebrochen.'); return; }
-  const done = await api('/api/maintenance/prune', { method: 'POST', body: { days } });
-  if (done.error) { setMsg('#maintMsg', `Wartung fehlgeschlagen: ${done.error}`, true); return; }
-  const text = `Aufgeräumt: ${done.deleted.audit} Audit-Einträge, ${done.deleted.messages} Nachrichten`;
-  setMsg('#maintMsg', text);
-  toast(text);
-}
-
-async function importVillaFile() {
-  const file = $('#importFile').files[0];
-  if (!file) return;
-  try {
-    const payload = JSON.parse(await file.text());
-    if (!payload || !payload.villa) throw new Error('Kein Villa-Export (villa-Objekt fehlt)');
-    const out = await api('/api/villas/import', { method: 'POST', body: payload });
-    if (out.error) throw new Error(out.error);
-    toast(`Villa #${out.villaId} importiert`);
-    await loadVillas();
-    openVilla(out.villaId);
-  } catch (err) {
-    toast(`Import fehlgeschlagen: ${String(err.message || err)}`, 'err');
-  } finally {
-    $('#importFile').value = '';
-  }
-}
-
-/* -------------------------------- Tabs -------------------------------- */
-
-function selectTab(tab) {
-  document.querySelectorAll('.side-tab').forEach((t) => {
-    const on = t.dataset.tab === tab;
-    t.classList.toggle('active', on);
-    t.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
-  document.querySelectorAll('.workspace-main .tabpane').forEach((p) => p.classList.toggle('active', p.dataset.pane === tab));
-  if (tab === 'packs') { loadPacks(); loadTools(); }
-}
-
-/* ------------------------------- Verdrahtung --------------------------- */
-
-$('#taskFilter').addEventListener('change', () => currentVilla && renderTasks(currentVilla.tasks));
-$('#retryFailedBar').addEventListener('click', retryFailedAll);
+/* ---------- Ereignisse & Start ---------- */
+$('#loginBtn').addEventListener('click', doLogin);
+$('#loginPassword').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+document.querySelectorAll('.bottomnav .nav-item[data-view]').forEach(n => n.addEventListener('click', () => {
+  const v = n.dataset.view;
+  if (v === 'chat') { window.openVillaForgeMaster(); return; }
+  if (v === 'agents') { selectView('agents'); loadFleet(); return; }
+  selectView(v);
+}));
+$('#newVillaBtn').addEventListener('click', openSheet);
+$('#createBackdrop').addEventListener('click', closeSheet);
 $('#createBtn').addEventListener('click', createVilla);
-$('#heroCreateBtn').addEventListener('click', () => { $('#createSection').scrollIntoView({ behavior: 'smooth' }); setTimeout(() => $('#idea').focus(), 350); });
-$('#refreshBtn').addEventListener('click', loadVillas);
-$('#openLatestBtn').addEventListener('click', () => latestVillas[0] && openVilla(latestVillas[0].id));
+$('#activeVillaCard').addEventListener('click', () => { const id = $('#activeVillaCard').dataset.id; if (id) openVilla(Number(id)); else openSheet(); });
+$('#superagentOpen').addEventListener('click', () => window.openVillaForgeMaster());
+
 $('#closeDetail').addEventListener('click', closeWorkspace);
-$('#deleteBtn').addEventListener('click', deleteVilla);
-$('#exportBtn').addEventListener('click', exportVilla);
-$('#importBtn').addEventListener('click', () => $('#importFile').click());
-$('#importFile').addEventListener('change', importVillaFile);
-$('#editBtn').addEventListener('click', editVilla);
-$('#backupBtn').addEventListener('click', downloadBackup);
-$('#pruneBtn').addEventListener('click', pruneAudit);
 $('#startBtn').addEventListener('click', startDevelopment);
 $('#stopBtn').addEventListener('click', stopDevelopment);
 $('#sendBtn').addEventListener('click', sendChat);
-$('#chatMsg').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+$('#chatMsg').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+$('#chatMsg').addEventListener('input', () => { const t = $('#chatMsg'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 120) + 'px'; });
 $('#addRouteBtn').addEventListener('click', addRoute);
 $('#addSecretBtn').addEventListener('click', addSecret);
-$('#saveTokenBtn').addEventListener('click', saveToken);
-$('#packsRefreshBtn').addEventListener('click', () => { loadPacks(); loadTools(); toast('Packs neu geladen', 'info'); });
-$('#offlineRetry').addEventListener('click', () => { checkHealth(); loadVillas(); loadStats(); });
-$('#modalCancel').addEventListener('click', () => $('#modal').close('cancel'));
-// Enter im Modal-Formular bestaetigt, damit man nicht zur Maus greifen muss.
-$('#modalFields').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#modalOk').click(); } });
-document.querySelectorAll('.side-tab').forEach((t) => t.addEventListener('click', () => selectTab(t.dataset.tab)));
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('#detailPanel').hidden && !$('#modal').open) closeWorkspace();
-});
+document.querySelectorAll('.tab-chip').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#detailPanel').hidden) closeWorkspace(); });
 
-checkHealth();
-loadVillas();
-loadStats();
-loadRoutes();
-loadSecrets();
-loadPacks();
-loadTools();
-connectEvents();
-connectSectionNavigation();
-setInterval(checkHealth, 20000);
-setInterval(loadStats, 30000);
+function boot() { checkHealth(); loadVillas(); loadRoutes(); loadSecrets(); connectEvents(); }
+checkSession(); boot(); setInterval(checkHealth, 20000);

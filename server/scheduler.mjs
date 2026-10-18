@@ -15,8 +15,16 @@
  *   Gleichstand, und Villen mit Fehlern fallen leicht zurueck.
  */
 import { db } from './db.mjs';
+import { getSetting } from './control-store.mjs';
+import { orchestrate } from './agents.mjs';
 
-const SLOTS = () => Math.max(1, Number(process.env.VF_VILLA_SLOTS ?? 2) || 2);
+// v1.42.0 — FOKUS-MODUS (Nutzerdirektive 2026-10-18): "Die Villen sollen nicht
+// staendig rotieren, sondern Projekt fuer Projekt fertigstellen." Der Fokus-Modus
+// ist Standard: Genau EINE Villa laeuft (die fortschrittlichste zuerst) und wird
+// erst fertig gebaut, bevor die naechste startet. Rotation (VF_VILLA_SLOTS > 1)
+// gibt es nur noch bei explizitem VF_FOCUS_MODE=0.
+export const FOCUS_MODE = () => process.env.VF_FOCUS_MODE !== '0';
+const SLOTS = () => (FOCUS_MODE() ? 1 : Math.max(1, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? 1)) || 1));
 
 /** Fortschritt und Rang aller Villen in einer einzigen Abfrage. */
 export function villaRanking() {
@@ -39,8 +47,9 @@ export function villaRanking() {
     .sort((a, b) => b.rank - a.rank || a.id - b.id);
 }
 
-const queue = [];          // wartende Villa-IDs (nach Rang einsortiert)
+const queue = [];          // wartende Villa-IDs (faire Reihenfolge, Rang als Stichbrecher)
 const active = new Set();  // Villen, die gerade einen Slot halten
+const lastStart = new Map(); // villaId -> Zeitpunkt des letzten Starts (Anti-Streben)
 let starter = null;        // Funktion (villaId) => Promise, die den Lauf startet
 
 /** Setzt die Startfunktion (orchestrate) - vermeidet zyklische Importe. */
@@ -50,18 +59,21 @@ export function configureScheduler({ start }) {
 
 export function schedulerStatus() {
   return {
+    focusMode: FOCUS_MODE(),
     slots: SLOTS(),
     active: [...active],
     queued: queue.length,
-    queue: queue.slice(0, 20)
+    queue: queue.slice(0, 20),
+    lastStart: Object.fromEntries(lastStart)
   };
 }
 
 function pump() {
   while (starter && active.size < SLOTS() && queue.length) {
     const id = queue.shift();
-    if (active.has(id)) continue;
+    if (active.has(id) || db.prepare('SELECT status FROM villas WHERE id=?').get(id)?.status === 'ARCHIVED') continue;
     active.add(id);
+    lastStart.set(id, Date.now());
     // Synchron starten: Aufrufer (Tests, Auto-Resume) sehen den Start sofort.
     try {
       const result = starter(id);
@@ -87,9 +99,20 @@ export function enqueueVillas(ids) {
   for (const id of ids) {
     if (!active.has(id) && !queue.includes(id)) queue.push(id);
   }
-  queue.sort((a, b) => (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9));
+  // Faire Reihenfolge: wer am laengsten nicht mehr dran war, kommt zuerst.
+  // Der Rang bricht nur Gleichstand - sonst verhungern niedrig gerankte
+  // Villen dauerhaft, weil hohergerankte nach jedem Lauf wieder vor drängen.
+  queue.sort((a, b) => (lastStart.get(a) ?? 0) - (lastStart.get(b) ?? 0) || (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9));
   pump();
   return schedulerStatus();
+}
+
+/** v1.40.0 — Einheitlicher Einstieg: Villen laufen NIEMALS direkt, sondern
+ *  immer ueber den Scheduler (strikte Reihenfolge, Default 1 Slot). */
+export function scheduleVilla(id, { concurrency = 0, maxRounds = 6 } = {}) {
+  configureScheduler({ start: (vid) => orchestrate(vid, { concurrency, maxRounds }) });
+  const status = enqueueVillas([id]);
+  return status;
 }
 
 /** Test-Hilfe: Zustand zuruecksetzen. */

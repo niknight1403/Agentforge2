@@ -1,56 +1,17 @@
+import { forgeLog } from './keyforge.mjs';
 import { db, now } from './db.mjs';
-import { OFFLINE_ROUTE } from './routes.mjs';
+import { KEY_ALIASES,isLocalRoute } from './llm-config.mjs';
+import { createCascade } from './llm-cascade.mjs';
+import { userStore, quotaLeft, chargeTokens } from './auth.mjs';
 
 /** Liefert einen Key aus Secrets-Store oder Umgebung. */
 export function resolveKey(keyEnv) {
   if (!keyEnv) return '';
-  const row = db.prepare('SELECT value FROM secrets WHERE name = ?').get(keyEnv);
-  if (row && row.value) return row.value;
-  return process.env[keyEnv] || '';
-}
-
-/**
- * Key-Pool eines Namens: Basiswert zuerst, dann nummerierte Zweit-Keys
- * (_2 bis _12), Store vor Umgebung. Rotation bei erschöpftem Kontingent.
- */
-export function resolveKeys(keyEnv) {
-  if (!keyEnv) return [];
-  const names = [keyEnv, ...Array.from({ length: 11 }, (_, i) => `${keyEnv}_${i + 2}`)];
-  const out = [];
-  for (const name of names) {
-    const row = db.prepare('SELECT value FROM secrets WHERE name = ?').get(name);
-    const value = (row && row.value) || process.env[name] || '';
-    if (value) out.push({ name, value });
+  for (const name of [keyEnv,...(KEY_ALIASES[keyEnv]||[])]) {
+    const value=db.prepare('SELECT value FROM secrets WHERE name=?').get(name)?.value || process.env[name];
+    if(value) return value;
   }
-  return out;
-}
-
-/** Ist ein einzelner Key gerade im Kontingent-Kuehlzustand? */
-export function isKeyCooling(name) {
-  if (!name) return false;
-  const row = db.prepare('SELECT until FROM key_cool WHERE name = ?').get(name);
-  return !!row && Number(row.until) > Date.now();
-}
-
-/** Legt einen Key nach 429/402 kurz still (gleiche Kurve wie Routen). */
-export function coolKey(name, ms = 45_000) {
-  if (!name) return;
-  db.prepare('INSERT INTO key_cool (name, until) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET until = excluded.until')
-    .run(name, now() + ms);
-}
-
-/** Sichtbarkeit: welche Key-Pools existieren und wie viele sind einsatzbereit. Nur Namen, nie Werte. */
-export function keyPools() {
-  const seen = new Set();
-  const pools = [];
-  for (const r of enabledRoutes()) {
-    if (!r.key_env || seen.has(r.key_env)) continue;
-    const keys = resolveKeys(r.key_env);
-    if (!keys.length) continue;
-    seen.add(r.key_env);
-    pools.push({ env: r.key_env, keys: keys.map((k) => k.name), ready: keys.filter((k) => !isKeyCooling(k.name)).length });
-  }
-  return pools;
+  return '';
 }
 
 export function keyStatus() {
@@ -63,28 +24,26 @@ export function enabledRoutes() {
 }
 
 /** Waehlt die naechste Route: Prioritaet, dann gewichtete Rotation. */
-export function pickRoute(strategy = 'ROTATE') {
-  // Nur Routen, die wirklich genutzt werden koennen: Offline immer, lokale
-  // Routen ohne Key-Pflicht ebenfalls, fremde nur mit hinterlegtem Key.
-  const usable = enabledRoutes().filter(isUsable);
-  if (!usable.length) return { ...OFFLINE_ROUTE, id: 0, provider: 'offline' };
-  const pool = usable;
-
-  if (strategy === 'FALLBACK') return pool[0];
-
-  // ROTATE: die am laengsten ungenutzte Route mit bester Prioritaet zuerst.
-  const sorted = [...pool].sort((a, b) => {
-    if (a.priority !== b.priority) return a.priority - b.priority;
-    return (a.last_used || 0) - (b.last_used || 0);
-  });
-  return sorted[0];
+export function pickRoute() {
+  return enabledRoutes().filter(r=>r.provider!=='offline' && isUsable(r))[0] || null;
 }
 
-function recordRoute(id, ok) {
+/* GATEWAY-Metriken (Charta 2026-10-18): Latenz (EMA) und Token-Verbrauch je Route. */
+try { db.exec('ALTER TABLE routes ADD COLUMN lat_ms INTEGER'); } catch { /* Spalte existiert */ }
+try { db.exec('ALTER TABLE routes ADD COLUMN tokens INTEGER'); } catch { /* Spalte existiert */ }
+
+function recordRoute(id, ok, latMs = 0, tok = 0) {
   if (!id) return;
+  /* Adaptive Routen-Intelligenz: Erfolg laesst das Gewicht wachsen (bis 2x),
+     Fehler schrumpfen es (bis 0.2x). Der Score-Sortierer bevorzugt Routen
+     mit hohem Gewicht und niedriger Fehlquote statt starrer Prioritaet. */
+  const r = db.prepare('SELECT weight FROM routes WHERE id = ?').get(id);
+  const w = Math.min(2, Math.max(0.2, (Number(r?.weight) || 1) * (ok ? 1.1 : 0.7)));
+  const row = db.prepare('SELECT lat_ms, tokens FROM routes WHERE id = ?').get(id) || {};
+  const emaLat = latMs > 0 ? Math.round(0.3 * latMs + 0.7 * (Number(row.lat_ms) || latMs)) : (Number(row.lat_ms) || 0);
   db.prepare(
-    'UPDATE routes SET status = ?, ok = ok + ?, fail = fail + ?, last_used = ? WHERE id = ?'
-  ).run(ok ? 'OK' : 'ERROR', ok ? 1 : 0, ok ? 0 : 1, now(), id);
+    'UPDATE routes SET status = ?, ok = ok + ?, fail = fail + ?, last_used = ?, weight = ?, lat_ms = ?, tokens = ? WHERE id = ?'
+  ).run(ok ? 'OK' : 'ERROR', ok ? 1 : 0, ok ? 0 : 1, now(), Math.round(w * 100) / 100, emaLat, Number(row.tokens || 0) + tok, id);
 }
 
 /**
@@ -92,193 +51,168 @@ function recordRoute(id, ok) {
  * Nach mehreren Fehlern waechst die Sperrzeit, damit der Rotator nicht bei
  * jedem Aufruf erneut in dieselbe tote Route laeuft.
  */
-const COOLDOWN_MS = 60_000;
-const RATE_LIMIT_COOLDOWN_MS = 45_000;
-function coolDown(route, rateLimited = false) {
-  if (!route.id) return;
-  // 429 heisst "gleich wieder", nicht "kaputt": kurze Pause ohne Eskalation,
-  // damit ein Gratis-Tageslimit den Lauf nicht fuer Minuten lahmlegt.
-  if (rateLimited) {
-    db.prepare('UPDATE routes SET cooldown_until = ? WHERE id = ?').run(now() + RATE_LIMIT_COOLDOWN_MS, route.id);
-    return;
-  }
-  const fails = Number(route.fail || 0) + 1;
-  const until = now() + Math.min(COOLDOWN_MS * fails, 10 * 60_000);
-  db.prepare('UPDATE routes SET cooldown_until = ? WHERE id = ?').run(until, route.id);
+function coolDown(route,error) {
+ if (!route.id || error.busy) return;
+ const status=Number(error.status)||0;
+ const retry=Number(error.retryAfterMs)||0;
+ const ms=[401,403].includes(status)?300000:status===429?Math.max(120000,Math.min(retry,600000)):15000;
+ db.prepare('UPDATE routes SET cooldown_until=? WHERE id=?').run(Math.max(now()+ms,Number(route.cooldown_until)||0),route.id);
 }
 
-/**
- * Anzahl gerade nutzbarer ECHTER Routen (ohne Offline-Planer).
- * Massstab fuer die adaptive Parallelitaet: wenn nur noch eine Route
- * aus dem Cooldown kommt, bringen vier parallele Agenten nur 429er.
- */
-export function readyRealRoutes() {
-  const usable = enabledRoutes().filter(isUsable);
-  return usable.filter((r) => r.provider !== 'offline' && r.priority < 50).length;
-}
-
-/**
- * Routen, die gerade nutzbar sind: nicht gesperrt und mit Key versorgt.
- * Routen ohne key_env (z. B. ein lokaler Ollama) brauchen keinen Key.
- */
-export function isUsable(route) {
-  if (route.provider === 'offline') return true;
+/** Routen, die gerade nicht gesperrt sind. */
+function isUsable(route) {
+  if (route.provider === 'offline') return false;
   if (Number(route.cooldown_until || 0) > now()) return false;
+  // Key-lose Routen (z.B. lokales Ollama) sind offen und immer benutzbar.
   if (!route.key_env) return true;
   return !!resolveKey(route.key_env);
 }
 
+/**
+ * Selbst gehostetes Ollama (ARM-CPU, 4 Kerne) schafft nur wenige gleichzeitige
+ * Anfragen. Ohne Grenze fallen bei erschoepften Cloud-Kontingenten ALLE Villen
+ * gleichzeitig auf Ollama durch, die CPU ueberlaeuft und jede Anfrage rennt in
+ * den Timeout (Hub-Last > 10, Antworten > 5 Min). Deshalb: globale Schlange.
+ */
+const OLLAMA_MAX_PARALLEL = Math.max(1, Number(process.env.OLLAMA_MAX_PARALLEL) || 1);
+const OLLAMA_MAX_QUEUE = Math.max(1, Number(process.env.OLLAMA_MAX_QUEUE) || 4);
+let ollamaActive = 0;
+const ollamaWaiters = [];
+
+async function acquireOllama() {
+  if (ollamaActive < OLLAMA_MAX_PARALLEL) { ollamaActive++; return; }
+  // Warteschlange voll: sofort ablehnen, damit der Router die naechste Route nimmt
+  // (oder die Aufgabe spaeter erneut versucht) statt die CPU weiter zu belasten.
+  if (ollamaWaiters.length >= OLLAMA_MAX_QUEUE) {
+    const err = new Error('Ollama ausgelastet (Warteschlange voll)');
+    err.busy = true; // Ueberlast ist kein Routenfehler: keine Sperre, kein Fehlerzaehler
+    throw err;
+  }
+  // Gebundenes Warten: ohnehin abgelehnt/uebernommen spaetestens nach 30 s.
+  // Frueher warteten Waiter EWIG - ein undichter Slot haengt dann ganze
+  // Aufgaben-Batches fuer Stunden fest (Zombie-RUNNING-Aufgaben).
+  await new Promise((resolve, reject) => {
+    const done = () => { clearTimeout(timer); resolve(); };
+    const timer = setTimeout(() => {
+      const i = ollamaWaiters.indexOf(done);
+      if (i >= 0) ollamaWaiters.splice(i, 1);
+      const err = new Error('Ollama ausgelastet (Wartezeit abgelaufen)');
+      err.busy = true;
+      reject(err);
+    }, 30_000);
+    ollamaWaiters.push(done);
+  });
+}
+
+function releaseOllama() {
+  const next = ollamaWaiters.shift();
+  if (next) next(); // Platz geht direkt an den naechsten Wartenden
+  else ollamaActive = Math.max(0, ollamaActive - 1);
+}
+
+export const _ollamaQueue = { acquire: () => acquireOllama(), release: () => releaseOllama() };
+
+export function ollamaQueueStats() {
+  return { active: ollamaActive, waiting: ollamaWaiters.length, maxParallel: OLLAMA_MAX_PARALLEL, maxQueue: OLLAMA_MAX_QUEUE };
+}
 
 /**
- * Globale Obergrenze fuer gleichzeitige LLM-Aufrufe (prozessweit).
- *
- * Ohne diese Grenze startet jede laufende Villa ihre eigenen parallelen
- * Agenten: 11 Villen x 4 Agenten = 44 gleichzeitige Aufrufe gegen EIN Ollama
- * (NUM_PARALLEL=1) auf 4 Kernen. Der Hub steht dann im Dauerstau, die
- * Anfragen laufen in Timeouts, und selbst /api/health antwortet nicht mehr.
- * Jetzt warten die Aufrufe in einer FIFO-Schlange; der Hub bleibt ansprechbar.
+ * Pro-Route-Ratenbegrenzung: Free-Tier-APIs (Gemini, Groq) sperren bei
+ * Anfrage-Sturzbett mit 429 - danach rutschen ALLE Routen in den Cooldown und
+ * der Offline-Planer uebernimmt. Ein lokaler Token-Bucket haelt das Volumen
+ * VOR dem API-Limit, damit die Kette stabil erreichbar bleibt.
  */
-const MAX_CONCURRENT = Math.max(1, Number(process.env.VF_LLM_MAX_CONCURRENT ?? 2) || 2);
-let activeCalls = 0;
-const waiting = [];
-
-function acquireSlot() {
-  if (activeCalls < MAX_CONCURRENT) {
-    activeCalls += 1;
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => waiting.push(resolve));
+const routeHits = new Map(); // routeId -> [timestamps der letzten 60 s]
+function routeRpm(route) {
+  const n = String(route.name || '').toLowerCase();
+  if (n.includes('gemini')) return Number(process.env.VF_RPM_GEMINI) || 8;   // Free-Tier ~10 RPM
+  if (n.includes('groq')) return Number(process.env.VF_RPM_GROQ) || 20;
+  if (n.includes('cerebras')) return Number(process.env.VF_RPM_CEREBRAS) || 15;
+  if (n.includes('openrouter')) return Number(process.env.VF_RPM_OPENROUTER) || 12;
+  return Number(process.env.VF_RPM_DEFAULT) || 30;
 }
-
-function releaseSlot() {
-  const next = waiting.shift();
-  if (next) next(); // Slot geht direkt an den naechsten Wartenden
-  else activeCalls = Math.max(0, activeCalls - 1);
-}
-
-/** Momentaufnahme fuer Health/Diagnose. */
-export function llmGateStatus() {
-  return { max: MAX_CONCURRENT, active: activeCalls, queued: waiting.length };
-}
-
-/** Fuehrt fn aus, sobald ein Slot frei ist (immer wieder freigegeben). */
-async function withSlot(fn) {
-  await acquireSlot();
-  try {
-    return await fn();
-  } finally {
-    releaseSlot();
-  }
+function rateLimited(route) {
+  if (!route.id) return false;
+  const list = routeHits.get(route.id) || [];
+  const cutoff = now() - 60_000;
+  while (list.length && list[0] < cutoff) list.shift();
+  if (list.length >= routeRpm(route)) return true;
+  list.push(now());
+  routeHits.set(route.id, list);
+  return false;
 }
 
 async function callOpenAiCompatible(route, messages, opts) {
-  // Key-Pool: bei erschöpftem Kontingent (429/402) rotiert der Aufruf auf den
-  // nächsten hinterlegten Key derselben Route, bevor die Route kippt.
-  const keys = route.key_env ? resolveKeys(route.key_env) : [{ name: '', value: '' }];
-  const ready = keys.filter((k) => !isKeyCooling(k.name));
-  const order = ready.length ? ready : keys;
-  let quotaErr = null;
-  for (const k of order) {
-    const out = await withSlot(() => fetchOnce(route, k, messages, opts));
-    if (out.ok) return out.data;
-    if ((out.status === 429 || out.status === 402) && k.name) {
-      coolKey(k.name);
-      quotaErr = out.err;
-      continue;
-    }
-    throw out.err;
+  if (!isLocalRoute(route) && rateLimited(route)) {
+    const err = new Error('Route lokal gedrosselt (' + routeRpm(route) + ' req/min)');
+    err.busy = true; // Drosselung ist kein Fehler der Route: keine Sperre, kein Zaehler
+    throw err;
   }
-  throw quotaErr || new Error(`Route ${route.name}: kein verwendbarer Key`);
+  if (!isLocalRoute(route)) return callOpenAiCompatibleRaw(route, messages, opts);
+  return callOpenAiCompatibleRaw(route,messages,opts);
 }
 
-/** Ein einzelner Anruf mit genau einem Key. */
-async function fetchOnce(route, k, messages, opts) {
+const localModels=new Map();
+async function callOpenAiCompatibleRaw(route, messages, opts) {
+  const key = resolveKey(route.key_env);
   const headers = { 'Content-Type': 'application/json' };
-  if (k.value) headers['Authorization'] = `Bearer ${k.value}`;
+  // Fal.ai authentifiziert mit "Key" statt "Bearer": provider-abhaengig setzen.
+  if (key) headers['Authorization'] = route.provider === 'fal' ? `Key ${key}` : `Bearer ${key}`;
+  let selectedModel=route.model;
+  if(selectedModel==='auto') {
+    const found=localModels.get(route.base_url);
+    if(found && found.until>Date.now()) selectedModel=found.id;
+    else {
+      const models=await fetch(`${route.base_url.replace(/\/$/,'')}/models`,{headers,signal:AbortSignal.timeout(Math.min(opts.timeoutMs,1500))});
+      if(!models.ok)throw Object.assign(new Error('Local model discovery failed'),{status:models.status});
+      const data=await models.json();
+      const list=(data.data||[]).filter(m=>typeof m.id==='string');
+      const preferred=route.provider==='gemini'?list.find(m=>/gemini.*flash/i.test(m.id)&&!/image|tts|audio/i.test(m.id)):list[0];
+      selectedModel=preferred?.id;
+      if(route.provider==='gemini')selectedModel=selectedModel?.replace(/^models\//,'');
+      if(!selectedModel)throw Object.assign(new Error('No local model loaded'),{code:'NO_LOCAL_MODEL'});
+      localModels.set(route.base_url,{id:selectedModel,until:Date.now()+60000});
+    }
+  }
   const body = {
-    model: route.model,
+    model: selectedModel,
     messages,
     temperature: opts.temperature ?? 0.6,
     max_tokens: opts.maxTokens ?? 2048
   };
-  // JSON-Modus nur, wo er verlaesslich funktioniert. Groqs gpt-oss-Modelle
-  // werfen im JSON-Modus haeufig HTTP 400 (json_validate_failed /
-  // tool_use_failed) und blockieren damit den ganzen Lauf; der ReAct-Loop
-  // parst die Antwort ohnehin selbst und wiederholt Nicht-JSON-Antworten.
-  if (opts.json && !/gpt-oss/.test(route.model)) body.response_format = { type: 'json_object' };
-  try {
-    const res = await fetch(`${route.base_url.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 60000)
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      const err = new Error(`HTTP ${res.status} ${text.slice(0, 200)}`);
-      err.status = res.status;
-      return { ok: false, status: res.status, err };
-    }
-    const data = await res.json();
-    const choice = data.choices?.[0] ?? {};
-    // Reasoning-Modelle (z. B. gpt-oss) koennen bei kleinem Budget nur
-    // Gedankengang liefern: dann ist das besser als eine leere Antwort.
-    const content = choice.message?.content || choice.message?.reasoning || '';
-    return { ok: true, data: { content, model: data.model ?? route.model, route: route.name, usage: data.usage ?? null } };
-  } catch (e) {
-    return { ok: false, status: 0, err: e };
+  if (opts.json) body.response_format = { type: 'json_object' };
+
+  // Selbst gehostetes Ollama auf ARM ist deutlich langsamer als Cloud-APIs:
+  // grosszuegigeres Timeout verhindert Failover-Thrashing auf funktionierenden Routen.
+  /* Ollama-artige Timeouts auch fuer den lokalen LiteLLM-Proxy (Port 4000):
+     im Worst-Case (Cloud-Legs im Cooldown) bedient Ollama die Kaskade und
+     braucht auf der ARM-CPU je nach Last bis ~180 s. */
+  const isSlowLocal = route.provider === 'ollama' || /127\.0\.0\.1:4000/.test(route.base_url || '');
+  const defaultTimeout = isSlowLocal ? (Number(process.env.OLLAMA_TIMEOUT_MS) || 180000) : 60000;
+  const res = await fetch(`${route.base_url.replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(opts.timeoutMs ?? defaultTimeout)
+  });
+  if (!res.ok) {
+    await res.body?.cancel().catch(()=>{});
+    const retry=res.headers.get('retry-after');
+    const retryAfterMs=retry ? (/^\d+$/.test(retry)?Number(retry)*1000:Math.max(0,Date.parse(retry)-Date.now())) : 0;
+    throw Object.assign(new Error(`Provider HTTP ${res.status}`),{status:res.status,retryAfterMs});
   }
-}
-
-function offlineReply(messages, opts) {
-  const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-  const wrap = (content) => ({ content, model: OFFLINE_ROUTE.model, route: OFFLINE_ROUTE.name, offline: true });
-
-  // Planungsmodus: regelbasierter Projektplan.
-  if (opts.mode === 'plan') {
-    return wrap(JSON.stringify(derivePlan(lastUser, opts.agentCount ?? 12)));
-  }
-
-  const answer = buildOfflineAnswer(lastUser, opts.context);
-  // Agentenmodus: Antwort muss dem ReAct-Vertrag entsprechen.
-  if (opts.mode === 'agent') return wrap(JSON.stringify({ final: answer }));
-  return wrap(answer);
-}
-
-/** Baut eine gut lesbare, gegliederte Antwort im Markdown-Stil. */
-function buildOfflineAnswer(question, context) {
-  const clean = String(question || '').trim().replace(/\s+/g, ' ').slice(0, 300) || '(leer)';
-  const lines = [];
-
-  lines.push('## Zusammenfassung');
-  lines.push('');
-  lines.push(`Deine Nachricht: "${clean}"`);
-  lines.push('');
-  lines.push('Ich habe sie aufgenommen. Ein Sprachmodell ist gerade nicht angebunden, daher antworte ich mit dem regelbasierten Planer.');
-  lines.push('');
-
-  if (context) {
-    lines.push('## Aktueller Stand');
-    lines.push('');
-    lines.push(context);
-    lines.push('');
-  }
-
-  lines.push('## Empfohlene nächste Schritte');
-  lines.push('');
-  lines.push('1. Anforderungen und Erfolgskriterien schriftlich festhalten');
-  lines.push('2. Architektur und Datenmodell skizzieren');
-  lines.push('3. Umsetzung in kleine, prüfbare Teilaufgaben zerlegen');
-  lines.push('4. Tests inklusive Randfälle beschreiben');
-  lines.push('5. Ergebnis dokumentieren und ausliefern');
-  lines.push('');
-
-  lines.push('## Was du jetzt tun kannst');
-  lines.push('');
-  lines.push('- "Entwicklung starten" arbeitet alle offenen Aufgaben autonom ab und baut am Ende das Projekt');
-  lines.push('- Unter Einstellungen einen Key hinterlegen (z. B. GROQ_API_KEY), damit ein Sprachmodell antwortet');
-
-  return lines.join('\n');
+  const data = await res.json();
+  const choice = data.choices?.[0] ?? {};
+  const content = String(choice.message?.content ?? '').trim();
+  /* Leere Antworten sind Routenfehler: Failover auf die naechste Route
+     statt einer scheinbar erfolgreichen, inhaltsleeren Rueckgabe. */
+  if (!content) throw new Error('Route lieferte eine leere Antwort');
+  return {
+    content,
+    model: data.model ?? route.model,
+    route: route.name,
+    usage: data.usage ?? null
+  };
 }
 
 /** Regelbasierter Planer, der ohne LLM eine sinnvolle Aufgabenliste erzeugt. */
@@ -309,73 +243,58 @@ export function derivePlan(idea, agentCount = 12) {
   };
 }
 
+/** Verbrauchte Tokens: echte usage bevorzugen, sonst aus Textlaenge schaetzen. */
+function usageTokens(messages, out) {
+  const u = out?.usage;
+  if (u && (u.total_tokens || (u.prompt_tokens + u.completion_tokens))) {
+    return u.total_tokens || (u.prompt_tokens + u.completion_tokens);
+  }
+  const inChars = messages.reduce((sum, m) => sum + String(m.content || '').length, 0);
+  const outChars = String(out?.content || '').length;
+  return Math.ceil((inChars + outChars) / 4);
+}
+
+/** Rollen, die die staerkste Route bekommen (FALLBACK statt Rotation). */
+export const QUALITY_ROLES = new Set(['ROOT', 'CODER', 'ARCHITECT', 'REVIEWER', 'INTEGRATOR']);
+
 /**
  * Chat-Aufruf mit Rotation und Failover ueber alle aktiven Routen.
+ * Rollen aus QUALITY_ROLES laufen mit FALLBACK: die Route mit hoechster
+ * Prioritaet (bestes Modell) zuerst, damit Code- und Architekturarbeit
+ * immer mit der verfuegbaren Top-Qualitaet arbeitet.
  */
-export async function chat(messages, opts = {}) {
-  const routes = enabledRoutes();
-  // Bewusster Offline-Betrieb (gar kein Zugang konfiguriert) ist ein
-  // gewollter Zustand; Keys vorhanden, aber gerade im Limit, ist transient.
-  // Nur echte Zaehler-Zugriffe (Keys) zaehlen als "konfiguriert": die
-  // schluessellose Ollama-Route ist kein Nachweis, dass ein LLM existiert.
-  const realConfigured = routes.some((r) => r.key_env && resolveKey(r.key_env));
-  const strategy = opts.strategy || 'ROTATE';
-  // Zuerst alle nutzbaren Routen. Ist keine mehr nutzbar (z. B. gerade im
-  // Rate-Limit-Cooldown), werden Routen MIT Zugang erneut probiert, damit
-  // ein Fenster vorbeiziehen kann; schluessellose Routen bleiben immer
-  // dabei (lokale Verbindungen schlagen sofort fehl). Ohne jeden Zugang
-  // geht es direkt zum Planer: bewusster Offline-Betrieb ohne 401er-Kette.
-  let pool = routes.filter(isUsable);
-  if (!pool.length) pool = routes.filter((r) => !r.key_env || resolveKey(r.key_env));
-  const order = [];
-  if (pool.length) {
-    order.push(...[...pool].sort((a, b) => (strategy === 'ROTATE'
-      ? (a.priority - b.priority) || ((a.last_used || 0) - (b.last_used || 0))
-      : a.priority - b.priority)));
-    order.push({ ...OFFLINE_ROUTE, id: 0 });
-  } else {
-    order.push({ ...OFFLINE_ROUTE, id: 0, intentional: true });
-  }
 
-  let lastErr = null;
-  for (const route of order) {
-    try {
-      if (route.provider === 'offline') {
-        const out = offlineReply(messages, opts);
-        out.intentional = route.intentional !== undefined ? route.intentional : !realConfigured;
-        // Auch der Offline-Rettefall berichtet, warum echte Routen versagt haben.
-        if (lastErr) out.warning = String(lastErr.message || lastErr);
-        return out;
-      }
-      const out = await callOpenAiCompatible(route, messages, opts);
-      recordRoute(route.id, true);
-      route.__toolRetry = false;
-      return out;
-    } catch (err) {
-      // Groq gpt-oss ruft stochastisch (~1/3 am echten Agentenprompt) intern
-      // ein Tool auf, obwohl der Request keine Tools definiert – Groq antwortet
-      // mit 400 "Tool choice is none, but model called a tool". Das ist kein
-      // Route-Defekt und kein Kontingent: ein sofortiger zweiter Versuch
-      // derselben Route loest es fast immer auf. Kein Cooldown, keine
-      // Eskalation, kein Failover-Wirbel.
-      if (err.status === 400 && /tool choice is none/i.test(String(err.message)) && !route.__toolRetry) {
-        route.__toolRetry = true;
-        order.unshift(route);
-        console.warn(`[villaforge] gpt-oss Tool-400 auf ${route.name}, einmal sofort erneut versuchen`);
-        continue;
-      }
-      recordRoute(route.id, false);
-      coolDown(route, err.status === 429);
-      // Betriebs-Sichtbarkeit: ein gescheiterter LLM-Anruf muss im Hub-Log
-      // sichtbar sein, sonst ist ein kippender Lauf nicht diagnostizierbar.
-      console.error(`[villaforge] Route fehlgeschlagen (${route.name}): ${String(err.message || err).slice(0, 240)}`);
-      lastErr = err;
-      if (opts.onFailover) opts.onFailover(route.name, String(err.message || err));
-    }
-  }
-  // Letzter Ausweg: Offline, damit der Ablauf nie hart scheitert.
-  const fallback = offlineReply(messages, opts);
-  fallback.intentional = !realConfigured;
-  fallback.warning = lastErr ? String(lastErr.message || lastErr) : 'keine Route verfuegbar';
-  return fallback;
+/* VForge-Router (Charta 2026-10-18): Route-Wechsel praezise protokollieren,
+   aber gedrosselt - Sturm-Phasen erzeugen tausend Failover pro Minute. */
+const switchLogged = new Map();
+const SWITCH_THROTTLE_MS = 5 * 60_000;
+function logRouteSwitch(failedName, successName, reason) {
+  const key = failedName + '->' + successName;
+  if (Date.now() - (switchLogged.get(key) || 0) < SWITCH_THROTTLE_MS) return;
+  switchLogged.set(key, Date.now());
+  try { forgeLog('routeforge:switch', `Route SWITCHED: ${failedName} -> ${successName} [Reason: ${String(reason).slice(0, 120)}]`); } catch { /* Log darf den Takt nie brechen */ }
+}
+
+const cascade=createCascade({
+ routes:enabledRoutes,key:resolveKey,call:callOpenAiCompatible,
+ success(route,out,latency){recordRoute(route.id,true,latency,usageTokens([],out));},
+ failure(route,error){if(!error.busy){recordRoute(route.id,false);coolDown(route,error);}}
+});
+export async function chat(messages,opts={}) {
+ const user=userStore.getStore();
+ if(user && quotaLeft(user)<=0) throw new Error('QUOTA_EXCEEDED: Tageskontingent aufgebraucht.');
+ const out=await cascade(messages,opts);
+ if(user)chargeTokens(user.id,usageTokens(messages,out));
+ return out;
+}
+export function routingStatus() {
+ return {mode:'cascade',ruleBasedFallback:false,routes:enabledRoutes().filter(r=>r.provider!=='offline').map(r=>({id:r.id,name:r.name,model:r.model,configured:!r.key_env||!!resolveKey(r.key_env),cooldownUntil:r.cooldown_until||0,status:r.status}))};
+}
+
+export function routingSummary(){
+ const routes=routingStatus().routes;
+ const eligible=routes.filter(r=>r.configured&&Number(r.cooldownUntil)<=Date.now()).length;
+ const latestRoute=db.prepare("SELECT last_used,name FROM routes WHERE provider!='offline' AND status='OK' ORDER BY last_used DESC LIMIT 1").get();
+ const latest=latestRoute?.last_used||0;
+ return {mode:'cascade',ruleBasedFallback:false,configuredRoutes:routes.filter(r=>r.configured).length,eligibleRoutes:eligible,lastSuccessfulReplyAt:latest||null,lastSuccessfulRoute:latestRoute?.name||null,state:latest&&Date.now()-latest<300000?'recently_verified':eligible?'unverified':'unavailable'};
 }

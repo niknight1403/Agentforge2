@@ -94,13 +94,6 @@ CREATE TABLE IF NOT EXISTS secrets (
   updated_at INTEGER NOT NULL
 );
 
--- Kontingent-Kuehlzustand einzelner Keys: bei 429/402 wird ein Key kurz
--- stillgelegt und der Pool rotiert auf den naechsten (z. B. GROQ_API_KEY_2).
-CREATE TABLE IF NOT EXISTS key_cool (
-  name TEXT PRIMARY KEY,
-  until INTEGER NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,
@@ -119,6 +112,28 @@ CREATE TABLE IF NOT EXISTS sources (
   kind TEXT NOT NULL DEFAULT 'PATH',
   meta TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'user',
+  plan TEXT NOT NULL DEFAULT 'free',
+  tokens_used INTEGER NOT NULL DEFAULT 0,
+  tokens_reset_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  /* v1.44.0 — Dauerhaft-Unlimited (Nutzerdirektive): 1 = keine Quotas,
+     keine Token-Drosselung. token_budget='UNLIMITED' dokumentiert das im Datensatz. */
+  is_unlimited INTEGER NOT NULL DEFAULT 0,
+  token_budget TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS reports (
@@ -142,22 +157,20 @@ ensureColumn('villas', 'mode', "TEXT NOT NULL DEFAULT 'BUILD'");
 // Zaehlt die selbstheilenden Runden eines Laufs. Wird beim Start eines Laufs
 // zurueckgesetzt, damit die Begrenzung pro Lauf gilt und nicht pro Datenbank.
 ensureColumn('villas', 'auto_rounds', 'INTEGER NOT NULL DEFAULT 0');
+// v1.44.0 — Unlimited-Anker fuer BESTEHENDE Datenbanken nachtragen.
+ensureColumn('users', 'is_unlimited', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('users', 'token_budget', 'TEXT');
+// Endprodukt-Vision: WAS genau am Ende verkauft wird (aus dem Umsatz-Plan).
+ensureColumn('villas', 'vision', "TEXT NOT NULL DEFAULT ''");
 // Sperrzeit einer Route nach einem Fehler (Zeitstempel). Verhindert, dass jeder
 // Aufruf erneut in dieselbe tote Route laeuft.
 ensureColumn('routes', 'cooldown_until', 'INTEGER NOT NULL DEFAULT 0');
-// Wie oft diese Aufgabe schon angelaufen ist (inkl. Selbstheilung und Retry).
-// FAILED mit Versuch 3 ist eine andere Geschichte als FAILED beim ersten Versuch.
-ensureColumn('tasks', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
-// Kontingent-Erschoepfung als Fehlerursache: alle echten Routen antworteten
-// nur 429. Solche Aufgaben darf der Hub automatisch erneut anstossen.
-ensureColumn('tasks', 'quota_blocked', 'INTEGER NOT NULL DEFAULT 0');
-// Zeitstempel, zu dem der Hub einen pausierten Lauf selbst fortsetzt.
-ensureColumn('villas', 'auto_retry_at', 'INTEGER NOT NULL DEFAULT 0');
-
+// Automatische Wiederholung fehlgeschlagener Aufgaben (max. 3 Versuche).
+ensureColumn('tasks', 'retry_count', 'INTEGER NOT NULL DEFAULT 0');
 
 // Indizes: ohne sie scannt jede "WHERE villa_id = ?"-Abfrage die komplette
-// Tabelle - bei ~38.000 Zeilen je Tabelle synchron im Event-Loop. Das liess den
-// Hub haengen (selbst /api/health antwortete nicht mehr). IF NOT EXISTS macht
+// Tabelle - bei ~38.000 Zeilen synchron im Event-Loop. Das liess den Hub
+// haengen (selbst /api/health antwortete nicht mehr). IF NOT EXISTS macht
 // die Migration idempotent; bestehende Datenbanken bekommen sie beim Start.
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_tasks_villa_status ON tasks(villa_id, status, priority, id);
@@ -165,7 +178,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_agents_villa ON agents(villa_id);
 CREATE INDEX IF NOT EXISTS idx_memories_villa ON memories(villa_id, importance, id);
 CREATE INDEX IF NOT EXISTS idx_messages_villa ON messages(villa_id, id);
-CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_villa ON audit(villa_id, id);
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit(ts);
 CREATE INDEX IF NOT EXISTS idx_reports_villa ON reports(villa_id, id);
@@ -175,25 +187,7 @@ CREATE INDEX IF NOT EXISTS idx_villas_status ON villas(status, autonomy);
 
 export const now = () => Date.now();
 
-/**
- * History-Rotation: Laeufe schreiben audit- und memory-Zeilen ohne Ende.
- * Nach Abschluss eines Laufs wird pro Villa auf ein handhabbares Fenster
- * gekuerzt — wichtige Erinnerungen (importance >= 8) ueberleben immer.
- * Rueckgabe: Anzahl der geloeschten Zeilen (fuer Logging/Tests).
- */
-export function pruneHistory(villaId, { keepAudit = 400, keepMemories = 300 } = {}) {
-  const audit = db.prepare(`
-    DELETE FROM audit WHERE villa_id = ? AND id NOT IN (
-      SELECT id FROM audit WHERE villa_id = ? ORDER BY id DESC LIMIT ?)`).run(villaId, villaId, keepAudit).changes;
-  const mem = db.prepare(`
-    DELETE FROM memories WHERE villa_id = ? AND id NOT IN (
-      SELECT id FROM memories WHERE villa_id = ?
-        ORDER BY (importance >= 8) DESC, importance DESC, id DESC LIMIT ?)`).run(villaId, villaId, keepMemories).changes;
-  return { audit, memories: mem };
-}
-
-// Rat der Agenten (v1.11.0): Runden des agenteninternen Erfahrungsaustauschs.
-// Ergebnisse fliessen zusaetzlich als Erinnerungen an alle Agenten zurueck.
+// Rat der Agenten (Superintelligenz-Loop): dokumentierte Rat-Runden je Villa.
 db.exec(`
 CREATE TABLE IF NOT EXISTS council (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,5 +199,4 @@ CREATE TABLE IF NOT EXISTS council (
   created_at INTEGER NOT NULL
 );
 `);
-exec_council_idx();
-function exec_council_idx() { db.exec('CREATE INDEX IF NOT EXISTS idx_council_villa ON council(villa_id, id);'); }
+db.exec('CREATE INDEX IF NOT EXISTS idx_council_villa ON council(villa_id, id);');

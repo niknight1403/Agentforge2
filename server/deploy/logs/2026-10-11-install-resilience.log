@@ -1,0 +1,107 @@
+# Installationsprotokoll: Resilienz-Paket (VillaForge Hub, Oracle Free Tier)
+# Datum: 2026-10-11, 18:13–18:16 UTC (20:13–20:16 MESZ)
+# Ausgeführt über oracle-token.yml (Mode: cmd) auf Instanz 92.5.177.159
+# Secrets wurden von GitHub Actions maskiert und sind hier redaktionell entfernt.
+
+==============================================================================
+LAUF 1 — Installation (18:13:54 – 18:14:05 UTC)
+==============================================================================
+== Dateien ziehen ==
+Pulls OK
+server.mjs Syntax OK
+== Installer ausfuehren ==
+== 1/4 systemd-Drop-Ins installieren ==
+  villaforge-hub <- resilience.conf
+  ollama <- resilience.conf
+  nginx <- resilience.conf
+  daemon-reload OK
+== 2/4 Watchdog + Cron installieren ==
+  /etc/cron.d/villa-watchdog aktiv (alle 2 Minuten)
+== 3/4 Logrotate installieren ==
+  /etc/logrotate.d/villaforge aktiv (woechentlich, 4 Rotationen)
+== 4/4 Dienste mit neuer Konfiguration starten ==
+== Verifikation ==
+  villaforge-hub: active
+  ollama: active
+  nginx: active
+  Hub-Health: {"ok":true,"ts":1791742444592,"version":"1.0.0","routes":10,
+               "uptime":{"processSec":7,"systemSec":139400},
+               "cpu":{"cores":4,"load1":3.76,"load5":3.95,"load15":4.03},
+               "mem":{"total":25139412992,"free":22124187648,"used":3015225344,
+                      "usedPct":12,"rss":95997952},
+               "disk":{"total":102888095744,"free":54801866752,"usedPct":47},
+               "services":{"hub":"active","ollama":"active","nginx":"active",
+                           "watchdog":"active"}}
+Resilienz-Paket installiert — System ist selbstheilend.
+
+== Detaillierter Health-Check ==
+{
+    "ok": true,
+    "ts": 1791742444624,
+    "version": "1.0.0",
+    "routes": 10,
+    "uptime": { "processSec": 7, "systemSec": 139400 },
+    "cpu": { "cores": 4, "load1": 3.76, "load5": 3.95, "load15": 4.03 },
+    "mem": {
+        "total": 25139412992,
+        "free": 22124187648,
+        "used": 3015225344,
+        "usedPct": 12,
+        "rss": 95997952
+    },
+    "disk": {
+        "total": 102888095744,
+        "free": 54801866752,
+        "usedPct": 47
+    },
+    "services": {
+        "hub": "active",
+        "ollama": "active",
+        "nginx": "active",
+        "watchdog": "active"
+    }
+}
+
+== Watchdog Probelauf ==
+Watchdog-Run OK
+Watchdog-State (alle Zaehler auf 0, keine Warnungen):
+  hub=0
+  ollama=0
+  nginx=0
+  tls=0
+
+==============================================================================
+LAUF 2 — Effektivitaets-Verifikation (18:16:04 UTC)
+==============================================================================
+== Effektive systemd-Config ==
+  villaforge-hub: Restart=always | MemoryMax=1258291200 (1200M) | StartLimitInterval=0
+  ollama:         Restart=always | MemoryMax=22548578304 (21G)    | StartLimitInterval=0
+  nginx:          Restart=always | MemoryMax=infinity             | StartLimitInterval=0
+  Hub NODE_OPTIONS: NODE_OPTIONS=--max-old-space-size=768
+  Ollama OLLAMA_FLASH_ATTENTION=1
+  Cron aktiv: active
+  Cron-Datei: -rw-r--r-- 1 root root 123 Oct 11 18:13 /etc/cron.d/villa-watchdog
+
+== Villas laufen noch (Hub-Neustart ueberstanden) ==
+  (1, 'AGI Agenten Villa', 'RUNNING')
+  (2, 'CyberSarah Villa', 'RUNNING')
+
+==============================================================================
+TLS-Frontdoor von außen (18:15 MESZ): https://hub.cybersarah-ki.com/api/health
+==============================================================================
+{
+    "ok": true,
+    "ts": 1791742555738,
+    "version": "1.0.0",
+    "routes": 10,
+    "uptime": { "processSec": 118, "systemSec": 14051 },
+    "cpu": { "cores": 4, "load1": 3.96, "load5": 3.97, "load15": 4.02 },
+    "mem": { "total": 25139412992, "free": 19894308864, "used": 5245104128,
+             "usedPct": 21, "rss": 87490560 },
+    "disk": { "total": 102888095744, "free": 54801842176, "usedPct": 47 },
+    "services": { "hub": "active", "ollama": "active", "nginx": "active", ... }
+}
+
+FAZIT: Resilienz-Paket (Commits 9c56322, 0c21b05) vollstaendig installiert
+und verifiziert. Alle Dienste aktiv, Selbstheilung alle 2 Minuten aktiv,
+Frontdoor inkl. TLS gruen.

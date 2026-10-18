@@ -1,24 +1,47 @@
 /**
- * Wartungs-Funktionen: alte Daten aufrueumen.
+ * Wartung: Historien-Rotation und Altdaten-Bereinigung.
  *
- * Audit-Eintraege (Werkzeugprotokoll) und Nachrichten (Chatverlauf)
- * wachsen unbegrenzt. pruneOldData entfernt alles, was aelter als
- * `days` Tage ist — im Trockenlauf nur gezaehlt, sonst geloescht.
- * Aufgaben, Agenten, Gedaechtnis und Berichte bleiben unberuehrt:
- * das ist Arbeitsinhalt, kein Protokoll.
+ * Laeufe schreiben ohne Rotationsgrenze: jede Agenten-Nachricht und jeder
+ * Werkzeugaufruf landet in der DB. Nach wenigen Tagen standen dort
+ * ~38.000 Nachrichten und Audit-Zeilen (157 MB) - und machten jede Abfrage
+ * langsamer. Zwei Grenzen halten die Villa dauerhaft schnell:
+ *
+ *   1. pruneHistory (je Lauf-Ende): audit/memories je Villa auf Fenster
+ *      kuerzen, wichtige Erinnerungen (importance >= 8) ueberleben immer.
+ *   2. maintenanceTick (Intervall + Endpunkt): Alte Chatverlaeufe und
+ *      Audit-Protokolle ab einer Mindestalter loeschen, danach WAL
+ *      zurueckschreiben und Statistiken auffrischen.
+ *
+ * Aufgaben, Agenten, Berichte und Rat-Protokolle sind Arbeitsinhalt und
+ * bleiben unberuehrt.
  */
+import { statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { db, now } from './db.mjs';
-import { emit } from './events.mjs';
-import { enqueueVillas, configureScheduler } from './scheduler.mjs';
 
-export function pruneOldData({ days, dryRun = false } = {}) {
+export function pruneHistory(villaId, { keepAudit = 400, keepMemories = 300, keepMessages = 500 } = {}) {
+  const audit = db.prepare(`
+    DELETE FROM audit WHERE villa_id = ? AND id NOT IN (
+      SELECT id FROM audit WHERE villa_id = ? ORDER BY id DESC LIMIT ?)`).run(villaId, villaId, keepAudit).changes;
+  const mem = db.prepare(`
+    DELETE FROM memories WHERE villa_id = ? AND id NOT IN (
+      SELECT id FROM memories WHERE villa_id = ?
+        ORDER BY (importance >= 8) DESC, importance DESC, id DESC LIMIT ?)`).run(villaId, villaId, keepMemories).changes;
+  // Chatverlaeufe sind das groesste Wachstum im Dauerbetrieb (37.000+ Zeilen):
+  // je Villa bleibt das letzte Fenster, aeltere Dialoge gehen.
+  const msgs = db.prepare(`
+    DELETE FROM messages WHERE villa_id = ? AND id NOT IN (
+      SELECT id FROM messages WHERE villa_id = ? ORDER BY id DESC LIMIT ?)`).run(villaId, villaId, keepMessages).changes;
+  return { audit, memories: mem, messages: msgs };
+}
+
+export function pruneOldData({ days = 30, dryRun = false } = {}) {
   const d = Number(days);
   if (!Number.isFinite(d) || d < 1 || d > 3650) {
     return { ok: false, error: 'days muss zwischen 1 und 3650 liegen' };
   }
-  const cutoff = Date.now() - d * 86400000;
-  const out = { ok: true, dryRun: !!dryRun, days: Math.round(d), cutoff, deleted: {} };
-
+  const cutoff = now() - d * 86_400_000;
+  const out = { ok: true, dryRun: !!dryRun, days: Math.round(d), deleted: {} };
   for (const [table, column] of [['audit', 'ts'], ['messages', 'created_at']]) {
     const count = db.prepare(`SELECT COUNT(*) c FROM ${table} WHERE ${column} < ?`).get(cutoff).c;
     if (!dryRun && count > 0) {
@@ -27,9 +50,6 @@ export function pruneOldData({ days, dryRun = false } = {}) {
     out.deleted[table] = count;
   }
   out.deleted.total = out.deleted.audit + out.deleted.messages;
-
-  // Nach dem Loeschen: SQLite-Hausputz — geloeschte Seiten zurueckgeben,
-  // Statistiken auffrischen und WAL in die DB zurückschreiben.
   if (!dryRun) {
     db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
     db.exec('PRAGMA optimize;');
@@ -38,42 +58,40 @@ export function pruneOldData({ days, dryRun = false } = {}) {
   return out;
 }
 
-/**
- * Automatische Fortsetzung pausierter Laeufe, deren einzige Fehlerursache
- * erschöpfte Gratis-Kontingente (429) waren. villas.auto_retry_at haelt den
- * faelligen Zeitpunkt; hier setzt der Hub die Villa selbst wieder an —
- * ohne Klick auf Retry und ohne externen Weckruf.
- */
-export function autoResumeQuotaVillas({ orchestrate, isRunning } = {}) {
-  const due = db.prepare(
-    "SELECT id FROM villas WHERE status = 'PAUSED' AND auto_retry_at > 0 AND auto_retry_at <= ?"
-  ).all(now());
-  const out = { checked: due.length, resumed: [], cleared: [], skipped: [] };
-  for (const { id } of due) {
-    if (isRunning?.(id)) { out.skipped.push(id); continue; }
-    const blocked = db.prepare(
-      "SELECT id FROM tasks WHERE villa_id = ? AND status = 'FAILED' AND quota_blocked = 1"
-    ).all(id);
-    // Zwischenzeitlich von Hand behoben oder Aufgaben weg — Flag aufraeumen.
-    if (blocked.length === 0) {
-      db.prepare('UPDATE villas SET auto_retry_at = 0, updated_at = ? WHERE id = ?').run(now(), id);
-      out.cleared.push(id);
-      continue;
+/** Kompletter Wartungstakt: alle Villen rotieren, Altdaten raus, kompaktieren. */
+export function maintenanceTick({ days = 30, dryRun = false } = {}) {
+  const villas = db.prepare('SELECT id FROM villas').all();
+  let audit = 0, memories = 0, messages = 0;
+  if (!dryRun) {
+    for (const v of villas) {
+      const r = pruneHistory(v.id);
+      audit += r.audit; memories += r.memories; messages += r.messages;
     }
-    db.prepare(
-      "UPDATE tasks SET status = 'PENDING', result = '', quota_blocked = 0, updated_at = ? WHERE villa_id = ? AND status = 'FAILED' AND quota_blocked = 1"
-    ).run(now(), id);
-    db.prepare('UPDATE villas SET auto_retry_at = 0, updated_at = ? WHERE id = ?').run(now(), id);
-    db.prepare('INSERT INTO audit (ts, villa_id, agent_id, tool, args, result, allowed) VALUES (?,?,?,?,?,?,?)')
-      .run(now(), id, 0, 'auto_resume', JSON.stringify({ count: blocked.length }),
-        blocked.length + ' kontingent-blockierte Aufgabe(n) automatisch erneut gestartet', 1);
-    emit('tasks_requeued', { villaId: id, count: blocked.length, auto: true });
-    if (typeof orchestrate === 'function') {
-      // Ueber den Scheduler: respektiert die Slot-Grenze und den Fortschrittsrang.
-      configureScheduler({ start: (vid) => orchestrate(vid, { concurrency: 4, maxTasks: 500, adaptive: true, maxRounds: 6 }) });
-      enqueueVillas([id]);
-    }
-    out.resumed.push(id);
   }
-  return out;
+  const old = pruneOldData({ days, dryRun });
+
+  // Geloeschte Zeilen befreien die Datei nicht automatisch: SQLite haelt die
+  // Seiten als freien Platz vor. VACUUM gibt sie erst wirklich an das
+  // Dateisystem zurueck - die DB schrumpfte inhaltlich auf ein Drittel,
+  // blieb aber 183 MB gross. Nur lohnen, wenn wirklich viel wegfiel.
+  let vacuumed = false;
+  if (!dryRun && old.deleted.total + audit + memories + messages > 500) {
+    try { db.exec('VACUUM;'); vacuumed = true; } catch { /* laufende Nutzung: naechster Takt */ }
+  }
+  return {
+    ok: true, dryRun: !!dryRun, villas: villas.length,
+    rotated: { audit, memories, messages },
+    deleted: old.deleted,
+    vacuumed,
+    db: dbSize()
+  };
+}
+
+/** Groesse der Datenbank-Dateien in Bytes (fuer Health und Berichte). */
+export function dbSize() {
+  const dbPath = process.env.VF_DB || resolve(process.cwd(), 'server/data/villaforge.db');
+  let main = 0, wal = 0;
+  try { main = statSync(dbPath).size; } catch { /* keine DB */ }
+  try { wal = statSync(dbPath + '-wal').size; } catch { /* kein WAL */ }
+  return { main, wal };
 }

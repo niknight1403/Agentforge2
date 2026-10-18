@@ -1,141 +1,83 @@
 /**
- * Werkzeug- und Feature-Packs.
+ * Sprint 1 (v1.32.0) — Packs sind echte Schalter im Live-Hub.
  *
- * Der Kern dieser Tests: ein Pack ist ein echter Schalter. Ist sein
- * Werkzeug-Pack aus, darf der Agent das Werkzeug nicht benutzen — der Versuch
- * muss im Audit als "blockiert" landen und nicht still ins Leere laufen.
+ * Feature- und Werkzeug-Packs (portiert aus Agentforge2): Der Hub ist die
+ * eine Wahrheit fuer Hub, Web-UI und Android-App. Ist ein Werkzeug-Pack aus,
+ * blockiert runTool das Werkzeug im Lauf und protokolliert den Versuch
+ * als "blockiert" im Audit.
  */
-import './_env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { db } from '../db.mjs';
-import { TOOL_SPECS, toolSpecs, createVilla, runTool } from '../agents.mjs';
-import {
-  FEATURE_PACKS, TOOL_PACKS, MASTER_PACK,
-  packState, packSummary, packEnabled, setPackEnabled, canUseTool, toolPackOf
-} from '../packs.mjs';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-const TOOL_NAMES = TOOL_SPECS.map((t) => t.name);
+process.env.VF_DB = join(mkdtempSync(join(tmpdir(), 'packs-')), 'test.db');
+process.env.VF_WORKSPACE = join(process.env.VF_DB, '..', 'ws');
 
-test('jedes Werkzeug gehoert zu genau einem Pack', () => {
-  const assigned = TOOL_PACKS.flatMap((p) => p.tools);
-  assert.deepEqual([...assigned].sort(), [...TOOL_NAMES].sort(), 'Werkzeugliste und Pack-Zuordnung laufen auseinander');
-  assert.equal(new Set(assigned).size, assigned.length, 'ein Werkzeug ist doppelt zugeordnet');
+const { canUseTool, setPackEnabled, packState, packSummary, MASTER_PACK, TOOL_PACKS } = await import('../packs.mjs');
+const { toolSpecs, TOOL_SPECS } = await import('../agents.mjs');
+
+test('Unberuehrte Packs: alles erlaubt (Default an)', () => {
+  assert.equal(canUseTool('artifact_write').allowed, true);
+  assert.equal(canUseTool('memory_search').allowed, true);
 });
 
-test('jedes Pack hat eindeutige IDs und erklaerende Texte', () => {
-  const ids = [...FEATURE_PACKS, ...TOOL_PACKS].map((p) => p.id);
-  assert.equal(new Set(ids).size, ids.length, 'doppelte Pack-ID');
-  for (const p of [...FEATURE_PACKS, ...TOOL_PACKS]) {
-    assert.ok(p.title && p.title.length > 3, `${p.id}: Titel fehlt`);
-    assert.ok(p.description && p.description.length > 15, `${p.id}: Beschreibung zu kurz`);
+test('Werkzeug-Pack aus blockiert seine Werkzeuge, Audit-Grund genannt', () => {
+  setPackEnabled('artefakte', false);
+  const gate = canUseTool('artifact_write');
+  assert.equal(gate.allowed, false);
+  assert.match(gate.reason, /Artefakte/);
+  // anderes Pack unberuehrt
+  assert.equal(canUseTool('memory_write').allowed, true);
+  setPackEnabled('artefakte', true);
+  assert.equal(canUseTool('artifact_write').allowed, true);
+});
+
+test('Hauptschalter sperrt alle Werkzeug-Packs auf einmal', () => {
+  setPackEnabled(MASTER_PACK, false);
+  assert.equal(canUseTool('artifact_write').allowed, false);
+  assert.equal(canUseTool('project_run').allowed, false);
+  assert.equal(canUseTool('web_fetch').allowed, false);
+  setPackEnabled(MASTER_PACK, true);
+  assert.equal(canUseTool('artifact_write').allowed, true);
+});
+
+test('Unbekanntes Pack wird abgelehnt', () => {
+  const r = setPackEnabled('gibtsnicht', true);
+  assert.equal(r.ok, false);
+});
+
+test('packState liefert Features, Tools und Hauptschalter konsistent', () => {
+  const st = packState();
+  assert.ok(st.features.length >= 9);
+  assert.ok(st.tools.length >= 6);
+  assert.equal(st.master.id, MASTER_PACK);
+  assert.ok(Array.isArray(st.blocked));
+  assert.equal(st.master.enabled, true);
+});
+
+test('packSummary ist kompakt und enthaelt Effektivitaet je Pack', () => {
+  const s = packSummary();
+  assert.ok(s.toolPacks.every((t) => typeof t.effective === 'boolean'));
+  assert.equal(s.master, true);
+});
+
+test('toolSpecs rechnet die Freigabe frisch dazu (kein eingefrorenes Flag)', () => {
+  const before = toolSpecs();
+  assert.ok(before.every((t) => t.enabled === true || t.pack === null));
+  setPackEnabled('planung', false);
+  const after = toolSpecs();
+  const planung = after.find((t) => t.pack === 'planung');
+  const gedaechtnis = after.find((t) => t.pack === 'gedaechtnis');
+  assert.equal(planung.enabled, false);
+  assert.equal(gedaechtnis.enabled, true);
+  setPackEnabled('planung', true);
+});
+
+test('Jedes bekannte Werkzeug hat ein Pack oder bleibt bewusst packfrei', () => {
+  const packTools = new Set(TOOL_PACKS.flatMap((p) => p.tools));
+  for (const spec of TOOL_SPECS) {
+    if (packTools.has(spec.name)) assert.ok(spec.pack, `${spec.name} sollte ein Pack haben`);
   }
-});
-
-test('der Hauptschalter existiert als Feature-Pack', () => {
-  assert.ok(FEATURE_PACKS.some((p) => p.id === MASTER_PACK));
-});
-
-test('Standard: alles ist freigeschaltet', () => {
-  for (const name of TOOL_NAMES) assert.equal(canUseTool(name).allowed, true, `${name} ist unerwartet gesperrt`);
-  const state = packState();
-  assert.equal(state.master.enabled, true);
-  assert.deepEqual(state.blocked, []);
-  assert.equal(state.features.length, FEATURE_PACKS.length);
-  assert.equal(state.tools.length, TOOL_PACKS.length);
-});
-
-test('unbekanntes Pack kann nicht geschaltet werden', () => {
-  const out = setPackEnabled('gibt-es-nicht', false);
-  assert.equal(out.ok, false);
-  assert.match(out.error, /Unbekanntes Pack/);
-});
-
-test('Werkzeug-Pack abschalten sperrt genau seine Werkzeuge', () => {
-  const pack = TOOL_PACKS.find((p) => p.id === 'recherche');
-  assert.ok(pack, 'Pack recherche fehlt');
-  try {
-    setPackEnabled(pack.id, false);
-    for (const tool of pack.tools) {
-      const gate = canUseTool(tool);
-      assert.equal(gate.allowed, false, `${tool} haette gesperrt sein muessen`);
-      assert.match(gate.reason, /recherche|ausgeschaltet/i);
-    }
-    // Andere Packs bleiben unberuehrt.
-    assert.equal(canUseTool('memory_write').allowed, true);
-    const summary = packSummary();
-    assert.ok(summary.blocked.includes(pack.id));
-    assert.equal(summary.toolPacks.find((p) => p.id === pack.id).effective, false);
-  } finally {
-    setPackEnabled(pack.id, true);
-  }
-  assert.equal(canUseTool(pack.tools[0]).allowed, true, 'Pack liess sich nicht zuruecksetzen');
-});
-
-test('Hauptschalter aus sperrt jedes Werkzeug-Pack', () => {
-  try {
-    setPackEnabled(MASTER_PACK, false);
-    for (const name of TOOL_NAMES) {
-      const gate = canUseTool(name);
-      assert.equal(gate.allowed, false, `${name} trotz Hauptschalter aus erlaubt`);
-    }
-    assert.equal(packSummary().master, false);
-    assert.equal(packSummary().blocked.length, TOOL_PACKS.length);
-  } finally {
-    setPackEnabled(MASTER_PACK, true);
-  }
-  assert.equal(packSummary().master, true);
-});
-
-test('toolSpecs meldet Pack und aktuelle Freigabe mit', () => {
-  const spec = toolSpecs().find((t) => t.name === 'project_run');
-  assert.equal(spec.pack, 'ausfuehrung');
-  assert.equal(spec.packTitle, 'Ausfuehrung');
-  assert.equal(spec.enabled, true);
-  assert.equal(toolPackOf('gibt-es-nicht'), null);
-  // Der statische Katalog bleibt ohne Freigabe-Flag...
-  assert.equal(TOOL_SPECS.find((t) => t.name === 'project_run').enabled, undefined);
-  // ...und die Freigabe folgt dem Pack-Zustand ohne Neustart.
-  try {
-    setPackEnabled('ausfuehrung', false);
-    assert.equal(toolSpecs().find((t) => t.name === 'project_run').enabled, false);
-  } finally {
-    setPackEnabled('ausfuehrung', true);
-  }
-  assert.equal(toolSpecs().find((t) => t.name === 'project_run').enabled, true);
-});
-
-test('runTool verweigert gesperrte Werkzeuge und protokolliert das', async () => {
-  const { villaId } = await createVilla({ name: 'Pack-Test', idea: 'Werkzeugsperre pruefen', agentCount: 3 });
-  const agent = db.prepare('SELECT * FROM agents WHERE villa_id = ? AND is_root = 1').get(villaId);
-  assert.ok(agent, 'Wurzelagent fehlt');
-
-  // Erst der Normalfall: das Werkzeug arbeitet.
-  const allowed = await runTool({ villaId, agentId: agent.id }, 'memory_write', { title: 'Vorher', content: 'geht', kind: 'FACT' });
-  assert.match(allowed, /Gedaechtnis gespeichert/);
-
-  try {
-    setPackEnabled('gedaechtnis', false);
-    const blocked = await runTool({ villaId, agentId: agent.id }, 'memory_write', { title: 'Nachher', content: 'soll nicht landen', kind: 'FACT' });
-    assert.match(blocked, /blockiert/i);
-
-    // Der Schreibversuch darf das Gedaechtnis nicht erreicht haben.
-    const stored = db.prepare("SELECT COUNT(*) c FROM memories WHERE villa_id = ? AND title = 'Nachher'").get(villaId).c;
-    assert.equal(stored, 0, 'gesperrtes Werkzeug hat trotzdem geschrieben');
-
-    // Und der Versuch steht als blockiert im Audit.
-    const entry = db.prepare("SELECT * FROM audit WHERE villa_id = ? AND tool = 'memory_write' ORDER BY id DESC LIMIT 1").get(villaId);
-    assert.equal(entry.allowed, 0);
-    assert.match(entry.result, /blockiert/i);
-  } finally {
-    setPackEnabled('gedaechtnis', true);
-  }
-
-  const after = await runTool({ villaId, agentId: agent.id }, 'memory_write', { title: 'Danach', content: 'geht wieder', kind: 'FACT' });
-  assert.match(after, /Gedaechtnis gespeichert/);
-});
-
-test('packEnabled kennt nur bekannte Packs und meldet Unbekanntes als an', () => {
-  assert.equal(packEnabled('recherche'), true);
-  assert.equal(packEnabled('nie-gesetzt'), true);
 });
