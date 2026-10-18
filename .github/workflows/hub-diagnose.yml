@@ -40,7 +40,14 @@ jobs:
           echo "== Hub-Chat-Test (Ollama/Route, 90s Limit) =="
           CVID=$(curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/villas | python3 -c "import json,sys; vs=json.load(sys.stdin); vs=vs.get('villas',vs) if isinstance(vs,dict) else vs; print(vs[0]['id'] if vs else '')" 2>/dev/null || true)
           if [ -n "$CVID" ]; then
-            curl -s -m 90 -o /tmp/c.json -w "chat-probe (villa $CVID): HTTP %{http_code} in %{time_total}s\n" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d '{"message":"Antworte nur mit: ok"}' $H/api/villas/$CVID/chat || true
+            # Free-Tier-Routen rotieren durch Cooldowns; LLM_UNAVAILABLE (503)
+            # mit retryAfter ist transient. Drei Versuche mit 15 s Pause.
+            for ATTEMPT in 1 2 3; do
+              CODE=$(curl -s -m 90 -o /tmp/c.json -w "%{http_code}" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d '{"message":"Antworte nur mit: ok"}' $H/api/villas/$CVID/chat || true)
+              echo "chat-probe (villa $CVID, Versuch $ATTEMPT): HTTP $CODE"
+              if [ "$CODE" = "200" ]; then break; fi
+              sleep 15
+            done
             head -c 300 /tmp/c.json; echo
           else
             echo "chat-probe uebersprungen: keine Villa verfuegbar"
