@@ -85,7 +85,7 @@ jobs:
                 model: ollama_chat/llama3.2:3b
                 api_base: http://127.0.0.1:11434
                 keep_alive: -1
-                timeout: 120
+                timeout: 240
             # Nur fuer den Failover-Akzeptanztest: absichtlich kaputter Primaer-Schluesse
             - model_name: villa-failtest
               litellm_params:
@@ -98,7 +98,7 @@ jobs:
                 model: ollama_chat/llama3.2:3b
                 api_base: http://127.0.0.1:11434
                 keep_alive: -1
-                timeout: 120
+                timeout: 240
           litellm_settings:
             drop_params: true
             num_retries: 0
@@ -140,11 +140,20 @@ jobs:
           #!/bin/bash
           # Prueft alle 15 s (via Timer) Ollama und LiteLLM; haengende
           # Instanzen werden hart neu gestartet.
-          if ! curl -sf -m 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-            logger -t llm-watchdog "Ollama haengt - Neustart"
-            systemctl restart ollama
+          # Achtung: unter Last braucht /api/tags bis ~10 s - 3 s waere ein
+          # Fehlalarm und wuerde laufende Generierungen per Neustart killen.
+          if ! curl -sf -m 10 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+            LAST=$(cat /var/tmp/ollama-last-restart 2>/dev/null || echo 0)
+            NOW=$(date +%s)
+            if [ $((NOW - LAST)) -ge 300 ]; then
+              logger -t llm-watchdog "Ollama haengt - Neustart (Rate-Limit 5 Min)"
+              echo $NOW > /var/tmp/ollama-last-restart
+              systemctl restart ollama
+            else
+              logger -t llm-watchdog "Ollama langsam - Neustart gesperrt (Rate-Limit)"
+            fi
           fi
-          if ! curl -sf -m 3 http://127.0.0.1:4000/health/liveliness >/dev/null 2>&1; then
+          if ! curl -sf -m 5 http://127.0.0.1:4000/health/liveliness >/dev/null 2>&1; then
             logger -t llm-watchdog "LiteLLM haengt - Neustart"
             systemctl restart litellm
           fi
