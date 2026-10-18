@@ -1,4 +1,4 @@
-name: VM-Tooling (Phase 1+2: Ressourcen-Validierung und lokale Coder-Modelle)
+name: VM-Tooling Phase 1+2
 
 # Ressourcen- und Modell-Layer der VillaForge-Produktions-VM pruefen und
 # erweitern: System-Specs (CPU/RAM/Disk/Docker), Ollama-Modellbestand,
