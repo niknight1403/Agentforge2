@@ -31,6 +31,6 @@ jobs:
           gh api "repos/niknight1403/Agentforge2/actions/artifacts/$AID/zip" > art.zip
           python3 -c "import zipfile; zipfile.ZipFile('art.zip').extractall('.')"
           ls -la VillaForge.apk
-          gh release view "$TAG" >/dev/null 2>&1 && gh release upload "$TAG" VillaForge.apk --clobber \
-            || gh release create "$TAG" VillaForge.apk --title "VillaForge $TAG"
+          gh release view "$TAG" -R niknight1403/Agentforge2 >/dev/null 2>&1 && gh release upload "$TAG" VillaForge.apk -R niknight1403/Agentforge2 --clobber \
+            || gh release create "$TAG" VillaForge.apk -R niknight1403/Agentforge2 --title "VillaForge $TAG"
           echo "Release $TAG mit VillaForge.apk versorgt."
