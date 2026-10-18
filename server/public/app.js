@@ -22,10 +22,16 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const THEME_KEY = 'villaforge-theme';
 const THEMES = ['aurora', 'midnight', 'mint', 'ember', 'arctic'];
 const THEME_COLORS = { aurora: '#060916', midnight: '#090d15', mint: '#061412', ember: '#160b0a', arctic: '#07131e' };
+let customThemes = [];
+const THEME_VAR_MAP = { bg:'--bg', bgRaised:'--bg-raised', surface:'--surface', surface2:'--surface-2', surface3:'--surface-3', lineStrong:'--line-strong', text:'--text', muted:'--muted', purple:'--purple', cyan:'--cyan', green:'--green', pink:'--pink', warn:'--warn', danger:'--danger' };
+function themeLabel(name) { return ({ aurora:'Aurora Neon', midnight:'Midnight Executive', mint:'Cyber Mint', ember:'Solar Ember', arctic:'Arctic Glass' })[name] || customThemes.find(t => t.id === name)?.title || name; }
 function applyTheme(name, announce = false) {
-  const theme = THEMES.includes(name) ? name : 'aurora';
+  const theme = THEMES.includes(name) || customThemes.some(t => t.id === name) ? name : 'aurora';
   document.documentElement.dataset.theme = theme;
   localStorage.setItem(THEME_KEY, theme);
+  for (const variable of Object.values(THEME_VAR_MAP)) document.documentElement.style.removeProperty(variable);
+  const custom = customThemes.find(t => t.id === theme);
+  if (custom) for (const [key, variable] of Object.entries(THEME_VAR_MAP)) if (custom.colors?.[key]) document.documentElement.style.setProperty(variable, custom.colors[key]);
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = THEME_COLORS[theme];
   document.querySelectorAll('[data-theme-choice]').forEach((button) => {
@@ -33,7 +39,21 @@ function applyTheme(name, announce = false) {
     button.setAttribute('aria-checked', selected ? 'true' : 'false');
     button.tabIndex = selected ? 0 : -1;
   });
-  if (announce) toast(`Design „${theme === 'aurora' ? 'Aurora Neon' : theme === 'midnight' ? 'Midnight Executive' : theme === 'mint' ? 'Cyber Mint' : theme === 'ember' ? 'Solar Ember' : 'Arctic Glass'}“ aktiviert`, 'info');
+  if (announce) toast(`Design „${themeLabel(theme)}“ aktiviert`, 'info');
+}
+function renderCustomThemes(themes = []) {
+  customThemes = Array.isArray(themes) ? themes : [];
+  const picker = $('#themePicker'); if (!picker) return;
+  picker.querySelectorAll('[data-custom-theme]').forEach(button => button.remove());
+  for (const theme of customThemes) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'theme-option'; button.dataset.themeChoice = theme.id; button.dataset.customTheme = 'true'; button.setAttribute('role', 'radio'); button.setAttribute('aria-label', theme.title);
+    const swatch = document.createElement('span'); swatch.className = 'theme-swatch'; swatch.style.background = `linear-gradient(135deg, ${theme.colors.bg || '#111827'}, ${theme.colors.purple || theme.colors.cyan || '#866bff'} 55%, ${theme.colors.green || '#2fe3b0'})`; swatch.setAttribute('aria-hidden', 'true');
+    const copy = document.createElement('span'); copy.innerHTML = `<b>${esc(theme.title)}</b><small>${esc(theme.description || 'Custom-Theme')}</small>`;
+    button.append(swatch, copy); picker.appendChild(button);
+    button.addEventListener('click', () => applyTheme(theme.id, true));
+  }
+  applyTheme(localStorage.getItem(THEME_KEY) || 'aurora');
 }
 function initThemePicker() {
   applyTheme(localStorage.getItem(THEME_KEY) || 'aurora');
@@ -833,6 +853,7 @@ async function refreshMaster() {
   if (!status.error) {
     $('#masterSummary').textContent = `${status.villas.length} Villen · ${status.archived.length} archiviert · ${status.skills.length} Skills · ${status.connectors.length} Connectoren`;
     $('#masterCatalog').innerHTML = `<p class="hint">Packs: ${status.packs.features.map(p => `${esc(p.id)} ${p.enabled ? 'an' : 'aus'}`).join(' · ')}</p><p class="hint">Skills: ${status.skills.map(s => `${esc(s.title)} (${s.enabled ? 'an' : 'aus'})`).join(', ') || 'noch keine'}</p><p class="hint">Connectoren: ${status.connectors.map(c => `${esc(c.title)}: ${esc(c.last_status)}`).join(', ') || 'noch keine'}</p>`;
+    renderCustomThemes(status.themes || []);
   }
   const rows = Array.isArray(proposals) ? proposals : [];
   $('#masterSuggestions').innerHTML = rows.map(r => `<button type="button" class="ghost master-suggestion" data-prompt="${esc(r.prompt)}" title="${esc(r.reason)}">${esc(r.title)} ↗</button>`).join('');
@@ -860,6 +881,8 @@ async function sendMaster(e) {
     }
     if (out.error || out.pending) throw new Error(out.error || 'Die Aktion läuft noch. Mit „Status prüfen“ wird dieselbe Anfrage fortgesetzt.');
     if (out.answer) setMsg('#masterMsg',out.ok ? 'Bearbeitung abgeschlossen.' : 'Bitte das Ergebnis im Verlauf prüfen.',!out.ok);
+    const createdTheme = out.steps?.find(step => step.type === 'upsert_theme' && step.ok && step.result?.activate)?.result;
+    if (createdTheme?.id) localStorage.setItem(THEME_KEY, createdTheme.id);
     masterPending = null; $('#masterInput').value = '';
     await Promise.all([refreshMaster(),loadVillas(),loadStats(),loadPacks()]);
   } catch(err) { setMsg('#masterMsg',String(err.message || err),true); }

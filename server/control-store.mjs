@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS control_archives (villa_id INTEGER PRIMARY KEY, canon
 CREATE TABLE IF NOT EXISTS control_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS control_turns (request_id TEXT PRIMARY KEY, message TEXT NOT NULL, status TEXT NOT NULL, response TEXT, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS control_dismissals (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS control_themes (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', colors TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL);
 `);
 export const SETTING_RULES = { defaultAgentCount: [3, 1000, 24], villaSlots: [1, 4, 2], suggestionCount: [1, 8, 4] };
 export function getSetting(key, fallback = SETTING_RULES[key]?.[2]) {
@@ -25,6 +26,27 @@ export function setSetting(key, value) {
   return { key, value };
 }
 export function toolEnabled(name) { return db.prepare('SELECT enabled FROM control_tools WHERE name=?').get(name)?.enabled !== 0; }
+const THEME_COLOR_KEYS = ['bg','bgRaised','surface','surface2','surface3','lineStrong','text','muted','purple','cyan','green','pink','warn','danger'];
+const HEX = /^#[0-9a-f]{6}$/i;
+export function validateThemeColors(colors = {}) {
+  const out = {};
+  for (const key of THEME_COLOR_KEYS) {
+    if (colors[key] != null) {
+      if (typeof colors[key] !== 'string' || !HEX.test(colors[key])) throw new Error(`Theme-Farbe ${key} muss ein HEX-Wert wie #866bff sein.`);
+      out[key] = colors[key].toLowerCase();
+    }
+  }
+  if (!Object.keys(out).length) throw new Error('Mindestens eine Theme-Farbe ist erforderlich.');
+  return out;
+}
+export function customThemes() {
+  return db.prepare('SELECT id,title,description,colors,enabled,updated_at FROM control_themes WHERE enabled=1 ORDER BY title COLLATE NOCASE').all().map(t => ({ ...t, colors: JSON.parse(t.colors) }));
+}
+export function upsertTheme(theme) {
+  const colors = validateThemeColors(theme.colors);
+  db.prepare('INSERT OR REPLACE INTO control_themes(id,title,description,colors,enabled,updated_at) VALUES (?,?,?,?,1,?)').run(theme.id, theme.title, theme.description || '', JSON.stringify(colors), now());
+  return { id: theme.id, title: theme.title, description: theme.description || '', colors, enabled: true };
+}
 export function skillInstructions() {
   return db.prepare('SELECT title, instructions FROM control_skills WHERE enabled=1 ORDER BY id').all()
     .map(s => `${s.title}: ${s.instructions}`).join('\n').slice(0, 12000);
@@ -34,7 +56,8 @@ export function controlCatalog() {
     settings: Object.fromEntries(Object.keys(SETTING_RULES).map(k => [k, getSetting(k)])),
     skills: db.prepare('SELECT * FROM control_skills ORDER BY id').all(),
     connectors: db.prepare('SELECT id,title,endpoint,secret_env,enabled,last_status FROM control_connectors ORDER BY id').all(),
-    toolOverrides: db.prepare('SELECT * FROM control_tools').all()
+    toolOverrides: db.prepare('SELECT * FROM control_tools').all(),
+    themes: customThemes()
   };
 }
 export function validEndpoint(value) {

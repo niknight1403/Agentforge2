@@ -5,10 +5,10 @@ import { db } from '../db.mjs';
 import { createMasterControl, validateAction } from '../master-control.mjs';
 import { duplicateGroups, archiveDuplicates, restoreVilla } from '../duplicates.mjs';
 import { suggestions } from '../suggestions.mjs';
-import { skillInstructions, publicAddress, validEndpoint, getSetting } from '../control-store.mjs';
+import { skillInstructions, publicAddress, validEndpoint, getSetting, upsertTheme } from '../control-store.mjs';
 import { packState, setPackEnabled, canUseTool } from '../packs.mjs';
 
-beforeEach(() => { for (const t of ['control_messages','control_turns','control_archives','control_settings','control_skills','control_connectors','control_tools','control_dismissals','packs','tasks','agents','memories','reports','villas']) db.prepare(`DELETE FROM ${t}`).run(); });
+beforeEach(() => { for (const t of ['control_messages','control_turns','control_archives','control_settings','control_skills','control_connectors','control_tools','control_dismissals','control_themes','packs','tasks','agents','memories','reports','villas']) db.prepare(`DELETE FROM ${t}`).run(); });
 function villa(name='Studio', idea='Musik produzieren', source='') {
   return Number(db.prepare('INSERT INTO villas(name,idea,status,created_at,updated_at,source_path) VALUES (?,?,?,?,?,?)').run(name,idea,'PAUSED',1,1,source).lastInsertRowid);
 }
@@ -74,6 +74,17 @@ test('Connectoren sperren private Adressen und unbeauftragte Schlüsselzuordnung
   assert.equal(publicAddress('8.8.8.8'),true);
   for (const url of ['http://example.com','https://127.0.0.1','https://local.internal','https://user:pass@example.com','https://example.com?key=secret']) assert.throws(()=>validEndpoint(url));
   assert.throws(()=>validateAction({type:'upsert_connector',args:{id:'external',title:'API',endpoint:'https://example.com/data',secretEnv:'GITHUB_TOKEN'}},'Verbinde eine API'),/ausdrücklich/);
+});
+test('Master-Agent erstellt ein persistentes Custom-Theme aus HEX-Farben', async () => {
+  const { service } = control();
+  const out = await service.turn({ message: 'Erstelle Custom-Theme „Ocean Lab“ Hintergrund: #07131e Primär: #79dcff Erfolg: #78efce', requestId: 'custom-theme-1234' });
+  assert.equal(out.ok, true);
+  assert.equal(out.steps[0].type, 'upsert_theme');
+  const theme = db.prepare('SELECT id,title,colors FROM control_themes').get();
+  assert.equal(theme.id, 'ocean-lab');
+  assert.equal(theme.title, 'Ocean Lab');
+  assert.match(theme.colors, /07131e/);
+  assert.throws(() => upsertTheme({ id:'bad', title:'Bad', colors:{ bg:'red' } }), /HEX/);
 });
 test('Vorschläge priorisieren Fehler, wiederholen keine Aufgaben und respektieren ausgeblendete Karten', () => {
   const id=villa();task(id,'Fehler beheben','FAILED');task(id,'Audio bauen');task(id,'Audio bauen');
