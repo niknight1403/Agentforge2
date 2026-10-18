@@ -82,6 +82,10 @@ data class UiState(
     /** Master-Agent: Verlauf des Master-Chats. */
     val masterMessages: List<dev.villaforge.app.net.ChatMessage> = emptyList(),
     val masterBusy: Boolean = false,
+    val masterPending: Boolean = false,
+    val masterError: String? = null,
+    val masterSuggestions: org.json.JSONArray = org.json.JSONArray(),
+    val masterStatus: org.json.JSONObject? = null,
     val masterLoaded: Boolean = false
 )
 
@@ -122,14 +126,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Master-Agent: Verlauf einmalig laden (beim Oeffnen des Chatfensters). */
     fun loadMaster() = viewModelScope.launch {
-        if (_state.value.masterLoaded) return@launch
+        _state.update { it.copy(masterBusy = true, masterError = null) }
         try {
-            val h = client.masterHistory()
-            _state.update { it.copy(masterMessages = h, masterLoaded = true) }
-        } catch (_: Exception) { /* naechster Versuch beim Senden */ }
+            val messages = client.masterHistory()
+            val suggestions = client.masterSuggestions()
+            val status = client.masterStatus()
+            _state.update { it.copy(masterMessages = messages, masterSuggestions = suggestions, masterStatus = status, masterLoaded = true) }
+        } catch (e: Exception) {
+            _state.update { it.copy(masterError = "Master-Agent nicht erreichbar: ${e.message.orEmpty().take(180)}") }
+        } finally { _state.update { it.copy(masterBusy = false) } }
     }
 
-    /** Master-Agent: Wunsch senden; erzeugt ggf. autonom eine Villa. */
     /* ---- Deep Agent: eigene App-Projekte (v1.37.0) ---- */
 
     /** Projekt-Verlauf laden. */
@@ -252,44 +259,43 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         loadDeepProjects()
     }
 
-    fun sendMaster(text: String) = viewModelScope.launch {
-        val t = text.trim()
-        if (t.isBlank() || _state.value.masterBusy) return@launch
-        val now = System.currentTimeMillis()
-        _state.update {
-            it.copy(masterMessages = it.masterMessages + dev.villaforge.app.net.ChatMessage("user", t, now),
-                masterBusy = true, error = null)
+    private var pendingMaster: Pair<String, String>? = null
+
+    fun sendMaster(text: String) {
+        if (_state.value.masterBusy || (text.isBlank() && pendingMaster == null)) return
+        val request = pendingMaster ?: (text.trim() to java.util.UUID.randomUUID().toString()).also {
+            pendingMaster = it
+            _state.update { state -> state.copy(masterMessages = state.masterMessages + dev.villaforge.app.net.ChatMessage("user", it.first, System.currentTimeMillis())) }
         }
-        try {
-            val res = client.masterChat(t)
-            val reply = res.optString("reply", "(keine Antwort)")
-            val parseDesignVariants: (org.json.JSONArray?) -> List<dev.villaforge.app.net.DesignVariant> = { arr ->
-                if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { i ->
-                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                    val url = o.optString("url")
-                    if (url.isBlank()) null
-                    else dev.villaforge.app.net.DesignVariant(o.optString("label").ifBlank { "Design ${i + 1}" }, o.optString("key"), url)
+        _state.update { it.copy(masterBusy = true, masterPending = true, masterError = null) }
+        viewModelScope.launch {
+            try {
+                var result = client.masterChat(request.first, request.second)
+                repeat(15) {
+                    if (result.optBoolean("pending")) {
+                        delay(1500)
+                        result = client.masterTurn(request.second)
+                    }
                 }
-            }
-            val msg = dev.villaforge.app.net.ChatMessage(
-                role = "assistant",
-                content = reply,
-                createdAt = System.currentTimeMillis(),
-                villaId = res.optLong("villaId", 0),
-                villaName = res.optString("villaName"),
-                designImage = res.optString("designImage"),
-                designVariants = parseDesignVariants(res.optJSONArray("designVariants"))
-            )
-            _state.update { it.copy(masterMessages = it.masterMessages + msg) }
-            if (res.optLong("villaId", 0) > 0) refreshAll()
-        } catch (e: Exception) {
-            _state.update {
-                it.copy(masterMessages = it.masterMessages + dev.villaforge.app.net.ChatMessage(
-                    "assistant", "Fehler: ${e.message ?: "Hub nicht erreichbar"}", System.currentTimeMillis()))
-            }
-        } finally {
-            _state.update { it.copy(masterBusy = false) }
+                if (result.optBoolean("pending")) throw IllegalStateException("Die Anfrage läuft noch. Status prüfen verfolgt dieselbe Anfrage weiter.")
+                val messages = client.masterHistory()
+                pendingMaster = null
+                _state.update { it.copy(masterMessages = messages, masterPending = false, masterError = if (result.optBoolean("ok", true)) null else result.optString("answer")) }
+                refreshAll()
+                val suggestions = client.masterSuggestions()
+                val status = client.masterStatus()
+                _state.update { it.copy(masterSuggestions = suggestions, masterStatus = status) }
+            } catch (e: Exception) {
+                _state.update { it.copy(masterError = e.message ?: "Master-Anfrage fehlgeschlagen. Status prüfen.") }
+            } finally { _state.update { it.copy(masterBusy = false) } }
         }
+    }
+
+    fun dismissMasterSuggestion(id: String) = viewModelScope.launch {
+        try {
+            client.dismissMasterSuggestion(id)
+            _state.update { it.copy(masterSuggestions = client.masterSuggestions()) }
+        } catch (e: Exception) { _state.update { it.copy(masterError = e.message) } }
     }
 
     /** Misst die Hub-Antwortzeit und meldet sie als Nachricht. */

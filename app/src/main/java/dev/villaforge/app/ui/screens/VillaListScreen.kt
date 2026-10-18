@@ -27,6 +27,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,14 +54,18 @@ import dev.villaforge.app.ui.theme.Violet
 
 @Composable
 fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (Long) -> Unit) {
-    var search by remember { mutableStateOf("") }
-    var statusFilter by remember { mutableStateOf("") }
-    var sortMode by remember { mutableStateOf("neu") }
+    var search by rememberSaveable { mutableStateOf("") }
+    var statusFilter by rememberSaveable { mutableStateOf("") }
+    var sortMode by rememberSaveable { mutableStateOf("neu") }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val online by rememberUpdatedState(state.online)
     viewModel?.let { vm ->
-        LaunchedEffect(Unit) {
-            while (true) {
-                kotlinx.coroutines.delay(30_000)
-                if (state.online) vm.refreshAll()
+        LaunchedEffect(vm, lifecycleOwner) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    kotlinx.coroutines.delay(30_000)
+                    if (online) vm.refreshAll()
+                }
             }
         }
     }
@@ -74,14 +83,14 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(top = 14.dp, bottom = 28.dp)
+            contentPadding = PaddingValues(top = 14.dp, bottom = 88.dp)
         ) {
             item { state.error?.let { ErrorBanner(it) { viewModel?.refreshAll() } } }
             item { ControlCenterHero() }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     MetricTile("Villen", state.villas.size.toString(), "⌂", Violet, Modifier.weight(1f))
-                    MetricTile("Agenten aktiv", state.stats?.optInt("agents", 0)?.toString() ?: "0", "◆", Aqua, Modifier.weight(1f))
+                    MetricTile("Agenten im Pool", state.stats?.optInt("agents", 0)?.toString() ?: "0", "◆", Aqua, Modifier.weight(1f))
                     MetricTile("Routen", state.routes.size.toString(), "↗", Color(0xFFFFB020), Modifier.weight(1f))
                 }
             }
@@ -106,13 +115,13 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
             item {
                 OutlinedTextField(
                     value = search, onValueChange = { search = it },
-                    placeholder = { Text("Villen durchsuchen") }, singleLine = true,
+                    label = { Text("Villen durchsuchen") }, placeholder = { Text("Name oder Idee") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
             item {
                 FilterRow(
-                    options = listOf("Alle" to "", "Läuft" to "RUNNING", "Pausiert" to "PAUSED", "Fehlgeschlagen" to "FAILED"),
+                    options = listOf("Alle" to "", "Läuft" to "RUNNING", "Pausiert" to "PAUSED", "Fertig" to "COMPLETED", "Fehler" to "FAILED"),
                     selected = statusFilter, onSelect = { statusFilter = it }
                 )
             }
@@ -123,7 +132,8 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
                 )
             }
             when {
-                state.villas.isEmpty() && !state.online -> item { SkeletonList(rows = 4) }
+                state.villas.isEmpty() && state.busy -> item { SkeletonList(rows = 4) }
+                state.villas.isEmpty() && !state.online -> item { EmptyState(title = "Hub nicht verbunden", hint = "Prüfe die Serveradresse in den Einstellungen und versuche es erneut.") }
                 state.villas.isEmpty() -> item { EmptyState(title = "Noch keine Villa", hint = "Tippe unten auf „Deep Agent“ und starte deine erste autonome Entwicklung.") }
                 visible.isEmpty() -> item { EmptyState(title = "Kein Treffer", hint = "Passe Suche oder Status-Filter an, um alle Villen wieder zu sehen.") }
                 else -> items(visible, key = { it.id }) { villa ->

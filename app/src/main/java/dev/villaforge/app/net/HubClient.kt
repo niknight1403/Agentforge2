@@ -284,25 +284,21 @@ class HubClient(context: Context) {
 
     suspend fun health(): JSONObject = JSONObject(execute("GET", "/api/health"))
 
-    /** Master-Agent: Verlauf des Master-Chats (aeltere zuerst). */
+    /** Persistent Master-Agent history, oldest first. */
     suspend fun masterHistory(): List<ChatMessage> {
-        val arr = JSONArray(execute("GET", "/api/master/history"))
+        val arr = JSONArray(execute("GET", "/api/master/messages"))
         return (0 until arr.length()).map { i ->
             val o = arr.getJSONObject(i)
-            ChatMessage(
-                role = o.optString("role", "assistant"),
-                content = o.optString("content"),
-                createdAt = o.optLong("createdAt"),
-                villaId = o.optLong("villaId", 0),
-                villaName = o.optString("villaName"),
-                designImage = o.optString("designImage")
-            )
+            ChatMessage(role = o.optString("role", "assistant"), content = o.optString("content"),
+                createdAt = o.optLong("created_at", o.optLong("createdAt")))
         }
     }
-
-    /** Master-Agent: Wunsch senden -> autonom erstellte Villa zurueck. */
-    suspend fun masterChat(message: String): JSONObject =
-        JSONObject(execute("POST", "/api/master/chat", JSONObject().put("message", message)))
+    suspend fun masterSuggestions(): JSONArray = JSONArray(execute("GET", "/api/master/suggestions"))
+    suspend fun masterStatus(): JSONObject = JSONObject(execute("GET", "/api/master/status"))
+    suspend fun masterChat(message: String, requestId: String = java.util.UUID.randomUUID().toString()): JSONObject =
+        JSONObject(execute("POST", "/api/master/chat", JSONObject().put("message", message).put("requestId", requestId)))
+    suspend fun masterTurn(requestId: String): JSONObject = JSONObject(execute("GET", "/api/master/turn/$requestId"))
+    suspend fun dismissMasterSuggestion(id: String) { execute("POST", "/api/master/suggestions/dismiss", JSONObject().put("id", id)) }
 
     /**
      * Verbindungstest fuer die Diagnose: DNS, TLS/HTTP-Health und Login einzeln mit

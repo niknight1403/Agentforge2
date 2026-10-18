@@ -1,7 +1,7 @@
 package dev.villaforge.app.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.villaforge.app.net.VillaEvent
@@ -72,8 +73,8 @@ internal fun Card(title: String, subtitle: String, badge: String, onClick: (() -
     Column(
         Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .clip(RoundedCornerShape(18.dp))
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .border(0.9.dp, Brush.linearGradient(listOf(dev.villaforge.app.ui.theme.NeonCyan.copy(alpha = 0.38f), dev.villaforge.app.ui.theme.NeonPink.copy(alpha = 0.24f))), RoundedCornerShape(18.dp))
             .background(Surface2.copy(alpha = 0.88f))
             .padding(14.dp)

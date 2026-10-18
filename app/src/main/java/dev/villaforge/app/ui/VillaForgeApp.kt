@@ -57,7 +57,7 @@ import dev.villaforge.app.ui.screens.DiagnosticsScreen
 import dev.villaforge.app.ui.screens.DetailScreen
 import dev.villaforge.app.ui.screens.LiveDot
 import dev.villaforge.app.ui.screens.LoginScreen
-import dev.villaforge.app.ui.screens.MasterChatScreen
+import dev.villaforge.app.ui.screens.MasterScreen
 import dev.villaforge.app.ui.screens.SettingsScreen
 import dev.villaforge.app.ui.screens.VillaListScreen
 import dev.villaforge.app.ui.screens.muted
@@ -177,9 +177,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                         onSuperagent = { screen = Screen.MASTER },
                         onDeepAgent = { screen = Screen.DEEP }
                     )
-                    Screen.MASTER -> MasterChatScreen(state, viewModel, onOpenVilla = { id ->
-                        viewModel.openVilla(id); screen = Screen.DETAIL
-                    })
+                    Screen.MASTER -> MasterScreen(state, viewModel)
                     Screen.CREATE -> CreateVillaScreen(state, viewModel) { id ->
                         viewModel.openVilla(id)
                         screen = Screen.CHAT

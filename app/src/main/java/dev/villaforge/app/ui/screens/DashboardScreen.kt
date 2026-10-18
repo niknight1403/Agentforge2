@@ -81,25 +81,29 @@ fun DashboardScreen(
     val agents = s?.optInt("agents") ?: 0
     val providers = state.routes.count { it.enabled }
     val open = s?.optJSONObject("tasks")?.optInt("open") ?: 0
-    val done = (s?.optJSONObject("tasks")?.optInt("total") ?: 0) - open
+    val done = s?.optJSONObject("tasks")?.optInt("done", 0) ?: 0
     val messages = s?.optInt("messages") ?: 0
     val running = state.villas.count { it.executing }
     val waiting = state.villas.count { it.queued }
     val uptimeHours = (s?.optLong("uptimeSec", 0L) ?: 0L) / 3600
+    val llmState = s?.optJSONObject("llm")?.optString("state", "unverified") ?: "unverified"
+    val modelLabel = when (llmState) { "recently_verified" -> "Geprüft"; "unavailable" -> "Nicht bereit"; else -> "Ungeprüft" }
     val maturityScores = mutableListOf<Float>()
     val maturity = s?.optJSONArray("maturity")
     val villaMaturity = mutableListOf<Triple<String, Int, String>>() // Name, Score, Phase
     if (maturity != null) {
         (0 until maturity.length()).forEach { i ->
             val m = maturity.optJSONObject(i) ?: return@forEach
-            val score = m.optInt("score", 0)
+            val rawScore = m.optInt("score", 0).coerceIn(0, 100)
+            val verified = m.optBoolean("verified", false)
+            val score = if (verified) rawScore else rawScore.coerceAtMost(95)
             maturityScores.add(score.toFloat())
-            villaMaturity.add(Triple(m.optString("name", "?"), score, m.optString("currentPhase", "-")))
+            villaMaturity.add(Triple(m.optString("name", "?"), score, m.optString("currentPhase", m.optString("phase", "—")) + if (verified) " · geprüft" else " · Abnahme offen"))
         }
     }
     val topVillas = villaMaturity.sortedByDescending { it.second }.take(3)
     val profileName = viewModel.loggedInEmail.substringBefore('@').replaceFirstChar { it.uppercase() }.ifBlank { "Chef" }
-    val activeRoute = state.routes.filter { it.enabled }.minByOrNull { it.priority }?.name ?: "–"
+    val activeRoute = s?.optJSONObject("llm")?.optString("lastSuccessfulRoute")?.takeIf { it.isNotBlank() } ?: "Noch keine bestätigte Modellantwort"
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -158,7 +162,7 @@ fun DashboardScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MetricChip("$agents", "Agenten", NeonCyan, Modifier.weight(1f))
             MetricChip("$providers", "Provider", ElectricBlue, Modifier.weight(1f))
-            MetricChip(if (state.online) "99,9 %" else "—", "Uptime", NeonPink, Modifier.weight(1f))
+            MetricChip(if (state.online && s != null) "$uptimeHours h" else "—", "Laufzeit", NeonPink, Modifier.weight(1f))
         }
 
         /* ---- Drei Einstiegskarten ---- */
@@ -169,10 +173,10 @@ fun DashboardScreen(
                     Spacer(Modifier.height(6.dp))
                     Text("Systemstatus", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Spacer(Modifier.height(10.dp))
-                    NeonRing(if (state.online) 0.99f else 0.2f, "OK")
+                    Text(if (state.online) "Online" else "Offline", color = if (state.online) NeonCyan else TextMuted, style = MaterialTheme.typography.titleLarge)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        if (state.online) "Alle Systeme aktiv" else "Hub nicht erreichbar",
+                        if (state.online) "Hub verbunden" else "Hub nicht erreichbar",
                         style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp
                     )
                 }
@@ -186,9 +190,9 @@ fun DashboardScreen(
                     Spacer(Modifier.height(6.dp))
                     Text("KI-Chat", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Spacer(Modifier.height(10.dp))
-                    NeonRing(if (state.online) 0.85f else 0f, "Aktiv", ElectricBlue)
+                    Text(modelLabel, color = ElectricBlue, style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(6.dp))
-                    Text("Bereit für deine Fragen", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
+                    Text(if (llmState == "recently_verified") "Kürzlich echte Antwort" else "Modellverbindung prüfen", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
                 }
             }
             GlassCard(accent = NeonPink, modifier = Modifier.weight(1f)) {
