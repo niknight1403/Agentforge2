@@ -68,7 +68,7 @@ jobs:
             # Stufe 1: Google Gemini Free Tier (gueltiger Key, schnellster Cloud-Leg)
             - model_name: villa-kaskade
               litellm_params:
-                model: gemini/gemini-2.0-flash
+                model: gemini/gemini-flash-lite-latest
                 api_key: os.environ/GEMINI_API_KEY
                 timeout: 10
                 max_retries: 0
