@@ -1,0 +1,35 @@
+name: APK-Release
+
+# Haengt das VillaForge-APK aus dem neuesten erfolgreichen Build-Lauf
+# an einen bestehenden Release-Tag an (oder legt den Release an).
+# Aufruf: workflow_dispatch mit dem Tag (z. B. v1.36.0).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release-Tag (z. B. v1.36.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Build-Artefakt holen und an Release anhaengen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          RID=$(gh api "repos/niknight1403/Agentforge2/actions/workflows/build-apk.yml/runs?per_page=10" --jq '[.workflow_runs[] | select(.conclusion=="success")][0].id')
+          echo "Build-Lauf: $RID"
+          AID=$(gh api "repos/niknight1403/Agentforge2/actions/runs/$RID/artifacts" --jq '.artifacts[0].id')
+          gh api "repos/niknight1403/Agentforge2/actions/artifacts/$AID/zip" > art.zip
+          python3 -c "import zipfile; zipfile.ZipFile('art.zip').extractall('.')"
+          ls -la VillaForge.apk
+          gh release view "$TAG" >/dev/null 2>&1 && gh release upload "$TAG" VillaForge.apk --clobber \
+            || gh release create "$TAG" VillaForge.apk --title "VillaForge $TAG"
+          echo "Release $TAG mit VillaForge.apk versorgt."
