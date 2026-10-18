@@ -60,6 +60,34 @@ data class Memory(
     val importance: Int
 )
 
+/** Deep-Agent: Ein eigenes App-Projekt (abseits der Villen). */
+data class DeepProject(
+    val id: Long,
+    val title: String,
+    val status: String,
+    val createdAt: Long = 0,
+    val updatedAt: Long = 0,
+    val messages: Int = 0,
+    val idea: String = ""
+)
+
+/** Deep-Agent: Nachricht im Projekt-Chat. */
+data class DeepMessage(
+    val id: Long,
+    val role: String,
+    val content: String,
+    val attachments: String = "",
+    val createdAt: Long = 0
+)
+
+/** Deep-Agent: Anhang an eine Nachricht. */
+data class DeepAttachment(
+    val kind: String, // file | repo | link
+    val fileId: Long = 0,
+    val url: String = "",
+    val name: String = ""
+)
+
 /** Eine optische Design-Stilrichtung des Master-Designers. */
 data class DesignVariant(
     val label: String,
@@ -420,6 +448,74 @@ class HubClient(context: Context) {
         JSONObject(execute("POST", "/api/proposals/$id/reject", JSONObject()))
 
     /** Autorisierungs-Header fuer externe Downloads (DownloadManager, WebView). */
+    /* ---- Deep Agent: eigene App-Projekte (v1.37.0) ---- */
+
+    /** Projekt-Verlauf (neueste zuerst). */
+    suspend fun deepProjects(): List<DeepProject> = withContext(Dispatchers.IO) {
+        val arr = JSONArray(execute("GET", "/api/deep/projects"))
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            DeepProject(
+                id = o.optLong("id"),
+                title = o.optString("title"),
+                status = o.optString("status", "ACTIVE"),
+                createdAt = o.optLong("created_at"),
+                updatedAt = o.optLong("updated_at"),
+                messages = o.optInt("messages", 0)
+            )
+        }
+    }
+
+    /** Neues Projekt anlegen - der Deep Agent liefert den initialen Bauplan. */
+    suspend fun deepCreateProject(idea: String): JSONObject =
+        JSONObject(execute("POST", "/api/deep/projects", JSONObject().put("idea", idea)))
+
+    /** Projekt-Detail: Projekt + Nachrichten. */
+    suspend fun deepProjectDetail(id: Long): Pair<DeepProject, List<DeepMessage>> = withContext(Dispatchers.IO) {
+        val d = JSONObject(execute("GET", "/api/deep/projects/$id"))
+        val po = d.getJSONObject("project")
+        val project = DeepProject(
+            id = po.optLong("id"),
+            title = po.optString("title"),
+            status = po.optString("status", "ACTIVE"),
+            createdAt = po.optLong("created_at"),
+            updatedAt = po.optLong("updated_at"),
+            idea = po.optString("idea")
+        )
+        val arr = d.optJSONArray("messages") ?: JSONArray()
+        val messages = (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            DeepMessage(
+                id = o.optLong("id"),
+                role = o.optString("role"),
+                content = o.optString("content"),
+                attachments = o.optString("attachments", ""),
+                createdAt = o.optLong("created_at")
+            )
+        }
+        project to messages
+    }
+
+    /** Nachricht im Projekt-Chat senden (Antwort des Deep Agent). */
+    suspend fun deepChat(projectId: Long, message: String, attachments: List<DeepAttachment>): JSONObject {
+        val body = JSONObject().put("message", message)
+        val arr = JSONArray()
+        attachments.forEach { a ->
+            arr.put(JSONObject()
+                .put("kind", a.kind)
+                .put("fileId", a.fileId)
+                .put("url", a.url)
+                .put("name", a.name))
+        }
+        body.put("attachments", arr)
+        return JSONObject(execute("POST", "/api/deep/projects/$projectId/chat", body))
+    }
+
+    /** Datei-Anhang hochladen (Base64), liefert Datei-Id + Abruf-URL. */
+    suspend fun deepUploadFile(projectId: Long, name: String, mime: String, base64: String): JSONObject =
+        JSONObject(execute("POST", "/api/deep/projects/$projectId/files",
+            JSONObject().put("name", name).put("mime", mime).put("data", base64)))
+
     fun authHeaderValue(): String? =
         if (apiToken.isNotBlank()) "Bearer $apiToken" else null
 

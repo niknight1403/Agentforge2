@@ -50,6 +50,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.villaforge.app.ui.screens.ChatScreen
 import dev.villaforge.app.ui.screens.CreateVillaScreen
 import dev.villaforge.app.ui.screens.DevScreen
+import dev.villaforge.app.ui.screens.DeepAgentScreen
+import dev.villaforge.app.ui.screens.DeepChatScreen
 import dev.villaforge.app.ui.screens.DashboardScreen
 import dev.villaforge.app.ui.screens.DiagnosticsScreen
 import dev.villaforge.app.ui.screens.DetailScreen
@@ -71,7 +73,7 @@ import dev.villaforge.app.ui.theme.TextMuted
  * leben in ui/screens/, Bausteine in ui/components/, der Parser in core/.
  * Hier bleibt nur die Navigation mit sanften uebergangen zurueck.
  */
-private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, MASTER, DEV, SETTINGS, DIAGNOSTICS }
+private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, MASTER, DEV, DEEP, DEEP_CHAT, SETTINGS, DIAGNOSTICS }
 
 private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.MASTER, Screen.DIAGNOSTICS, Screen.SETTINGS)
 
@@ -172,7 +174,8 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                         onVillas = { viewModel.closeDetail(); screen = Screen.LIST },
                         onDiagnostics = { screen = Screen.DIAGNOSTICS },
                         onSettings = { screen = Screen.SETTINGS },
-                        onSuperagent = { screen = Screen.MASTER }
+                        onSuperagent = { screen = Screen.MASTER },
+                        onDeepAgent = { screen = Screen.DEEP }
                     )
                     Screen.MASTER -> MasterChatScreen(state, viewModel, onOpenVilla = { id ->
                         viewModel.openVilla(id); screen = Screen.DETAIL
@@ -184,6 +187,8 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     Screen.DETAIL -> DetailScreen(state, viewModel, onChat = { screen = Screen.CHAT }, onDeleted = { screen = Screen.LIST }, onDev = { screen = Screen.DEV })
                     Screen.CHAT -> ChatScreen(state, viewModel)
                     Screen.DEV -> DevScreen(state, viewModel, onOpenVilla = { id -> viewModel.openVilla(id); screen = Screen.DEV })
+                    Screen.DEEP -> DeepAgentScreen(state, viewModel, onOpenProject = { id -> viewModel.openDeepProject(id); screen = Screen.DEEP_CHAT }, onBack = { screen = Screen.DASHBOARD })
+                    Screen.DEEP_CHAT -> DeepChatScreen(state, viewModel, onBack = { screen = Screen.DEEP })
                     Screen.SETTINGS -> SettingsScreen(state, viewModel)
                     Screen.DIAGNOSTICS -> DiagnosticsScreen(state, viewModel)
                 }

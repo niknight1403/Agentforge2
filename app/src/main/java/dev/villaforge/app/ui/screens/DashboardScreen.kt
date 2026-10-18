@@ -73,7 +73,8 @@ fun DashboardScreen(
     onVillas: () -> Unit = {},
     onDiagnostics: () -> Unit = {},
     onSettings: () -> Unit = {},
-    onSuperagent: () -> Unit = {}
+    onSuperagent: () -> Unit = {},
+    onDeepAgent: () -> Unit = {}
 ) {
     val s = state.stats
     val agents = s?.optInt("agents") ?: 0
@@ -284,6 +285,19 @@ fun DashboardScreen(
                         }
                     }
                 }
+            }
+        }
+
+        /* ---- Deep Agent: eigener Entwicklungs-Bereich abseits der Villen ---- */
+        GlassCard(accent = NeonPink, modifier = Modifier.fillMaxWidth().clickable { onDeepAgent() }) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                Icon(Icons.Filled.Add, null, tint = NeonPink, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Deep Agent", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = TextMain)
+                    Text("Eigene App-Idee umsetzen · mit Verlauf, Anhaengen, Gedaechtnis", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
+                }
+                Text("NEU >", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = NeonPink)
             }
         }
 

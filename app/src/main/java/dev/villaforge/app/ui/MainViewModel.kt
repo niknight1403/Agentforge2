@@ -5,6 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.villaforge.app.net.ChatMessage
 import dev.villaforge.app.net.HubClient
+import dev.villaforge.app.net.DeepProject
+import dev.villaforge.app.net.DeepMessage
+import dev.villaforge.app.net.DeepAttachment
 import dev.villaforge.app.net.LlmRoute
 import dev.villaforge.app.net.SseClient
 import dev.villaforge.app.net.Villa
@@ -22,6 +25,14 @@ data class UiState(
     val serverUrl: String = HubClient.DEFAULT_BASE,
     val online: Boolean = false,
     val healthText: String = "verbinde …",
+    /** Deep-Agent: Projekt-Verlauf. */
+    val deepProjects: List<DeepProject> = emptyList(),
+    /** Deep-Agent: aktuelles Projekt (0 = keins offen). */
+    val deepActiveProject: DeepProject? = null,
+    /** Deep-Agent: Nachrichten des aktiven Projekts. */
+    val deepMessages: List<DeepMessage> = emptyList(),
+    /** Deep-Agent: noch nicht gesendete Anhaenge. */
+    val deepPendingAttachments: List<DeepAttachment> = emptyList(),
     /** SSE-Verbindung zum Hub aktiv (Live-Ereignisse fließen). */
     val live: Boolean = false,
     /** Letzte Live-Ereignisse (neueste zuerst, begrenzt). */
@@ -117,6 +128,97 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Master-Agent: Wunsch senden; erzeugt ggf. autonom eine Villa. */
+    /* ---- Deep Agent: eigene App-Projekte (v1.37.0) ---- */
+
+    /** Projekt-Verlauf laden. */
+    fun loadDeepProjects() = viewModelScope.launch {
+        try {
+            val list = client.deepProjects()
+            _state.update { it.copy(deepProjects = list) }
+        } catch (_: Exception) { /* still - beim naechsten Refresh */ }
+    }
+
+    /** Neues Projekt anlegen (neuer Deep Agent). */
+    fun createDeepProject(idea: String, onCreated: (Long) -> Unit) = viewModelScope.launch {
+        _state.update { it.copy(busy = true) }
+        try {
+            val res = client.deepCreateProject(idea)
+            val id = res.optLong("id", 0)
+            _state.update { it.copy(busy = false, deepPendingAttachments = emptyList()) }
+            if (id > 0) { loadDeepProjects(); openDeepProject(id); onCreated(id) }
+            else _state.update { it.copy(message = res.optString("error", "Projekt konnte nicht angelegt werden")) }
+        } catch (e: Exception) {
+            _state.update { it.copy(busy = false, message = e.message?.let { m -> "Fehler: $m" } ?: "Hub nicht erreichbar") }
+        }
+    }
+
+    /** Projekt oeffnen: Detail + Nachrichten laden. */
+    fun openDeepProject(id: Long) = viewModelScope.launch {
+        try {
+            val (project, messages) = client.deepProjectDetail(id)
+            _state.update { it.copy(deepActiveProject = project, deepMessages = messages, deepPendingAttachments = emptyList()) }
+        } catch (_: Exception) { }
+    }
+
+    /** Datei/Foto/Video hochladen und als Anhang vormerken. */
+    fun addDeepAttachment(projectId: Long, name: String, mime: String, base64: String) = viewModelScope.launch {
+        _state.update { it.copy(busy = true) }
+        try {
+            val res = client.deepUploadFile(projectId, name, mime, base64)
+            val fileId = res.optLong("id", 0)
+            if (fileId > 0) {
+                _state.update {
+                    it.copy(deepPendingAttachments = it.deepPendingAttachments +
+                        DeepAttachment(kind = "file", fileId = fileId, name = res.optString("name", name)))
+                }
+            } else _state.update { it.copy(message = res.optString("error", "Upload fehlgeschlagen")) }
+        } catch (e: Exception) {
+            _state.update { it.copy(message = "Upload fehlgeschlagen: ${'$'}{e.message}") }
+        } finally {
+            _state.update { it.copy(busy = false) }
+        }
+    }
+
+    /** Anhang vormerken ohne Upload (Repo/Link). */
+    fun addDeepLink(kind: String, url: String) {
+        if (url.isBlank()) return
+        _state.update { it.copy(deepPendingAttachments = it.deepPendingAttachments + DeepAttachment(kind = kind, url = url)) }
+    }
+
+    /** Anhang aus der Vormerkung entfernen. */
+    fun removeDeepAttachment(name: String, url: String) {
+        _state.update { it.copy(deepPendingAttachments = it.deepPendingAttachments.filterNot { it.name == name && it.url == url }) }
+    }
+
+    /** Nachricht im Deep-Chat senden. */
+    fun sendDeep(text: String) = viewModelScope.launch {
+        val projectId = state.value.deepActiveProject?.id ?: return@launch
+        val attachments = state.value.deepPendingAttachments
+        val userMsg = DeepMessage(
+            id = System.currentTimeMillis(),
+            role = "user",
+            content = text + (if (attachments.isEmpty()) "" else attachments.joinToString("") { "\n[Anhang: ${it.name.ifBlank { it.url }}] }),
+            createdAt = System.currentTimeMillis()
+        )
+        _state.update { it.copy(deepMessages = it.deepMessages + userMsg, deepPendingAttachments = emptyList(), busy = true) }
+        try {
+            val res = client.deepChat(projectId, text, attachments)
+            val reply = DeepMessage(
+                id = System.currentTimeMillis() + 1,
+                role = "assistant",
+                content = res.optString("reply", "(keine Antwort)"),
+                createdAt = System.currentTimeMillis()
+            )
+            _state.update { it.copy(deepMessages = it.deepMessages + reply, busy = false) }
+        } catch (e: Exception) {
+            _state.update {
+                it.copy(busy = false, deepMessages = it.deepMessages + DeepMessage(
+                    0, "assistant", "Fehler: ${'$'}{e.message ?: "Hub nicht erreichbar"}", "", System.currentTimeMillis()))
+            }
+        }
+        loadDeepProjects()
+    }
+
     fun sendMaster(text: String) = viewModelScope.launch {
         val t = text.trim()
         if (t.isBlank() || _state.value.masterBusy) return@launch
