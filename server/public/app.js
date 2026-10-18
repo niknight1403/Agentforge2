@@ -253,7 +253,10 @@ function closeWorkspace() {
   document.querySelectorAll('.topbar, #mobileNav, .dashboard, body > footer').forEach((el) => { el.inert = false; });
   currentVilla = null;
   currentAgentId = null;
-  (workspaceOpener?.isConnected ? workspaceOpener : $('#openLatestBtn')).focus();
+  const fallback = $('#openLatestBtn');
+  const target = workspaceOpener?.isConnected && workspaceOpener.getClientRects().length ? workspaceOpener : fallback;
+  target?.focus();
+  if (document.activeElement !== target) fallback?.focus();
 }
 
 async function openVilla(id) {
