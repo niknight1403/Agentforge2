@@ -213,7 +213,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) {
             _state.update {
                 it.copy(busy = false, deepMessages = it.deepMessages + DeepMessage(
-                    0, "assistant", "Fehler: ${'$'}{e.message ?: "Hub nicht erreichbar"}", "", System.currentTimeMillis()))
+                    0, "assistant", "Fehler: ${e.message ?: "Hub nicht erreichbar"}", "", System.currentTimeMillis()))
             }
         }
         loadDeepProjects()
