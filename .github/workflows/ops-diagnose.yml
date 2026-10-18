@@ -28,7 +28,10 @@ jobs:
           chmod +x /tmp/sshcmd
 
       - name: Hub-Journal abfragen
+        env:
+          MINUTES: ${{ github.event.inputs.minutes }}
+          FILTER: ${{ github.event.inputs.filter }}
         run: |
-          MIN='${{ github.event.inputs.minutes }}'
-          FILTER='${{ github.event.inputs.filter }}'
-          /tmp/sshcmd "sudo journalctl -u villaforge-hub.service --since \"\$(date -d \"\$MIN min ago\" '+%Y-%m-%d %H:%M:%S')\" --no-pager | grep -iE \"$FILTER\" | tail -40"
+          /tmp/sshcmd 'bash -s' << 'EOS'
+          sudo journalctl -u villaforge-hub.service --since "$MINUTES ago" --no-pager | grep -iE "$FILTER" | tail -40
+          EOS
