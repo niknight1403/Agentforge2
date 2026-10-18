@@ -65,14 +65,21 @@ jobs:
           echo "== Kaskaden-Konfiguration schreiben =="
           cat > /home/ubuntu/litellm.yaml << 'YAML'
           model_list:
-            # Stufe 1: kostenloser Cloud-Endpunkt (Groq Free Tier)
+            # Stufe 1: Google Gemini Free Tier (gueltiger Key, schnellster Cloud-Leg)
+            - model_name: villa-kaskade
+              litellm_params:
+                model: gemini/gemini-2.0-flash
+                api_key: os.environ/GEMINI_API_KEY
+                timeout: 10
+                max_retries: 0
+            # Stufe 2: Groq Free Tier (Key aktuell ungueltig, wird uebersprungen)
             - model_name: villa-kaskade
               litellm_params:
                 model: groq/llama-3.3-70b-versatile
                 api_key: os.environ/GROQ_API_KEY
                 timeout: 10
                 max_retries: 0
-            # Stufe 2: lokales Offline-Backup (Ollama, unbegrenzt, kostenlos)
+            # Stufe 3: lokales Offline-Backup (Ollama, unbegrenzt, kostenlos)
             - model_name: villa-kaskade
               litellm_params:
                 model: ollama_chat/llama3.2:3b
@@ -98,10 +105,10 @@ jobs:
             request_timeout: 120
           router_settings:
             routing_strategy: simple-shuffle
-            num_retries: 1
+            num_retries: 3
             timeout: 120
             cooldown_time: 30
-            allowed_fails: 1
+            allowed_fails: 2
           general_settings:
             master_key: sk-villaforge-local
           YAML
