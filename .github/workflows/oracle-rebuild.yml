@@ -107,7 +107,17 @@ jobs:
           cd "$(dirname "$HUBDIR")"
           if [ -d .git ]; then
             echo "== git pull in $PWD =="
-            git fetch -q origin && git reset -q --hard origin/main && git log -1 --oneline
+            # Fix 2026-10-19: AgentForge ist PRIVAT - der Pull ohne Token scheiterte
+            # still ('could not read Username'), der Restart lief auf ALTEN Code und
+            # der Workflow meldete HUB-UPDATE-OK (Falsch-Gruen). Remote je Lauf mit
+            # frischem PAT versehen und bei Pull-Fehler ABBERECHNEN statt false-green.
+            git remote set-url origin "https://x-access-token:${GT}@github.com/niknight1403/AgentForge.git" 2>/dev/null || true
+            if git fetch -q origin && git reset -q --hard origin/main && git log -1 --oneline; then
+              echo "PULL-OK"
+            else
+              echo "PULL-FEHLER: Update abgebrochen (kein false-green Restart auf altem Code)."
+              exit 1
+            fi
           else
             echo "== kein Git-Klon in $PWD - Server-Code aus AgentForge ersetzen =="
             VFNEW=$(mktemp -d)
