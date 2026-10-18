@@ -2,11 +2,12 @@ package dev.villaforge.app.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.SavedStateHandle
-import dev.villaforge.app.core.SelectedVilla
 import androidx.lifecycle.viewModelScope
 import dev.villaforge.app.net.ChatMessage
 import dev.villaforge.app.net.HubClient
+import dev.villaforge.app.net.DeepProject
+import dev.villaforge.app.net.DeepMessage
+import dev.villaforge.app.net.DeepAttachment
 import dev.villaforge.app.net.LlmRoute
 import dev.villaforge.app.net.SseClient
 import dev.villaforge.app.net.Villa
@@ -18,12 +19,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class UiState(
     val serverUrl: String = HubClient.DEFAULT_BASE,
     val online: Boolean = false,
     val healthText: String = "verbinde …",
+    /** Deep-Agent: Projekt-Verlauf. */
+    val deepProjects: List<DeepProject> = emptyList(),
+    /** Deep-Agent: aktuelles Projekt (0 = keins offen). */
+    val deepActiveProject: DeepProject? = null,
+    /** Deep-Agent: Nachrichten des aktiven Projekts. */
+    val deepMessages: List<DeepMessage> = emptyList(),
+    /** Deep-Agent: noch nicht gesendete Anhaenge. */
+    val deepPendingAttachments: List<DeepAttachment> = emptyList(),
     /** SSE-Verbindung zum Hub aktiv (Live-Ereignisse fließen). */
     val live: Boolean = false,
     /** Letzte Live-Ereignisse (neueste zuerst, begrenzt). */
@@ -32,8 +43,6 @@ data class UiState(
     val lastRefresh: Long = 0L,
     val villas: List<Villa> = emptyList(),
     val detail: VillaDetail? = null,
-    val selectedVillaId: Long? = null,
-    val villaLoading: Boolean = false,
     val messages: List<ChatMessage> = emptyList(),
     /** Aktueller Chat-Partner (Agent-ID), null = Root/Deep Agent. */
     val chatAgentId: Long? = null,
@@ -75,14 +84,17 @@ data class UiState(
     val needsLogin: Boolean = false,
     /** Ergebnis des Verbindungstests (Diagnose). */
     val connTest: List<String> = emptyList(),
-    val connTestRunning: Boolean = false
+    val connTestRunning: Boolean = false,
+    /** Master-Agent: Verlauf des Master-Chats. */
+    val masterMessages: List<dev.villaforge.app.net.ChatMessage> = emptyList(),
+    val masterBusy: Boolean = false,
+    val masterLoaded: Boolean = false
 )
 
-class MainViewModel(app: Application, savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
+class MainViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val selectedVilla = SelectedVilla(savedStateHandle)
     private val client = HubClient(app)
-    private val _state = MutableStateFlow(UiState(serverUrl = client.serverUrl, selectedVillaId = selectedVilla.id))
+    private val _state = MutableStateFlow(UiState(serverUrl = client.serverUrl))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     /** Live-Ereignisstrom des Hubs (SSE), mit automatischem Nachverbinden. */
@@ -96,7 +108,6 @@ class MainViewModel(app: Application, savedStateHandle: SavedStateHandle) : Andr
         loadSnapshot()
         startEventStream()
         refreshAll()
-        retrySelectedVilla()
     }
 
     /** Nach Netzwerk-Fehlern automatisch neu verbinden (45 s), bis der Hub wieder antwortet. */
@@ -113,6 +124,178 @@ class MainViewModel(app: Application, savedStateHandle: SavedStateHandle) : Andr
         _state.update { it.copy(connTestRunning = true, connTest = listOf("Test laeuft ...")) }
         val lines = try { client.connectionTest() } catch (e: Exception) { listOf("Test-FEHLER: ${e.javaClass.simpleName}: ${e.message}") }
         _state.update { it.copy(connTestRunning = false, connTest = lines) }
+    }
+
+    /** Master-Agent: Verlauf einmalig laden (beim Oeffnen des Chatfensters). */
+    fun loadMaster() = viewModelScope.launch {
+        if (_state.value.masterLoaded) return@launch
+        try {
+            val h = client.masterHistory()
+            _state.update { it.copy(masterMessages = h, masterLoaded = true) }
+        } catch (_: Exception) { /* naechster Versuch beim Senden */ }
+    }
+
+    /** Master-Agent: Wunsch senden; erzeugt ggf. autonom eine Villa. */
+    /* ---- Deep Agent: eigene App-Projekte (v1.37.0) ---- */
+
+    /** Projekt-Verlauf laden. */
+    fun loadDeepProjects() = viewModelScope.launch {
+        try {
+            val list = client.deepProjects()
+            _state.update { it.copy(deepProjects = list) }
+        } catch (_: Exception) { /* still - beim naechsten Refresh */ }
+    }
+
+    /** Neues Projekt anlegen (neuer Deep Agent). */
+    fun createDeepProject(idea: String, onCreated: (Long) -> Unit) = viewModelScope.launch {
+        _state.update { it.copy(busy = true) }
+        try {
+            val res = client.deepCreateProject(idea)
+            val id = res.optLong("id", 0)
+            _state.update { it.copy(busy = false, deepPendingAttachments = emptyList()) }
+            if (id > 0) { loadDeepProjects(); openDeepProject(id); onCreated(id) }
+            else _state.update { it.copy(message = res.optString("error", "Projekt konnte nicht angelegt werden")) }
+        } catch (e: Exception) {
+            _state.update { it.copy(busy = false, message = e.message?.let { m -> "Fehler: $m" } ?: "Hub nicht erreichbar") }
+        }
+    }
+
+    /** Projekt oeffnen: Detail + Nachrichten laden. */
+    fun openDeepProject(id: Long) = viewModelScope.launch {
+        try {
+            val (project, messages) = client.deepProjectDetail(id)
+            _state.update { it.copy(deepActiveProject = project, deepMessages = messages, deepPendingAttachments = emptyList()) }
+        } catch (_: Exception) { }
+    }
+
+    /** Datei/Foto/Video hochladen und als Anhang vormerken. */
+    fun addDeepAttachment(projectId: Long, name: String, mime: String, base64: String) = viewModelScope.launch {
+        _state.update { it.copy(busy = true) }
+        try {
+            val res = client.deepUploadFile(projectId, name, mime, base64)
+            val fileId = res.optLong("id", 0)
+            if (fileId > 0) {
+                _state.update {
+                    it.copy(deepPendingAttachments = it.deepPendingAttachments +
+                        DeepAttachment(kind = "file", fileId = fileId, name = res.optString("name", name)))
+                }
+            } else _state.update { it.copy(message = res.optString("error", "Upload fehlgeschlagen")) }
+        } catch (e: Exception) {
+            _state.update { it.copy(message = "Upload fehlgeschlagen: ${'$'}{e.message}") }
+        } finally {
+            _state.update { it.copy(busy = false) }
+        }
+    }
+
+    /** Foto/Video/Datei aus dem Android-Picker lesen und als Anhang hochladen. */
+    fun addDeepAttachmentFromUri(context: android.content.Context, projectId: Long, uri: android.net.Uri) = viewModelScope.launch {
+        _state.update { it.copy(busy = true, message = "Anhang wird geladen ...") }
+        try {
+            val resolver = context.contentResolver
+            var name = "anhang"
+            var mime = resolver.getType(uri) ?: "application/octet-stream"
+            resolver.query(uri, null, null, null, null)?.use { c ->
+                val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && c.moveToFirst() && !c.isNull(idx)) name = c.getString(idx)
+            }
+            val bytes = withContext(Dispatchers.IO) {
+                resolver.openInputStream(uri)?.use { it.readBytes() } ?: throw IllegalStateException("Datei nicht lesbar")
+            }
+            if (bytes.size > 12 * 1024 * 1024) throw IllegalStateException("Anhang zu gross (max. 12 MB)")
+            val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            val res = client.deepUploadFile(projectId, name, mime, base64)
+            val fileId = res.optLong("id", 0)
+            if (fileId > 0) {
+                _state.update {
+                    it.copy(deepPendingAttachments = it.deepPendingAttachments +
+                        DeepAttachment(kind = "file", fileId = fileId, name = res.optString("name", name)))
+                }
+            } else _state.update { it.copy(message = res.optString("error", "Upload fehlgeschlagen")) }
+        } catch (e: Exception) {
+            _state.update { it.copy(message = "Anhang fehlgeschlagen: " + (e.message ?: "unbekannt")) }
+        } finally {
+            _state.update { it.copy(busy = false) }
+        }
+    }
+
+    /** Anhang vormerken ohne Upload (Repo/Link). */
+    fun addDeepLink(kind: String, url: String) {
+        if (url.isBlank()) return
+        _state.update { it.copy(deepPendingAttachments = it.deepPendingAttachments + DeepAttachment(kind = kind, url = url)) }
+    }
+
+    /** Anhang aus der Vormerkung entfernen. */
+    fun removeDeepAttachment(name: String, url: String) {
+        _state.update { it.copy(deepPendingAttachments = it.deepPendingAttachments.filterNot { it.name == name && it.url == url }) }
+    }
+
+    /** Nachricht im Deep-Chat senden. */
+    fun sendDeep(text: String) = viewModelScope.launch {
+        val projectId = state.value.deepActiveProject?.id ?: return@launch
+        val attachments = state.value.deepPendingAttachments
+        val userMsg = DeepMessage(
+            id = System.currentTimeMillis(),
+            role = "user",
+            content = text + (if (attachments.isEmpty()) "" else attachments.joinToString("") { "\n[Anhang: ${it.name.ifBlank { it.url }}]" }),
+            createdAt = System.currentTimeMillis()
+        )
+        _state.update { it.copy(deepMessages = it.deepMessages + userMsg, deepPendingAttachments = emptyList(), busy = true) }
+        try {
+            val res = client.deepChat(projectId, text, attachments)
+            val reply = DeepMessage(
+                id = System.currentTimeMillis() + 1,
+                role = "assistant",
+                content = res.optString("reply", "(keine Antwort)"),
+                createdAt = System.currentTimeMillis()
+            )
+            _state.update { it.copy(deepMessages = it.deepMessages + reply, busy = false) }
+        } catch (e: Exception) {
+            _state.update {
+                it.copy(busy = false, deepMessages = it.deepMessages + DeepMessage(
+                    0, "assistant", "Fehler: ${e.message ?: "Hub nicht erreichbar"}", "", System.currentTimeMillis()))
+            }
+        }
+        loadDeepProjects()
+    }
+
+    fun sendMaster(text: String) = viewModelScope.launch {
+        val t = text.trim()
+        if (t.isBlank() || _state.value.masterBusy) return@launch
+        val now = System.currentTimeMillis()
+        _state.update {
+            it.copy(masterMessages = it.masterMessages + dev.villaforge.app.net.ChatMessage("user", t, now),
+                masterBusy = true, error = null)
+        }
+        try {
+            val res = client.masterChat(t)
+            val reply = res.optString("reply", "(keine Antwort)")
+            val parseDesignVariants: (org.json.JSONArray?) -> List<dev.villaforge.app.net.DesignVariant> = { arr ->
+                if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val url = o.optString("url")
+                    if (url.isBlank()) null
+                    else dev.villaforge.app.net.DesignVariant(o.optString("label").ifBlank { "Design ${i + 1}" }, o.optString("key"), url)
+                }
+            }
+            val msg = dev.villaforge.app.net.ChatMessage(
+                role = "assistant",
+                content = reply,
+                createdAt = System.currentTimeMillis(),
+                villaId = res.optLong("villaId", 0),
+                villaName = res.optString("villaName"),
+                designImage = res.optString("designImage"),
+                designVariants = parseDesignVariants(res.optJSONArray("designVariants"))
+            )
+            _state.update { it.copy(masterMessages = it.masterMessages + msg) }
+            if (res.optLong("villaId", 0) > 0) refreshAll()
+        } catch (e: Exception) {
+            _state.update {
+                it.copy(masterMessages = it.masterMessages + dev.villaforge.app.net.ChatMessage(
+                    "assistant", "Fehler: ${e.message ?: "Hub nicht erreichbar"}", System.currentTimeMillis()))
+            }
+        } finally {
+            _state.update { it.copy(masterBusy = false) }
+        }
     }
 
     /** Misst die Hub-Antwortzeit und meldet sie als Nachricht. */
@@ -316,6 +499,262 @@ class MainViewModel(app: Application, savedStateHandle: SavedStateHandle) : Andr
         val refreshed = client.villaDetail(detail.villa.id)
         _state.update { it.copy(detail = refreshed, message = "Quellprojekt gespeichert") }
     }
+
+    fun openVilla(id: Long) = run {
+        val detail = client.villaDetail(id)
+        val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
+        val msgs = client.messages(id, rootId)
+        val prod = fetchProduct(id)
+        val build = fetchBuild(id)
+        val preview = fetchPreview(id)
+        _state.update {
+            it.copy(detail = detail, messages = msgs, product = prod, chatAgentId = rootId, build = build, preview = preview)
+        }
+    }
+
+    /** Wechselt den Chat-Partner und laedt dessen Verlauf nach. */
+    fun selectChatAgent(agentId: Long) = run {
+        val detail = _state.value.detail ?: return@run
+        _state.update { it.copy(chatAgentId = agentId) }
+        val msgs = client.messages(detail.villa.id, agentId)
+        _state.update { it.copy(messages = msgs) }
+    }
+
+    fun sendChat(message: String) = run {
+        val detail = _state.value.detail ?: return@run
+        val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
+        val optimistic = _state.value.messages + ChatMessage("user", message, System.currentTimeMillis())
+        _state.update { it.copy(messages = optimistic, message = "Deep Agent arbeitet …") }
+        val targetId = _state.value.chatAgentId ?: rootId
+        val reply = client.chat(detail.villa.id, targetId, message)
+        val refreshed = client.villaDetail(detail.villa.id)
+        val msgs = client.messages(detail.villa.id, targetId)
+        _state.update {
+            it.copy(
+                detail = refreshed,
+                messages = msgs,
+                message = "Antwort über ${reply.route}${if (reply.offline) " (Offline-Planer)" else ""}"
+            )
+        }
+    }
+
+    fun orchestrate() = run {
+        val detail = _state.value.detail ?: return@run
+        client.orchestrate(detail.villa.id)
+        _state.update { it.copy(message = "Entwicklung gestartet") }
+        val refreshed = client.villaDetail(detail.villa.id)
+        _state.update { it.copy(detail = refreshed) }
+    }
+
+    fun stop() = run {
+        val detail = _state.value.detail ?: return@run
+        client.stop(detail.villa.id)
+        _state.update { it.copy(message = "Stopp angefordert") }
+        val refreshed = client.villaDetail(detail.villa.id)
+        _state.update { it.copy(detail = refreshed) }
+    }
+
+    /** Einzellne FAILED-Aufgabe zurueck in die Warteschlange und Lauf fortsetzen. */
+    fun retryTask(taskId: Long) = run {
+        val detail = _state.value.detail ?: return@run
+        client.retryTask(detail.villa.id, taskId)
+        _state.update { it.copy(message = "Aufgabe erneut gestartet") }
+        val refreshed = client.villaDetail(detail.villa.id)
+        _state.update { it.copy(detail = refreshed) }
+    }
+
+    /** Alle gescheiterten Aufgaben der Villa erneut starten. */
+    fun retryFailed() = run {
+        val detail = _state.value.detail ?: return@run
+        val res = client.retryFailed(detail.villa.id)
+        val n = res.optInt("requeued", 0)
+        _state.update { it.copy(message = if (n > 0) "$n Aufgabe(n) erneut gestartet" else "Keine fehlgeschlagenen Aufgaben") }
+        val refreshed = client.villaDetail(detail.villa.id)
+        _state.update { it.copy(detail = refreshed) }
+    }
+
+    /** Loescht die offene Villa mitsamt allen Daten und kehrt zur Liste zurueck. */
+    fun delete() = run {
+        val detail = _state.value.detail ?: return@run
+        client.deleteVilla(detail.villa.id)
+        val villas = client.villas()
+        _state.update { it.copy(detail = null, messages = emptyList(), villas = villas, message = "Villa gelöscht") }
+    }
+
+    /** Benennt die offene Villa um bzw. aktualisiert die Idee (PATCH). */
+    fun editVilla(name: String, idea: String) = run {
+        val detail = _state.value.detail ?: return@run
+        client.patchVilla(detail.villa.id, name, idea)
+        val refreshed = client.villaDetail(detail.villa.id)
+        _state.update { it.copy(detail = refreshed, message = "Villa aktualisiert") }
+    }
+
+    /** Exportiert die offene Villa als JSON-Text (zum Teilen/Speichern). */
+    fun export(onReady: (String) -> Unit) = run {
+        val detail = _state.value.detail ?: return@run
+        val json = client.exportVilla(detail.villa.id)
+        onReady(json)
+        _state.update { it.copy(message = "Export bereit") }
+    }
+
+    /* Sprint 33: bei Verbindungsfehler den letzten Detail-Snapshot zeigen. */
+    fun refreshDetail() = run {
+        val detail = _state.value.detail ?: return@run
+        var fromCache = false
+        val refreshed = try {
+            client.villaDetail(detail.villa.id)
+        } catch (e: Exception) {
+            fromCache = true
+            client.villaDetailFromCache(detail.villa.id)
+        }
+        if (refreshed != null) {
+            val prod = if (fromCache) _state.value.product else fetchProduct(detail.villa.id)
+            _state.update { it.copy(detail = refreshed, product = prod, stale = fromCache) }
+        }
+    }
+
+    /** Build-Status laden; Fehler sind unkritisch (Karte zeigt 'nicht gebaut'). */
+    private suspend fun fetchBuild(id: Long): org.json.JSONObject? =
+        try { client.buildStatus(id) } catch (e: Exception) { null }
+
+    /** Live-Vorschau-Info laden; Fehler sind unkritisch. */
+    private suspend fun fetchPreview(id: Long): org.json.JSONObject? =
+        try { client.previewInfo(id) } catch (e: Exception) { null }
+
+    /** Autorisierungs-Header fuer Downloads (DownloadManager/WebView). */
+    fun authHeader(): String? = client.authHeaderValue()
+
+    /** Live-Ansicht: URL mit Auth-Header laden (WebView-Ressource). */
+    fun previewResource(url: String): android.webkit.WebResourceResponse? = client.webResource(url)
+
+    /** Aktivitaet laden: letzte Meldungen aller Agenten der offenen Villa. */
+    fun refreshActivity() = run {
+        val detail = _state.value.detail ?: return@run
+        val msgs = try { client.messages(detail.villa.id, null) } catch (e: Exception) { null }
+        _state.update { it.copy(activity = msgs) }
+    }
+
+    /** WAS/WARUM/WIE-Erklaerung der offenen Villa anfordern. */
+    fun explain() = run {
+        val detail = _state.value.detail ?: return@run
+        val ex = try { client.explain(detail.villa.id) } catch (e: Exception) { null }
+        _state.update { it.copy(explanation = ex) }
+    }
+
+    /** Scout-Vorschlaege laden. */
+    fun refreshProposals() = run {
+        val props = try { client.proposals() } catch (e: Exception) { null }
+        _state.update { it.copy(proposals = props) }
+    }
+
+    /** Scout anstossen: Villa analysiert und schlaegt bessere Alternative vor. */
+    fun scanProposals() = run {
+        client.proposalsScan()
+        _state.update { it.copy(message = "Analyse läuft - der Scout prüft bessere Alternativen") }
+        refreshProposals()
+    }
+
+    /** Vorschlag bestaetigen: Hub gruendet selbststaendig eine neue Villa. */
+    fun approveProposal(id: Long, onCreated: (Long) -> Unit = {}) = run {
+        val r = client.proposalApprove(id)
+        val villaId = r.optLong("villaId", -1)
+        _state.update { it.copy(message = "Villa '${r.optString("villaName")}' wurde gegründet und startet autonom") }
+        refreshProposals()
+        if (villaId > 0) onCreated(villaId)
+    }
+
+    /** Vorschlag ablehnen. */
+    fun rejectProposal(id: Long) = run {
+        client.proposalReject(id)
+        _state.update { it.copy(message = "Vorschlag abgelehnt") }
+        refreshProposals()
+    }
+
+    /* ---- Villa-Evolution: naechste Phasen, Perfektion, Marketplace je Villa ---- */
+
+    /** Evolutions-Status der offenen Villa laden (Stufe + offene Vorschlaege). */
+    fun refreshEvolution(villaId: Long) = run {
+        val evo = try { client.evolution(villaId) } catch (e: Exception) { null }
+        _state.update { it.copy(evolution = evo) }
+    }
+
+    /** Villa einen neuen Vorschlag erzeugen lassen. kind: NEXT_PHASES | PERFECT | MARKETPLACE. */
+    fun proposeEvolution(villaId: Long, kind: String) = run {
+        val r = client.evolutionPropose(villaId, kind)
+        val note = if (r.optBoolean("fallback", false))
+            "Vorschlag aus Standardplan (kein Modell erreichbar) - bitte pruefen"
+        else "Neuer Vorschlag mit ${r.optInt("items", 0)} Aufgaben erstellt"
+        _state.update { it.copy(message = note) }
+        refreshEvolution(villaId)
+    }
+
+    /** Vorschlag bestaetigen: Aufgaben legen an und die Villa entwickelt weiter. */
+    fun approveEvolution(villaId: Long, proposalId: Long) = run {
+        val r = client.evolutionApprove(proposalId)
+        _state.update { it.copy(message = "Bestätigt: ${r.optInt("added", 0)} neue Aufgaben - die Villa entwickelt weiter") }
+        refreshEvolution(villaId)
+        refreshDetail()
+    }
+
+    /** Vorschlag ablehnen. */
+    fun rejectEvolution(villaId: Long, proposalId: Long) = run {
+        client.evolutionReject(proposalId)
+        _state.update { it.copy(message = "Vorschlag abgelehnt") }
+        refreshEvolution(villaId)
+    }
+
+    /** Aktualisiert Build-Status und Vorschau-Info der offenen Villa. */
+    fun refreshBuild() = run {
+        val detail = _state.value.detail ?: return@run
+        val build = fetchBuild(detail.villa.id)
+        val preview = fetchPreview(detail.villa.id)
+        _state.update { it.copy(build = build, preview = preview) }
+    }
+
+    /** Startet den Produkt-Build und meldet den Start. */
+    fun triggerBuild() = run {
+        val detail = _state.value.detail ?: return@run
+        try {
+            client.startBuild(detail.villa.id)
+        } catch (e: dev.villaforge.app.net.HubException) {
+            throw Exception(if (e.code == 409) "Build läuft bereits." else e.message)
+        }
+        _state.update { it.copy(message = "Produkt-Build gestartet") }
+        refreshBuild()
+    }
+
+    /** Marktreife laden; Fehler sind unkritisch (Karte bleibt dann einfach weg). */
+    private suspend fun fetchProduct(id: Long): org.json.JSONObject? =
+        try { client.product(id) } catch (e: Exception) { null }
+
+    fun toggleRoute(route: LlmRoute) = run {
+        client.setRouteEnabled(route.id, !route.enabled)
+        val routes = client.routes()
+        _state.update { it.copy(routes = routes) }
+    }
+
+    fun saveSecret(name: String, value: String) = run {
+        client.setSecret(name, value)
+        _state.update { it.copy(message = "Key $name gespeichert") }
+        val routes = client.routes()
+        _state.update { it.copy(routes = routes) }
+    }
+
+    fun closeDetail() = _state.update { it.copy(detail = null, messages = emptyList(), product = null, chatAgentId = null, build = null, preview = null) }
+
+    /** Leert den Live-Ereignis-Feed. */
+    fun clearEvents() = _state.update { it.copy(events = emptyList()) }
+
+    /** Groesse des Offline-Caches in Bytes (Diagnose). */
+    fun cacheBytes(): Long = client.snapshotsSizeBytes()
+
+    /** Leert den Offline-Cache und meldet den Erfolg. */
+    fun clearCache() = run {
+        client.clearSnapshots()
+        _state.update { it.copy(message = "Offline-Cache geleert") }
+    }
+
+    fun clearMessage() = _state.update { it.copy(message = "", error = null) }
 
     private var pendingMaster: Pair<String, String>? = null
 
