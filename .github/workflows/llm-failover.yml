@@ -164,9 +164,10 @@ jobs:
           Description=LLM-Watchdog alle 15 Sekunden
           WDT
           sudo systemctl daemon-reload
-          sudo systemctl enable --now litellm.service
+          sudo systemctl enable litellm.service
+          sudo systemctl restart litellm.service
           sudo systemctl enable --now llm-watchdog.timer
-          sleep 8
+          sleep 12
           sudo systemctl --no-pager --lines=5 status litellm.service | head -8 || true
           EOS
 
