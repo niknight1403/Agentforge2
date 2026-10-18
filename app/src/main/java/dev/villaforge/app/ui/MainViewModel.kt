@@ -19,7 +19,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class UiState(
     val serverUrl: String = HubClient.DEFAULT_BASE,
@@ -190,7 +192,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                 if (idx >= 0 && c.moveToFirst() && !c.isNull(idx)) name = c.getString(idx)
             }
-            val bytes = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val bytes = withContext(Dispatchers.IO) {
                 resolver.openInputStream(uri)?.use { it.readBytes() } ?: throw IllegalStateException("Datei nicht lesbar")
             }
             if (bytes.size > 12 * 1024 * 1024) throw IllegalStateException("Anhang zu gross (max. 12 MB)")
