@@ -13,6 +13,18 @@ on:
         description: 'Villa-IDs, kommasepariert (leer = Auto-Treiber-Modus)'
         required: false
         default: ''
+      create_name:
+        description: 'Neue Villa anlegen mit diesem Namen (dann automatisch starten)'
+        required: false
+        default: ''
+      create_idea:
+        description: 'Mission/Idee der neuen Villa (erforderlich mit create_name)'
+        required: false
+        default: ''
+      create_source:
+        description: 'Quellpfad/GitHub-Repo der neuen Villa (optional)'
+        required: false
+        default: ''
   schedule:
     - cron: '23 */4 * * *'
 
@@ -52,6 +64,19 @@ jobs:
           }
 
           IDS='${{ github.event.inputs.ids }}'
+          CNAME='${{ github.event.inputs.create_name }}'
+          CIDEA='${{ github.event.inputs.create_idea }}'
+          CSRC='${{ github.event.inputs.create_source }}'
+          if [ -n "$CNAME" ]; then
+            echo "=== Modus: Neue Villa anlegen ($CNAME) ==="
+            BODY=$(jq -n --arg n "$CNAME" --arg i "$CIDEA" --arg s "$CSRC" \
+              '{name:$n, idea:$i} + (if $s != "" then {sourcePath:$s} else {} end)')
+            RES=$(curl -s -m 120 -X POST -H "$AUTH" -H "Content-Type: application/json" -d "$BODY" "$H/api/villas")
+            echo "$RES" | head -c 300; echo
+            NID=$(echo "$RES" | jq -r '.villaId // empty')
+            if [ -z "$NID" ]; then echo "Anlegen fehlgeschlagen"; exit 1; fi
+            IDS="$NID"
+          fi
           if [ -n "$IDS" ] && [ "$IDS" != "''" ]; then
             echo "=== Modus: Manueller Start ($IDS) ==="
             for ID in $(echo "$IDS" | tr ',' ' '); do start_villa "$ID"; done
