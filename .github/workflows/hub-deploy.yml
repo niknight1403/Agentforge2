@@ -1,11 +1,6 @@
 name: Hub-Deploy
 on:
   workflow_dispatch:
-    inputs:
-      ref:
-        description: 'Branch/Tag, der auf die VM soll (Standard main)'
-        required: false
-        default: 'main'
 
 jobs:
   deploy:
@@ -22,7 +17,7 @@ jobs:
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
           cat > /tmp/deploy.sh <<'DEP'
-          set -e
+          set -euo pipefail
           echo "== Hub-Verzeichnis und Dienst aus systemd ermitteln =="
           UNIT=$(systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -iE '^(hub|villaforge)' | head -1 || true)
           [ -n "$UNIT" ] || UNIT=hub
@@ -49,14 +44,56 @@ jobs:
             RC=0
             git fetch -q origin main || RC=$?
           fi
-          [ "$RC" = "0" ] || { echo "FETCH-FEHLGESCHLAGEN rc=$RC"; git remote -v | head -2; exit 3; }
+          if [ "$RC" != "0" ]; then
+            git remote set-url origin "https://github.com/niknight1403/AgentForge.git" 2>/dev/null || true
+            echo "FETCH-FEHLGESCHLAGEN rc=$RC (Remote-URL aus Sicherheitsgruenden nicht ausgegeben)"
+            exit 3
+          fi
+          # PAT nicht dauerhaft in .git/config speichern oder in spaeteren Logs zeigen.
+          git remote set-url origin "https://github.com/niknight1403/AgentForge.git" 2>/dev/null || true
+          PREVIOUS_SHA=$(git rev-parse HEAD)
+          SOURCE_UPDATED=0
+          ROLLBACK_REQUIRED=0
+          rollback_on_error() {
+            status=$?
+            trap - ERR
+            if [ "$ROLLBACK_REQUIRED" = "1" ]; then
+              echo "Deploy-Health fehlgeschlagen; stelle vorherigen Stand wieder her."
+              git reset --hard "$PREVIOUS_SHA" || true
+              systemctl restart "$UNIT" || true
+            elif [ "$SOURCE_UPDATED" = "1" ]; then
+              echo "Freigabepruefung fehlgeschlagen; stelle vorherigen Quellstand wieder her."
+              git reset --hard "$PREVIOUS_SHA" || true
+            fi
+            exit "$status"
+          }
+          trap rollback_on_error ERR
           git reset --hard origin/main 2>&1 | head -3
+          SOURCE_UPDATED=1
           git log --oneline -1
           echo "== Abhaengigkeiten aktualisieren (falls noetig) =="
-          if [ -f package.json ]; then
-            npm install --omit=dev --no-audit --no-fund 2>&1 | tail -2 || true
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev --no-audit --no-fund
+          elif [ -f package.json ] && node -e 'const p=require("./package.json");process.exit(Object.keys(p.dependencies||{}).length?0:1)'; then
+            npm install --omit=dev --no-audit --no-fund
+          else
+            echo "Keine Laufzeit-Abhaengigkeiten zu installieren."
           fi
+          echo "== Vollstaendige Backend-Tests vor Freigabe =="
+          cd "$HUBDIR"
+          TEST_LOG=$(mktemp)
+          if ! VF_TEST=1 timeout 300 node --test tests/*.test.mjs >"$TEST_LOG" 2>&1; then
+            tail -n 80 "$TEST_LOG"
+            rm -f "$TEST_LOG"
+            echo "Backend-Tests fehlgeschlagen; Deploy wird abgebrochen."
+            git reset --hard "$PREVIOUS_SHA"
+            SOURCE_UPDATED=0
+            exit 4
+          fi
+          tail -n 12 "$TEST_LOG"
+          rm -f "$TEST_LOG"
           echo "== Neustart =="
+          ROLLBACK_REQUIRED=1
           systemctl daemon-reload || true
           systemctl restart "$UNIT"
           sleep 6
@@ -65,9 +102,13 @@ jobs:
           echo "== Health/Version lokal =="
           PORT=$(systemctl show "$UNIT" -p Environment --value 2>/dev/null | grep -oE 'PORT=[0-9]+' | cut -d= -f2 || true)
           [ -n "$PORT" ] || PORT=3000
-          curl -s -m 30 "http://127.0.0.1:${PORT:-3000}/api/health" | head -c 600; echo
-          echo "== Tests auf der VM (Bestandsschutz) =="
-          cd "$HUBDIR" && (VF_TEST=1 timeout 300 node --test tests/*.test.mjs 2>&1 | tail -4) || true
+          HEALTH_FILE=$(mktemp)
+          curl --fail --silent --show-error --max-time 30 "http://127.0.0.1:${PORT}/api/health" -o "$HEALTH_FILE"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8")); assert d.get("ok") is True; assert d.get("masterControl")==1; assert "master-control-v1" in d.get("capabilities",[]); print("Lokaler Health-Check: Master-Control aktiv, Version",d.get("version"))' "$HEALTH_FILE"
+          rm -f "$HEALTH_FILE"
+          ROLLBACK_REQUIRED=0
+          SOURCE_UPDATED=0
+          trap - ERR
           echo "DEPLOY-ENDE"
           DEP
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/deploy.sh ubuntu@92.5.177.159:/tmp/deploy.sh
@@ -99,10 +140,14 @@ jobs:
       - name: Hub von aussen verifizieren
         run: |
           sleep 5
-          curl -s -m 60 -o /tmp/h.json -w "health: HTTP %{http_code} in %{time_total}s\n" https://hub.cybersarah-ki.com/api/health
-          python3 -c "
+          curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 2 --max-time 15 \
+            -o /tmp/h.json -w "health: HTTP %{http_code} in %{time_total}s\n" \
+            https://hub.cybersarah-ki.com/api/health
+          python3 -c '
           import json
-          d = json.load(open('/tmp/h.json'))
-          print('LIVE-VERSION:', d.get('version'), '| Agenten:', d.get('agents'), '| Villen:', d.get('villas'))
-          assert '1.41.1' in str(d.get('version','')), 'Live-Version ist nicht 1.41.1!'
-          print('LIVE-DEPLOY-OK')"
+          with open("/tmp/h.json", encoding="utf-8") as f:
+              d = json.load(f)
+          assert d.get("ok") is True, "Health meldet ok=false"
+          assert d.get("masterControl") == 1, "Master-Control ist nicht aktiv"
+          assert "master-control-v1" in d.get("capabilities", []), "Master-API-Faehigkeit fehlt"
+          print("LIVE-DEPLOY-OK:", d.get("version"), "· Master-Control aktiv ·", d.get("routes"), "Routen")'
