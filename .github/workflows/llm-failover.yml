@@ -201,12 +201,15 @@ jobs:
         run: |
           /tmp/sshcmd 'bash -s' << 'EOS'
           set -e
-          echo "== Systemd-Drop-In: VF_MAX_CONCURRENCY=2 (Free-Tier-Kapazitaet) =="
-          sudo mkdir -p /etc/systemd/system/villaforge.service.d
-          printf '[Service]\nEnvironment=VF_MAX_CONCURRENCY=2\n' | sudo tee /etc/systemd/system/villaforge.service.d/limits.conf >/dev/null
+          UNIT=$(systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -iE '^(hub|villaforge)' | head -1 || true)
+          UNIT=${UNIT:-villaforge.service}
+          echo "== Hub-Unit: $UNIT =="
+          sudo rm -f /etc/systemd/system/villaforge.service.d/limits.conf
+          sudo mkdir -p "/etc/systemd/system/${UNIT}.d"
+          printf '[Service]\nEnvironment=VF_MAX_CONCURRENCY=2\n' | sudo tee "/etc/systemd/system/${UNIT}.d/concurrency.conf" >/dev/null
           sudo systemctl daemon-reload
-          sudo systemctl restart villaforge
-          echo "Drop-In aktiv fuer villaforge - Hub neu gestartet"
+          sudo systemctl restart "$UNIT"
+          echo "VF_MAX_CONCURRENCY=2 aktiv - $UNIT neu gestartet"
           echo "== Kaskaden-Routenname: Groq-Bucket statt Gemini-Bucket =="
           tee /tmp/rename-route.mjs >/dev/null << 'NODEJS'
           import { DatabaseSync } from 'node:sqlite';
