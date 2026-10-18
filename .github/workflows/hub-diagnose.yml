@@ -45,7 +45,7 @@ jobs:
             # geduldige CHAT-PROBE RAW spaeter in diesem Lauf ist maßgeblich.
             CODE=$(curl -s -m 90 -o /tmp/c.json -w "%{http_code}" -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" -d '{"message":"Antworte nur mit: ok"}' $H/api/villas/$CVID/chat || true)
             echo "chat-kurzprobe (villa $CVID): HTTP $CODE (maßgeblich: CHAT-PROBE RAW spaeter)"
-            head -c 200 /tmp/c.json; echo
+            [ -f /tmp/c.json ] && head -c 200 /tmp/c.json; echo
           else
             echo "chat-kurzprobe uebersprungen: keine Villa verfuegbar"
           fi
@@ -118,8 +118,11 @@ jobs:
               ans, dt = post("/api/villas/%d/chat" % v.get("id"), {"message": "Sag nur: ok - kein Werkzeug, keine Aufgabe."}, tok, 420)
               print("CHAT-PROBE RAW:", json.dumps(ans)[:400], "| Dauer:", dt, "s")
               villas = get("/api/villas", tok)
-              for v_ in (villas if isinstance(villas, list) else [])[:14]:
-                  print("VILLA-LIVE:", v_.get("name","")[:24], "| executing:", v_.get("executing"), "| queued:", v_.get("queued"), "| status:", v_.get("status"))
+              for v_ in (villas if isinstance(villas, list) else []):
+                  idea = " ".join(str(v_.get("idea") or v_.get("vision") or "")[:110].split())
+                  print("VILLA-ROSTER: #%s | %s | status: %s | executing: %s | queued: %s | idee: %s" % (
+                      v_.get("id"), str(v_.get("name",""))[:34], v_.get("status"),
+                      v_.get("executing"), v_.get("queued"), idea))
               mres, mdt = post("/api/master/chat", {"message": "Kurztest: antworte in einem Satz mit dem Status der Villen, gruende KEINE Villa."}, tok, 180)
               print("MASTER-PROBE:", json.dumps(mres)[:300], "| Dauer:", mdt, "s")
           PROBE
