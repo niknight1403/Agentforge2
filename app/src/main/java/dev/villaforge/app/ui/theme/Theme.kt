@@ -2,6 +2,9 @@ package dev.villaforge.app.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
+import androidx.compose.material3.Shapes
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
@@ -21,18 +24,18 @@ import androidx.compose.ui.unit.sp
  * - Overline-Stil fuer Sektions-Labels mit Letter-Spacing.
  * - statusColor(): semantische Statusfarben als zentrale Wahrheit.
  */
-val Violet = Color(0xFF8B6CFF)
-val Aqua = Color(0xFF00E6C2)
-val Ink = Color(0xFF050816)
-val Surface1 = Color(0xFF101A33)
-val Surface2 = Color(0xFF172342)
-val Surface3 = Color(0xFF24335A)
-val TextMain = Color(0xFFECF0FF)
-val TextMuted = Color(0xFF94A0C8)
+val Violet = Color(0xFFA396FF)
+val Aqua = Color(0xFF68DFCD)
+val Ink = Color(0xFF0C1018)
+val Surface1 = Color(0xFF151C28)
+val Surface2 = Color(0xFF1B2433)
+val Surface3 = Color(0xFF222E40)
+val TextMain = Color(0xFFF0F4FB)
+val TextMuted = Color(0xFFA8B5C9)
 val Warn = Color(0xFFFFB020)
 val Danger = Color(0xFFFF5F6D)
 val Success = Color(0xFF35D97B)
-val Border = Color(0xFF34446D)
+val Border = Color(0xFF2B3649)
 
 /** Marken-Verlauf fuer Header und Highlights. */
 val BrandGradient = Brush.linearGradient(listOf(Violet, Aqua))
@@ -52,7 +55,7 @@ fun statusColor(status: String): Color = when {
     status == "ARBEITET" -> Success
     status == "WARTET" || status == "QUEUED" -> Warn
     status == "DONE" || status == "COMPLETED" || status == "Key vorhanden" || status == "ok" -> Success
-    status == "FAILED" -> Danger
+    status == "FAILED" || status == "BLOCKED" || status == "ERROR" -> Danger
     status == "PAUSED" || status == "PLANNING" || status == "STOPPING" ||
         status == "PENDING" || status == "kein Key" || status == "offline" -> Warn
     else -> TextMuted
@@ -60,7 +63,7 @@ fun statusColor(status: String): Color = when {
 
 private val scheme = darkColorScheme(
     primary = Violet,
-    onPrimary = Color.White,
+    onPrimary = Ink,
     secondary = Aqua,
     onSecondary = Ink,
     tertiary = Success,
@@ -92,8 +95,8 @@ private val typography = Typography(
     headlineSmall = TextStyle(fontSize = 23.sp, fontWeight = FontWeight.Bold, color = TextMain),
     titleLarge = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = TextMain),
     titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextMain),
-    bodyLarge = TextStyle(fontSize = 15.sp, color = TextMain),
-    bodyMedium = TextStyle(fontSize = 14.sp, color = TextMain),
+    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp, color = TextMain),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp, color = TextMain),
     bodySmall = TextStyle(fontSize = 12.5.sp, color = TextMuted),
     labelSmall = TextStyle(
         fontSize = 11.sp,
@@ -108,6 +111,7 @@ fun VillaForgeTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = scheme,
         typography = typography,
+        shapes = Shapes(small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(20.dp)),
         content = content
     )
 }

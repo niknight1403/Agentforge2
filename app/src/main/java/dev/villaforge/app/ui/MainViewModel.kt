@@ -2,12 +2,11 @@ package dev.villaforge.app.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
+import dev.villaforge.app.core.SelectedVilla
 import androidx.lifecycle.viewModelScope
 import dev.villaforge.app.net.ChatMessage
 import dev.villaforge.app.net.HubClient
-import dev.villaforge.app.net.DeepProject
-import dev.villaforge.app.net.DeepMessage
-import dev.villaforge.app.net.DeepAttachment
 import dev.villaforge.app.net.LlmRoute
 import dev.villaforge.app.net.SseClient
 import dev.villaforge.app.net.Villa
@@ -19,22 +18,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 data class UiState(
     val serverUrl: String = HubClient.DEFAULT_BASE,
     val online: Boolean = false,
     val healthText: String = "verbinde …",
-    /** Deep-Agent: Projekt-Verlauf. */
-    val deepProjects: List<DeepProject> = emptyList(),
-    /** Deep-Agent: aktuelles Projekt (0 = keins offen). */
-    val deepActiveProject: DeepProject? = null,
-    /** Deep-Agent: Nachrichten des aktiven Projekts. */
-    val deepMessages: List<DeepMessage> = emptyList(),
-    /** Deep-Agent: noch nicht gesendete Anhaenge. */
-    val deepPendingAttachments: List<DeepAttachment> = emptyList(),
     /** SSE-Verbindung zum Hub aktiv (Live-Ereignisse fließen). */
     val live: Boolean = false,
     /** Letzte Live-Ereignisse (neueste zuerst, begrenzt). */
@@ -43,9 +32,17 @@ data class UiState(
     val lastRefresh: Long = 0L,
     val villas: List<Villa> = emptyList(),
     val detail: VillaDetail? = null,
+    val selectedVillaId: Long? = null,
+    val villaLoading: Boolean = false,
     val messages: List<ChatMessage> = emptyList(),
     /** Aktueller Chat-Partner (Agent-ID), null = Root/Deep Agent. */
     val chatAgentId: Long? = null,
+    val masterMessages: List<ChatMessage> = emptyList(),
+    val masterSuggestions: org.json.JSONArray = org.json.JSONArray(),
+    val masterStatus: org.json.JSONObject? = null,
+    val masterBusy: Boolean = false,
+    val masterPending: Boolean = false,
+    val masterError: String? = null,
     val routes: List<LlmRoute> = emptyList(),
     val busy: Boolean = false,
     val message: String = "",
@@ -78,17 +75,14 @@ data class UiState(
     val needsLogin: Boolean = false,
     /** Ergebnis des Verbindungstests (Diagnose). */
     val connTest: List<String> = emptyList(),
-    val connTestRunning: Boolean = false,
-    /** Master-Agent: Verlauf des Master-Chats. */
-    val masterMessages: List<dev.villaforge.app.net.ChatMessage> = emptyList(),
-    val masterBusy: Boolean = false,
-    val masterLoaded: Boolean = false
+    val connTestRunning: Boolean = false
 )
 
-class MainViewModel(app: Application) : AndroidViewModel(app) {
+class MainViewModel(app: Application, savedStateHandle: SavedStateHandle) : AndroidViewModel(app) {
 
+    private val selectedVilla = SelectedVilla(savedStateHandle)
     private val client = HubClient(app)
-    private val _state = MutableStateFlow(UiState(serverUrl = client.serverUrl))
+    private val _state = MutableStateFlow(UiState(serverUrl = client.serverUrl, selectedVillaId = selectedVilla.id))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     /** Live-Ereignisstrom des Hubs (SSE), mit automatischem Nachverbinden. */
@@ -102,6 +96,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         loadSnapshot()
         startEventStream()
         refreshAll()
+        retrySelectedVilla()
     }
 
     /** Nach Netzwerk-Fehlern automatisch neu verbinden (45 s), bis der Hub wieder antwortet. */
@@ -118,178 +113,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(connTestRunning = true, connTest = listOf("Test laeuft ...")) }
         val lines = try { client.connectionTest() } catch (e: Exception) { listOf("Test-FEHLER: ${e.javaClass.simpleName}: ${e.message}") }
         _state.update { it.copy(connTestRunning = false, connTest = lines) }
-    }
-
-    /** Master-Agent: Verlauf einmalig laden (beim Oeffnen des Chatfensters). */
-    fun loadMaster() = viewModelScope.launch {
-        if (_state.value.masterLoaded) return@launch
-        try {
-            val h = client.masterHistory()
-            _state.update { it.copy(masterMessages = h, masterLoaded = true) }
-        } catch (_: Exception) { /* naechster Versuch beim Senden */ }
-    }
-
-    /** Master-Agent: Wunsch senden; erzeugt ggf. autonom eine Villa. */
-    /* ---- Deep Agent: eigene App-Projekte (v1.37.0) ---- */
-
-    /** Projekt-Verlauf laden. */
-    fun loadDeepProjects() = viewModelScope.launch {
-        try {
-            val list = client.deepProjects()
-            _state.update { it.copy(deepProjects = list) }
-        } catch (_: Exception) { /* still - beim naechsten Refresh */ }
-    }
-
-    /** Neues Projekt anlegen (neuer Deep Agent). */
-    fun createDeepProject(idea: String, onCreated: (Long) -> Unit) = viewModelScope.launch {
-        _state.update { it.copy(busy = true) }
-        try {
-            val res = client.deepCreateProject(idea)
-            val id = res.optLong("id", 0)
-            _state.update { it.copy(busy = false, deepPendingAttachments = emptyList()) }
-            if (id > 0) { loadDeepProjects(); openDeepProject(id); onCreated(id) }
-            else _state.update { it.copy(message = res.optString("error", "Projekt konnte nicht angelegt werden")) }
-        } catch (e: Exception) {
-            _state.update { it.copy(busy = false, message = e.message?.let { m -> "Fehler: $m" } ?: "Hub nicht erreichbar") }
-        }
-    }
-
-    /** Projekt oeffnen: Detail + Nachrichten laden. */
-    fun openDeepProject(id: Long) = viewModelScope.launch {
-        try {
-            val (project, messages) = client.deepProjectDetail(id)
-            _state.update { it.copy(deepActiveProject = project, deepMessages = messages, deepPendingAttachments = emptyList()) }
-        } catch (_: Exception) { }
-    }
-
-    /** Datei/Foto/Video hochladen und als Anhang vormerken. */
-    fun addDeepAttachment(projectId: Long, name: String, mime: String, base64: String) = viewModelScope.launch {
-        _state.update { it.copy(busy = true) }
-        try {
-            val res = client.deepUploadFile(projectId, name, mime, base64)
-            val fileId = res.optLong("id", 0)
-            if (fileId > 0) {
-                _state.update {
-                    it.copy(deepPendingAttachments = it.deepPendingAttachments +
-                        DeepAttachment(kind = "file", fileId = fileId, name = res.optString("name", name)))
-                }
-            } else _state.update { it.copy(message = res.optString("error", "Upload fehlgeschlagen")) }
-        } catch (e: Exception) {
-            _state.update { it.copy(message = "Upload fehlgeschlagen: ${'$'}{e.message}") }
-        } finally {
-            _state.update { it.copy(busy = false) }
-        }
-    }
-
-    /** Foto/Video/Datei aus dem Android-Picker lesen und als Anhang hochladen. */
-    fun addDeepAttachmentFromUri(context: android.content.Context, projectId: Long, uri: android.net.Uri) = viewModelScope.launch {
-        _state.update { it.copy(busy = true, message = "Anhang wird geladen ...") }
-        try {
-            val resolver = context.contentResolver
-            var name = "anhang"
-            var mime = resolver.getType(uri) ?: "application/octet-stream"
-            resolver.query(uri, null, null, null, null)?.use { c ->
-                val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (idx >= 0 && c.moveToFirst() && !c.isNull(idx)) name = c.getString(idx)
-            }
-            val bytes = withContext(Dispatchers.IO) {
-                resolver.openInputStream(uri)?.use { it.readBytes() } ?: throw IllegalStateException("Datei nicht lesbar")
-            }
-            if (bytes.size > 12 * 1024 * 1024) throw IllegalStateException("Anhang zu gross (max. 12 MB)")
-            val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-            val res = client.deepUploadFile(projectId, name, mime, base64)
-            val fileId = res.optLong("id", 0)
-            if (fileId > 0) {
-                _state.update {
-                    it.copy(deepPendingAttachments = it.deepPendingAttachments +
-                        DeepAttachment(kind = "file", fileId = fileId, name = res.optString("name", name)))
-                }
-            } else _state.update { it.copy(message = res.optString("error", "Upload fehlgeschlagen")) }
-        } catch (e: Exception) {
-            _state.update { it.copy(message = "Anhang fehlgeschlagen: " + (e.message ?: "unbekannt")) }
-        } finally {
-            _state.update { it.copy(busy = false) }
-        }
-    }
-
-    /** Anhang vormerken ohne Upload (Repo/Link). */
-    fun addDeepLink(kind: String, url: String) {
-        if (url.isBlank()) return
-        _state.update { it.copy(deepPendingAttachments = it.deepPendingAttachments + DeepAttachment(kind = kind, url = url)) }
-    }
-
-    /** Anhang aus der Vormerkung entfernen. */
-    fun removeDeepAttachment(name: String, url: String) {
-        _state.update { it.copy(deepPendingAttachments = it.deepPendingAttachments.filterNot { it.name == name && it.url == url }) }
-    }
-
-    /** Nachricht im Deep-Chat senden. */
-    fun sendDeep(text: String) = viewModelScope.launch {
-        val projectId = state.value.deepActiveProject?.id ?: return@launch
-        val attachments = state.value.deepPendingAttachments
-        val userMsg = DeepMessage(
-            id = System.currentTimeMillis(),
-            role = "user",
-            content = text + (if (attachments.isEmpty()) "" else attachments.joinToString("") { "\n[Anhang: ${it.name.ifBlank { it.url }}]" }),
-            createdAt = System.currentTimeMillis()
-        )
-        _state.update { it.copy(deepMessages = it.deepMessages + userMsg, deepPendingAttachments = emptyList(), busy = true) }
-        try {
-            val res = client.deepChat(projectId, text, attachments)
-            val reply = DeepMessage(
-                id = System.currentTimeMillis() + 1,
-                role = "assistant",
-                content = res.optString("reply", "(keine Antwort)"),
-                createdAt = System.currentTimeMillis()
-            )
-            _state.update { it.copy(deepMessages = it.deepMessages + reply, busy = false) }
-        } catch (e: Exception) {
-            _state.update {
-                it.copy(busy = false, deepMessages = it.deepMessages + DeepMessage(
-                    0, "assistant", "Fehler: ${e.message ?: "Hub nicht erreichbar"}", "", System.currentTimeMillis()))
-            }
-        }
-        loadDeepProjects()
-    }
-
-    fun sendMaster(text: String) = viewModelScope.launch {
-        val t = text.trim()
-        if (t.isBlank() || _state.value.masterBusy) return@launch
-        val now = System.currentTimeMillis()
-        _state.update {
-            it.copy(masterMessages = it.masterMessages + dev.villaforge.app.net.ChatMessage("user", t, now),
-                masterBusy = true, error = null)
-        }
-        try {
-            val res = client.masterChat(t)
-            val reply = res.optString("reply", "(keine Antwort)")
-            val parseDesignVariants: (org.json.JSONArray?) -> List<dev.villaforge.app.net.DesignVariant> = { arr ->
-                if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { i ->
-                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                    val url = o.optString("url")
-                    if (url.isBlank()) null
-                    else dev.villaforge.app.net.DesignVariant(o.optString("label").ifBlank { "Design ${i + 1}" }, o.optString("key"), url)
-                }
-            }
-            val msg = dev.villaforge.app.net.ChatMessage(
-                role = "assistant",
-                content = reply,
-                createdAt = System.currentTimeMillis(),
-                villaId = res.optLong("villaId", 0),
-                villaName = res.optString("villaName"),
-                designImage = res.optString("designImage"),
-                designVariants = parseDesignVariants(res.optJSONArray("designVariants"))
-            )
-            _state.update { it.copy(masterMessages = it.masterMessages + msg) }
-            if (res.optLong("villaId", 0) > 0) refreshAll()
-        } catch (e: Exception) {
-            _state.update {
-                it.copy(masterMessages = it.masterMessages + dev.villaforge.app.net.ChatMessage(
-                    "assistant", "Fehler: ${e.message ?: "Hub nicht erreichbar"}", System.currentTimeMillis()))
-            }
-        } finally {
-            _state.update { it.copy(masterBusy = false) }
-        }
     }
 
     /** Misst die Hub-Antwortzeit und meldet sie als Nachricht. */
@@ -494,15 +317,80 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(detail = refreshed, message = "Quellprojekt gespeichert") }
     }
 
-    fun openVilla(id: Long) = run {
-        val detail = client.villaDetail(id)
-        val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
-        val msgs = client.messages(id, rootId)
-        val prod = fetchProduct(id)
-        val build = fetchBuild(id)
-        val preview = fetchPreview(id)
-        _state.update {
-            it.copy(detail = detail, messages = msgs, product = prod, chatAgentId = rootId, build = build, preview = preview)
+    private var pendingMaster: Pair<String, String>? = null
+
+    fun loadMaster() = viewModelScope.launch {
+        _state.update { it.copy(masterBusy = true, masterError = null) }
+        try {
+            val messages = client.masterMessages()
+            val suggestions = client.masterSuggestions()
+            val status = client.masterStatus()
+            _state.update { it.copy(masterMessages = messages, masterSuggestions = suggestions, masterStatus = status) }
+        } catch (e: Exception) {
+            _state.update { it.copy(masterError = "Master-Agent nicht erreichbar. Der Hub muss die Master-Verwaltung unterstützen. ${e.message.orEmpty().take(150)}") }
+        } finally { _state.update { it.copy(masterBusy = false) } }
+    }
+
+    fun sendMaster(message: String) {
+        if (_state.value.masterBusy || (message.isBlank() && pendingMaster == null)) return
+        val request = pendingMaster ?: (message.trim() to java.util.UUID.randomUUID().toString()).also {
+            pendingMaster = it
+            _state.update { state -> state.copy(masterMessages = state.masterMessages + ChatMessage("user", it.first, System.currentTimeMillis())) }
+        }
+        _state.update { it.copy(masterBusy = true, masterPending = true, masterError = null) }
+        viewModelScope.launch {
+            try {
+                var result = client.masterChat(request.first, request.second)
+                repeat(15) {
+                    if (result.optBoolean("pending")) {
+                        delay(1500)
+                        result = client.masterTurn(request.second)
+                    }
+                }
+                if (result.optBoolean("pending")) throw IllegalStateException("Die Anfrage läuft noch. Mit „Status prüfen“ wird dieselbe Anfrage weiterverfolgt.")
+                val messages = client.masterMessages()
+                pendingMaster = null
+                _state.update { it.copy(masterMessages = messages, masterPending = false, masterError = if (result.optBoolean("ok", true)) null else result.optString("answer")) }
+                refreshAll()
+                val suggestions = client.masterSuggestions()
+                val status = client.masterStatus()
+                _state.update { it.copy(masterSuggestions = suggestions, masterStatus = status) }
+            } catch (e: Exception) {
+                _state.update { it.copy(masterError = e.message ?: "Master-Anfrage fehlgeschlagen. Bitte den Status prüfen.") }
+            } finally { _state.update { it.copy(masterBusy = false) } }
+        }
+    }
+    fun dismissMasterSuggestion(id: String) = viewModelScope.launch {
+        try {
+            client.dismissMasterSuggestion(id)
+            val suggestions = client.masterSuggestions()
+            _state.update { it.copy(masterSuggestions = suggestions) }
+        } catch (e: Exception) { _state.update { it.copy(masterError = e.message) } }
+    }
+
+    fun retrySelectedVilla() {
+        _state.value.selectedVillaId?.let { openVilla(it) }
+    }
+
+    fun openVilla(id: Long) {
+        if (id <= 0) return
+        selectedVilla.select(id)
+        _state.update { it.copy(selectedVillaId = id, villaLoading = true, detail = null, messages = emptyList(), error = null) }
+        run {
+            try {
+                val detail = client.villaDetail(id)
+                val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
+                val msgs = client.messages(id, rootId)
+                val prod = fetchProduct(id)
+                val build = fetchBuild(id)
+                val preview = fetchPreview(id)
+                _state.update {
+                    if (it.selectedVillaId != id) it
+                    else it.copy(detail = detail, messages = msgs, product = prod, chatAgentId = rootId, build = build, preview = preview)
+                }
+            } finally {
+                _state.update { if (it.selectedVillaId == id) it.copy(villaLoading = false) else it }
+            }
         }
     }
 
@@ -734,7 +622,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(routes = routes) }
     }
 
-    fun closeDetail() = _state.update { it.copy(detail = null, messages = emptyList(), product = null, chatAgentId = null, build = null, preview = null) }
+    fun closeDetail() {
+        selectedVilla.clear()
+        _state.update { it.copy(selectedVillaId = null, villaLoading = false, detail = null, messages = emptyList(), product = null, chatAgentId = null, build = null, preview = null) }
+    }
 
     /** Leert den Live-Ereignis-Feed. */
     fun clearEvents() = _state.update { it.copy(events = emptyList()) }

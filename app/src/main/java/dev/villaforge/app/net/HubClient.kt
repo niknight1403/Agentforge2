@@ -60,41 +60,6 @@ data class Memory(
     val importance: Int
 )
 
-/** Deep-Agent: Ein eigenes App-Projekt (abseits der Villen). */
-data class DeepProject(
-    val id: Long,
-    val title: String,
-    val status: String,
-    val createdAt: Long = 0,
-    val updatedAt: Long = 0,
-    val messages: Int = 0,
-    val idea: String = ""
-)
-
-/** Deep-Agent: Nachricht im Projekt-Chat. */
-data class DeepMessage(
-    val id: Long,
-    val role: String,
-    val content: String,
-    val attachments: String = "",
-    val createdAt: Long = 0
-)
-
-/** Deep-Agent: Anhang an eine Nachricht. */
-data class DeepAttachment(
-    val kind: String, // file | repo | link
-    val fileId: Long = 0,
-    val url: String = "",
-    val name: String = ""
-)
-
-/** Eine optische Design-Stilrichtung des Master-Designers. */
-data class DesignVariant(
-    val label: String,
-    val key: String,
-    val url: String
-)
-
 data class ChatMessage(
     val role: String,
     val content: String,
@@ -104,9 +69,7 @@ data class ChatMessage(
     val villaId: Long = 0,
     val villaName: String = "",
     /** Master-Agent: Design-Konzeptbild-URL (leer = keins). */
-    val designImage: String = "",
-    /** Master-Agent: optische Stilvarianten zur Auswahl (leer = keine). */
-    val designVariants: List<DesignVariant> = emptyList()
+    val designImage: String = ""
 )
 
 data class Report(
@@ -212,21 +175,6 @@ class HubClient(context: Context) {
     val hasLogin: Boolean get() = loginEmail.isNotBlank() && loginPass.isNotBlank()
 
     /** Meldet am Hub an (POST /api/auth/login) und speichert den Sitzungs-Token. */
-    /** Liest die Design-Stilvarianten aus der Master-Antwort ([{label, key, url}]). */
-    private fun parseDesignVariants(arr: org.json.JSONArray?): List<DesignVariant> {
-        if (arr == null) return emptyList()
-        return (0 until arr.length()).mapNotNull { i ->
-            val o = arr.optJSONObject(i) ?: return@mapNotNull null
-            val url = o.optString("url")
-            if (url.isBlank()) null
-            else DesignVariant(
-                label = o.optString("label").ifBlank { "Design ${i + 1}" },
-                key = o.optString("key"),
-                url = url
-            )
-        }
-    }
-
     suspend fun login(email: String, password: String): String = withContext(Dispatchers.IO) {
         val body = JSONObject().put("email", email.trim().lowercase()).put("password", password)
         val req = Request.Builder().url(url("/api/auth/login")).post(body.toString().toRequestBody(JSON)).build()
@@ -283,26 +231,6 @@ class HubClient(context: Context) {
         }
 
     suspend fun health(): JSONObject = JSONObject(execute("GET", "/api/health"))
-
-    /** Master-Agent: Verlauf des Master-Chats (aeltere zuerst). */
-    suspend fun masterHistory(): List<ChatMessage> {
-        val arr = JSONArray(execute("GET", "/api/master/history"))
-        return (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            ChatMessage(
-                role = o.optString("role", "assistant"),
-                content = o.optString("content"),
-                createdAt = o.optLong("createdAt"),
-                villaId = o.optLong("villaId", 0),
-                villaName = o.optString("villaName"),
-                designImage = o.optString("designImage")
-            )
-        }
-    }
-
-    /** Master-Agent: Wunsch senden -> autonom erstellte Villa zurueck. */
-    suspend fun masterChat(message: String): JSONObject =
-        JSONObject(execute("POST", "/api/master/chat", JSONObject().put("message", message)))
 
     /**
      * Verbindungstest fuer die Diagnose: DNS, TLS/HTTP-Health und Login einzeln mit
@@ -379,6 +307,20 @@ class HubClient(context: Context) {
         }
     }
 
+    suspend fun masterMessages(): List<ChatMessage> {
+        val rows = JSONArray(execute("GET", "/api/master/messages"))
+        return (0 until rows.length()).map { i ->
+            val row = rows.getJSONObject(i)
+            ChatMessage(row.optString("role"), row.optString("content"), row.optLong("created_at"))
+        }
+    }
+    suspend fun masterSuggestions(): JSONArray = JSONArray(execute("GET", "/api/master/suggestions"))
+    suspend fun masterStatus(): JSONObject = JSONObject(execute("GET", "/api/master/status"))
+    suspend fun masterChat(message: String, requestId: String): JSONObject =
+        JSONObject(execute("POST", "/api/master/chat", JSONObject().put("message", message).put("requestId", requestId)))
+    suspend fun masterTurn(requestId: String): JSONObject = JSONObject(execute("GET", "/api/master/turn/$requestId"))
+    suspend fun dismissMasterSuggestion(id: String) { execute("POST", "/api/master/suggestions/dismiss", JSONObject().put("id", id)) }
+
     suspend fun createVilla(name: String, idea: String, agentCount: Int, sourcePath: String = ""): Long {
         val body = JSONObject()
             .put("name", name)
@@ -448,74 +390,6 @@ class HubClient(context: Context) {
         JSONObject(execute("POST", "/api/proposals/$id/reject", JSONObject()))
 
     /** Autorisierungs-Header fuer externe Downloads (DownloadManager, WebView). */
-    /* ---- Deep Agent: eigene App-Projekte (v1.37.0) ---- */
-
-    /** Projekt-Verlauf (neueste zuerst). */
-    suspend fun deepProjects(): List<DeepProject> = withContext(Dispatchers.IO) {
-        val arr = JSONArray(execute("GET", "/api/deep/projects"))
-        (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            DeepProject(
-                id = o.optLong("id"),
-                title = o.optString("title"),
-                status = o.optString("status", "ACTIVE"),
-                createdAt = o.optLong("created_at"),
-                updatedAt = o.optLong("updated_at"),
-                messages = o.optInt("messages", 0)
-            )
-        }
-    }
-
-    /** Neues Projekt anlegen - der Deep Agent liefert den initialen Bauplan. */
-    suspend fun deepCreateProject(idea: String): JSONObject =
-        JSONObject(execute("POST", "/api/deep/projects", JSONObject().put("idea", idea)))
-
-    /** Projekt-Detail: Projekt + Nachrichten. */
-    suspend fun deepProjectDetail(id: Long): Pair<DeepProject, List<DeepMessage>> = withContext(Dispatchers.IO) {
-        val d = JSONObject(execute("GET", "/api/deep/projects/$id"))
-        val po = d.getJSONObject("project")
-        val project = DeepProject(
-            id = po.optLong("id"),
-            title = po.optString("title"),
-            status = po.optString("status", "ACTIVE"),
-            createdAt = po.optLong("created_at"),
-            updatedAt = po.optLong("updated_at"),
-            idea = po.optString("idea")
-        )
-        val arr = d.optJSONArray("messages") ?: JSONArray()
-        val messages = (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            DeepMessage(
-                id = o.optLong("id"),
-                role = o.optString("role"),
-                content = o.optString("content"),
-                attachments = o.optString("attachments", ""),
-                createdAt = o.optLong("created_at")
-            )
-        }
-        project to messages
-    }
-
-    /** Nachricht im Projekt-Chat senden (Antwort des Deep Agent). */
-    suspend fun deepChat(projectId: Long, message: String, attachments: List<DeepAttachment>): JSONObject {
-        val body = JSONObject().put("message", message)
-        val arr = JSONArray()
-        attachments.forEach { a ->
-            arr.put(JSONObject()
-                .put("kind", a.kind)
-                .put("fileId", a.fileId)
-                .put("url", a.url)
-                .put("name", a.name))
-        }
-        body.put("attachments", arr)
-        return JSONObject(execute("POST", "/api/deep/projects/$projectId/chat", body))
-    }
-
-    /** Datei-Anhang hochladen (Base64), liefert Datei-Id + Abruf-URL. */
-    suspend fun deepUploadFile(projectId: Long, name: String, mime: String, base64: String): JSONObject =
-        JSONObject(execute("POST", "/api/deep/projects/$projectId/files",
-            JSONObject().put("name", name).put("mime", mime).put("data", base64)))
-
     fun authHeaderValue(): String? =
         if (apiToken.isNotBlank()) "Bearer $apiToken" else null
 
