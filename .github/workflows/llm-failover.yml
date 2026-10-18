@@ -1,0 +1,184 @@
+name: LLM-Failover-Aufbau
+
+# SRE-Auftrag 2026-10-18: Redundantes, 100 % kostenloses LLM-Failover:
+# LiteLLM-Proxy (Port 4000) mit Kaskade 1. Groq Free -> 2. Ollama lokal
+# (llama3.2:3b, keep_alive -1, Timeout 5 s, Cooldown 30 s) + Systemd-Watchdog
+# (alle 15 s Health-Checks, automatische Neustarts).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  failover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+
+      - name: 1) Ollama pruefen + Keep-Alive -1
+        run: |
+          /tmp/sshcmd 'bash -s' << 'EOS'
+          set -e
+          echo "== Ollama-Status =="
+          if ! curl -sf -m 5 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+            echo "Ollama nicht erreichbar - installiere ..."
+            curl -fsSL https://ollama.com/install.sh | sh
+          else
+            echo "Ollama laeuft bereits."
+          fi
+          echo "== Modell-Check (llama3.2:3b) =="
+          if ! curl -sf -m 10 http://127.0.0.1:11434/api/tags | grep -q "llama3.2:3b"; then
+            echo "Modell wird gezogen ..."
+            ollama pull llama3.2:3b
+          else
+            echo "llama3.2:3b vorhanden."
+          fi
+          echo "== Keep-Alive dauerhaft (-1) via Systemd-Override =="
+          sudo mkdir -p /etc/systemd/system/ollama.service.d
+          printf '%s\n' '[Service]' 'Environment="OLLAMA_KEEP_ALIVE=-1"' 'Environment="OLLAMA_FLASH_ATTENTION=1"' | sudo tee /etc/systemd/system/ollama.service.d/override.conf >/dev/null
+          sudo systemctl daemon-reload
+          sudo systemctl restart ollama
+          sleep 3
+          curl -sf -m 5 http://127.0.0.1:11434/api/tags >/dev/null && echo "Ollama mit keep_alive=-1 aktiv."
+          EOS
+
+      - name: 2) LiteLLM-Proxy installieren (Kaskade Groq -> Ollama)
+        run: |
+          /tmp/sshcmd 'bash -s' << 'EOS'
+          set -e
+          if [ ! -d /opt/villaforge/litellm-venv ]; then
+            sudo apt-get -qq update >/dev/null 2>&1 || true
+            sudo apt-get -qq install -y python3-venv python3-pip >/dev/null 2>&1 || true
+            python3 -m venv /opt/villaforge/litellm-venv
+          fi
+          echo "== LiteLLM installieren/aktualisieren (evtl. einige Minuten) =="
+          /opt/villaforge/litellm-venv/bin/pip install -q --upgrade 'litellm[proxy]' 2>&1 | tail -2 || true
+          /opt/villaforge/litellm-venv/bin/litellm --version || echo "Versionsabfrage fehlgeschlagen - pruefe Installation"
+          echo "== Kaskaden-Konfiguration schreiben =="
+          cat > /opt/villaforge/litellm.yaml << 'YAML'
+          model_list:
+            # Stufe 1: kostenloser Cloud-Endpunkt (Groq Free Tier)
+            - model_name: villa-kaskade
+              litellm_params:
+                model: groq/llama-3.3-70b-versatile
+                api_key: os.environ/GROQ_API_KEY
+                timeout: 5
+                max_retries: 0
+            # Stufe 2: lokales Offline-Backup (Ollama, unbegrenzt, kostenlos)
+            - model_name: villa-kaskade
+              litellm_params:
+                model: ollama_chat/llama3.2:3b
+                api_base: http://127.0.0.1:11434
+                keep_alive: -1
+                timeout: 5
+            # Nur fuer den Failover-Akzeptanztest: absichtlich kaputter Primaer-Schluesse
+            - model_name: villa-failtest
+              litellm_params:
+                model: groq/llama-3.3-70b-versatile
+                api_key: os.environ/BROKEN_TEST_KEY
+                timeout: 5
+                max_retries: 0
+            - model_name: villa-failtest
+              litellm_params:
+                model: ollama_chat/llama3.2:3b
+                api_base: http://127.0.0.1:11434
+                keep_alive: -1
+                timeout: 5
+          litellm_settings:
+            drop_params: true
+            num_retries: 0
+            request_timeout: 5
+          router_settings:
+            routing_strategy: simple-shuffle
+            num_retries: 1
+            timeout: 5
+            cooldown_time: 30
+            allowed_fails: 1
+          general_settings:
+            master_key: sk-villaforge-local
+          YAML
+          echo "Konfiguration: /opt/villaforge/litellm.yaml"
+          EOS
+
+      - name: 3) Systemd-Dienste + Watchdog (15-Sekunden-Health-Checks)
+        run: |
+          /tmp/sshcmd 'bash -s' << 'EOS'
+          set -e
+          echo "== LiteLLM als Systemd-Dienst (Restart=always) =="
+          sudo tee /etc/systemd/system/litellm.service >/dev/null << 'UNIT'
+          [Unit]
+          Description=LiteLLM LLM-Proxy (Kaskade Groq -> Ollama)
+          After=network.target ollama.service
+          [Service]
+          Type=simple
+          User=ubuntu
+          EnvironmentFile=/opt/villaforge/hub.env
+          Environment=BROKEN_TEST_KEY=gpt-invalid-failover-test
+          ExecStart=/opt/villaforge/litellm-venv/bin/litellm --config /opt/villaforge/litellm.yaml --port 4000 --host 127.0.0.1
+          Restart=always
+          RestartSec=3
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          echo "== Watchdog-Skript =="
+          sudo tee /opt/villaforge/llm-watchdog.sh >/dev/null << 'WD'
+          #!/bin/bash
+          # Prueft alle 15 s (via Timer) Ollama und LiteLLM; haengende
+          # Instanzen werden hart neu gestartet.
+          if ! curl -sf -m 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+            logger -t llm-watchdog "Ollama haengt - Neustart"
+            systemctl restart ollama
+          fi
+          if ! curl -sf -m 3 http://127.0.0.1:4000/health/liveliness >/dev/null 2>&1; then
+            logger -t llm-watchdog "LiteLLM haengt - Neustart"
+            systemctl restart litellm
+          fi
+          WD
+          sudo chmod +x /opt/villaforge/llm-watchdog.sh
+          echo "== Watchdog-Dienst + Timer (alle 15 Sekunden) =="
+          sudo tee /etc/systemd/system/llm-watchdog.service >/dev/null << 'WDS'
+          [Service]
+          Type=oneshot
+          ExecStart=/opt/villaforge/llm-watchdog.sh
+          WDS
+          sudo tee /etc/systemd/system/llm-watchdog.timer >/dev/null << 'WDT'
+          [Timer]
+          OnBootSec=15
+          OnUnitActiveSec=15
+          [Unit]
+          Description=LLM-Watchdog alle 15 Sekunden
+          WDT
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now litellm.service
+          sudo systemctl enable --now llm-watchdog.timer
+          sleep 8
+          sudo systemctl --no-pager --lines=5 status litellm.service | head -8 || true
+          EOS
+
+      - name: "4) Verifikation - Health-Checks + Failover-Akzeptanztest"
+        run: |
+          /tmp/sshcmd 'bash -s' << 'EOS'
+          echo "== Health-Checks =="
+          echo -n "Ollama  /api/tags:        HTTP "; curl -s -m 5 -o /dev/null -w "%{http_code}\n" http://127.0.0.1:11434/api/tags
+          echo -n "LiteLLM /health/liveliness: HTTP "; curl -s -m 5 -o /dev/null -w "%{http_code}\n" http://127.0.0.1:4000/health/liveliness
+          echo "== Kaskaden-Test (Normalbetrieb: Groq primaer) =="
+          time curl -s -m 30 http://127.0.0.1:4000/v1/chat/completions \
+            -H "Authorization: Bearer sk-villaforge-local" -H "Content-Type: application/json" \
+            -d '{"model":"villa-kaskade","messages":[{"role":"user","content":"Antworte nur mit: ok"}],"max_tokens":10}' | head -c 400
+          echo ""
+          echo "== FAILOVER-TEST: kaputter Primaer-Schluessel -> muss auf Ollama springen (3-5 s) =="
+          time curl -s -m 30 http://127.0.0.1:4000/v1/chat/completions \
+            -H "Authorization: Bearer sk-villaforge-local" -H "Content-Type: application/json" \
+            -d '{"model":"villa-failtest","messages":[{"role":"user","content":"Antworte nur mit: ok"}],"max_tokens":10}' | head -c 400
+          echo ""
+          echo "== Watchdog-Timer aktiv? =="
+          systemctl is-active llm-watchdog.timer
+          EOS
