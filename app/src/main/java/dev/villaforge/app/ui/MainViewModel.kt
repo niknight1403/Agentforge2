@@ -46,12 +46,6 @@ data class UiState(
     val messages: List<ChatMessage> = emptyList(),
     /** Aktueller Chat-Partner (Agent-ID), null = Root/Deep Agent. */
     val chatAgentId: Long? = null,
-    val masterMessages: List<ChatMessage> = emptyList(),
-    val masterSuggestions: org.json.JSONArray = org.json.JSONArray(),
-    val masterStatus: org.json.JSONObject? = null,
-    val masterBusy: Boolean = false,
-    val masterPending: Boolean = false,
-    val masterError: String? = null,
     val routes: List<LlmRoute> = emptyList(),
     val busy: Boolean = false,
     val message: String = "",
@@ -88,6 +82,10 @@ data class UiState(
     /** Master-Agent: Verlauf des Master-Chats. */
     val masterMessages: List<dev.villaforge.app.net.ChatMessage> = emptyList(),
     val masterBusy: Boolean = false,
+    val masterPending: Boolean = false,
+    val masterError: String? = null,
+    val masterSuggestions: org.json.JSONArray = org.json.JSONArray(),
+    val masterStatus: org.json.JSONObject? = null,
     val masterLoaded: Boolean = false
 )
 
@@ -128,14 +126,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Master-Agent: Verlauf einmalig laden (beim Oeffnen des Chatfensters). */
     fun loadMaster() = viewModelScope.launch {
-        if (_state.value.masterLoaded) return@launch
+        _state.update { it.copy(masterBusy = true, masterError = null) }
         try {
-            val h = client.masterHistory()
-            _state.update { it.copy(masterMessages = h, masterLoaded = true) }
-        } catch (_: Exception) { /* naechster Versuch beim Senden */ }
+            val messages = client.masterHistory()
+            val suggestions = client.masterSuggestions()
+            val status = client.masterStatus()
+            _state.update { it.copy(masterMessages = messages, masterSuggestions = suggestions, masterStatus = status, masterLoaded = true) }
+        } catch (e: Exception) {
+            _state.update { it.copy(masterError = "Master-Agent nicht erreichbar: ${e.message.orEmpty().take(180)}") }
+        } finally { _state.update { it.copy(masterBusy = false) } }
     }
 
-    /** Master-Agent: Wunsch senden; erzeugt ggf. autonom eine Villa. */
     /* ---- Deep Agent: eigene App-Projekte (v1.37.0) ---- */
 
     /** Projekt-Verlauf laden. */
@@ -258,44 +259,43 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         loadDeepProjects()
     }
 
-    fun sendMaster(text: String) = viewModelScope.launch {
-        val t = text.trim()
-        if (t.isBlank() || _state.value.masterBusy) return@launch
-        val now = System.currentTimeMillis()
-        _state.update {
-            it.copy(masterMessages = it.masterMessages + dev.villaforge.app.net.ChatMessage("user", t, now),
-                masterBusy = true, error = null)
+    private var pendingMaster: Pair<String, String>? = null
+
+    fun sendMaster(text: String) {
+        if (_state.value.masterBusy || (text.isBlank() && pendingMaster == null)) return
+        val request = pendingMaster ?: (text.trim() to java.util.UUID.randomUUID().toString()).also {
+            pendingMaster = it
+            _state.update { state -> state.copy(masterMessages = state.masterMessages + dev.villaforge.app.net.ChatMessage("user", it.first, System.currentTimeMillis())) }
         }
-        try {
-            val res = client.masterChat(t)
-            val reply = res.optString("reply", "(keine Antwort)")
-            val parseDesignVariants: (org.json.JSONArray?) -> List<dev.villaforge.app.net.DesignVariant> = { arr ->
-                if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { i ->
-                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                    val url = o.optString("url")
-                    if (url.isBlank()) null
-                    else dev.villaforge.app.net.DesignVariant(o.optString("label").ifBlank { "Design ${i + 1}" }, o.optString("key"), url)
+        _state.update { it.copy(masterBusy = true, masterPending = true, masterError = null) }
+        viewModelScope.launch {
+            try {
+                var result = client.masterChat(request.first, request.second)
+                repeat(15) {
+                    if (result.optBoolean("pending")) {
+                        delay(1500)
+                        result = client.masterTurn(request.second)
+                    }
                 }
-            }
-            val msg = dev.villaforge.app.net.ChatMessage(
-                role = "assistant",
-                content = reply,
-                createdAt = System.currentTimeMillis(),
-                villaId = res.optLong("villaId", 0),
-                villaName = res.optString("villaName"),
-                designImage = res.optString("designImage"),
-                designVariants = parseDesignVariants(res.optJSONArray("designVariants"))
-            )
-            _state.update { it.copy(masterMessages = it.masterMessages + msg) }
-            if (res.optLong("villaId", 0) > 0) refreshAll()
-        } catch (e: Exception) {
-            _state.update {
-                it.copy(masterMessages = it.masterMessages + dev.villaforge.app.net.ChatMessage(
-                    "assistant", "Fehler: ${e.message ?: "Hub nicht erreichbar"}", System.currentTimeMillis()))
-            }
-        } finally {
-            _state.update { it.copy(masterBusy = false) }
+                if (result.optBoolean("pending")) throw IllegalStateException("Die Anfrage läuft noch. Status prüfen verfolgt dieselbe Anfrage weiter.")
+                val messages = client.masterHistory()
+                pendingMaster = null
+                _state.update { it.copy(masterMessages = messages, masterPending = false, masterError = if (result.optBoolean("ok", true)) null else result.optString("answer")) }
+                refreshAll()
+                val suggestions = client.masterSuggestions()
+                val status = client.masterStatus()
+                _state.update { it.copy(masterSuggestions = suggestions, masterStatus = status) }
+            } catch (e: Exception) {
+                _state.update { it.copy(masterError = e.message ?: "Master-Anfrage fehlgeschlagen. Status prüfen.") }
+            } finally { _state.update { it.copy(masterBusy = false) } }
         }
+    }
+
+    fun dismissMasterSuggestion(id: String) = viewModelScope.launch {
+        try {
+            client.dismissMasterSuggestion(id)
+            _state.update { it.copy(masterSuggestions = client.masterSuggestions()) }
+        } catch (e: Exception) { _state.update { it.copy(masterError = e.message) } }
     }
 
     /** Misst die Hub-Antwortzeit und meldet sie als Nachricht. */
@@ -741,330 +741,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun closeDetail() = _state.update { it.copy(detail = null, messages = emptyList(), product = null, chatAgentId = null, build = null, preview = null) }
-
-    /** Leert den Live-Ereignis-Feed. */
-    fun clearEvents() = _state.update { it.copy(events = emptyList()) }
-
-    /** Groesse des Offline-Caches in Bytes (Diagnose). */
-    fun cacheBytes(): Long = client.snapshotsSizeBytes()
-
-    /** Leert den Offline-Cache und meldet den Erfolg. */
-    fun clearCache() = run {
-        client.clearSnapshots()
-        _state.update { it.copy(message = "Offline-Cache geleert") }
-    }
-
-    fun clearMessage() = _state.update { it.copy(message = "", error = null) }
-
-    private var pendingMaster: Pair<String, String>? = null
-
-    fun loadMaster() = viewModelScope.launch {
-        _state.update { it.copy(masterBusy = true, masterError = null) }
-        try {
-            val messages = client.masterMessages()
-            val suggestions = client.masterSuggestions()
-            val status = client.masterStatus()
-            _state.update { it.copy(masterMessages = messages, masterSuggestions = suggestions, masterStatus = status) }
-        } catch (e: Exception) {
-            _state.update { it.copy(masterError = "Master-Agent nicht erreichbar. Der Hub muss die Master-Verwaltung unterstützen. ${e.message.orEmpty().take(150)}") }
-        } finally { _state.update { it.copy(masterBusy = false) } }
-    }
-
-    fun sendMaster(message: String) {
-        if (_state.value.masterBusy || (message.isBlank() && pendingMaster == null)) return
-        val request = pendingMaster ?: (message.trim() to java.util.UUID.randomUUID().toString()).also {
-            pendingMaster = it
-            _state.update { state -> state.copy(masterMessages = state.masterMessages + ChatMessage("user", it.first, System.currentTimeMillis())) }
-        }
-        _state.update { it.copy(masterBusy = true, masterPending = true, masterError = null) }
-        viewModelScope.launch {
-            try {
-                var result = client.masterChat(request.first, request.second)
-                repeat(15) {
-                    if (result.optBoolean("pending")) {
-                        delay(1500)
-                        result = client.masterTurn(request.second)
-                    }
-                }
-                if (result.optBoolean("pending")) throw IllegalStateException("Die Anfrage läuft noch. Mit „Status prüfen“ wird dieselbe Anfrage weiterverfolgt.")
-                val messages = client.masterMessages()
-                pendingMaster = null
-                _state.update { it.copy(masterMessages = messages, masterPending = false, masterError = if (result.optBoolean("ok", true)) null else result.optString("answer")) }
-                refreshAll()
-                val suggestions = client.masterSuggestions()
-                val status = client.masterStatus()
-                _state.update { it.copy(masterSuggestions = suggestions, masterStatus = status) }
-            } catch (e: Exception) {
-                _state.update { it.copy(masterError = e.message ?: "Master-Anfrage fehlgeschlagen. Bitte den Status prüfen.") }
-            } finally { _state.update { it.copy(masterBusy = false) } }
-        }
-    }
-    fun dismissMasterSuggestion(id: String) = viewModelScope.launch {
-        try {
-            client.dismissMasterSuggestion(id)
-            val suggestions = client.masterSuggestions()
-            _state.update { it.copy(masterSuggestions = suggestions) }
-        } catch (e: Exception) { _state.update { it.copy(masterError = e.message) } }
-    }
-
-    fun retrySelectedVilla() {
-        _state.value.selectedVillaId?.let { openVilla(it) }
-    }
-
-    fun openVilla(id: Long) {
-        if (id <= 0) return
-        selectedVilla.select(id)
-        _state.update { it.copy(selectedVillaId = id, villaLoading = true, detail = null, messages = emptyList(), error = null) }
-        run {
-            try {
-                val detail = client.villaDetail(id)
-                val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
-                val msgs = client.messages(id, rootId)
-                val prod = fetchProduct(id)
-                val build = fetchBuild(id)
-                val preview = fetchPreview(id)
-                _state.update {
-                    if (it.selectedVillaId != id) it
-                    else it.copy(detail = detail, messages = msgs, product = prod, chatAgentId = rootId, build = build, preview = preview)
-                }
-            } finally {
-                _state.update { if (it.selectedVillaId == id) it.copy(villaLoading = false) else it }
-            }
-        }
-    }
-
-    /** Wechselt den Chat-Partner und laedt dessen Verlauf nach. */
-    fun selectChatAgent(agentId: Long) = run {
-        val detail = _state.value.detail ?: return@run
-        _state.update { it.copy(chatAgentId = agentId) }
-        val msgs = client.messages(detail.villa.id, agentId)
-        _state.update { it.copy(messages = msgs) }
-    }
-
-    fun sendChat(message: String) = run {
-        val detail = _state.value.detail ?: return@run
-        val rootId = detail.agents.firstOrNull { it.isRoot }?.id ?: detail.agents.firstOrNull()?.id
-        val optimistic = _state.value.messages + ChatMessage("user", message, System.currentTimeMillis())
-        _state.update { it.copy(messages = optimistic, message = "Deep Agent arbeitet …") }
-        val targetId = _state.value.chatAgentId ?: rootId
-        val reply = client.chat(detail.villa.id, targetId, message)
-        val refreshed = client.villaDetail(detail.villa.id)
-        val msgs = client.messages(detail.villa.id, targetId)
-        _state.update {
-            it.copy(
-                detail = refreshed,
-                messages = msgs,
-                message = "Antwort über ${reply.route}${if (reply.offline) " (Offline-Planer)" else ""}"
-            )
-        }
-    }
-
-    fun orchestrate() = run {
-        val detail = _state.value.detail ?: return@run
-        client.orchestrate(detail.villa.id)
-        _state.update { it.copy(message = "Entwicklung gestartet") }
-        val refreshed = client.villaDetail(detail.villa.id)
-        _state.update { it.copy(detail = refreshed) }
-    }
-
-    fun stop() = run {
-        val detail = _state.value.detail ?: return@run
-        client.stop(detail.villa.id)
-        _state.update { it.copy(message = "Stopp angefordert") }
-        val refreshed = client.villaDetail(detail.villa.id)
-        _state.update { it.copy(detail = refreshed) }
-    }
-
-    /** Einzellne FAILED-Aufgabe zurueck in die Warteschlange und Lauf fortsetzen. */
-    fun retryTask(taskId: Long) = run {
-        val detail = _state.value.detail ?: return@run
-        client.retryTask(detail.villa.id, taskId)
-        _state.update { it.copy(message = "Aufgabe erneut gestartet") }
-        val refreshed = client.villaDetail(detail.villa.id)
-        _state.update { it.copy(detail = refreshed) }
-    }
-
-    /** Alle gescheiterten Aufgaben der Villa erneut starten. */
-    fun retryFailed() = run {
-        val detail = _state.value.detail ?: return@run
-        val res = client.retryFailed(detail.villa.id)
-        val n = res.optInt("requeued", 0)
-        _state.update { it.copy(message = if (n > 0) "$n Aufgabe(n) erneut gestartet" else "Keine fehlgeschlagenen Aufgaben") }
-        val refreshed = client.villaDetail(detail.villa.id)
-        _state.update { it.copy(detail = refreshed) }
-    }
-
-    /** Loescht die offene Villa mitsamt allen Daten und kehrt zur Liste zurueck. */
-    fun delete() = run {
-        val detail = _state.value.detail ?: return@run
-        client.deleteVilla(detail.villa.id)
-        val villas = client.villas()
-        _state.update { it.copy(detail = null, messages = emptyList(), villas = villas, message = "Villa gelöscht") }
-    }
-
-    /** Benennt die offene Villa um bzw. aktualisiert die Idee (PATCH). */
-    fun editVilla(name: String, idea: String) = run {
-        val detail = _state.value.detail ?: return@run
-        client.patchVilla(detail.villa.id, name, idea)
-        val refreshed = client.villaDetail(detail.villa.id)
-        _state.update { it.copy(detail = refreshed, message = "Villa aktualisiert") }
-    }
-
-    /** Exportiert die offene Villa als JSON-Text (zum Teilen/Speichern). */
-    fun export(onReady: (String) -> Unit) = run {
-        val detail = _state.value.detail ?: return@run
-        val json = client.exportVilla(detail.villa.id)
-        onReady(json)
-        _state.update { it.copy(message = "Export bereit") }
-    }
-
-    /* Sprint 33: bei Verbindungsfehler den letzten Detail-Snapshot zeigen. */
-    fun refreshDetail() = run {
-        val detail = _state.value.detail ?: return@run
-        var fromCache = false
-        val refreshed = try {
-            client.villaDetail(detail.villa.id)
-        } catch (e: Exception) {
-            fromCache = true
-            client.villaDetailFromCache(detail.villa.id)
-        }
-        if (refreshed != null) {
-            val prod = if (fromCache) _state.value.product else fetchProduct(detail.villa.id)
-            _state.update { it.copy(detail = refreshed, product = prod, stale = fromCache) }
-        }
-    }
-
-    /** Build-Status laden; Fehler sind unkritisch (Karte zeigt 'nicht gebaut'). */
-    private suspend fun fetchBuild(id: Long): org.json.JSONObject? =
-        try { client.buildStatus(id) } catch (e: Exception) { null }
-
-    /** Live-Vorschau-Info laden; Fehler sind unkritisch. */
-    private suspend fun fetchPreview(id: Long): org.json.JSONObject? =
-        try { client.previewInfo(id) } catch (e: Exception) { null }
-
-    /** Autorisierungs-Header fuer Downloads (DownloadManager/WebView). */
-    fun authHeader(): String? = client.authHeaderValue()
-
-    /** Live-Ansicht: URL mit Auth-Header laden (WebView-Ressource). */
-    fun previewResource(url: String): android.webkit.WebResourceResponse? = client.webResource(url)
-
-    /** Aktivitaet laden: letzte Meldungen aller Agenten der offenen Villa. */
-    fun refreshActivity() = run {
-        val detail = _state.value.detail ?: return@run
-        val msgs = try { client.messages(detail.villa.id, null) } catch (e: Exception) { null }
-        _state.update { it.copy(activity = msgs) }
-    }
-
-    /** WAS/WARUM/WIE-Erklaerung der offenen Villa anfordern. */
-    fun explain() = run {
-        val detail = _state.value.detail ?: return@run
-        val ex = try { client.explain(detail.villa.id) } catch (e: Exception) { null }
-        _state.update { it.copy(explanation = ex) }
-    }
-
-    /** Scout-Vorschlaege laden. */
-    fun refreshProposals() = run {
-        val props = try { client.proposals() } catch (e: Exception) { null }
-        _state.update { it.copy(proposals = props) }
-    }
-
-    /** Scout anstossen: Villa analysiert und schlaegt bessere Alternative vor. */
-    fun scanProposals() = run {
-        client.proposalsScan()
-        _state.update { it.copy(message = "Analyse läuft - der Scout prüft bessere Alternativen") }
-        refreshProposals()
-    }
-
-    /** Vorschlag bestaetigen: Hub gruendet selbststaendig eine neue Villa. */
-    fun approveProposal(id: Long, onCreated: (Long) -> Unit = {}) = run {
-        val r = client.proposalApprove(id)
-        val villaId = r.optLong("villaId", -1)
-        _state.update { it.copy(message = "Villa '${r.optString("villaName")}' wurde gegründet und startet autonom") }
-        refreshProposals()
-        if (villaId > 0) onCreated(villaId)
-    }
-
-    /** Vorschlag ablehnen. */
-    fun rejectProposal(id: Long) = run {
-        client.proposalReject(id)
-        _state.update { it.copy(message = "Vorschlag abgelehnt") }
-        refreshProposals()
-    }
-
-    /* ---- Villa-Evolution: naechste Phasen, Perfektion, Marketplace je Villa ---- */
-
-    /** Evolutions-Status der offenen Villa laden (Stufe + offene Vorschlaege). */
-    fun refreshEvolution(villaId: Long) = run {
-        val evo = try { client.evolution(villaId) } catch (e: Exception) { null }
-        _state.update { it.copy(evolution = evo) }
-    }
-
-    /** Villa einen neuen Vorschlag erzeugen lassen. kind: NEXT_PHASES | PERFECT | MARKETPLACE. */
-    fun proposeEvolution(villaId: Long, kind: String) = run {
-        val r = client.evolutionPropose(villaId, kind)
-        val note = if (r.optBoolean("fallback", false))
-            "Vorschlag aus Standardplan (kein Modell erreichbar) - bitte pruefen"
-        else "Neuer Vorschlag mit ${r.optInt("items", 0)} Aufgaben erstellt"
-        _state.update { it.copy(message = note) }
-        refreshEvolution(villaId)
-    }
-
-    /** Vorschlag bestaetigen: Aufgaben legen an und die Villa entwickelt weiter. */
-    fun approveEvolution(villaId: Long, proposalId: Long) = run {
-        val r = client.evolutionApprove(proposalId)
-        _state.update { it.copy(message = "Bestätigt: ${r.optInt("added", 0)} neue Aufgaben - die Villa entwickelt weiter") }
-        refreshEvolution(villaId)
-        refreshDetail()
-    }
-
-    /** Vorschlag ablehnen. */
-    fun rejectEvolution(villaId: Long, proposalId: Long) = run {
-        client.evolutionReject(proposalId)
-        _state.update { it.copy(message = "Vorschlag abgelehnt") }
-        refreshEvolution(villaId)
-    }
-
-    /** Aktualisiert Build-Status und Vorschau-Info der offenen Villa. */
-    fun refreshBuild() = run {
-        val detail = _state.value.detail ?: return@run
-        val build = fetchBuild(detail.villa.id)
-        val preview = fetchPreview(detail.villa.id)
-        _state.update { it.copy(build = build, preview = preview) }
-    }
-
-    /** Startet den Produkt-Build und meldet den Start. */
-    fun triggerBuild() = run {
-        val detail = _state.value.detail ?: return@run
-        try {
-            client.startBuild(detail.villa.id)
-        } catch (e: dev.villaforge.app.net.HubException) {
-            throw Exception(if (e.code == 409) "Build läuft bereits." else e.message)
-        }
-        _state.update { it.copy(message = "Produkt-Build gestartet") }
-        refreshBuild()
-    }
-
-    /** Marktreife laden; Fehler sind unkritisch (Karte bleibt dann einfach weg). */
-    private suspend fun fetchProduct(id: Long): org.json.JSONObject? =
-        try { client.product(id) } catch (e: Exception) { null }
-
-    fun toggleRoute(route: LlmRoute) = run {
-        client.setRouteEnabled(route.id, !route.enabled)
-        val routes = client.routes()
-        _state.update { it.copy(routes = routes) }
-    }
-
-    fun saveSecret(name: String, value: String) = run {
-        client.setSecret(name, value)
-        _state.update { it.copy(message = "Key $name gespeichert") }
-        val routes = client.routes()
-        _state.update { it.copy(routes = routes) }
-    }
-
-    fun closeDetail() {
-        selectedVilla.clear()
-        _state.update { it.copy(selectedVillaId = null, villaLoading = false, detail = null, messages = emptyList(), product = null, chatAgentId = null, build = null, preview = null) }
-    }
 
     /** Leert den Live-Ereignis-Feed. */
     fun clearEvents() = _state.update { it.copy(events = emptyList()) }
