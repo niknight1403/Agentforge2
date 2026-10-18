@@ -84,7 +84,7 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
         else -> filtered.sortedByDescending { it.id }
     }
 
-    Column(Modifier.fillMaxSize().background(Color(0xFF050816))) {
+    Column(Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

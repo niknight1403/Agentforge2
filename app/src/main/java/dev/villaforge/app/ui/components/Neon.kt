@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -163,38 +164,30 @@ fun NeonIconPlate(icon: @Composable () -> Unit, accent: Color = NeonCyan, size: 
  * Lichtkoerper (Violett, Cyan, Gold) ueber tiefem Premium-Ink. Rein statisch
  * gezeichnet (keine Animation) — stets fluessig auch auf aelteren Handys.
  */
-@Composable
-fun AuroraBackground(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().background(PremiumInk)) {
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.radialGradient(
-                    colors = listOf(Color(0x33241A63), Color(0x0F1B1340), Color.Transparent),
-                    center = Offset(120f, 40f),
-                    radius = 1200f
-                )
-            )
-        )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.radialGradient(
-                    colors = listOf(Color(0x2600A3FF), Color.Transparent),
-                    center = Offset(2800f, 2100f),
-                    radius = 1000f
-                )
-            )
-        )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.radialGradient(
-                    colors = listOf(Color(0x1FE8C27A), Color.Transparent),
-                    center = Offset(600f, 2600f),
-                    radius = 900f
-                )
-            )
-        )
-    }
+/**
+ * Quality-Layer v2 (2026-10-19, Struktur-Bereinigung): Zentrale Aurora-
+ * Hintergrund-Funktion als Modifier statt pro Screen gewrappter Komponente.
+ * EIN Aufruf auf App-Ebene (VillaForgeApp Scaffold-Ebene) versieht ALLE
+ * Screens mit dem Premium-Look: Premium-Ink-Basis plus drei radiale
+ * Lichtkoerper (Violett oben links, Cyan rechts, Gold unten). Statisch
+ * gerendert, kein Animations-Overhead, handy-schonend.
+ */
+fun Modifier.auroraBg(): Modifier = drawBehind {
+    drawRect(color = PremiumInk, size = size)
+    drawBrush(brush = Brush.radialGradient(
+        colors = listOf(Color(0x33241A63), Color(0x00241A63)),
+        center = Offset(size.width * 0.12f, size.height * 0.05f),
+        radius = size.width * 1.35f))
+    drawBrush(brush = Brush.radialGradient(
+        colors = listOf(Color(0x26007A7A), Color(0x00007A7A)),
+        center = Offset(size.width * 0.95f, size.height * 0.55f),
+        radius = size.width * 1.1f))
+    drawBrush(brush = Brush.radialGradient(
+        colors = listOf(Color(0x2EE8C27A), Color(0x00E8C27A)),
+        center = Offset(size.width * 0.55f, size.height * 1.02f),
+        radius = size.width * 0.9f))
 }
+
 
 /*
  * Quality-Layer v2 — GoldChip: exklusiver Elite-/Unlimited-Statusmarker

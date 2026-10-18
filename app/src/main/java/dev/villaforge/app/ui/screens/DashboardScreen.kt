@@ -1,6 +1,5 @@
 package dev.villaforge.app.ui.screens
 
-import dev.villaforge.app.ui.components.AuroraBackground
 import dev.villaforge.app.ui.components.GoldChip
 import dev.villaforge.app.ui.theme.Gold
 import dev.villaforge.app.ui.theme.GoldGradient
@@ -56,7 +55,6 @@ import dev.villaforge.app.ui.theme.Aqua
 import dev.villaforge.app.ui.theme.Danger
 import dev.villaforge.app.ui.theme.ElectricBlue
 import dev.villaforge.app.ui.theme.NeonCyan
-import dev.villaforge.app.ui.theme.NeonGradient
 import dev.villaforge.app.ui.theme.NeonPink
 import dev.villaforge.app.ui.theme.TextMuted
 import dev.villaforge.app.ui.theme.TextMain
@@ -110,9 +108,7 @@ fun DashboardScreen(
     val activeRoute = s?.optJSONObject("llm")?.optString("lastSuccessfulRoute")?.takeIf { it.isNotBlank() } ?: "Noch keine bestätigte Modellantwort"
 
     /* Quality-Layer v2: Premium-Aurora-Hintergrund hinter dem Dashboard. */
-    Box(Modifier.fillMaxSize()) {
-        AuroraBackground(Modifier.fillMaxSize())
-        Column(
+    Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -367,4 +363,3 @@ fun DashboardScreen(
         }
     }
 }
-    }

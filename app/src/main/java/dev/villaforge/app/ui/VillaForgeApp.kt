@@ -34,6 +34,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import dev.villaforge.app.ui.components.auroraBg
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -83,8 +85,12 @@ fun VillaForgeApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf(Screen.DASHBOARD) }
 
-    Scaffold(
-        containerColor = Ink,
+    /* Quality-Layer v2: EIN zentraler Aurora-Hintergrund auf App-Ebene —
+     * alle Screens (Dashboard, Villen, Master, Chat, Detail, Diagnose)
+     * erben den Premium-Look, der Scaffold selbst bleibt transparent. */
+    Box(Modifier.fillMaxSize().auroraBg()) {
+        Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             if (screen != Screen.DASHBOARD) TopAppBar(
                 title = {
@@ -115,16 +121,18 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Ink,
+                    containerColor = Color.Transparent,
                     titleContentColor = TextMain,
                     navigationIconContentColor = NeonCyan,
                     actionIconContentColor = TextMain
                 )
             )
-        },
+        }
+    }
+,
         bottomBar = {
             if (topLevelScreens.contains(screen)) {
-                NavigationBar(containerColor = Ink, tonalElevation = 0.dp) {
+                NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
                     NavigationBarItem(selected = screen == Screen.DASHBOARD, onClick = { viewModel.closeDetail(); screen = Screen.DASHBOARD },
                         icon = { Icon(Icons.Filled.Dashboard, contentDescription = "Übersicht", tint = if (screen == Screen.DASHBOARD) NeonCyan else TextMuted) },
                         label = { Text("Übersicht") })
