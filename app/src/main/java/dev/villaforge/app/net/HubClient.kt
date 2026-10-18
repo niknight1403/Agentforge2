@@ -60,6 +60,13 @@ data class Memory(
     val importance: Int
 )
 
+/** Eine optische Design-Stilrichtung des Master-Designers. */
+data class DesignVariant(
+    val label: String,
+    val key: String,
+    val url: String
+)
+
 data class ChatMessage(
     val role: String,
     val content: String,
@@ -69,7 +76,9 @@ data class ChatMessage(
     val villaId: Long = 0,
     val villaName: String = "",
     /** Master-Agent: Design-Konzeptbild-URL (leer = keins). */
-    val designImage: String = ""
+    val designImage: String = "",
+    /** Master-Agent: optische Stilvarianten zur Auswahl (leer = keine). */
+    val designVariants: List<DesignVariant> = emptyList()
 )
 
 data class Report(
@@ -175,6 +184,21 @@ class HubClient(context: Context) {
     val hasLogin: Boolean get() = loginEmail.isNotBlank() && loginPass.isNotBlank()
 
     /** Meldet am Hub an (POST /api/auth/login) und speichert den Sitzungs-Token. */
+    /** Liest die Design-Stilvarianten aus der Master-Antwort ([{label, key, url}]). */
+    private fun parseDesignVariants(arr: org.json.JSONArray?): List<DesignVariant> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val url = o.optString("url")
+            if (url.isBlank()) null
+            else DesignVariant(
+                label = o.optString("label").ifBlank { "Design ${i + 1}" },
+                key = o.optString("key"),
+                url = url
+            )
+        }
+    }
+
     suspend fun login(email: String, password: String): String = withContext(Dispatchers.IO) {
         val body = JSONObject().put("email", email.trim().lowercase()).put("password", password)
         val req = Request.Builder().url(url("/api/auth/login")).post(body.toString().toRequestBody(JSON)).build()
@@ -244,6 +268,7 @@ class HubClient(context: Context) {
                 villaId = o.optLong("villaId", 0),
                 villaName = o.optString("villaName"),
                 designImage = o.optString("designImage")
+                designVariants = parseDesignVariants(o.optJSONArray("designVariants"))
             )
         }
     }

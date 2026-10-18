@@ -1,6 +1,7 @@
 package dev.villaforge.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -188,8 +189,50 @@ private fun MasterBubble(msg: ChatMessage, onOpenVilla: (Long) -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextMain
                 )
-                /* Designer-Tool-Pack: Design-Konzeptbild zur erzeugten Villa */
-                if (!mine && msg.designImage.isNotBlank()) {
+                /* Designer-Tool-Pack: Design-Stilvarianten zur Auswahl (3 Optionen),
+                   sonst Rueckfall auf das einzelne Konzeptbild. */
+                if (!mine && msg.designVariants.isNotEmpty()) {
+                    var selectedKey by remember(msg.createdAt) { mutableStateOf<String?>(null) }
+                    Text(
+                        "Design-Optionen - tippe dein Favor an:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        msg.designVariants.forEach { v ->
+                            val selected = selectedKey == v.key
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (selected) NeonCyan.copy(alpha = 0.16f) else androidx.compose.ui.graphics.Color.Transparent)
+                                    .clickable {
+                                        selectedKey = v.key
+                                        viewModel.sendMaster("Design-Auswahl: ${v.label}")
+                                    }
+                                    .padding(6.dp)
+                            ) {
+                                AsyncImage(
+                                    model = v.url,
+                                    contentDescription = "Design ${v.label}",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(86.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    v.label + if (selected) "  ✓" else "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (selected) NeonCyan else TextMuted,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+                } else if (!mine && msg.designImage.isNotBlank()) {
                     AsyncImage(
                         model = msg.designImage,
                         contentDescription = "Design-Konzept",
