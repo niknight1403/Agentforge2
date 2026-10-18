@@ -62,21 +62,38 @@ jobs:
           echo "== LiteLLM installieren/aktualisieren (evtl. einige Minuten) =="
           /home/ubuntu/litellm-venv/bin/pip install -q --upgrade 'litellm[proxy]' 2>&1 | tail -2 || true
           /home/ubuntu/litellm-venv/bin/litellm --version || echo "Versionsabfrage fehlgeschlagen - pruefe Installation"
+          echo "== GROQ_API_KEY aus Hub-Secrets-Store nach hub.env synchronisieren =="
+          tee /tmp/sync-groq.mjs >/dev/null << 'NODEJS'
+          import { DatabaseSync } from 'node:sqlite';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db', { readOnly: true });
+          const row = db.prepare("SELECT value FROM secrets WHERE name = 'GROQ_API_KEY'").get();
+          if (!row || !row.value) { console.log('Kein GROQ_API_KEY im Hub-Store - ueberspringe Sync'); process.exit(0); }
+          const envPath = '/opt/villaforge/hub.env';
+          let env = readFileSync(envPath, 'utf8');
+          const line = 'GROQ_API_KEY=' + row.value;
+          if (/^GROQ_API_KEY=/m.test(env)) env = env.replace(/^GROQ_API_KEY=.*$/m, line);
+          else env = env.trimEnd() + '\n' + line + '\n';
+          writeFileSync(envPath, env);
+          console.log('hub.env: GROQ_API_KEY synchronisiert (' + row.value.slice(0, 8) + '...)');
+          NODEJS
+          sudo node /tmp/sync-groq.mjs && rm -f /tmp/sync-groq.mjs
+
           echo "== Kaskaden-Konfiguration schreiben =="
           cat > /home/ubuntu/litellm.yaml << 'YAML'
           model_list:
-            # Stufe 1: Google Gemini Free Tier (gueltiger Key, schnellster Cloud-Leg)
+            # Stufe 1: Groq Free Tier (gueltiger Key, Millisekunden-Latenz, grosses Kontingent)
+            - model_name: villa-kaskade
+              litellm_params:
+                model: groq/openai/gpt-oss-120b
+                api_key: os.environ/GROQ_API_KEY
+                timeout: 10
+                max_retries: 0
+            # Stufe 2: Google Gemini Free Tier (Zweit-Kontingent)
             - model_name: villa-kaskade
               litellm_params:
                 model: gemini/gemini-flash-lite-latest
                 api_key: os.environ/GEMINI_API_KEY
-                timeout: 10
-                max_retries: 0
-            # Stufe 2: Groq Free Tier (Key aktuell ungueltig, wird uebersprungen)
-            - model_name: villa-kaskade
-              litellm_params:
-                model: groq/llama-3.3-70b-versatile
-                api_key: os.environ/GROQ_API_KEY
                 timeout: 10
                 max_retries: 0
             # Stufe 3: lokales Offline-Backup (Ollama, unbegrenzt, kostenlos)
@@ -89,7 +106,7 @@ jobs:
             # Nur fuer den Failover-Akzeptanztest: absichtlich kaputter Primaer-Schluesse
             - model_name: villa-failtest
               litellm_params:
-                model: groq/llama-3.3-70b-versatile
+                model: groq/openai/gpt-oss-120b
                 api_key: os.environ/BROKEN_TEST_KEY
                 timeout: 10
                 max_retries: 0
@@ -122,7 +139,7 @@ jobs:
           echo "== LiteLLM als Systemd-Dienst (Restart=always) =="
           sudo tee /etc/systemd/system/litellm.service >/dev/null << 'UNIT'
           [Unit]
-          Description=LiteLLM LLM-Proxy (Kaskade Groq -> Ollama)
+          Description=LiteLLM LLM-Proxy (Kaskade Groq -> Gemini -> Ollama)
           After=network.target ollama.service
           [Service]
           Type=simple
