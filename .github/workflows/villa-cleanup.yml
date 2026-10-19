@@ -1,0 +1,142 @@
+name: Villa-Cleanup (Doppelte Villen loeschen)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+
+      - name: Doppelte Villen in der Hub-DB loeschen
+        run: |
+          /tmp/sshcmd 'bash -s' << 'EOS'
+          set -e
+          tee /tmp/villa-cleanup.mjs >/dev/null << 'NODEJS'
+          import { DatabaseSync } from 'node:sqlite';
+
+          const dbPath = '/opt/villaforge/server/data/villaforge.db';
+          console.log('--- VILLA CLEANUP START ---');
+          const db = new DatabaseSync(dbPath);
+
+          // 1. Vorher-Liste
+          console.log('=== VORHER VILLENLISTE ===');
+          const villasBefore = db.prepare('SELECT id, name, status, autonomy FROM villas ORDER BY id ASC').all();
+          for (const v of villasBefore) {
+            console.log(`${v.id}|${v.name}|${v.status}|${v.autonomy}`);
+          }
+
+          // 2. Bekannte Duplikate: IDs 26, 27, 28 (Design Lab)
+          const deleteIds = new Set([26, 27, 28]);
+
+          // Analyse Paar 7 vs 18
+          console.log('=== ANALYSIS PAAR 7 VS 18 ===');
+          const p7_18 = db.prepare('SELECT id, name, idea, status, autonomy FROM villas WHERE id IN (7, 18)').all();
+          console.log('Villas 7 & 18 details:', JSON.stringify(p7_18, null, 2));
+
+          const tasksStats = db.prepare('SELECT villa_id, status, count(*) AS count FROM tasks WHERE villa_id IN (7, 18) GROUP BY villa_id, status').all();
+          console.log('Tasks stats 7 & 18:', JSON.stringify(tasksStats, null, 2));
+
+          const v7 = p7_18.find(v => Number(v.id) === 7);
+          const v18 = p7_18.find(v => Number(v.id) === 18);
+
+          if (v7 && v18) {
+            const done7 = tasksStats.filter(t => Number(t.villa_id) === 7 && ['DONE', 'completed', 'done'].includes(t.status)).reduce((acc, t) => acc + Number(t.count), 0);
+            const total7 = tasksStats.filter(t => Number(t.villa_id) === 7).reduce((acc, t) => acc + Number(t.count), 0);
+
+            const done18 = tasksStats.filter(t => Number(t.villa_id) === 18 && ['DONE', 'completed', 'done'].includes(t.status)).reduce((acc, t) => acc + Number(t.count), 0);
+            const total18 = tasksStats.filter(t => Number(t.villa_id) === 18).reduce((acc, t) => acc + Number(t.count), 0);
+
+            console.log(`Villa 7: done=${done7}, total=${total7}, autonomy=${v7.autonomy}, idea="${v7.idea}"`);
+            console.log(`Villa 18: done=${done18}, total=${total18}, autonomy=${v18.autonomy}, idea="${v18.idea}"`);
+
+            const idea7Lower = (v7.idea || '').toLowerCase();
+            const idea18Lower = (v18.idea || '').toLowerCase();
+            const isSameTheme = (idea7Lower.includes('filmstudio') || idea7Lower.includes('film')) && (idea18Lower.includes('filmstudio') || idea18Lower.includes('film'));
+
+            console.log(`Thematisch gleiches Projekt (Filmstudio): ${isSameTheme}`);
+
+            if (isSameTheme) {
+              if (v7.autonomy === 1 && v18.autonomy === 0 && done7 >= done18) {
+                console.log('Entscheidung: Loesche Villa 18 (schwaecher, autonomy=0, weniger/gleiche Arbeit)');
+                deleteIds.add(18);
+              } else if (v18.autonomy === 1 && v7.autonomy === 0 && done18 >= done7) {
+                console.log('Entscheidung: Loesche Villa 7 (schwaecher, autonomy=0, weniger/gleiche Arbeit)');
+                deleteIds.add(7);
+              } else if (done7 > done18) {
+                console.log('Entscheidung: Loesche Villa 18 (weniger erledigte Arbeit)');
+                deleteIds.add(18);
+              } else if (done18 > done7) {
+                console.log('Entscheidung: Loesche Villa 7 (weniger erledigte Arbeit)');
+                deleteIds.add(7);
+              } else {
+                console.log('Entscheidung: Unklar (Fortschritt/Autonomy gleichwertig) -> Behalte beide (7 & 18)');
+              }
+            } else {
+              console.log('Entscheidung: Verschiedenes Thema -> Behalte beide (7 & 18)');
+            }
+          }
+
+          const targetIds = Array.from(deleteIds);
+          console.log('=== TARGET IDS TO DELETE ===:', targetIds);
+
+          // Sicherheitsregel: NUR 26, 27, 28, 7, 18 sind erlaubt
+          const allowedSet = new Set([26, 27, 28, 7, 18]);
+          for (const id of targetIds) {
+            if (!allowedSet.has(id)) {
+              throw new Error(`Sicherheitsregel verletzt: ID ${id} ist nicht in [26, 27, 28, 7, 18]`);
+            }
+          }
+
+          if (targetIds.length > 0) {
+            const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all();
+            const cascadeTables = [];
+            for (const t of tables) {
+              if (t.name === 'villas') continue;
+              const cols = db.prepare(`PRAGMA table_info(${t.name})`).all();
+              if (cols.some(c => c.name === 'villa_id')) {
+                cascadeTables.push(t.name);
+              }
+            }
+            console.log('Cascade Tabellen mit villa_id Spalte:', cascadeTables);
+
+            db.exec('BEGIN IMMEDIATE');
+            try {
+              const ph = targetIds.map(() => '?').join(',');
+              for (const tbl of cascadeTables) {
+                const res = db.prepare(`DELETE FROM ${tbl} WHERE villa_id IN (${ph})`).run(...targetIds);
+                console.log(`Geloescht aus Tabelle ${tbl}: ${res.changes} Zeilen`);
+              }
+              const resVillas = db.prepare(`DELETE FROM villas WHERE id IN (${ph})`).run(...targetIds);
+              console.log(`Geloescht aus Tabelle villas: ${resVillas.changes} Zeilen`);
+              db.exec('COMMIT');
+              console.log('Transaktion erfolgreich committet.');
+            } catch (err) {
+              db.exec('ROLLBACK');
+              console.error('Transaktion abgebrochen:', err);
+              throw err;
+            }
+          }
+
+          // 3. Nachher-Liste
+          console.log('=== NACHHER VILLENLISTE ===');
+          const villasAfter = db.prepare('SELECT id, name, status, autonomy FROM villas ORDER BY id ASC').all();
+          for (const v of villasAfter) {
+            console.log(`${v.id}|${v.name}|${v.status}|${v.autonomy}`);
+          }
+
+          console.log('--- VILLA CLEANUP END ---');
+          NODEJS
+          sudo node /tmp/villa-cleanup.mjs
+          rm -f /tmp/villa-cleanup.mjs
+          EOS
