@@ -346,28 +346,33 @@ und ohne echte Keys — Tests laufen vollstaendig im Offline-Planer.
 
 ## Kostenlose LLM-Routen (Katalog)
 
-Vorkonfiguriert sind OpenAI-kompatible Endpunkte mit kostenlosem Kontingent
-(Stand Oktober 2026, live verifiziert):
+Die automatische Kaskade ist standardmäßig auf kostenlose Routen begrenzt
+(`VF_LLM_FREE_ONLY=1`). Sie versucht Gemini Flash-Lite, danach Groq GPT-OSS
+und kostenlose OpenRouter-Modelle und zuletzt lokal gehostete Modelle. Unbekannte,
+bezahlte und kreditbasierte Routen werden übersprungen. Zum bewussten Zulassen
+weiterer aktivierter Routen kann `VF_LLM_FREE_ONLY=0` gesetzt werden.
 
 | Prioritaet | Route | Modell | Key |
 | --- | --- | --- | --- |
-| 1 | Groq GPT-OSS 120B | `openai/gpt-oss-120b` | `GROQ_API_KEY` |
-| 2 | Groq GPT-OSS 20B | `openai/gpt-oss-20b` | `GROQ_API_KEY` |
-| 3 | Cerebras Llama 3.3 70B | `llama-3.3-70b` | `CEREBRAS_API_KEY` |
-| 4 | Gemini 2.0 Flash | `gemini-2.0-flash` | `GEMINI_API_KEY` |
-| 5 | OpenRouter Gemma 4 31B | `google/gemma-4-31b-it:free` | `OPENROUTER_API_KEY` |
-| 6 | Mistral Small | `mistral-small-latest` | `MISTRAL_API_KEY` |
-| 7 | Together Llama 3.3 (free) | `meta-llama/Llama-3.3-70B-Instruct-Turbo-Free` | `TOGETHER_API_KEY` |
-| 50 | Ollama lokal | beliebig | keiner (127.0.0.1:11434) |
+| 1 | Google Gemini 3.5 Flash-Lite | `gemini-3.5-flash-lite` | `GEMINI_API_KEY` |
+| 2 | Groq GPT-OSS 120B / 20B | `openai/gpt-oss-120b`, `openai/gpt-oss-20b` | `GROQ_API_KEY` |
+| 3 | OpenRouter kostenlose Modelle | Modell-ID mit `:free` | `OPENROUTER_API_KEY` |
+| 4 | Ollama oder LM Studio lokal | lokal installiertes Modell | keiner |
 
-Hinweise: Bei Groq wurde `llama-3.3-70b-versatile` abgeschafft; der Katalog nutzt jetzt
-GPT-OSS (Reasoning-Modelle — der Hub nutzt den Gedankengang als Fallback, falls das
-Antwortbudget knapp ist). OpenRouter gewaehrt 50 Gratis-Requests pro Tag (Reset 02:00).
-Bei einem Katalog-Update haelt `syncCatalog()` bestehende Datenbanken automatisch auf
-dem neuen Modellstand; Nutzer-Einstellungen und Statistiken bleiben unberuehrt.
+Kostenlose Kontingente haben Anbieterlimits und sind nicht unbegrenzt verfügbar.
+Bei erschöpftem Kontingent wechselt der Hub zur nächsten kostenlosen Route oder
+meldet, dass kein Modell erreichbar ist. Gemini-Flash-Lite-Anfragen im kostenlosen
+Tarif können vom Anbieter zur Produktverbesserung verwendet werden; sende darüber
+keine vertraulichen Quelltexte oder Kundendaten. Die Gemini-Standardroute wird
+bei vorhandenen Installationen automatisch von `auto` und Gemini 2.0 Flash auf
+Flash-Lite aktualisiert; ausdrücklich konfigurierte andere Modelle bleiben bestehen.
 
-Key hinterlegen – entweder als Umgebungsvariable beim Start oder in der Oberfläche unter
-„API-Key hinterlegen“. Es genügt **ein** Key; der Router nutzt alle aktiven Routen.
+Für Cloud-Nutzung einen Anbieter-Key als Umgebungsvariable oder über
+„API-Key hinterlegen“ speichern. Ein Gemini-Key lässt sich kostenlos in
+[Google AI Studio](https://aistudio.google.com/apikey) erstellen. Alternativ
+Ollama oder LM Studio auf dem Host des Hubs einrichten. Mindestens eine
+erreichbare Route samt Key (Cloud) oder lokalem Modell ist nötig; Kontingente
+begrenzen die Zahl und Geschwindigkeit kostenloser Anfragen.
 
 ### Gratis-Betrieb und Kontingent-Selbstheilung
 

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { isLocalRoute,routeTier } from './llm-config.mjs';
+import { freeOnlyEnabled,isFreeRoute,isLocalRoute,routeTier } from './llm-config.mjs';
 export class LlmUnavailableError extends Error {
  constructor(attempts=[]) {super('Kein echtes Sprachmodell erreichbar. Cloud-Zugänge, Modellstatus und lokale LLM-Verbindung prüfen; die Anfrage wurde nicht durch einen regelbasierten Planer ersetzt.');this.name='LlmUnavailableError';this.code='LLM_UNAVAILABLE';this.statusCode=503;this.retryAfter=15;this.attempts=attempts;}
 }
@@ -8,7 +8,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
  const inFlight=new Map(),credentialBlocks=new Map();
  return async function cascade(messages,opts={}) {
   const attempted=[],seen=new Set();
-  const ordered=routes().filter(r=>r.provider!=='offline' && (!r.key_env||key(r.key_env)))
+  const ordered=routes().filter(r=>r.provider!=='offline' && (!freeOnlyEnabled()||isFreeRoute(r)) && (!r.key_env||key(r.key_env)))
    .filter(r=>Number(r.cooldown_until||0)<=clock())
    .sort((a,b)=>routeTier(a)-routeTier(b)||Number(a.priority)-Number(b.priority)||Number(a.last_used||0)-Number(b.last_used||0)||a.id-b.id);
   const deadline=clock()+Math.max(1000,Math.min(Number(opts.totalTimeoutMs)||120000,600000));
