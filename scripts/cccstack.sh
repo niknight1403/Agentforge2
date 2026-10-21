@@ -39,7 +39,7 @@ git reset -q --hard origin/main
 echo "Stand: $(git log -1 --oneline)"
 
 echo "== [4/7] Abhaengigkeiten + Server-Build =="
-npm ci --no-audit --no-fund
+npm ci --no-audit --no-fund || { echo "== node_modules beschädigt, Clean-Reinstall =="; rm -rf node_modules; npm ci --no-audit --no-fund; }
 npm run build
 echo "Server gebaut (dist/)."
 
