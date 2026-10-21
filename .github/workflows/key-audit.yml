@@ -25,7 +25,7 @@ jobs:
           cd /opt/villaforge/server
           tee /tmp/key-audit.mjs >/dev/null << 'NODEJS'
           import { DatabaseSync } from 'node:sqlite';
-          import { probeKey, classifyKey, PROVIDER_CATALOG } from './keyforge.mjs';
+          import { probeKey, classifyKey, PROVIDER_CATALOG } from '/opt/villaforge/server/keyforge.mjs';
 
           console.log('--- KEY AUDIT START ---');
           const dbPath = '/opt/villaforge/server/data/villaforge.db';
