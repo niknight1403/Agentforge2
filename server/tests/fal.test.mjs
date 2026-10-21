@@ -15,6 +15,7 @@ import { join } from 'node:path';
 const tmp = mkdtempSync(join(tmpdir(), 'fal-'));
 process.env.VF_DB = join(tmp, 'test.db');
 process.env.VF_WORKSPACE = join(tmp, 'ws');
+process.env.VF_LLM_FREE_ONLY = '0'; // route-auth tests exercise the full provider catalog
 
 const { FREE_ROUTE_CATALOG } = await import('../routes.mjs');
 const { db } = await import('../db.mjs');
