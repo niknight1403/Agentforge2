@@ -4,9 +4,29 @@ VillaForge ist ein privates System zum Erstellen von **Deep Agents**, die eine I
 **Villa mit bis zu 1000 Agenten** autonom planen, umsetzen und abschließen.
 
 Beim Anlegen einer Villa öffnet sich automatisch das Chat-Fenster mit dem Deep Agent.
-Ein Router rotiert über **kostenlose LLM-Anbindungen** und wechselt bei Fehlern automatisch
-auf die nächste Route. Ohne hinterlegten Key arbeitet ein regelbasierter Offline-Planer, damit
-das System immer lauffähig bleibt.
+Ein Router wechselt standardmäßig zwischen **kostenlosen LLM-Anbindungen** und nutzt
+bei Bedarf ein lokales Modell. Ohne erreichbares Sprachmodell bleibt die App bedienbar
+und zeigt klar an, dass KI-Aufgaben derzeit nicht ausgeführt werden können.
+
+## Neu in 1.45.0 — Kostenbewusste KI und Release-Stabilität
+
+- **Kostenlose LLM-Kaskade als Standard**: Gemini Flash-Lite zuerst, danach
+  Groq GPT-OSS, kostenlose OpenRouter-Modelle und lokale Inferenz. Der Hub
+  überspringt bezahlte, kreditbasierte und unbekannte Routen standardmäßig.
+- **Ehrlicher Modellstatus**: Dashboard und Bereitschafts-API zählen nur
+  Routen, die nach der aktiven Kostenregel tatsächlich verwendet werden dürfen.
+- **Professionellere Deep-Agent-Aufträge**: Anhänge werden begrenzt und
+  gekennzeichnet in den Kontext übernommen; nicht analysierte Bilddateien
+  werden nicht als geprüft ausgegeben. Bei echtem LLM-Ausfall bleibt der
+  Status transparent statt erfundene Ergebnisse zu liefern.
+- **Android- und Hub-Version synchronisiert**: `1.45.0`, Android-Versioncode
+  `42`; ein Versionstag baut und veröffentlicht das getestete APK automatisch.
+- **Qualitätssicherung**: 155 Hub-Tests sowie Android-Unit-Tests und
+  Debug-Build im Release-Workflow.
+
+Kostenlose Anbieter begrenzen Kontingente. Bei deren Erschöpfung nutzt der Hub
+die nächste zulässige Route oder meldet die Nichtverfügbarkeit. Die Android-
+Release-APK ist direkt installierbar und debug-signiert.
 
 ## Neu in 1.35.0 — Umsatz-Fokus & Endprodukt-Vision
 
