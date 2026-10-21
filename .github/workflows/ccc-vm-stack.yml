@@ -33,8 +33,8 @@ jobs:
       - name: Env-Datei (Werte nie im Log)
         env:
           CCC_TOKEN: ${{ secrets.CCC_ACCESS_TOKEN }}
-          STRIPE_KEY: ${{ github.event.inputs.stripe_secret_key }}
-          STRIPE_WHSEC: ${{ github.event.inputs.stripe_webhook_secret }}
+          STRIPE_KEY: ${{ secrets.CCC_STRIPE_SECRET_KEY }}
+          STRIPE_WHSEC: ${{ secrets.CCC_STRIPE_WEBHOOK_SECRET }}
           OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           umask 077
