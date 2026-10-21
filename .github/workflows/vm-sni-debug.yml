@@ -1,0 +1,44 @@
+name: VM SNI Debug (Postgres-443)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH-Key einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+
+      - name: Diagnose auf VM
+        env:
+          VM_PG_PW: ${{ secrets.VM_PG_PW }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo VM_PG_PW='$VM_PG_PW' bash -s" <<'DIAG'
+          export PGPASSWORD="${VM_PG_PW}"
+          echo "== 1. nginx 443-Listener =="
+          ss -tlnp | grep -E ":443 " || echo "nichts auf 443"
+          echo "== 2. DNS www von VM =="
+          getent hosts www.cybersarah-ki.com || echo "DNS schlaegt fehl"
+          echo "== 3. TCP zu www:443 (hairpin) =="
+          timeout 6 bash -c 'cat < /dev/null > /dev/tcp/www.cybersarah-ki.com/443' && echo "TCP OK" || echo "TCP BLOCKIERT/TIMEOUT"
+          echo "== 4. psql direkt 127.0.0.1:5432 =="
+          psql "host=127.0.0.1 port=5432 user=ccc_app dbname=cybersarah sslmode=require" -tAc "SELECT 'direkt: '||current_user" 2>&1 || true
+          echo "== 5. psql www:443 sslmode=require (vollstaendige Ausgabe) =="
+          psql "host=www.cybersarah-ki.com port=443 user=ccc_app dbname=cybersarah sslmode=require" -tAc "SELECT 'via-443: '||current_user" 2>&1 || true
+          echo "== 6. psql 127.0.0.1:443 (stream lokal) =="
+          psql "host=127.0.0.1 port=443 user=ccc_app dbname=cybersarah sslmode=require sslmode=require" -tAc "SELECT 'via-443-lokal: '||current_user" 2>&1 || true
+          echo "== 7. nginx error.log =="
+          tail -8 /var/log/nginx/error.log 2>/dev/null || true
+          echo "== 8. postgres Log =="
+          journalctl -u postgresql@16-main --since "10 min ago" --no-pager 2>/dev/null | tail -8 || journalctl -u postgresql --since "10 min ago" --no-pager | tail -8 || true
+          DIAG
