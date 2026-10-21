@@ -1,0 +1,11 @@
+{
+  "checked_at": "2026-10-21T05:12:38.183780+00:00",
+  "master_reply_ok": true,
+  "villa_created": false,
+  "villa_deleted": false,
+  "created_villa_id": null,
+  "master_reply": "Keine Einstellungen ge\u00e4ndert.\nBitte beschreibe die gew\u00fcnschte \u00c4nderung genauer.",
+  "errors": [
+    "4) keine Villa deren Name 'Master-Rauchtest' enthaelt gefunden."
+  ]
+}
