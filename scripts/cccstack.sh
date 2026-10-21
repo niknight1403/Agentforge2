@@ -116,4 +116,5 @@ echo "== Externe Verifikation =="
 sleep 2
 curl -sf https://hub.cybersarah-ki.com/ccc/api/health || { echo "Externe Health FEHLGESCHLAGEN"; exit 1; }
 echo ""
+echo "IPN-PASSPHRASE (fuer Digistore24 eintragen): $IPNPASS"
 echo "CCC-VM-STACK OK"
