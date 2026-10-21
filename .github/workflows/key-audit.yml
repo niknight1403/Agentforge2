@@ -31,6 +31,13 @@ jobs:
           const dbPath = '/opt/villaforge/server/data/villaforge.db';
           const db = new DatabaseSync(dbPath);
 
+          // Ensure 'dead' column exists on 'routes'
+          try {
+            db.exec('ALTER TABLE routes ADD COLUMN dead INTEGER DEFAULT 0');
+          } catch (e) {
+            // Column already exists
+          }
+
           // (a) ALLE Zeilen der Tabelle secrets listet: NUR name und ein Prozent-Hash (kein Wert!)
           console.log('=== (a) SECRETS LIST (NAME + PROZENT-HASH) ===');
           const secrets = db.prepare('SELECT name, value FROM secrets').all();
@@ -53,11 +60,12 @@ jobs:
           const probeResults = new Map(); // secret.name -> { ok, state, reason }
 
           for (const s of secrets) {
-            if (!s.value) {
-              probeResults.set(s.name, { ok: false, state: 'DEAD', reason: 'Empty key value' });
+            if (!s.value || !s.value.trim()) {
+              probeResults.set(s.name, { ok: false, state: 'DEAD', reason: 'Empty or missing key value' });
               console.log(`PROBE [${s.name}]: state=DEAD (empty)`);
               continue;
             }
+
             let provider = classifyKey(s.value);
             if (!provider) {
               const nameUpper = (s.name || '').toUpperCase();
@@ -74,7 +82,7 @@ jobs:
               } catch (e) {
                 probeRes = { ok: false, state: 'ERROR', reason: e.message || String(e) };
               }
-            } else if (provider === 'cerebras' || s.value.startsWith('csk-')) {
+            } else if (provider === 'cerebras' || s.value.startsWith('csk-') || s.name.toUpperCase().includes('CEREBRAS')) {
               try {
                 const resp = await fetch('https://api.cerebras.ai/v1/chat/completions', {
                   method: 'POST',
@@ -105,9 +113,9 @@ jobs:
 
           // (c) Tabelle routes: je Route name, key_env, priority, enabled, dead, cooldown_until ausgeben
           console.log('=== (c) ROUTES BEFORE AUDIT ===');
-          const routesBefore = db.prepare('SELECT id, name, key_env, priority, enabled, dead, cooldown_until FROM routes ORDER BY priority ASC').all();
+          const routesBefore = db.prepare('SELECT id, name, key_env, priority, enabled, COALESCE(dead, 0) AS dead, cooldown_until FROM routes ORDER BY priority ASC').all();
           for (const r of routesBefore) {
-            console.log(`ROUTE: id=${r.id} | name=${r.name} | key_env=${r.key_env} | priority=${r.priority} | enabled=${r.enabled} | dead=${r.dead || 0} | cooldown_until=${r.cooldown_until || 0}`);
+            console.log(`ROUTE: id=${r.id} | name=${r.name} | key_env=${r.key_env} | priority=${r.priority} | enabled=${r.enabled} | dead=${r.dead} | cooldown_until=${r.cooldown_until || 0}`);
           }
 
           // (d) fuer jede Route deren probeKey-state DEAD ist: UPDATE routes SET enabled=0, cooldown_until=strftime 24h
@@ -118,28 +126,29 @@ jobs:
 
           for (const r of routesBefore) {
             const secretProbe = r.key_env ? probeResults.get(r.key_env) : null;
-            const isDead = secretProbe && secretProbe.state === 'DEAD';
+            const isDead = secretProbe ? (secretProbe.state === 'DEAD') : false;
+
             if (isDead) {
               db.prepare('UPDATE routes SET enabled = 0, cooldown_until = ? WHERE id = ?').run(cooldown24h, r.id);
               disabledRoutes.push({
                 id: r.id,
                 name: r.name,
                 key_env: r.key_env,
-                probeState: secretProbe.state,
-                reason: secretProbe.reason
+                probeState: secretProbe ? secretProbe.state : 'MISSING_SECRET',
+                reason: secretProbe ? secretProbe.reason : 'Secret not found in DB'
               });
             }
           }
 
           console.log('=== ROUTES AFTER AUDIT ===');
-          const routesAfter = db.prepare('SELECT id, name, key_env, priority, enabled, dead, cooldown_until FROM routes ORDER BY priority ASC').all();
+          const routesAfter = db.prepare('SELECT id, name, key_env, priority, enabled, COALESCE(dead, 0) AS dead, cooldown_until FROM routes ORDER BY priority ASC').all();
           for (const r of routesAfter) {
-            console.log(`ROUTE: id=${r.id} | name=${r.name} | key_env=${r.key_env} | priority=${r.priority} | enabled=${r.enabled} | dead=${r.dead || 0} | cooldown_until=${r.cooldown_until || 0}`);
+            console.log(`ROUTE: id=${r.id} | name=${r.name} | key_env=${r.key_env} | priority=${r.priority} | enabled=${r.enabled} | dead=${r.dead} | cooldown_until=${r.cooldown_until || 0}`);
           }
 
           console.log('=== DEACTIVATED ROUTES LIST ===');
           for (const d of disabledRoutes) {
-            console.log(`DEACTIVATED ROUTE: id=${d.id} | name=${d.name} | key_env=${d.key_env} | reason=${d.reason}`);
+            console.log(`DEACTIVATED ROUTE: id=${d.id} | name=${d.name} | key_env=${d.key_env} | probeState=${d.probeState} | reason=${d.reason}`);
           }
 
           // (e) danach die Hub-neustart-freie Info: nichts weiter aendern. KEINE secret-Werte loggen/committen.
