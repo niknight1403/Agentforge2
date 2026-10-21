@@ -15,91 +15,20 @@ jobs:
     steps:
       - name: SSH-Key einrichten
         env:
-          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          ORACLE_SSH_KEY: ${'{'}{{ secrets.ORACLE_SSH_KEY }}${'}'}
         run: |
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
 
-      - name: Postgres-Init-Skript bauen
+      - name: Init-Skript entpacken und Passwort injizieren
         env:
-          VM_PG_PW: ${{ secrets.VM_PG_PW }}
+          VM_PG_PW: ${'{'}{{ secrets.VM_PG_PW }}${'}'}
+          PG_INIT_B64: IyEvYmluL2Jhc2gKc2V0IC1ldW8gcGlwZWZhaWwKUFc9J19fUEdQV19fJwpQR1VTRVJfQVBQPWNjY19hcHAKREI9Y3liZXJzYXJhaApleHBvcnQgREVCSUFOX0ZST05URU5EPW5vbmludGVyYWN0aXZlCmVjaG8gIlsxLzhdIFBvc3RncmVzIGluc3RhbGxpZXJlbiAuLi4iCmFwdC1nZXQgdXBkYXRlIC1xcSA+L2Rldi9udWxsIDI+JjEgfHwgdHJ1ZQphcHQtZ2V0IGluc3RhbGwgLXkgLXFxIHBvc3RncmVzcWwgcG9zdGdyZXNxbC1jb250cmliID4vZGV2L251bGwgMj4mMQpQR1ZFUj0kKGxzIC9ldGMvcG9zdGdyZXNxbCB8IGhlYWQgLTEpClBHQ09ORj0vZXRjL3Bvc3RncmVzcWwvJFBHVkVSL21haW4KZWNobyAiWzIvOF0gUG9zdGdyZXMgJFBHVkVSIOKAlCBSb2xsZSArIERCIGFubGVnZW4gKGlkZW1wb3RlbnQpIC4uLiIKc3VkbyAtdSBwb3N0Z3JlcyBwc3FsIC1xYyAiQ1JFQVRFIFJPTEUgJHtQR1VTRVJfQVBQfSBMT0dJTiBQQVNTV09SRCAnJHtQV30nOyIgPi9kZXYvbnVsbCAyPiYxIHx8IHN1ZG8gLXUgcG9zdGdyZXMgcHNxbCAtcWMgIkFMVEVSIFJPTEUgJHtQR1VTRVJfQVBQfSBQQVNTV09SRCAnJHtQV30nOyIKc3VkbyAtdSBwb3N0Z3JlcyBwc3FsIC10QWMgIlNFTEVDVCAxIEZST00gcGdfZGF0YWJhc2UgV0hFUkUgZGF0bmFtZT0nJHtEQn0nIiB8IGdyZXAgLXEgMSB8fCBzdWRvIC11IHBvc3RncmVzIGNyZWF0ZWRiIC1PICR7UEdVU0VSX0FQUH0gJHtEQn0Kc3VkbyAtdSBwb3N0Z3JlcyBwc3FsIC1xYyAiR1JBTlQgQUxMIFBSSVZJTEVHRVMgT04gREFUQUJBU0UgJHtEQn0gVE8gJHtQR1VTRVJfQVBQfTsiCmVjaG8gIlszLzhdIFRMUy1aZXJ0aWZpa2F0IChMZXQncyBFbmNyeXB0IHZvbSBIdWIpIC4uLiIKQ0VSVERJUj0iIgpmb3IgZCBpbiAvZXRjL2xldHNlbmNyeXB0L2xpdmUvaHViLmN5YmVyc2FyYWgta2kuY29tIC9yb290Ly5sb2NhbC9zaGFyZS9jYWRkeS9jZXJ0aWZpY2F0ZXMvYWNtZS12MDIuYXBpLmxldHNlbmNyeXB0Lm9yZy1kaXJlY3RvcnkvaHViLmN5YmVyc2FyYWgta2kuY29tOyBkbwogIFsgLWYgIiRkL2Z1bGxjaGFpbi5wZW0iIF0gfHwgWyAtZiAiJGQvZnVsbGNoYWluLmNlciIgXSAmJiBDRVJURElSPSIkZCIgJiYgYnJlYWsKZG9uZQppZiBbIC16ICIkQ0VSVERJUiIgXTsgdGhlbgogIEZVTExDSEFJTj0kKGZpbmQgL3Jvb3QvLmxvY2FsL3NoYXJlL2NhZGR5IC9ldGMvbGV0c2VuY3J5cHQgL3Zhci9saWIvY2FkZHkgLW5hbWUgJ2Z1bGxjaGFpbionIC1wYXRoICcqY3liZXJzYXJhaConIDI+L2Rldi9udWxsIHwgaGVhZCAtMSkKICBbIC1uICIkRlVMTENIQUlOIiBdICYmIENFUlRESVI9JChkaXJuYW1lICIkRlVMTENIQUlOIikKZmkKaWYgWyAteiAiJENFUlRESVIiIF07IHRoZW4gZWNobyAiRkVITEVSOiBLZWluIExFLVplcnRpZmlrYXQgZ2VmdW5kZW4iOyBleGl0IDM7IGZpCkZVTExDSEFJTj0kKGxzICIkQ0VSVERJUiIvZnVsbGNoYWluLnBlbSAiJENFUlRESVIiL2Z1bGxjaGFpbi5jZXIgMj4vZGV2L251bGwgfCBoZWFkIC0xKQpQUklWS0VZPSQobHMgIiRDRVJURElSIi9wcml2a2V5LnBlbSAiJENFUlRESVIiL3ByaXZrZXkua2V5ICIkQ0VSVERJUiIvaHViLmN5YmVyc2FyYWgta2kuY29tLmtleSAyPi9kZXYvbnVsbCB8IGhlYWQgLTEpCmlmIFsgLXogIiRQUklWS0VZIiBdOyB0aGVuIFBSSVZLRVk9JChscyAiJENFUlRESVIiIHwgZ3JlcCAtaXYgZnVsbGNoYWluIHwgZ3JlcCAtaUUgJ2tleXxwcml2JyB8IGhlYWQgLTEgfCB4YXJncyAtSXt9IGVjaG8gIiRDRVJURElSL3t9Iik7IGZpCmVjaG8gIiAgIFplcnRpZmlrYXQ6ICRGVUxMQ0hBSU4gLyAkUFJJVktFWSIKbWtkaXIgLXAgL3Zhci9saWIvcG9zdGdyZXNxbC9zc2wKY3AgIiRGVUxMQ0hBSU4iIC92YXIvbGliL3Bvc3RncmVzcWwvc3NsL3BnLmNydApjcCAiJFBSSVZLRVkiIC92YXIvbGliL3Bvc3RncmVzcWwvc3NsL3BnLmtleQpjaG93biBwb3N0Z3Jlczpwb3N0Z3JlcyAvdmFyL2xpYi9wb3N0Z3Jlc3FsL3NzbC9wZy4qCmNobW9kIDYwMCAvdmFyL2xpYi9wb3N0Z3Jlc3FsL3NzbC9wZy5rZXkKaWYgWyAtZCAvZXRjL2xldHNlbmNyeXB0L3JlbmV3YWwtaG9va3MgXTsgdGhlbgpjYXQgPiAvZXRjL2xldHNlbmNyeXB0L3JlbmV3YWwtaG9va3MvZGVwbG95L3Bvc3RncmVzLXNzbC5zaCA8PCdIT09LJwojIS9iaW4vYmFzaApjcCAiX19DRVJURElSX18vZnVsbGNoYWluLnBlbSIgL3Zhci9saWIvcG9zdGdyZXNxbC9zc2wvcGcuY3J0IDI+L2Rldi9udWxsIHx8IHRydWUKY3AgJChscyBfX0NFUlRESVJfXyB8IGdyZXAgLWkgcHJpdiB8IGhlYWQgLTEgfCB4YXJncyAtSXt9IGVjaG8gX19DRVJURElSX18ve30pIC92YXIvbGliL3Bvc3RncmVzcWwvc3NsL3BnLmtleSAyPi9kZXYvbnVsbCB8fCB0cnVlCmNob3duIHBvc3RncmVzOnBvc3RncmVzIC92YXIvbGliL3Bvc3RncmVzcWwvc3NsL3BnLioKY2htb2QgNjAwIC92YXIvbGliL3Bvc3RncmVzcWwvc3NsL3BnLmtleQpzeXN0ZW1jdGwgcmVsb2FkIHBvc3RncmVzcWwgMj4vZGV2L251bGwgfHwgc3lzdGVtY3RsIHJlc3RhcnQgcG9zdGdyZXNxbApIT09LCnNlZCAtaSAic3xfX0NFUlRESVJfX3wkQ0VSVERJUnxnIiAvZXRjL2xldHNlbmNyeXB0L3JlbmV3YWwtaG9va3MvZGVwbG95L3Bvc3RncmVzLXNzbC5zaApjaG1vZCAreCAvZXRjL2xldHNlbmNyeXB0L3JlbmV3YWwtaG9va3MvZGVwbG95L3Bvc3RncmVzLXNzbC5zaApmaQplY2hvICJbNC84XSBwb3N0Z3Jlc3FsLmNvbmYgKGxpc3RlbiArIHNzbCkgLi4uIgpncmVwIC1xICIjIyMgdmlsbGFmb3JnZS1wZyIgJFBHQ09ORi9wb3N0Z3Jlc3FsLmNvbmYgfHwgY2F0ID4+ICRQR0NPTkYvcG9zdGdyZXNxbC5jb25mIDw8J0NPTkYnCiMjIyB2aWxsYWZvcmdlLXBnCmxpc3Rlbl9hZGRyZXNzZXMgPSAnKicKc3NsID0gb24Kc3NsX2NlcnRfZmlsZSA9ICcvdmFyL2xpYi9wb3N0Z3Jlc3FsL3NzbC9wZy5jcnQnCnNzbF9rZXlfZmlsZSA9ICcvdmFyL2xpYi9wb3N0Z3Jlc3FsL3NzbC9wZy5rZXknCnBhc3N3b3JkX2VuY3J5cHRpb24gPSAnc2NyYW0tc2hhLTI1NicKQ09ORgplY2hvICJbNS84XSBwZ19oYmEuY29uZiAobnVyIFNTTCwgbnVyIGRpZXNlIERCKSAuLi4iCmdyZXAgLXEgInZpbGxhZm9yZ2UtcGciICRQR0NPTkYvcGdfaGJhLmNvbmYgfHwgY2F0ID4+ICRQR0NPTkYvcGdfaGJhLmNvbmYgPDwnSEJBJwojIHZpbGxhZm9yZ2UtcGc6IEN5YmVyU2FyYWgtQXBwLURCIOKAlCBudXIgVExTLVp1Z3JpZmYKaG9zdHNzbCAgY3liZXJzYXJhaCAgY2NjX2FwcCAgMC4wLjAuMC8wICBzY3JhbS1zaGEtMjU2Cmhvc3Rzc2wgIGN5YmVyc2FyYWggIGNjY19hcHAgIDo6LzAgICAgICAgc2NyYW0tc2hhLTI1NgpIQkEKZWNobyAiWzYvOF0gVk0tRmlyZXdhbGwgKGlwdGFibGVzIDU0MzIpIC4uLiIKaXB0YWJsZXMgLUMgSU5QVVQgLXAgdGNwIC0tZHBvcnQgNTQzMiAtaiBBQ0NFUFQgMj4vZGV2L251bGwgfHwgaXB0YWJsZXMgLUkgSU5QVVQgLXAgdGNwIC0tZHBvcnQgNTQzMiAtaiBBQ0NFUFQKbmV0ZmlsdGVyLXBlcnNpc3RlbnQgc2F2ZSA+L2Rldi9udWxsIDI+JjEgfHwgaXB0YWJsZXMtc2F2ZSA+IC9ldGMvaXB0YWJsZXMvcnVsZXMudjQgMj4vZGV2L251bGwgfHwgdHJ1ZQplY2hvICJbNy84XSBQb3N0Z3JlcyBuZXUgc3RhcnRlbiAuLi4iCnN5c3RlbWN0bCByZXN0YXJ0IHBvc3RncmVzcWwKc2xlZXAgMwpzdWRvIC11IHBvc3RncmVzIHBnX2lzcmVhZHkgLXEgJiYgZWNobyAiICAgcGdfaXNyZWFkeTogT0siCmVjaG8gIls4LzhdIFRMUy1WZXJiaW5kdW5nc3Rlc3QgLi4uIgpQR1BBU1NXT1JEPSIke1BXfSIgcHNxbCAtaCAxMjcuMC4wLjEgLVUgJHtQR1VTRVJfQVBQfSAtZCAke0RCfSAtYyAiU0VMRUNUIDEgQVMgb2siID4vZGV2L251bGwgMj4mMSB8fCBQR1BBU1NXT1JEPSIke1BXfSIgcHNxbCAiaG9zdD0xMjcuMC4wLjEgc3NsbW9kZT1yZXF1aXJlIGRibmFtZT0ke0RCfSB1c2VyPSR7UEdVU0VSX0FQUH0iIC1jICJTRUxFQ1QgMSBBUyBvayIgPi9kZXYvbnVsbCAyPiYxIHx8IHsgZWNobyAiICAgRkVITEVSIGJlaW0gVmVyYmluZHVuZ3N0ZXN0IjsgZXhpdCA0OyB9CmVjaG8gIlBPU1RHUkVTLVNFVFVQOiBBTExFUyBPSyAoUm9sbGUrREIrVExTK0ZpcmV3YWxsIGFrdGl2KSIK
         run: |
-          cat > /tmp/pg-init.sh <<'PGSCRIPT'
-          #!/bin/bash
-          set -euo pipefail
-          PW='__PGPW__'
-          PGUSER_APP=ccc_app
-          DB=cybersarah
-          export DEBIAN_FRONTEND=noninteractive
-          echo "[1/8] Postgres installieren ..."
-          apt-get update -qq >/dev/null 2>&1 || true
-          apt-get install -y -qq postgresql postgresql-contrib >/dev/null 2>&1
-          PGVER=$(ls /etc/postgresql | head -1)
-          PGCONF=/etc/postgresql/$PGVER/main
-          echo "[2/8] Postgres $PGVER — Rolle + DB anlegen (idempotent) ..."
-          sudo -u postgres psql -qc "CREATE ROLE ${PGUSER_APP} LOGIN PASSWORD '${PW}';" >/dev/null 2>&1 || sudo -u postgres psql -qc "ALTER ROLE ${PGUSER_APP} PASSWORD '${PW}';"
-          sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB}'" | grep -q 1 || sudo -u postgres createdb -O ${PGUSER_APP} ${DB}
-          sudo -u postgres psql -qc "GRANT ALL PRIVILEGES ON DATABASE ${DB} TO ${PGUSER_APP};"
-          echo "[3/8] TLS-Zertifikat (Let's Encrypt vom Hub) ..."
-          CERTDIR=""
-          for d in /etc/letsencrypt/live/hub.cybersarah-ki.com /root/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/hub.cybersarah-ki.com; do
-            [ -f "$d/fullchain.pem" ] || [ -f "$d/fullchain.cer" ] && CERTDIR="$d" && break
-          done
-          if [ -z "$CERTDIR" ]; then
-            FULLCHAIN=$(find /root/.local/share/caddy /etc/letsencrypt /var/lib/caddy -name 'fullchain*' -path '*cybersarah*' 2>/dev/null | head -1)
-            [ -n "$FULLCHAIN" ] && CERTDIR=$(dirname "$FULLCHAIN")
-          fi
-          if [ -z "$CERTDIR" ]; then echo "FEHLER: Kein LE-Zertifikat gefunden"; exit 3; fi
-          FULLCHAIN=$(ls "$CERTDIR"/fullchain.pem "$CERTDIR"/fullchain.cer 2>/dev/null | head -1)
-          PRIVKEY=$(ls "$CERTDIR"/privkey.pem "$CERTDIR"/privkey.key "$CERTDIR"/hub.cybersarah-ki.com.key 2>/dev/null | head -1)
-          if [ -z "$PRIVKEY" ]; then PRIVKEY=$(ls "$CERTDIR" | grep -iv fullchain | grep -iE 'key|priv' | head -1 | xargs -I{} echo "$CERTDIR/{}"); fi
-          echo "   Zertifikat: $FULLCHAIN / $PRIVKEY"
-          mkdir -p /var/lib/postgresql/ssl
-          cp "$FULLCHAIN" /var/lib/postgresql/ssl/pg.crt
-          cp "$PRIVKEY" /var/lib/postgresql/ssl/pg.key
-          chown postgres:postgres /var/lib/postgresql/ssl/pg.*
-          chmod 600 /var/lib/postgresql/ssl/pg.key
-          if [ -d /etc/letsencrypt/renewal-hooks ]; then
-          cat > /etc/letsencrypt/renewal-hooks/deploy/postgres-ssl.sh <<'HOOK'
-          #!/bin/bash
-          cp "__CERTDIR__/fullchain.pem" /var/lib/postgresql/ssl/pg.crt 2>/dev/null || true
-          cp $(ls __CERTDIR__ | grep -i priv | head -1 | xargs -I{} echo __CERTDIR__/{}) /var/lib/postgresql/ssl/pg.key 2>/dev/null || true
-          chown postgres:postgres /var/lib/postgresql/ssl/pg.*
-          chmod 600 /var/lib/postgresql/ssl/pg.key
-          systemctl reload postgresql 2>/dev/null || systemctl restart postgresql
-          HOOK
-          sed -i "s|__CERTDIR__|$CERTDIR|g" /etc/letsencrypt/renewal-hooks/deploy/postgres-ssl.sh
-          chmod +x /etc/letsencrypt/renewal-hooks/deploy/postgres-ssl.sh
-          fi
-          echo "[4/8] postgresql.conf (listen + ssl) ..."
-          grep -q "### villaforge-pg" $PGCONF/postgresql.conf || cat >> $PGCONF/postgresql.conf <<'CONF'
-          ### villaforge-pg
-          listen_addresses = '*'
-          ssl = on
-          ssl_cert_file = '/var/lib/postgresql/ssl/pg.crt'
-          ssl_key_file = '/var/lib/postgresql/ssl/pg.key'
-          password_encryption = 'scram-sha-256'
-          CONF
-          echo "[5/8] pg_hba.conf (nur SSL, nur diese DB) ..."
-          grep -q "villaforge-pg" $PGCONF/pg_hba.conf || cat >> $PGCONF/pg_hba.conf <<'HBA'
-          # villaforge-pg: CyberSarah-App-DB — nur TLS-Zugriff
-          hostssl  cybersarah  ccc_app  0.0.0.0/0  scram-sha-256
-          hostssl  cybersarah  ccc_app  ::/0       scram-sha-256
-          HBA
-          echo "[6/8] VM-Firewall (iptables 5432) ..."
-          iptables -C INPUT -p tcp --dport 5432 -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport 5432 -j ACCEPT
-          netfilter-persistent save >/dev/null 2>&1 || iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
-          echo "[7/8] Postgres neu starten ..."
-          systemctl restart postgresql
-          sleep 3
-          sudo -u postgres pg_isready -q && echo "   pg_isready: OK"
-          echo "[8/8] TLS-Verbindungstest ..."
-          PGPASSWORD="${PW}" psql -h 127.0.0.1 -U ${PGUSER_APP} -d ${DB} -c "SELECT 1 AS ok" >/dev/null 2>&1 || PGPASSWORD="${PW}" psql "host=127.0.0.1 sslmode=require dbname=${DB} user=${PGUSER_APP}" -c "SELECT 1 AS ok" >/dev/null 2>&1 || { echo "   FEHLER beim Verbindungstest"; exit 4; }
-          echo "POSTGRES-SETUP: ALLES OK (Rolle+DB+TLS+Firewall aktiv)"
-PGSCRIPT
+          printf '%s' "$PG_INIT_B64" | base64 -d > /tmp/pg-init.sh
           sed -i "s|__PGPW__|$VM_PG_PW|" /tmp/pg-init.sh
-          test -s /tmp/pg-init.sh && echo "Skript bereit ($(wc -l < /tmp/pg-init.sh) Zeilen)"
+          test -s /tmp/pg-init.sh && echo "Skript bereit: $(wc -l < /tmp/pg-init.sh) Zeilen"
 
       - name: Skript auf VM ausfuehren
         run: |
