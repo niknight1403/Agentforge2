@@ -92,7 +92,7 @@ jobs:
           echo "Stand: $(git log -1 --oneline)"
 
           echo "== [4/7] Abhaengigkeiten + Server-Build =="
-          npm ci --no-audit --no-fund
+          npm ci --no-audit --no-fund || { echo "== node_modules beschaedigt, Clean-Reinstall =="; rm -rf node_modules; npm ci --no-audit --no-fund; }
           npm run build
           echo "Server gebaut (dist/)."
 
@@ -118,6 +118,7 @@ jobs:
             chmod 600 "$CCC_DIR/.d24key.tmp"
             mv "$CCC_DIR/.d24key.tmp" "$CCC_DIR/.d24key"
           fi
+          D24KEY=$(cat "$CCC_DIR/.d24key" 2>/dev/null || echo "")
           STRIPE_ENV=""
           if [ -n "${STRIPE_KEY}" ]; then
             STRIPE_ENV="Environment=STRIPE_SECRET_KEY=${STRIPE_KEY}"
@@ -147,6 +148,7 @@ jobs:
           Environment=APP_BASE_URL=https://hub.cybersarah-ki.com/ccc
           Environment=GOOGLE_WEB_CLIENT_ID=656137332727-2i47bqt2fk359nj48tc0kdfl3mhjmoo1.apps.googleusercontent.com
           Environment=DIGISTORE24_IPN_PASSPHRASE=${IPNPASS}
+          Environment=DIGISTORE24_API_KEY=${D24KEY}
           Environment=LANDING_PUBLIC_BASE=https://hub.cybersarah-ki.com/ccc
           Environment=STRIPE_PAYMENT_LINK=${STRIPE_PAYMENT_LINK_ENV}
           Environment=APP_ALLOWED_ORIGINS=https://app.cybersarah-ki.com,https://hub.cybersarah-ki.com,capacitor://localhost,https://localhost,exp://localhost,http://localhost
