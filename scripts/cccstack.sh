@@ -97,7 +97,8 @@ User=ubuntu
 WantedBy=multi-user.target
 UNIT
 sudo systemctl daemon-reload
-sudo systemctl enable --now cybersarah-ccc
+sudo systemctl enable cybersarah-ccc
+sudo systemctl restart cybersarah-ccc
 sleep 4
 if curl -sf http://127.0.0.1:13000/api/health >/dev/null; then
   echo "Lokale Health OK."
