@@ -38,6 +38,11 @@ import { createReadStream, existsSync as fsExists } from 'node:fs';
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
 const PUBLIC_DIR = resolve(process.cwd(), 'server/public');
+const portIssue = !Number.isInteger(PORT) || PORT < 1 || PORT > 65535;
+if (portIssue) {
+  console.error(`Ungueltige PORT-Konfiguration: ${process.env.PORT}. Erlaubt ist eine ganze Zahl von 1 bis 65535.`);
+  process.exit(1);
+}
 
 /* --------------------------- Villa-Live-Daten --------------------------- */
 /* Was laeuft gerade, wie lange dauert es noch?                           */
@@ -155,6 +160,10 @@ function serveStatic(req, res, pathname) {
 /* --------------------------- API --------------------------- */
 syncCascadeRoutes();
 const masterControl = createMasterControl({ chat, createVilla, isRunning, stopVilla, toolSpecs, packState, setPackEnabled, emit, startVilla(id) { scheduleVilla(id); return { queued: id }; } });
+if (process.argv.includes('--check')) {
+  console.log(JSON.stringify({ ok: true, host: HOST, port: PORT, version: VERSION, routing: routingSummary() }, null, 2));
+  process.exit(0);
+}
 
 async function api(req, res, url) {
   const p = url.pathname;
