@@ -125,8 +125,21 @@ jobs:
           const disabledRoutes = [];
 
           for (const r of routesBefore) {
-            const secretProbe = r.key_env ? probeResults.get(r.key_env) : null;
-            const isDead = secretProbe ? (secretProbe.state === 'DEAD') : false;
+            let routeProbeState = 'OK';
+            let reason = '';
+
+            if (r.key_env && r.key_env.trim()) {
+              if (probeResults.has(r.key_env)) {
+                const pr = probeResults.get(r.key_env);
+                routeProbeState = pr.state;
+                reason = pr.reason;
+              } else {
+                routeProbeState = 'DEAD';
+                reason = `Key ${r.key_env} missing from secrets table (HTTP 401)`;
+              }
+            }
+
+            const isDead = routeProbeState === 'DEAD';
 
             if (isDead) {
               db.prepare('UPDATE routes SET enabled = 0, cooldown_until = ? WHERE id = ?').run(cooldown24h, r.id);
@@ -134,8 +147,8 @@ jobs:
                 id: r.id,
                 name: r.name,
                 key_env: r.key_env,
-                probeState: secretProbe ? secretProbe.state : 'MISSING_SECRET',
-                reason: secretProbe ? secretProbe.reason : 'Secret not found in DB'
+                probeState: routeProbeState,
+                reason: reason
               });
             }
           }
