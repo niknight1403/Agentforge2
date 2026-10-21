@@ -100,6 +100,12 @@ jobs:
             mv "$CCC_DIR/.jwt.tmp" "$CCC_DIR/.jwt"
           fi
           JWT=$(cat "$CCC_DIR/.jwt")
+          if [ ! -f "$CCC_DIR/.ipnpass" ]; then
+            openssl rand -hex 16 > "$CCC_DIR/.ipnpass.tmp"
+            chmod 600 "$CCC_DIR/.ipnpass.tmp"
+            mv "$CCC_DIR/.ipnpass.tmp" "$CCC_DIR/.ipnpass"
+          fi
+          IPNPASS=$(cat "$CCC_DIR/.ipnpass")
           STRIPE_ENV=""
           if [ -n "${STRIPE_KEY}" ]; then
             STRIPE_ENV="Environment=STRIPE_SECRET_KEY=${STRIPE_KEY}"
@@ -123,6 +129,8 @@ jobs:
           Environment=JWT_SECRET=${JWT}
           Environment=ADMIN_EMAIL=niko.oeben@gmail.com
           Environment=APP_BASE_URL=https://hub.cybersarah-ki.com/ccc
+          Environment=GOOGLE_WEB_CLIENT_ID=656137332727-2i47bqt2fk359nj48tc0kdfl3mhjmoo1.apps.googleusercontent.com
+          Environment=DIGISTORE24_IPN_PASSPHRASE=${IPNPASS}
           Environment=APP_ALLOWED_ORIGINS=https://app.cybersarah-ki.com,https://hub.cybersarah-ki.com,capacitor://localhost,https://localhost,exp://localhost,http://localhost
           ${STRIPE_ENV}
           ${OR_ENV}
