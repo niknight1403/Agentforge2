@@ -62,7 +62,10 @@ fi
 IPNPASS=$(cat "$CCC_DIR/.ipnpass")
 STRIPE_ENV=""
 if [ -n "${STRIPE_KEY}" ]; then
-  STRIPE_ENV="Environment=STRIPE_SECRET_KEY=${STRIPE_KEY}"
+  STRIPE_ENV="Environment=STRIPE_SECRET_KEY=${STRIPE_KEY}
+if [ -n "${STRIPE_WHSEC:-}" ]; then
+  echo "Environment=STRIPE_WEBHOOK_SECRET=${STRIPE_WHSEC}" >> "$UNIT"
+fi"
 fi
 OR_ENV=""
 if [ -n "${OPENROUTER_KEY}" ]; then

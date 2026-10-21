@@ -10,6 +10,9 @@ on:
       stripe_secret_key:
         description: "Stripe Live-Key (sk_live_...) — nur fuer die systemd-Unit auf der VM"
         required: false
+      stripe_webhook_secret:
+        description: "Stripe Webhook Signing Secret (whsec_...) aus dem Stripe-Dashboard"
+        required: false
 
 permissions:
   contents: read
@@ -31,12 +34,14 @@ jobs:
         env:
           CCC_TOKEN: ${{ secrets.CCC_ACCESS_TOKEN }}
           STRIPE_KEY: ${{ github.event.inputs.stripe_secret_key }}
+          STRIPE_WHSEC: ${{ github.event.inputs.stripe_webhook_secret }}
           OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           umask 077
           {
             echo "CCC_TOKEN=${CCC_TOKEN}"
             echo "STRIPE_KEY=${STRIPE_KEY}"
+            echo "STRIPE_WHSEC=${STRIPE_WHSEC}"
             echo "OPENROUTER_KEY=${OPENROUTER_KEY}"
           } > /tmp/ccc.env
           echo "Env-Datei erstellt."
@@ -108,7 +113,10 @@ jobs:
           IPNPASS=$(cat "$CCC_DIR/.ipnpass")
           STRIPE_ENV=""
           if [ -n "${STRIPE_KEY}" ]; then
-            STRIPE_ENV="Environment=STRIPE_SECRET_KEY=${STRIPE_KEY}"
+            STRIPE_ENV="Environment=STRIPE_SECRET_KEY=${STRIPE_KEY}
+          if [ -n "${STRIPE_WHSEC:-}" ]; then
+            echo "Environment=STRIPE_WEBHOOK_SECRET=${STRIPE_WHSEC}" >> "$UNIT"
+          fi"
           fi
           OR_ENV=""
           if [ -n "${OPENROUTER_KEY}" ]; then
