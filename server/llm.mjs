@@ -1,6 +1,6 @@
 import { forgeLog } from './keyforge.mjs';
 import { db, now } from './db.mjs';
-import { KEY_ALIASES,isLocalRoute } from './llm-config.mjs';
+import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute } from './llm-config.mjs';
 import { createCascade } from './llm-cascade.mjs';
 import { userStore, quotaLeft, chargeTokens } from './auth.mjs';
 
@@ -25,7 +25,7 @@ export function enabledRoutes() {
 
 /** Waehlt die naechste Route: Prioritaet, dann gewichtete Rotation. */
 export function pickRoute() {
-  return enabledRoutes().filter(r=>r.provider!=='offline' && isUsable(r))[0] || null;
+  return enabledRoutes().filter(r=>r.provider!=='offline' && (!freeOnlyEnabled()||isFreeRoute(r)) && isUsable(r))[0] || null;
 }
 
 /* GATEWAY-Metriken (Charta 2026-10-18): Latenz (EMA) und Token-Verbrauch je Route. */
@@ -288,13 +288,15 @@ export async function chat(messages,opts={}) {
  return out;
 }
 export function routingStatus() {
- return {mode:'cascade',ruleBasedFallback:false,routes:enabledRoutes().filter(r=>r.provider!=='offline').map(r=>({id:r.id,name:r.name,model:r.model,configured:!r.key_env||!!resolveKey(r.key_env),cooldownUntil:r.cooldown_until||0,status:r.status}))};
+  const freeOnly=freeOnlyEnabled();
+  return {mode:'cascade',ruleBasedFallback:false,freeOnly,routes:enabledRoutes().filter(r=>r.provider!=='offline').map(r=>{const configured=!r.key_env||!!resolveKey(r.key_env),eligible=(!freeOnly||isFreeRoute(r))&&configured&&Number(r.cooldown_until||0)<=Date.now();return {id:r.id,name:r.name,model:r.model,configured,eligible,cooldownUntil:r.cooldown_until||0,status:r.status};})};
 }
 
 export function routingSummary(){
- const routes=routingStatus().routes;
- const eligible=routes.filter(r=>r.configured&&Number(r.cooldownUntil)<=Date.now()).length;
- const latestRoute=db.prepare("SELECT last_used,name FROM routes WHERE provider!='offline' AND status='OK' ORDER BY last_used DESC LIMIT 1").get();
+ const status=routingStatus();
+ const routes=status.routes;
+ const eligible=routes.filter(r=>r.eligible).length;
+ const latestRoute=db.prepare("SELECT last_used,name,provider,model,base_url FROM routes WHERE provider!='offline' AND status='OK' ORDER BY last_used DESC").all().find(r=>!status.freeOnly||isFreeRoute(r));
  const latest=latestRoute?.last_used||0;
- return {mode:'cascade',ruleBasedFallback:false,configuredRoutes:routes.filter(r=>r.configured).length,eligibleRoutes:eligible,lastSuccessfulReplyAt:latest||null,lastSuccessfulRoute:latestRoute?.name||null,state:latest&&Date.now()-latest<300000?'recently_verified':eligible?'unverified':'unavailable'};
+ return {mode:'cascade',ruleBasedFallback:false,freeOnly:status.freeOnly,configuredRoutes:routes.filter(r=>r.configured).length,eligibleRoutes:eligible,lastSuccessfulReplyAt:latest||null,lastSuccessfulRoute:latestRoute?.name||null,state:latest&&Date.now()-latest<300000?'recently_verified':eligible?'unverified':'unavailable'};
 }
