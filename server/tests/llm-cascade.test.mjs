@@ -8,7 +8,7 @@ process.env.VF_LLM_FREE_ONLY='0';
 const {createCascade,LlmUnavailableError}=await import('../llm-cascade.mjs');
 const {syncCascadeRoutes}=await import('../llm-config.mjs');
 const {db}=await import('../db.mjs');
-const {chat,resolveKey}=await import('../llm.mjs');
+const {chat,resolveKey,routingStatus}=await import('../llm.mjs');
 function route(id,provider,key_env='',extra={}){return {id,name:provider,provider,base_url:`http://${provider}`,model:'test',key_env,priority:id,...extra};}
 const answer={content:'Echte Antwort',model:'test'};
 test('Primary -> Secondary -> Backup -> Local: fixe Kaskade trotz anderer Priorität',async()=>{
@@ -69,5 +69,14 @@ test('Free-only mode uses approved free routes and skips paid or unknown cloud r
  ];
  const seen=[];const run=createCascade({routes:()=>rows,key:()=>true,call:async r=>{seen.push(r.id);if(r.id===1)throw Error('temporary');return answer;}});
  await run([]);assert.deepEqual(seen,[1,3]);
+ process.env.VF_LLM_FREE_ONLY='0';
+});
+test('Routing readiness marks blocked paid routes ineligible',()=>{
+ process.env.VF_LLM_FREE_ONLY='1';db.exec('DELETE FROM routes');
+ db.prepare('INSERT INTO routes(name,provider,base_url,model,key_env,priority) VALUES (?,?,?,?,?,?)').run('Paid route','xai','https://api.x.ai/v1','grok-latest','XAI_API_KEY',1);
+ db.prepare('INSERT INTO routes(name,provider,base_url,model,key_env,priority) VALUES (?,?,?,?,?,?)').run('Local route','ollama','http://127.0.0.1:11434/v1','llama3.2:3b','',2);
+ const routes=routingStatus().routes;
+ assert.equal(routes.find(r=>r.name==='Paid route').eligible,false);
+ assert.equal(routes.find(r=>r.name==='Local route').eligible,true);
  process.env.VF_LLM_FREE_ONLY='0';
 });
