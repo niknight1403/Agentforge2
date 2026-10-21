@@ -35,6 +35,7 @@ jobs:
           CCC_TOKEN: ${{ secrets.CCC_ACCESS_TOKEN }}
           STRIPE_KEY: ${{ secrets.CCC_STRIPE_SECRET_KEY }}
           STRIPE_WHSEC: ${{ secrets.CCC_STRIPE_WEBHOOK_SECRET }}
+          STRIPE_PAYMENT_LINK_ENV: ${{ secrets.CCC_STRIPE_PAYMENT_LINK }}
           OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           umask 077
@@ -42,6 +43,7 @@ jobs:
             echo "CCC_TOKEN=${CCC_TOKEN}"
             echo "STRIPE_KEY=${STRIPE_KEY}"
             echo "STRIPE_WHSEC=${STRIPE_WHSEC}"
+            echo "STRIPE_PAYMENT_LINK_ENV=${STRIPE_PAYMENT_LINK_ENV}"
             echo "OPENROUTER_KEY=${OPENROUTER_KEY}"
           } > /tmp/ccc.env
           echo "Env-Datei erstellt."
@@ -141,6 +143,7 @@ jobs:
           Environment=GOOGLE_WEB_CLIENT_ID=656137332727-2i47bqt2fk359nj48tc0kdfl3mhjmoo1.apps.googleusercontent.com
           Environment=DIGISTORE24_IPN_PASSPHRASE=${IPNPASS}
           Environment=LANDING_PUBLIC_BASE=https://hub.cybersarah-ki.com/ccc
+          Environment=STRIPE_PAYMENT_LINK=${STRIPE_PAYMENT_LINK_ENV}
           Environment=APP_ALLOWED_ORIGINS=https://app.cybersarah-ki.com,https://hub.cybersarah-ki.com,capacitor://localhost,https://localhost,exp://localhost,http://localhost
           ${STRIPE_ENV}
           ${OR_ENV}
