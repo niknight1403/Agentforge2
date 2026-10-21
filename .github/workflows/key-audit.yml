@@ -1,0 +1,151 @@
+name: Key Audit (Tote Keys & 401-Routen stillegen)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+
+      - name: Key-Audit & Dead Routes Stilllegung durchfuehren
+        run: |
+          /tmp/sshcmd 'bash -s' << 'EOS'
+          set -e
+          cd /opt/villaforge/server
+          tee /tmp/key-audit.mjs >/dev/null << 'NODEJS'
+          import { DatabaseSync } from 'node:sqlite';
+          import { probeKey, classifyKey, PROVIDER_CATALOG } from './keyforge.mjs';
+
+          console.log('--- KEY AUDIT START ---');
+          const dbPath = '/opt/villaforge/server/data/villaforge.db';
+          const db = new DatabaseSync(dbPath);
+
+          // (a) ALLE Zeilen der Tabelle secrets listet: NUR name und ein Prozent-Hash (kein Wert!)
+          console.log('=== (a) SECRETS LIST (NAME + PROZENT-HASH) ===');
+          const secrets = db.prepare('SELECT name, value FROM secrets').all();
+
+          function percentHash(str) {
+            if (!str) return '0%';
+            let h = 0;
+            for (let i = 0; i < str.length; i++) {
+              h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+            }
+            return Math.abs(h % 100) + '%';
+          }
+
+          for (const s of secrets) {
+            console.log(`SECRET: ${s.name} | HASH: ${percentHash(s.value)}`);
+          }
+
+          // (b) mit probeKey aus /opt/villaforge/server/keyforge.mjs JE Key einmal probet
+          console.log('=== (b) PROBING KEYS ===');
+          const probeResults = new Map(); // secret.name -> { ok, state, reason }
+
+          for (const s of secrets) {
+            if (!s.value) {
+              probeResults.set(s.name, { ok: false, state: 'DEAD', reason: 'Empty key value' });
+              console.log(`PROBE [${s.name}]: state=DEAD (empty)`);
+              continue;
+            }
+            let provider = classifyKey(s.value);
+            if (!provider) {
+              const nameUpper = (s.name || '').toUpperCase();
+              if (nameUpper.includes('CEREBRAS') || s.value.startsWith('csk-')) provider = 'cerebras';
+              else if (nameUpper.includes('GROQ') || s.value.startsWith('gsk-')) provider = 'groq';
+              else if (nameUpper.includes('GOOGLE') || nameUpper.includes('GEMINI')) provider = 'google';
+              else if (nameUpper.includes('OPENROUTER') || s.value.startsWith('sk-or-v1-')) provider = 'openrouter';
+            }
+
+            let probeRes = null;
+            if (provider && PROVIDER_CATALOG && PROVIDER_CATALOG[provider]) {
+              try {
+                probeRes = await probeKey(provider, s.value);
+              } catch (e) {
+                probeRes = { ok: false, state: 'ERROR', reason: e.message || String(e) };
+              }
+            } else if (provider === 'cerebras' || s.value.startsWith('csk-')) {
+              try {
+                const resp = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.value}` },
+                  body: JSON.stringify({ model: 'llama3.1-8b', messages: [{ role: 'user', content: 'ok' }], max_tokens: 5 }),
+                  signal: AbortSignal.timeout(15_000)
+                });
+                const text = await resp.text().catch(() => '');
+                if (resp.ok) {
+                  probeRes = { ok: true, state: 'OK' };
+                } else if (resp.status === 401 || resp.status === 403) {
+                  probeRes = { ok: false, state: 'DEAD', reason: `HTTP ${resp.status}` };
+                } else if (resp.status === 429) {
+                  probeRes = { ok: true, state: 'RATE_LIMITED', reason: 'HTTP 429' };
+                } else {
+                  probeRes = { ok: false, state: 'ERROR', reason: `HTTP ${resp.status} ${text.slice(0, 100)}` };
+                }
+              } catch (e) {
+                probeRes = { ok: false, state: 'ERROR', reason: e.message || String(e) };
+              }
+            } else {
+              probeRes = { ok: false, state: 'UNKNOWN', reason: `Provider ${provider} not cataloged` };
+            }
+
+            probeResults.set(s.name, probeRes);
+            console.log(`PROBE [${s.name}]: provider=${provider || 'none'}, state=${probeRes.state}, ok=${probeRes.ok}, reason=${probeRes.reason || ''}`);
+          }
+
+          // (c) Tabelle routes: je Route name, key_env, priority, enabled, dead, cooldown_until ausgeben
+          console.log('=== (c) ROUTES BEFORE AUDIT ===');
+          const routesBefore = db.prepare('SELECT id, name, key_env, priority, enabled, dead, cooldown_until FROM routes ORDER BY priority ASC').all();
+          for (const r of routesBefore) {
+            console.log(`ROUTE: id=${r.id} | name=${r.name} | key_env=${r.key_env} | priority=${r.priority} | enabled=${r.enabled} | dead=${r.dead || 0} | cooldown_until=${r.cooldown_until || 0}`);
+          }
+
+          // (d) fuer jede Route deren probeKey-state DEAD ist: UPDATE routes SET enabled=0, cooldown_until=strftime 24h
+          console.log('=== (d) DISABLING DEAD ROUTES ===');
+          const nowMs = Date.now();
+          const cooldown24h = nowMs + 86400000;
+          const disabledRoutes = [];
+
+          for (const r of routesBefore) {
+            const secretProbe = r.key_env ? probeResults.get(r.key_env) : null;
+            const isDead = secretProbe && secretProbe.state === 'DEAD';
+            if (isDead) {
+              db.prepare('UPDATE routes SET enabled = 0, cooldown_until = ? WHERE id = ?').run(cooldown24h, r.id);
+              disabledRoutes.push({
+                id: r.id,
+                name: r.name,
+                key_env: r.key_env,
+                probeState: secretProbe.state,
+                reason: secretProbe.reason
+              });
+            }
+          }
+
+          console.log('=== ROUTES AFTER AUDIT ===');
+          const routesAfter = db.prepare('SELECT id, name, key_env, priority, enabled, dead, cooldown_until FROM routes ORDER BY priority ASC').all();
+          for (const r of routesAfter) {
+            console.log(`ROUTE: id=${r.id} | name=${r.name} | key_env=${r.key_env} | priority=${r.priority} | enabled=${r.enabled} | dead=${r.dead || 0} | cooldown_until=${r.cooldown_until || 0}`);
+          }
+
+          console.log('=== DEACTIVATED ROUTES LIST ===');
+          for (const d of disabledRoutes) {
+            console.log(`DEACTIVATED ROUTE: id=${d.id} | name=${d.name} | key_env=${d.key_env} | reason=${d.reason}`);
+          }
+
+          // (e) danach die Hub-neustart-freie Info: nichts weiter aendern. KEINE secret-Werte loggen/committen.
+          console.log('=== (e) INFO: HUB NEUSTART-FREI - ROUTES UPDATED LIVE IN DB ===');
+          console.log('--- KEY AUDIT END ---');
+          NODEJS
+          sudo node /tmp/key-audit.mjs
+          rm -f /tmp/key-audit.mjs
+          EOS
