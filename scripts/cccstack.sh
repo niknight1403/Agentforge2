@@ -4,7 +4,8 @@ set -euo pipefail
 source /tmp/ccc.env
 
 CCC_DIR=/opt/ccc
-mkdir -p "$CCC_DIR"
+sudo mkdir -p "$CCC_DIR"
+sudo chown ubuntu:ubuntu "$CCC_DIR"
 
 echo "== [1/7] Postgres installieren (falls fehlt) =="
 if ! command -v psql >/dev/null 2>&1; then
