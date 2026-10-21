@@ -89,6 +89,7 @@ Environment=ADMIN_EMAIL=niko.oeben@gmail.com
 Environment=APP_BASE_URL=https://hub.cybersarah-ki.com/ccc
 Environment=GOOGLE_WEB_CLIENT_ID=656137332727-2i47bqt2fk359nj48tc0kdfl3mhjmoo1.apps.googleusercontent.com
 Environment=DIGISTORE24_IPN_PASSPHRASE=${IPNPASS}
+Environment=LANDING_PUBLIC_BASE=https://hub.cybersarah-ki.com/ccc
 Environment=APP_ALLOWED_ORIGINS=https://app.cybersarah-ki.com,https://hub.cybersarah-ki.com,capacitor://localhost,https://localhost,exp://localhost,http://localhost
 ${STRIPE_ENV}
 ${OR_ENV}
