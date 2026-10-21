@@ -163,6 +163,14 @@ jobs:
           sleep 2
           curl -sf https://hub.cybersarah-ki.com/ccc/api/health || { echo "Externe Health FEHLGESCHLAGEN"; exit 1; }
           echo ""
+          echo "== [7/7] DIAGNOSE =="
+          echo "Deploy-Commit: $(git -C $CCC_DIR/repo log -1 --oneline)"
+          echo "dist/index.js: $(ls -la $CCC_DIR/repo/dist/index.js 2>&1 | awk '{print $6, $7, $8}')"
+          echo "Route im Quellcode: $(grep -c 'webhooks/digistore24' $CCC_DIR/repo/server/_core/index.ts) Treffer"
+          sudo systemctl show cybersarah-ccc -p ActiveEnterTimestamp -p MainPID
+          echo "Lokaler Webhook-Test:"; curl -s -o /dev/null -w "  HTTP %{http_code}\n" -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:13000/api/v1/webhooks/digistore24
+          echo "Lokaler Google-Config-Test:"; curl -s http://127.0.0.1:13000/api/trpc/account.googleLoginConfig | head -c 130; echo
+          echo "Port-Belegung 13000: $(sudo ss -tlnp | grep 13000 | head -1)"
           echo "IPN-PASSPHRASE (fuer Digistore24 eintragen): $IPNPASS"
           echo "CCC-VM-STACK OK"
           SETUPEOF
