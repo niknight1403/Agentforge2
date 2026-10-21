@@ -1,0 +1,50 @@
+name: VM Port Probe (443-Routing pruefen)
+
+# Diagnose: Welche Ports sind von aussen offen? Wer bedient 443 auf der VM
+# (nginx/caddy)? Vorbereitung fuer SNI-Routing Postgres ueber 443.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH-Key einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+
+      - name: Ports von aussen testen
+        run: |
+          for p in 22 80 443 5432 11434 3000 8080 8000 8888 2222 3306 6379; do
+            if timeout 5 bash -c "cat < /dev/null > /dev/tcp/92.5.177.159/$p" 2>/dev/null; then
+              echo "PORT $p: OFFEN"
+            else
+              echo "PORT $p: blockiert"
+            fi
+          done
+
+      - name: VM-Proxy-Konfiguration inspizieren
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'INSPECT'
+          echo "== Aktive Listener =="
+          ss -tlnp | grep -E ":(80|443|3000|8443|5432|11434) " || true
+          echo "== Dienste =="
+          systemctl is-active nginx 2>/dev/null && echo "nginx: aktiv" || echo "nginx: inaktiv"
+          systemctl is-active caddy 2>/dev/null && echo "caddy: aktiv" || echo "caddy: inaktiv"
+          echo "== nginx-Version + Module =="
+          nginx -v 2>&1 || true
+          ls /usr/lib/nginx/modules/ 2>/dev/null | grep -i stream || echo "kein stream-Modul in /usr/lib/nginx/modules"
+          ls /etc/nginx/modules-enabled/ 2>/dev/null || true
+          echo "== 443/80-Konfiguration =="
+          grep -rn "listen" /etc/nginx/sites-enabled/ 2>/dev/null | head -12 || true
+          echo "== Caddyfile =="
+          head -30 /etc/caddy/Caddyfile 2>/dev/null || echo "keine Caddyfile"
+          INSPECT
