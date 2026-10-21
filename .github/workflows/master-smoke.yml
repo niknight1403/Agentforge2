@@ -1,0 +1,241 @@
+name: Master-Smoke
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Master-Agent Rauchtest
+        env:
+          GH: ${{ secrets.GITHUB_TOKEN }}
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, urllib.request, datetime, re, time, subprocess, sys
+
+          ghauth = {'Authorization': 'Bearer ' + os.environ['GH']}
+          now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+          errors = []
+          master_reply_ok = False
+          villa_created = False
+          villa_deleted = False
+          created_villa_id = None
+          master_reply = ""
+
+          def fetch_hub_logs():
+              ssh_key = os.environ.get('ORACLE_SSH_KEY')
+              if not ssh_key:
+                  print("Kein ORACLE_SSH_KEY vorhanden, logs koennen nicht geholt werden.")
+                  return
+              try:
+                  os.makedirs('/tmp/ssh', exist_ok=True)
+                  key_path = '/tmp/ssh/oracle_key'
+                  with open(key_path, 'w') as f:
+                      f.write(ssh_key)
+                  os.chmod(key_path, 0o600)
+                  cmd = [
+                      'ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=20',
+                      '-i', key_path, 'ubuntu@92.5.177.159',
+                      'sudo journalctl -u villaforge-hub -n 80 --no-pager'
+                  ]
+                  log_out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
+                  print("== JOURNALCTL LOG (HUB) ==")
+                  print(log_out[-4000:])
+              except Exception as log_err:
+                  print(f"Fehler beim Holen des journalctl-Logs: {log_err}")
+
+          # 1) Login am Hub
+          token = None
+          try:
+              login_url = 'https://hub.cybersarah-ki.com/api/auth/login'
+              login_body = json.dumps({
+                  'email': os.environ['VF_ADMIN_EMAIL'],
+                  'password': os.environ['VF_ADMIN_PASSWORD']
+              }).encode('utf-8')
+              req = urllib.request.Request(login_url, data=login_body, headers={'Content-Type': 'application/json'})
+              res = urllib.request.urlopen(req, timeout=20)
+              data = json.load(res)
+              token = data.get('token')
+              if not token:
+                  errors.append("Login gab kein Token zurueck.")
+                  print("1) Login fehlgeschlagen: Kein Token.")
+              else:
+                  print("1) Login erfolgreich.")
+          except Exception as e:
+              err_msg = f"1) Login Fehler: {e}"
+              errors.append(err_msg)
+              print(err_msg)
+
+          if not token:
+              fetch_hub_logs()
+
+          headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'} if token else {}
+
+          # 2) POST /api/master/chat
+          chat_msg = "Diagnose: Lege bitte eine Testvilla namens 'Master-Rauchtest 20s' an mit einer Mini-Idee (Ein-Seiten-Zusammenfassung von VillaForge selbst). Loesche nichts."
+          chat_response = None
+
+          if token:
+              max_attempts = 3
+              for attempt in range(1, max_attempts + 1):
+                  print(f"2) POST /api/master/chat (Versuch {attempt}/{max_attempts})...")
+                  try:
+                      chat_body = json.dumps({'message': chat_msg}).encode('utf-8')
+                      req = urllib.request.Request('https://hub.cybersarah-ki.com/api/master/chat', data=chat_body, headers=headers)
+                      # Timeout 120s
+                      res = urllib.request.urlopen(req, timeout=120)
+                      chat_response = json.load(res)
+                      print("2) Master-Chat Antwort empfangen:", json.dumps(chat_response)[:300])
+                      if chat_response.get('ok') or chat_response.get('reply') or chat_response.get('answer'):
+                          break
+                  except urllib.error.HTTPError as he:
+                      print(f"2) HTTPError Versuch {attempt}: {he.code} {he.reason}")
+                      if attempt < max_attempts:
+                          print("Warte 20s vor naechstem Versuch...")
+                          time.sleep(20)
+                  except Exception as ce:
+                      print(f"2) Exception Versuch {attempt}: {ce}")
+                      if attempt < max_attempts:
+                          print("Warte 20s vor naechstem Versuch...")
+                          time.sleep(20)
+
+          # 3) GET /api/master/history
+          if token:
+              try:
+                  req = urllib.request.Request('https://hub.cybersarah-ki.com/api/master/history', headers=headers)
+                  res = urllib.request.urlopen(req, timeout=20)
+                  history = json.load(res)
+                  print(f"3) Master-History empfangen ({len(history)} Nachrichten).")
+
+                  assistant_msgs = [m for m in history if m.get('role') == 'assistant']
+                  if assistant_msgs:
+                      last_msg = assistant_msgs[-1]
+                      reply_text = last_msg.get('content', '').strip()
+                      master_reply = reply_text
+                      print("Letzte Assistant-Nachricht:", reply_text[:300])
+
+                      # Pruefe ID > 0 in reply_text
+                      match = re.search(r'#(\d+)', reply_text)
+                      if match:
+                          created_villa_id = int(match.group(1))
+                          print(f"Gefundene Villa-ID aus Reply: {created_villa_id}")
+
+                      if len(reply_text) > 0 and (created_villa_id or (chat_response and chat_response.get('ok'))):
+                          master_reply_ok = True
+                      else:
+                          errors.append(f"Master-History hat keinen verifizierten Reply oder Villa-ID. Text: {reply_text}")
+                  else:
+                      errors.append("Keine Assistant-Nachricht in /api/master/history gefunden.")
+              except Exception as e:
+                  err_msg = f"3) GET /api/master/history Fehler: {e}"
+                  errors.append(err_msg)
+                  print(err_msg)
+
+          # 4) GET /api/villas
+          if token:
+              try:
+                  req = urllib.request.Request('https://hub.cybersarah-ki.com/api/villas', headers=headers)
+                  res = urllib.request.urlopen(req, timeout=20)
+                  villas = json.load(res)
+                  print(f"4) GET /api/villas empfangen ({len(villas)} Villen).")
+
+                  target_villa = None
+                  for v in villas:
+                      v_name = v.get('name', '')
+                      if 'Master-Rauchtest' in v_name:
+                          target_villa = v
+                          break
+
+                  if target_villa:
+                      villa_created = True
+                      created_villa_id = target_villa.get('id')
+                      print(f"4) Testvilla 'Master-Rauchtest' gefunden: ID {created_villa_id}, Name: '{target_villa.get('name')}'")
+                  else:
+                      errors.append("4) keine Villa deren Name 'Master-Rauchtest' enthaelt gefunden.")
+              except Exception as e:
+                  err_msg = f"4) GET /api/villas Fehler: {e}"
+                  errors.append(err_msg)
+                  print(err_msg)
+
+          # Wenn Schritt 3/4 fehlschlaegt: Log-Ausschnitt aus dem Workflow (journalctl oder hub-log)
+          if not master_reply_ok or not villa_created:
+              print("Schritt 3 oder 4 fehlgeschlagen. Hole Hub Journalctl Logs...")
+              fetch_hub_logs()
+
+          # 5) DELETE /api/villas/<id>
+          if token and created_villa_id and villa_created:
+              try:
+                  del_url = f'https://hub.cybersarah-ki.com/api/villas/{created_villa_id}'
+                  req = urllib.request.Request(del_url, method='DELETE', headers=headers)
+                  res = urllib.request.urlopen(req, timeout=20)
+                  del_res = json.load(res)
+                  print(f"5) DELETE /api/villas/{created_villa_id} Antwort:", del_res)
+
+                  # Pruefe erneut GET /api/villas dass Villa weg ist
+                  req2 = urllib.request.Request('https://hub.cybersarah-ki.com/api/villas', headers=headers)
+                  res2 = urllib.request.urlopen(req2, timeout=20)
+                  villas2 = json.load(res2)
+                  still_exists = any(v.get('id') == created_villa_id for v in villas2)
+                  if not still_exists:
+                      villa_deleted = True
+                      print(f"5) Villa ID {created_villa_id} erfolgreich geloescht und verifiziert.")
+                  else:
+                      errors.append(f"5) Villa ID {created_villa_id} existiert nach DELETE immer noch.")
+              except Exception as e:
+                  err_msg = f"5) DELETE /api/villas/{created_villa_id} Fehler: {e}"
+                  errors.append(err_msg)
+                  print(err_msg)
+
+          # 6) MASTER-SMOKE.json schreiben & auf main committen
+          smoke_data = {
+              'checked_at': now_iso,
+              'master_reply_ok': master_reply_ok,
+              'villa_created': villa_created,
+              'villa_deleted': villa_deleted,
+              'created_villa_id': created_villa_id,
+              'master_reply': master_reply,
+              'errors': errors
+          }
+
+          print("== MASTER-SMOKE.json ==")
+          print(json.dumps(smoke_data, indent=2))
+
+          # Commit via GitHub Contents API
+          contents_url = 'https://api.github.com/repos/niknight1403/Agentforge2/contents/MASTER-SMOKE.json'
+          sha = None
+          try:
+              req = urllib.request.Request(contents_url, headers=ghauth)
+              res = urllib.request.urlopen(req, timeout=15)
+              res_obj = json.load(res)
+              sha = res_obj.get('sha')
+          except Exception:
+              pass
+
+          body = json.dumps({
+              'message': f'master-smoke: reply_ok={master_reply_ok}, created={villa_created}, deleted={villa_deleted}',
+              'branch': 'main',
+              'sha': sha,
+              'content': base64.b64encode(json.dumps(smoke_data, indent=2).encode('utf-8')).decode('utf-8')
+          }).encode('utf-8')
+
+          req = urllib.request.Request(contents_url, data=body, method='PUT', headers=ghauth)
+          try:
+              urllib.request.urlopen(req, timeout=20)
+              print("MASTER-SMOKE.json erfolgreich committet.")
+          except Exception as e:
+              print(f"Fehler beim Committen von MASTER-SMOKE.json: {e}")
+
+          if not (master_reply_ok and villa_created and villa_deleted):
+              print("FEHLER: Akzeptanzkriterien nicht erfuellt.")
+              sys.exit(1)
+
+          print("ERFOLG: Master-Agent Rauchtest bestanden!")
+          PY
