@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
-    paths:
-      - "app/**"
+
+permissions:
+  contents: write
 
 jobs:
   apk:
@@ -29,6 +30,14 @@ jobs:
 
       - name: Release-APK bauen (R8-minimiert)
         run: gradle :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Release-Tag mit Android-Version abgleichen
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          APP_VERSION=$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
+          test "v$APP_VERSION" = "$GITHUB_REF_NAME" || {
+            echo "Tag $GITHUB_REF_NAME passt nicht zur Android-Version $APP_VERSION"; exit 1;
+          }
 
       - name: APK umbenennen
         run: cp app/build/outputs/apk/release/app-release.apk VillaForge.apk
@@ -57,3 +66,20 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: node server/scripts/llm-smoke.mjs
+
+      - name: GitHub-Release mit getesteter APK erstellen
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          NOTES="docs/releases/${TAG}.md"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" VillaForge.apk --repo "$GITHUB_REPOSITORY" --clobber
+          elif [ -f "$NOTES" ]; then
+            gh release create "$TAG" VillaForge.apk --repo "$GITHUB_REPOSITORY" \
+              --title "VillaForge $TAG" --notes-file "$NOTES"
+          else
+            gh release create "$TAG" VillaForge.apk --repo "$GITHUB_REPOSITORY" \
+              --title "VillaForge $TAG" --generate-notes
+          fi

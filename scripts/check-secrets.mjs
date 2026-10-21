@@ -6,8 +6,8 @@
  * Ohne Argumente: alles im Repository ausser .git, Datenbanken, APKs, Bundles.
  */
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
-import { join, extname, basename } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, extname } from 'node:path';
 
 // Muster echter Provider-Keys (Präfix plus ausreichende Laenge).
 const PATTERNS = [
@@ -40,7 +40,9 @@ function walk(dir, out = []) {
 
 let files = process.argv.slice(2);
 if (!files.length) {
-  const repoRoot = existsSync('.git') ? process.cwd() : join(process.cwd(), '..');
+  // Workspaces and downloaded source snapshots may omit .git; never broaden a
+  // repository scan to its parent directory, which can include sibling projects.
+  const repoRoot = process.cwd();
   files = walk(repoRoot);
 }
 
