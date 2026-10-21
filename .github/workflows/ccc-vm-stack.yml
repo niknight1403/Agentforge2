@@ -113,6 +113,11 @@ jobs:
             mv "$CCC_DIR/.ipnpass.tmp" "$CCC_DIR/.ipnpass"
           fi
           IPNPASS=$(cat "$CCC_DIR/.ipnpass")
+          if [ -n "${{ secrets.CCC_DIGISTORE24_API_KEY }}" ]; then
+            printf '%s' "${{ secrets.CCC_DIGISTORE24_API_KEY }}" > "$CCC_DIR/.d24key.tmp"
+            chmod 600 "$CCC_DIR/.d24key.tmp"
+            mv "$CCC_DIR/.d24key.tmp" "$CCC_DIR/.d24key"
+          fi
           STRIPE_ENV=""
           if [ -n "${STRIPE_KEY}" ]; then
             STRIPE_ENV="Environment=STRIPE_SECRET_KEY=${STRIPE_KEY}"

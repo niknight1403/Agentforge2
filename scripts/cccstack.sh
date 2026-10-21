@@ -60,6 +60,7 @@ if [ ! -f "$CCC_DIR/.ipnpass" ]; then
   mv "$CCC_DIR/.ipnpass.tmp" "$CCC_DIR/.ipnpass"
 fi
 IPNPASS=$(cat "$CCC_DIR/.ipnpass")
+D24KEY=$(cat "$CCC_DIR/.d24key")
 STRIPE_ENV=""
 if [ -n "${STRIPE_KEY}" ]; then
   STRIPE_ENV="Environment=STRIPE_SECRET_KEY=${STRIPE_KEY}"
@@ -89,6 +90,7 @@ Environment=ADMIN_EMAIL=niko.oeben@gmail.com
 Environment=APP_BASE_URL=https://hub.cybersarah-ki.com/ccc
 Environment=GOOGLE_WEB_CLIENT_ID=656137332727-2i47bqt2fk359nj48tc0kdfl3mhjmoo1.apps.googleusercontent.com
 Environment=DIGISTORE24_IPN_PASSPHRASE=${IPNPASS}
+Environment=DIGISTORE24_API_KEY=${D24KEY}
 Environment=LANDING_PUBLIC_BASE=https://hub.cybersarah-ki.com/ccc
 Environment=STRIPE_PAYMENT_LINK=${STRIPE_PAYMENT_LINK_ENV}
 Environment=APP_ALLOWED_ORIGINS=https://app.cybersarah-ki.com,https://hub.cybersarah-ki.com,capacitor://localhost,https://localhost,exp://localhost,http://localhost
