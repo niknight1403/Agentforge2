@@ -1,8 +1,8 @@
 name: APK-Release
 
-# Haengt das VillaForge-APK aus dem neuesten erfolgreichen Build-Lauf
-# an einen bestehenden Release-Tag an (oder legt den Release an).
-# Aufruf: workflow_dispatch mit dem Tag (z. B. v1.36.0).
+# Manueller Reparaturweg: haengt das erfolgreiche APK des angegebenen
+# Tag-Builds an einen bestehenden Release an. Neue Releases laufen direkt im
+# Build-Workflow, damit kein fremder/alter Build an einen Tag geraten kann.
 
 on:
   workflow_dispatch:
@@ -25,9 +25,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag }}
         run: |
-          RID=$(gh api "repos/niknight1403/Agentforge2/actions/workflows/build-apk.yml/runs?per_page=10" --jq '[.workflow_runs[] | select(.conclusion=="success")][0].id')
+          RID=$(gh api "repos/niknight1403/Agentforge2/actions/workflows/build-apk.yml/runs" -f branch="$TAG" -f status=success -f per_page=20 --jq '[.workflow_runs[] | select(.head_branch == env.TAG and .conclusion == "success")][0].id')
+          [ -z "$RID" ] || [ "$RID" = "null" ] && { echo "Kein erfolgreicher APK-Build fuer $TAG"; exit 1; }
           echo "Build-Lauf: $RID"
-          AID=$(gh api "repos/niknight1403/Agentforge2/actions/runs/$RID/artifacts" --jq '.artifacts[0].id')
+          AID=$(gh api "repos/niknight1403/Agentforge2/actions/runs/$RID/artifacts" --jq '[.artifacts[] | select(.name=="villaforge-apk")][0].id')
+          [ -z "$AID" ] || [ "$AID" = "null" ] && { echo "APK-Artefakt fehlt im Lauf $RID"; exit 1; }
           gh api "repos/niknight1403/Agentforge2/actions/artifacts/$AID/zip" > art.zip
           python3 -c "import zipfile; zipfile.ZipFile('art.zip').extractall('.')"
           ls -la VillaForge.apk
