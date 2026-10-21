@@ -1,0 +1,38 @@
+name: VM SNI Map Fix (kein SNI -> Postgres)
+
+# libpq (Postgres-Client) sendet kein SNI. Routing daher: leer/www -> Postgres,
+# alles andere (Browser, Mobile-App, Webhooks mit SNI) -> Web.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  mapfix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH-Key einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+
+      - name: Map-Fix auf VM ausfuehren
+        env:
+          FIX_B64: IyEvYmluL2Jhc2gKc2V0IC1ldW8gcGlwZWZhaWwKZXhwb3J0IFBHUEFTU1dPUkQ9IiR7Vk1fUEdfUFd9IgplY2hvICJbMS80XSBTdHJlYW0tTWFwIHVtIGxlZXJlIFNOSS1Fcmtlbm51bmcgZXJ3ZWl0ZXJuIgpjYXQgPiAvZXRjL25naW54L3N0cmVhbS5jb25mIDw8J1NDJwpsb2FkX21vZHVsZSAvdXNyL2xpYi9uZ2lueC9tb2R1bGVzL25neF9zdHJlYW1fbW9kdWxlLnNvOwpzdHJlYW0gewogICAgbWFwICRzc2xfcHJlcmVhZF9zZXJ2ZXJfbmFtZSAkc25pX3RhcmdldCB7CiAgICAgICAgIiIgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHBnX2JhY2tlbmQ7CiAgICAgICAgd3d3LmN5YmVyc2FyYWgta2kuY29tICAgICAgICAgICBwZ19iYWNrZW5kOwogICAgICAgIGRlZmF1bHQgICAgICAgICAgICAgICAgICAgICAgICAgd2ViX2JhY2tlbmQ7CiAgICB9CiAgICB1cHN0cmVhbSB3ZWJfYmFja2VuZCB7IHNlcnZlciAxMjcuMC4wLjE6OTQ0MzsgfQogICAgdXBzdHJlYW0gcGdfYmFja2VuZCAgeyBzZXJ2ZXIgMTI3LjAuMC4xOjU0MzI7IH0KICAgIHNlcnZlciB7CiAgICAgICAgbGlzdGVuIDQ0MzsKICAgICAgICBsaXN0ZW4gWzo6XTo0NDM7CiAgICAgICAgc3NsX3ByZXJlYWQgb247CiAgICAgICAgcHJveHlfY29ubmVjdF90aW1lb3V0IDVzOwogICAgICAgIHByb3h5X3RpbWVvdXQgMzYwMHM7CiAgICAgICAgcHJveHlfcGFzcyAkc25pX3RhcmdldDsKICAgIH0KfQpTQwplY2hvICJbMi80XSBLb25maWd1cmF0aW9uIHRlc3RlbiArIFJlbG9hZCIKbmdpbnggLXQKc3lzdGVtY3RsIHJlbG9hZCBuZ2lueApzbGVlcCAyCmVjaG8gIlszLzRdIFdlYi1DaGVjayIKQ09ERT0kKGN1cmwgLXNrIC1vIC9kZXYvbnVsbCAtdyAiJXtodHRwX2NvZGV9IiAtLW1heC10aW1lIDE1IGh0dHBzOi8vaHViLmN5YmVyc2FyYWgta2kuY29tLyB8fCBlY2hvIDAwMCkKZWNobyAiICAgSFRUUFMtU3RhdHVzIEh1YjogJENPREUiClsgIiRDT0RFIiAhPSAiMDAwIiBdIHx8IHsgZWNobyAiRkVITEVSOiBIdWIgZG93biI7IGV4aXQgNTsgfQplY2hvICJbNC80XSBQb3N0Z3JlcyB2aWEgNDQzIChsaWJwcSwgb2huZSBTTkkpIgpPVVQ9JChwc3FsICJob3N0PTEyNy4wLjAuMSBwb3J0PTQ0MyB1c2VyPWNjY19hcHAgZGJuYW1lPWN5YmVyc2FyYWggc3NsbW9kZT1yZXF1aXJlIiAtdEFjICJTRUxFQ1QgJ1BHLVVFQkVSLTQ0My1PSzogJ3x8Y3VycmVudF91c2VyIiAyPiYxIHx8IHRydWUpCmVjaG8gIiAgICRPVVQiCmNhc2UgIiRPVVQiIGluCiAgUEctVUVCRVItNDQzLU9LKikgZWNobyAiU05JLVJPVVRJTkc6IEFMTEVTIE9LIiA7OwogICopIGVjaG8gIkZFSExFUjogUG9zdGdyZXMtVGVzdCBmZWhsZ2VzY2hsYWdlbiI7IGV4aXQgNiA7Owplc2FjCg==
+          VM_PG_PW: ${{ secrets.VM_PG_PW }}
+        run: |
+          printf '%s' "$FIX_B64" | base64 -d > /tmp/map-fix.sh
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/map-fix.sh ubuntu@92.5.177.159:/tmp/map-fix.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo VM_PG_PW='$VM_PG_PW' bash /tmp/map-fix.sh"
+
+      - name: Externer Test (Render-Sicht)
+        env:
+          VM_PG_PW: ${{ secrets.VM_PG_PW }}
+        run: |
+          command -v psql >/dev/null || sudo apt-get install -y -qq postgresql-client >/dev/null 2>&1
+          PGPASSWORD="$VM_PG_PW" psql "host=www.cybersarah-ki.com port=443 user=ccc_app dbname=cybersarah sslmode=require" -tAc "SELECT 'EXTERN-PG-443: '||current_database()" && echo "RENDER-SICHT: POSTGRES UEBER 443 ERREICHBAR" || echo "FEHLER: extern nicht erreichbar"
