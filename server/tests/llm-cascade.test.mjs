@@ -4,6 +4,7 @@ import {mkdtempSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 process.env.VF_DB=join(mkdtempSync(join(tmpdir(),'cascade-')),'db');
+process.env.VF_LLM_FREE_ONLY='0';
 const {createCascade,LlmUnavailableError}=await import('../llm-cascade.mjs');
 const {syncCascadeRoutes}=await import('../llm-config.mjs');
 const {db}=await import('../db.mjs');
@@ -42,6 +43,7 @@ test('Keine doppelten Requests für denselben Endpoint und dasselbe Modell',asyn
 });
 test('Kaskade ist dauerhaft und idempotent; deaktivierte Einträge bleiben deaktiviert',()=>{
  db.exec('DELETE FROM routes');assert.ok(syncCascadeRoutes().added>=4);assert.equal(syncCascadeRoutes().added,0);
+ assert.equal(db.prepare('SELECT model FROM routes WHERE name=?').get('Cascade: Gemini').model,'gemini-3.5-flash-lite');
  db.prepare('UPDATE routes SET enabled=0 WHERE name=?').run('Cascade: Ollama local');syncCascadeRoutes();assert.equal(db.prepare('SELECT enabled FROM routes WHERE name=?').get('Cascade: Ollama local').enabled,0);
  db.prepare('INSERT OR REPLACE INTO secrets(name,value,updated_at) VALUES (?,?,0)').run('GOOGLE_API_KEY','test-only');assert.equal(resolveKey('GEMINI_API_KEY'),'test-only');
 });
@@ -54,4 +56,18 @@ test('Abgelaufener Schlüssel wird nicht mit jedem Modell desselben Providers er
  const rows=[route(1,'gemini','KEY',{model:'a'}),route(2,'gemini','ALIAS',{model:'b'}),route(3,'ollama')];let seen=[];
  const run=createCascade({routes:()=>rows,key:()=> 'same-test-key',call:async r=>{seen.push(r.id);if(r.id!==3)throw Object.assign(Error('unauthorized'),{status:401});return answer;}});
  await run([]);assert.deepEqual(seen,[1,3]);seen=[];await run([]);assert.deepEqual(seen,[3]);
+});
+test('Free-only mode uses approved free routes and skips paid or unknown cloud routes',async()=>{
+ process.env.VF_LLM_FREE_ONLY='1';
+ const rows=[
+  {...route(1,'gemini'),model:'gemini-3.5-flash-lite'},
+  {...route(2,'gemini'),model:'gemini-3.5-pro'},
+  {...route(3,'openrouter'),model:'google/gemma-4-31b-it:free'},
+  {...route(4,'openrouter'),model:'anthropic/claude-sonnet'},
+  {...route(5,'huggingface'),model:'meta-llama/Llama-3.3-70B-Instruct'},
+  route(6,'xai'),route(7,'ollama')
+ ];
+ const seen=[];const run=createCascade({routes:()=>rows,key:()=>true,call:async r=>{seen.push(r.id);if(r.id===1)throw Error('temporary');return answer;}});
+ await run([]);assert.deepEqual(seen,[1,3]);
+ process.env.VF_LLM_FREE_ONLY='0';
 });
