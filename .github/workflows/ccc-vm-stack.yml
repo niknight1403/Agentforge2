@@ -92,7 +92,7 @@ jobs:
           echo "Stand: $(git log -1 --oneline)"
 
           echo "== [4/7] Abhaengigkeiten + Server-Build =="
-          npm ci --no-audit --no-fund || { echo "== node_modules beschaedigt, Clean-Reinstall =="; rm -rf node_modules; npm ci --no-audit --no-fund; }
+          npm ci --no-audit --no-fund || { echo "== node_modules beschaedigt, Side-Step via mv =="; BROKEN=node_modules.broken.$(date +%s); mv node_modules "$BROKEN" 2>/dev/null || true; rm -rf "$BROKEN" 2>/dev/null || true; npm ci --no-audit --no-fund; }
           npm run build
           echo "Server gebaut (dist/)."
 
