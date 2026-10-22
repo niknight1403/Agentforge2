@@ -79,7 +79,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          if [ "$GITHUB_REF" = "refs/heads/main" ]; then TAG="v$(sed -nE 's/.*versionName = "([^"]+)".*/\\1/p' app/build.gradle.kts)"; fi
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then TAG="v$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)"; fi
           NOTES="docs/releases/${TAG}.md"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" VillaForge.apk --repo "$GITHUB_REPOSITORY" --clobber
