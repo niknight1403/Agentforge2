@@ -284,7 +284,11 @@ const cascade=createCascade({
 export async function chat(messages,opts={}) {
  const user=userStore.getStore();
  if(user && quotaLeft(user)<=0) throw new Error('QUOTA_EXCEEDED: Tageskontingent aufgebraucht.');
- const out=await cascade(messages,opts);
+ // 80/20-Routing: Routine bleibt lokal; komplexe Code-/Architekturrollen
+ // eskalieren automatisch in die staerkere kostenlose Cloud-Kaskade.
+ const role=String(opts.role||'').toUpperCase();
+ const routingOpts={...opts,cloudFirst:opts.cloudFirst ?? QUALITY_ROLES.has(role)};
+ const out=await cascade(messages,routingOpts);
  if(user)chargeTokens(user.id,usageTokens(messages,out));
  return out;
 }
