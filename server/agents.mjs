@@ -12,6 +12,7 @@ import { execSync,execFileSync } from 'node:child_process';
 import { resolve, join, dirname } from 'node:path';
 import { projectSummary, searchProject, readProjectFile, runCommand, safePath } from './fs-tools.mjs';
 import { canUseTool, toolPackOf, packEnabled } from './packs.mjs';
+import { generateMedia, mediaCapabilities } from './media.mjs';
 
 export const WORKSPACE = PROJECT_WORKSPACE;
 mkdirSync(WORKSPACE, { recursive: true });
@@ -453,31 +454,44 @@ const TOOLS = {
       return `Asana-Aufgabe angelegt: ${t?.name} (gid ${t?.gid}).`;
     }
   },
-  media_generate: {
-    description: 'Erzeugt ein Bild mit Fal.ai (Mockups, Marketing, Icons, Illustrationen) und speichert es als Datei im Villa-Workspace.',
-    schema: { prompt: 'string', model: 'string (Standard fal-ai/flux/schnell)', filename: 'string' },
-    run: async (ctx, a) => {
-      const key = resolveKey('FAL_KEY');
-      if (!key) return 'Fal.ai nicht angebunden: hinterlege FAL_KEY unter Einstellungen > Routen.';
-      const model = String(a.model || process.env.FAL_IMAGE_MODEL || 'fal-ai/flux/schnell');
-      const res = await fetch(`https://fal.run/${model}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Key ${key}` },
-        body: JSON.stringify({ prompt: String(a.prompt || '').slice(0, 2000) }),
-        signal: AbortSignal.timeout(120000)
-      });
-      if (!res.ok) return `Fal.ai HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`;
-      const data = await res.json().catch(() => ({}));
-      const url = data?.images?.[0]?.url || data?.image?.url || data?.video?.url;
-      if (!url) return 'Fal.ai lieferte keine Medien-URL zurueck.';
-      const img = await fetch(url, { signal: AbortSignal.timeout(60000) });
-      const buf = Buffer.from(await img.arrayBuffer());
-      const ext = (url.match(/\.(png|jpg|jpeg|webp|mp4)/i)?.[1] || 'png').toLowerCase();
-      const safe = String(a.filename || 'medien-bild').replace(/[^a-zA-Z0-9._-]/g, '_').replace(new RegExp(ext + '$', 'i'), '') + '.' + ext;
+  media_capabilities: {
+    description: 'Prüft vor einer Medien- oder Produktaufgabe die verfügbare Route für App-Code, Bild, Bildbearbeitung, Video, Audio und Live-Performance. Bei fehlender Route nenne den konkreten Setup-Schritt und nutze den dokumentierten Projektdatei-Fallback, ohne Rendern vorzutäuschen.',
+    schema: {},
+    run: () => JSON.stringify(mediaCapabilities()),
+  },
+  media_prepare: {
+    description: 'Bereitet ohne externen Medienanbieter ein konkretes, speicherbares Produktionspaket vor: Bildbrief, Video-Skript/Shotlist/Untertitel oder Audio-Lyrics/Arrangement/Sounddesign. Das Artefakt ist eine Produktionsvorlage und kein gerendertes Medium.',
+    schema: { type: 'image|image_edit|video|audio', title: 'string', prompt: 'string', audience: 'string (optional)', durationSeconds: 'number (optional)' },
+    run: (ctx, a) => {
+      const type = String(a.type || '').toLowerCase();
+      if (!['image', 'image_edit', 'video', 'audio'].includes(type)) return 'Ungültiger Medientyp.';
+      const prompt = String(a.prompt || '').trim().slice(0, 5000);
+      if (!prompt) return 'Bitte eine Produktionsidee angeben.';
+      const title = String(a.title || `Produktion ${type}`).replace(/[<>\r\n]/g, ' ').trim().slice(0, 120);
+      const duration = Math.min(600, Math.max(1, Number(a.durationSeconds) || (type === 'video' ? 30 : 60)));
+      const body = type === 'video'
+        ? `## Video-Produktionspaket\n\nZielgruppe: ${String(a.audience || 'noch festzulegen').slice(0, 240)}\nDauerziel: ${duration} Sekunden\n\n### Konzept\n${prompt}\n\n### Szenen- und Shotlist\n1. Hook (0–3 s): visuelles Motiv und klare Aussage passend zum Konzept.\n2. Aufbau: Demonstration oder Beleg; Bildausschnitt, Bewegung und Einblendung festlegen.\n3. Auflösung: Ergebnis, Handlungsaufforderung und Abspann.\n\n### Ton und Untertitel\nSprechertext, Musikrechte und Untertitel vor Export abnehmen.\n\n### Abnahme\nFormat, Seitenverhältnis, Länge, Lesbarkeit und Audio-Pegel am Zielgerät prüfen.\n\nStatus: Produktionsvorlage; Video-Rendering ausstehend.`
+        : type === 'audio'
+          ? `## Audio-Produktionspaket\n\nZielgruppe: ${String(a.audience || 'noch festzulegen').slice(0, 240)}\nDauerziel: ${duration} Sekunden\n\n### Brief\n${prompt}\n\n### Arrangement\nIntro → Hauptmotiv → Variation/Break → Outro; Tempo, Tonart, Instrumentierung und Dynamik nach Brief bestimmen.\n\n### Abnahme\nClipping, Lautheit, Stereo, Ausklang, Rechte und Wiedergabe auf Mobilgerät/Kopfhörer prüfen.\n\nStatus: Produktionsvorlage; Audio-Rendering ausstehend.`
+          : `## Bild-Produktionspaket\n\n### Brief\n${prompt}\n\n### Umsetzung\nMotiv, Komposition, Licht, Palette, Stil, Seitenverhältnis und Negativvorgaben vor dem Rendern konkretisieren. Für Bildbearbeitung zusätzlich eine freigegebene HTTPS-Quellbild-URL angeben.\n\n### Abnahme\nAuflösung, Artefakte, Textdarstellung, Nutzungsrechte und Zielkanal prüfen.\n\nStatus: Produktionsvorlage; Bild-Rendering ausstehend.`;
+      const slug = title.normalize('NFKD').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || type;
+      const filename = `media-${type}-${slug}.md`;
       const dir = join(WORKSPACE, `villa-${ctx.villaId}`);
       mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, safe), buf);
-      return `Medium gespeichert: villa-${ctx.villaId}/${safe} (${buf.length} B, Modell: ${model})`;
+      writeFileSync(join(dir, filename), `# ${title}\n\n${body}\n`, 'utf8');
+      return `Produktionsvorlage gespeichert (kein gerendertes Medium): villa-${ctx.villaId}/${filename}. Für das Rendern media_capabilities prüfen und bei konfigurierter Route media_generate aufrufen.`;
+    }
+  },
+  media_generate: {
+    description: 'Erzeugt und speichert Bild, Bildbearbeitung, Video oder Audio im Villa-Workspace. Vorher media_capabilities aufrufen. Medienrendering kann Providerkosten verursachen; nur auf konkrete Nutzeranforderung ausführen. Typen: image, image_edit, video, audio.',
+    schema: { type: 'image|image_edit|video|audio', prompt: 'string', sourceImageUrl: 'HTTPS-URL (nur image_edit)', model: 'string (optional)', filename: 'string (optional)' },
+    run: async (ctx, a) => {
+      try {
+        const result = await generateMedia({ villaId: ctx.villaId, type: a.type || 'image', prompt: a.prompt, sourceImageUrl: a.sourceImageUrl, model: a.model, filename: a.filename });
+        return `Erstellt und verifiziert gespeichert: ${result.path} (${result.bytes} B, ${result.mime || result.type}, Modell ${result.model}).`;
+      } catch (error) {
+        return `Medienroute fehlgeschlagen: ${String(error?.message || error).slice(0, 500)} Capability-Status mit media_capabilities prüfen. Erstelle bei fehlendem Provider stattdessen einen ausführbaren Prompt-/Storyboard-/Asset-Arbeitsauftrag als Projektdatei und markiere das Rendering als ausstehend.`;
+      }
     }
   },
   report_write: {
@@ -669,7 +683,7 @@ export async function analyzeProject(villaId, rootId) {
 /* ------------------------------------------------------------------ */
 
 const ROLE_BRIEF = {
-  ROOT: 'Du bist der Deep Agent und leitest die Villa wie ein erfahrener CTO. Vor jeder Planung prufst du studio_status, maturity_check und backlog_review. Bei UI-Ideen nutzt du studio_designs für zwei konkrete Designrichtungen; speichere die Nutzerentscheidung als Vorgabe. Zeige die vorhandene Vorschau und prüfbare nächste Schritte. Behaupte keine Live-Ansicht, wenn kein Web-Build existiert. Du delegierst klar (Rolle + Akzeptanzkriterium), pruefst Ergebnisse gegen das Kriterium und legst selbst fehlende Aufgaben an. Jeder Abschluss nennt: was konkret geleistet wurde, was als naechstes folgt und welche Risiken bleiben.',
+  ROOT: 'Du bist der Deep Agent und leitest die Villa wie ein erfahrener CTO. Vor jeder Planung prufst du studio_status, maturity_check und backlog_review. Bei UI-Ideen nutzt du studio_designs für zwei konkrete Designrichtungen; speichere die Nutzerentscheidung als Vorgabe. Bei Bild-, Video-, Audio- und Live-Performance-Aufträgen triffst du die Formatentscheidung anhand des Ziels, prüfst zuerst media_capabilities und nutzt bei vorhandener Route media_generate. Wenn eine Fähigkeit fehlt, erstelle mit media_prepare ein direkt nutzbares Produktionspaket und einen konkreten nächsten Integrationsschritt; behaupte nie ein gerendertes Medium ohne gespeicherte und geprüfte Datei. Führe externe Medienjobs nur bei konkretem Nutzerauftrag aus. Zeige die vorhandene Vorschau und prüfbare nächste Schritte. Behaupte keine Live-Ansicht, wenn kein Web-Build existiert. Du delegierst klar (Rolle + Akzeptanzkriterium), pruefst Ergebnisse gegen das Kriterium und legst selbst fehlende Aufgaben an. Jeder Abschluss nennt: was konkret geleistet wurde, was als naechstes folgt und welche Risiken bleiben.',
   PLANNER: 'Du zerlegst Ziele in scharf umrissene Teilaufgaben. Jede Aufgabe nennt: das konkrete Artefakt (Datei, Bericht, Code), ein pruefbares Akzeptanzkriterium ("Akzeptanz: ..."), die passende Rolle und einen Aufwandsschaetz. Verboten sind vage Aufgaben wie "verbessern" oder "untersuchen" ohne messbares Ziel.',
   RESEARCHER: 'Du recherchierst belegbar: mindestenens drei Quellen via web_search/web_fetch, Fakten mit Quelle und Datum, Annahmen ausdruecklich als solche markiert, Zahlen mit Spanne statt Scheinpraezision. Am Ende steht eine Quellenliste und eine klare Trennung: belegt / wahrscheinlich / unklar.',
   ARCHITECT: 'Du entwirfst Architektur im ADR-Stil: Komponenten mit Verantwortlichkeiten, Schnittstellen, Datenmodell, Deployment, bewertete Alternativen mit Begrundung und Fehlermodi (was passiert, wenn X ausfaellt). Vor dem Entwurf liest du mit project_tree/project_read die echte Basis, statt im Blauen zu entwerfen.',
@@ -703,7 +717,7 @@ const ROLE_TOOLS = {
   WORKER: 'artifact_write, artifact_patch, memory_write',
   BUSINESS: 'report_write, memory_write, web_search',
   GROWTH: 'report_write, memory_write, web_search, web_fetch',
-  ROOT: 'maturity_check, council_convene, backlog_review, memory_write, memory_search, task_create, agent_spawn, report_write',
+  ROOT: 'maturity_check, council_convene, backlog_review, memory_write, memory_search, task_create, agent_spawn, report_write, media_capabilities, media_prepare, media_generate',
   STRATEGIST: 'maturity_check, backlog_review, memory_write, report_write, project_tree',
   REASONER: 'memory_search, memory_write, project_read, project_search, report_write',
   SYNTHESIZER: 'memory_search, memory_write, artifact_write, report_write, backlog_review',
@@ -732,7 +746,7 @@ function maxAgents(villaId) {
 }
 
 /** Version der Prompt-Vorlage: Bei Erhoehung frischt der Hub beim Start alle Agenten-Prompts auf. */
-export const PROMPT_VERSION = 4;
+export const PROMPT_VERSION = 5;
 
 /** Zentraler Prompt-Bau: eine Quelle der Wahrheit fuer Neuanlage UND Migration. */
 export function buildSystemPrompt(role) {
