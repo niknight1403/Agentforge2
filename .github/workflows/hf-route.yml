@@ -16,20 +16,24 @@ jobs:
           chmod 600 ~/.ssh/oracle_key
           ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
           set -uo pipefail
+          cat /tmp/hf-result.txt 2>/dev/null || echo 'keine fruehere Ausgabe'
           # HF-Router als freie Cloud-Fallback-Stufe (P50, NACH den lokalen Routen —
           # Local-First bleibt: 3B/7B/32B lokal, HF nur wenn alle lokalen gesaettigt).
           python3 - <<'PYV'
-          import sqlite3
-          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
+          import sqlite3, time
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db', timeout=30)
+          open('/tmp/hf-result.txt','w').write('start\n')
           cur = con.cursor()
           cur.execute("DELETE FROM routes WHERE name='HF Router'")
           cur.execute("""INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used)
                          VALUES ('HF Router','huggingface','https://router.huggingface.co/v1','meta-llama/Llama-3.3-70B-Instruct','HF_TOKEN',1,1,50,1,'OK',1,0,0)""")
           con.commit()
+          open('/tmp/hf-result.txt','a').write('route-ok\n')
           print("HF-Route:", cur.execute("SELECT id,name,base_url,model,key_env,priority,enabled FROM routes WHERE name='HF Router'").fetchone())
           print("Kaskade:", cur.execute("SELECT id,name,priority,enabled FROM routes ORDER BY priority").fetchall())
           tok = cur.execute("SELECT COUNT(*) FROM secrets WHERE name='HF_TOKEN'").fetchone()[0]
           print("HF_TOKEN in Secrets-Store:", bool(tok))
+          open('/tmp/hf-result.txt','a').write('probe-done\n')
           PYV
           echo "== HF_TOKEN im Hub-Environment? =="
           systemctl show villaforge-hub.service -p Environment | grep -o "HF_TOKEN" || echo "nicht gesetzt (Route wartet auf Token, Kaskade ueberspringt sie automatisch)"
