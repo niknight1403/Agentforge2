@@ -45,7 +45,7 @@ test('Prüfbefehle laufen wirklich: roter Nutzerfluss verhindert 100, reparierte
 });
 test('Gewichtetes Quality Gate blockiert hart codierte Secrets trotz gruener Build-Tests',async()=>{
  const id=villa(),p=project(id);writeFileSync(join(p,'index.mjs'),"export const API_KEY='sk-abcdefghijklmnopqrstuvwxyz123456';");
- await verifyProjectRuntime(id,{runner:async()=>({ok:true})});
+ const verification=await verifyProjectRuntime(id,{runner:async()=>({ok:true})});assert.equal(verification.ok,false);
  const ready=projectReadiness(id);assert.equal(ready.quality.passed,false);assert.ok(ready.quality.score<85);assert.equal(ready.verified,false);
 });
 test('Noch offene Produktaufgaben sperren 100 trotz technisch erfolgreicher Prüfungen',async()=>{
