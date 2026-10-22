@@ -5,7 +5,7 @@
  */
 export const FREE_ROUTE_CATALOG = [
   {
-    name: 'Groq Llama 3.3 70B (free tier)',
+    name: 'Groq GPT-OSS 120B (free tier)',
     provider: 'groq',
     baseUrl: 'https://api.groq.com/openai/v1',
     model: 'openai/gpt-oss-120b',
@@ -31,10 +31,18 @@ export const FREE_ROUTE_CATALOG = [
     priority: 2
   },
   {
-    name: 'Cerebras Llama 3.3 70B (free tier)',
+    name: 'Cerebras GPT-OSS 120B (free tier)',
     provider: 'cerebras',
     baseUrl: 'https://api.cerebras.ai/v1',
-    model: 'llama-3.3-70b',
+    model: 'gpt-oss-120b',
+    keyEnv: 'CEREBRAS_API_KEY',
+    priority: 2
+  },
+  {
+    name: 'Cerebras Qwen 3.8 27B (free tier)',
+    provider: 'cerebras',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    model: 'qwen-3.8-27b',
     keyEnv: 'CEREBRAS_API_KEY',
     priority: 2
   },
