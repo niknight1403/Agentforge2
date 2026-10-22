@@ -40,3 +40,26 @@ Route-Statusantworten.
 Erst ein erfolgreicher Modellaufruf setzt den Status auf `recently_verified`.
 Fehlende Keys und nicht erreichbare lokale Modelle benötigen Betreiberkonfiguration;
 der Hub erzeugt keine Providerkonten oder API-Schlüssel.
+
+## Medien- und Generator-Routen
+
+Deep Agent prüft vor Bild-, Video-, Audio- und Live-Performance-Aufträgen das
+Capability-Register (`media_capabilities`). `media_generate` unterstützt
+Bildgenerierung, Bildbearbeitung, Video und Audio über die serverseitige Fal.ai
+Route. Die Standardmodelle stehen in `.env.example` und sind über
+`VF_FAL_IMAGE_MODEL`, `VF_FAL_IMAGE_EDIT_MODEL`, `VF_FAL_VIDEO_MODEL` und
+`VF_FAL_AUDIO_MODEL` änderbar. `FAL_KEY` gehört ausschließlich in den Secrets-
+Store oder die Serverumgebung. Das Medien-Pack muss aktiviert sein.
+
+Medienaufrufe werden nur auf konkrete Nutzeraufträge ausgeführt und können
+Providerkosten verursachen. Ohne `FAL_KEY` meldet das Register den fehlenden
+Provider und `media_prepare` legt eine Bildspezifikation, Video-Shotlist oder
+Audio-Produktionsvorlage im Villa-Workspace ab. Das ist ein Planungsartefakt und
+kein gerendertes Medium. Dateien werden auf unterstützte Formate und eine
+konfigurierbare Downloadgröße begrenzt; Medien- und Quellbild-URLs müssen HTTPS
+verwenden, private Hosts werden abgewiesen.
+
+Live-Performance-Apps können durch die normalen Projektwerkzeuge erstellt,
+gebaut und getestet werden. Reale Audiointerfaces, MIDI-Geräte, Latenz und
+Hardware-Ausgabe müssen auf dem jeweiligen Zielgerät abgenommen werden; diese
+Prüfung lässt sich nicht durch einen Serverstatus ersetzen.
