@@ -233,7 +233,7 @@ jobs:
                   cur.execute("UPDATE routes SET name=?, model=?, enabled=1, status='IDLE', dead=0, cooldown_until=0 WHERE id=?", (name, mdl, ex[0]))
                   print("aktualisiert:", name)
               else:
-                  cur.execute("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used, cooldown_until, lat_ms, tokens, dead) VALUES (?,?,?,?,?,1,1,?,0.2,'IDLE',0,0,0,0,0,0,0)", (name, prov, url, mdl, prio))
+                  cur.execute("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used, cooldown_until, lat_ms, tokens, dead) VALUES (?,?,?,?,?,1,1,?,0.2,'IDLE',0,0,0,0,0,0,0)", (name, prov, url, mdl, "", prio))
                   print("eingefuegt:", name, "Prioritaet", prio)
           con.commit()
           for r in cur.execute("SELECT name, priority, enabled FROM routes WHERE name LIKE 'Cascade: Ollama CAX%' ORDER BY priority").fetchall():
