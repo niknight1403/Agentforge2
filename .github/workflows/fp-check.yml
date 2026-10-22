@@ -1,0 +1,19 @@
+name: SSH-Key-Fingerprint-Check
+on:
+  workflow_dispatch: {}
+jobs:
+  fp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Fingerprints von VM und Hetzner holen
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.ORACLE_SSH_KEY }}" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          echo "== Oracle VM authorized_keys =="
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "awk 'NR>1{print \$0}' ~/.ssh/authorized_keys 2>/dev/null; for k in \$(grep -oE 'ssh-(rsa|ed25519) [A-Za-z0-9+/=]+' ~/.ssh/authorized_keys); do echo \$k | ssh-keygen -lf /dev/stdin -E md5 2>/dev/null; done" || true
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo grep -hoE 'ssh-(rsa|ed25519) [A-Za-z0-9+/=]+' /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys 2>/dev/null | sort -u | while read t k rest; do echo \"\$t \$k\" | ssh-keygen -lf /dev/stdin -E md5; done" || true
+          echo "== GH Runner Key (ORACLE_SSH_KEY) Fingerprint =="
+          ssh-keygen -yf ~/.ssh/oracle_key > /tmp/pub.pub 2>/dev/null && ssh-keygen -lf /tmp/pub.pub -E md5 || echo "konnte nicht abgeleitet werden"
