@@ -1,0 +1,73 @@
+name: Reaper-Schwellen-Fix (live patchen, Setting 90 Min, Neustart, Verifikation)
+on:
+  workflow_dispatch:
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Live-Patch + Setting + Neustart + 6-Min-Check
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=50 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          F=/opt/villaforge/server/agents.mjs
+          echo "== Backup =="
+          cp "$F" "$F.bak-$(date +%Y%m%d-%H%M%S)" && ls -1 "$F".bak-* | tail -2
+          echo "== Patch anwenden =="
+          cat > /tmp/patch_reaper.py <<'PYV'
+          p = '/opt/villaforge/server/agents.mjs'
+          s = open(p).read()
+          old_imp = "import { skillInstructions, readConnector } from './control-store.mjs';"
+          new_imp = "import { skillInstructions, readConnector, getSetting } from './control-store.mjs';"
+          assert s.count(old_imp) == 1, "Import-Zeile nicht gefunden (Abbruch, kein Neustart)"
+          s = s.replace(old_imp, new_imp)
+          old_sig = "export function reapZombies(maxMin = 35) {"
+          new_sig = """export function reapZombies(maxMin = 0) {
+            // v1.44.1 - Schwelle konfigurierbar: 32B-Agentenlaeufe brauchen laenger als 35 Min.
+            maxMin = Math.max(5, Number(maxMin) || Number(getSetting('reapMinutes', process.env.VF_REAP_MINUTES)) || 90);"""
+          assert s.count(old_sig) == 1, "reapZombies-Signatur nicht gefunden (Abbruch, kein Neustart)"
+          s = s.replace(old_sig, new_sig)
+          old_msg = "'Automatisch abgebrochen (Zombie-Reaper): Aufgabe hing ueber 35 Min fest. Wird von der Evolution neu geplant.'"
+          new_msg = "`Automatisch abgebrochen (Zombie-Reaper): Aufgabe hing ueber ${maxMin} Min fest. Wird von der Evolution neu geplant.`"
+          assert s.count(old_msg) == 1, "Reaper-Meldung nicht gefunden (Abbruch, kein Neustart)"
+          s = s.replace(old_msg, new_msg)
+          open(p, 'w').write(s)
+          print("Live-Patch OK")
+          PYV
+          python3 /tmp/patch_reaper.py
+          node --check "$F" && echo "Node-Syntax OK"
+          echo "== Setting reapMinutes=90 setzen =="
+          cat > /tmp/setreap.py <<'PYV'
+          import sqlite3
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
+          con.execute("INSERT OR REPLACE INTO control_settings VALUES ('reapMinutes','90')")
+          con.commit()
+          row = con.execute("SELECT * FROM control_settings WHERE key='reapMinutes'").fetchone()
+          print("Setting:", row)
+          PYV
+          python3 /tmp/setreap.py
+          echo "== Hub-Neustart =="
+          systemctl restart villaforge-hub.service
+          sleep 25
+          systemctl is-active villaforge-hub.service
+          curl -s -m 10 http://localhost:12000/api/health -o /dev/null -w "Health HTTP %{http_code}\n"
+          echo "== Verifikation nach 6 Minuten =="
+          sleep 360
+          cat > /tmp/verify.py <<'PYV'
+          import sqlite3
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
+          cur = con.cursor()
+          print("Villen:", cur.execute("SELECT status, COUNT(*) FROM villas GROUP BY status").fetchall())
+          print("reapMinutes:", cur.execute("SELECT value FROM control_settings WHERE key='reapMinutes'").fetchone())
+          print("Aktive Running-Tasks:", cur.execute("SELECT villa_id, COUNT(*) FROM tasks WHERE status='RUNNING' GROUP BY villa_id").fetchall())
+          PYV
+          python3 /tmp/verify.py
+          echo "== Hub-Log (Reaper/Start) =="
+          journalctl -u villaforge-hub.service --since "8 min ago" --no-pager | grep -iE "reaper|hub laeuft|dauerentw|verwaist" | tail -8
+          EOS
