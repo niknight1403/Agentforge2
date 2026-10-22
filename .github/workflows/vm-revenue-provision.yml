@@ -1,0 +1,37 @@
+name: VM Revenue-Provision
+on:
+  workflow_dispatch: {}
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: revenue_os-DB anlegen, VM-Routen pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          SSHO="ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159"
+          $SSHO "sudo bash -c '
+          echo == revenue_os anlegen ==
+          sudo -u postgres psql -Atq -c \"SELECT 1 FROM pg_database WHERE datname='"'"'revenue_os'"'"';\" | grep -q 1 || sudo -u postgres createdb -O ccc_app revenue_os
+          sudo -u postgres psql -Atq -c \"SELECT datname FROM pg_database ORDER BY datname;\"
+          sudo -u postgres psql -Atq -d revenue_os -c \"SELECT current_database(), current_user;\"
+          echo == Nginx-Hub-Serverblock ==
+          grep -rlE \"hub.cybersarah-ki.com\" /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null | head -3
+          for F in /etc/nginx/sites-enabled/hub* /etc/nginx/sites-enabled/*hub* /etc/nginx/conf.d/hub*; do [ -f \"\$F\" ] && { echo \"-- \$F\"; cat \"\$F\"; }; done 2>/dev/null | head -60
+          echo == Stream-Config (443) ==
+          grep -rE \"listen 443|server_name|proxy_pass|pg_backend\" /etc/nginx/nginx.conf /etc/nginx/stream-* /etc/nginx/conf.d/*.conf 2>/dev/null | grep -v \"^.*#\" | head -20
+          echo == Ollama-Route ==
+          ss -tlnp | grep -E \":(11434|45249)\" || echo kein-ollama-port
+          grep -rE \"11434|ollama\" /etc/nginx/ 2>/dev/null | grep -v \"#\" | head -5
+          echo == Hub-Health ==
+          curl -s -m 10 http://127.0.0.1:12000/api/health | head -c 200; echo
+          echo == Syslog-Wachstum ==
+          S1=\$(stat -c %s /var/log/syslog); sleep 20; S2=\$(stat -c %s /var/log/syslog); echo \"Delta in 20s: \$(( S2 - S1 )) Bytes\"
+          echo == Platz ==
+          df -h / | tail -1
+          '"
