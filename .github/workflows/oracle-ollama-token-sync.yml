@@ -1,0 +1,80 @@
+name: Oracle-Ollama-Token-Sync
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: oracle-token-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Oracle-Token nach openhands-Repo uebertragen
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Token aus Oracle-VM extrahieren und als Secret setzen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          AGENTFORGE_PAT: ${{ secrets.AGENTFORGE_PAT }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+
+          echo "== [1/4] Token von Oracle-VM extrahieren =="
+          TOKEN=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
+            "sudo grep -oE 'Bearer [A-Za-z0-9_-]+' /etc/nginx/sites-available/ollama 2>/dev/null | head -1 | awk '{print \$2}'" || true)
+          if [ -z "${TOKEN}" ]; then
+            echo "FEHLER: Kein Token in der Oracle-Nginx-Konfiguration gefunden"
+            exit 1
+          fi
+          echo "Token extrahiert (Laenge: ${#TOKEN}, Wert nicht geloggt)"
+
+          echo "== [2/4] Endpoint mit Token verifizieren =="
+          CODE=$(curl -s -o /tmp/tags.json -w "%{http_code}" --max-time 20 \
+            -H "Authorization: Bearer ${TOKEN}" https://ollama.cybersarah-ki.com/api/tags || echo 000)
+          echo "HTTP ${CODE} bei /api/tags"
+          if [ "$CODE" != "200" ]; then
+            echo "FEHLER: Endpoint antwortet nicht mit 200"
+            exit 1
+          fi
+          python3 -c "import json; print('Oracle-Modelle:', ', '.join(m['name'] for m in json.load(open('/tmp/tags.json')).get('models', [])) or 'keine')"
+
+          echo "== [3/4] Secret in niknight1403/openhands setzen =="
+          pip install pynacl -q 2>/dev/null
+          TOKEN="$TOKEN" PAT="$AGENTFORGE_PAT" python3 - <<'PY'
+          import os, json, base64, urllib.request
+          from nacl import encoding, public
+
+          token = os.environ["TOKEN"]
+          pat = os.environ["PAT"]
+          repo = "niknight1403/openhands"
+
+          def api(method, path, body=None, headers=None):
+              req = urllib.request.Request(f"https://api.github.com{path}", method=method,
+                  headers={"Authorization": f"Bearer {pat}", "Accept": "application/vnd.github+json", **(headers or {})},
+                  data=json.dumps(body).encode() if body is not None else None)
+              try:
+                  with urllib.request.urlopen(req) as r:
+                      return r.status, json.loads(r.read() or b"{}")
+              except urllib.error.HTTPError as e:
+                  return e.code, json.loads(e.read() or b"{}")
+
+          st, pk = api("GET", f"/repos/{repo}/actions/secrets/public-key")
+          if st != 200:
+              print(f"FEHLER beim Repo-Key ({st}):", str(pk)[:120]); raise SystemExit(1)
+          pk_obj = public.PublicKey(pk["key"].encode(), encoding.Base64Encoder())
+          enc = public.SealedBox(pk_obj).encrypt(token.encode())
+          st, res = api("PUT", f"/repos/{repo}/actions/secrets/ORACLE_OLLAMA_TOKEN",
+                        {"encrypted_value": base64.b64encode(enc).decode(), "key_id": pk["key_id"]})
+          if st not in (201, 204):
+              print(f"FEHLER beim Setzen des Secrets ({st}):", str(res)[:120]); raise SystemExit(1)
+          print(f"Secret ORACLE_OLLAMA_TOKEN gesetzt (HTTP {st})")
+          PY
+
+          echo "== [4/4] Fertig — OpenHands kann den Oracle-Endpunkt jetzt nutzen =="
