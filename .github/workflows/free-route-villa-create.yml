@@ -1,0 +1,69 @@
+name: Free-Route-Villa anlegen (Gratis-Routen-Schmiede)
+on:
+  workflow_dispatch:
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Villa 'Free Route Hunter' in Hub-DB anlegen + Workspace initialisieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=40 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -euo pipefail
+          python3 -u - <<'PYV'
+          import sqlite3
+          NAME = "Free Route Hunter"
+          DB = "/opt/villaforge/server/data/villaforge.db"
+          SRC = "/opt/villaforge/workspace/free-route-hunter"
+          IDEA = "\n".join([
+              "MISSION: FREE ROUTE HUNTER - AUTONOME GRATIS-ROUTEN-SCHMIEDE FUER DAUERHAFT KOSTENLOSE ENTWICKLUNG",
+              "",
+              "ZIEL: Ein sich selbst erweiterndes, voll autonomes Routen-Netzwerk, das ALLE kostenlosen LLM-, API-, Tool- und Werkzeug-Routen findet, integriert, ueberwacht und optimiert - als dauerhafte Entwicklungsgrundlage fuer einen eigenen Agenten-Schwarm, der ausschliesslich mit Gratis-Routen Software entwickelt.",
+              "",
+              "KERNAUFGABEN:",
+              "1. DISCOVERY (kontinuierlich): Neue kostenlose Routen finden - OpenRouter-Free-Modelle (Live-Katalog), Groq free tier, Google Gemini free, Hugging Face Inference, GitHub Models, Together free, weitere no-key-APIs, freie Tool-/Werkzeug-Routen (Open-Source-APIs, MCP-Server, freie Entwickler-Werkzeuge). Jede Route mit Quelle, Rate-Limit und Quoten-Regeln dokumentieren.",
+              "2. INTEGRATION: Gefundene Routen als Hub-Routen in der Routen-DB registrieren (Tabelle routes, is_free=1, Prioritaet nach Qualitaet), inkl. gratis API-Key-Beschaffung und -Rotation via Keyforge, mit Fallback-Kette hinter der lokellen Ollama-Kaskade.",
+              "3. SELBSTWACHSTUM + SELBSTOPTIMIERUNG: Metrik-gesteuert arbeiten - Latenz, Verfuegbarkeit, Quoten-Auslastung und Antwortqualitaet messen; tote Routen automatisch deaktivieren (401/403 = 24h-Parken, Dead-Zaehler), bessere Gratis-Routen hoeher priorisieren; die Anzahl aktiver Anbindungen waechst mit jeder gefundenen Route (Ziel: monatlich messbarer Zuwachs aktiver Gratis-Routen).",
+              "4. AGENTEN-SCHWARM: Eigene spezialisierte Agenten (Scout, Integrator, Waechter, Optimierer) bearbeiten die Warteschlange selbststaendig und entwickeln damit dauerhaft kostenlos Software - jede Entwicklungsaufgabe dieser Villa laeuft ausschliesslich ueber Gratis-Routen.",
+              "",
+              "ABNAHMEKRITERIEN: Jede neue Route ist in der Hub-Routen-DB registriert, im Health-Check sichtbar und beantwortet einen Testprompt; keine Route mit Kostenpflicht wird integriert; woechentlicher Zuwachs-Bericht als Proposal.",
+              "ARBEITSWEISE: Echtes Repository patchen (%s), niemals Platzhalter, niemals erfundene Keys oder Werte." % SRC,
+              "SCHUTZREGELN: Keine Secrets im Code; ausschliesslich kostenlose Dienste; Rate-Limits respektieren; alle Quellen dokumentieren.",
+          ])
+          con = sqlite3.connect(DB)
+          cur = con.cursor()
+          ex = cur.execute("SELECT id, status FROM villas WHERE name=?", (NAME,)).fetchone()
+          if ex:
+              print("Villa '%s' existiert bereits (id %s, status %s) - kein Duplikat angelegt." % (NAME, ex[0], ex[1]))
+          else:
+              cur.execute("INSERT INTO villas (name, idea, status, max_agents, autonomy, route_strategy, created_at, updated_at, source_path, mode, auto_rounds, vision) VALUES (?,?,?,100,1,'ROTATE',datetime('now'),datetime('now'),?,'OPTIMIZE',1,'')",
+                          (NAME, IDEA, "RUNNING", SRC))
+              con.commit()
+              print("Villa angelegt: id %s | status RUNNING | autonomy 1 | %s" % (cur.lastrowid, SRC))
+          print("Routen-Status aktuell:")
+          for r in cur.execute("SELECT COUNT(*), SUM(is_free) FROM routes").fetchone():
+              pass
+          total, free = cur.execute("SELECT COUNT(*), COALESCE(SUM(is_free),0) FROM routes").fetchone()
+          print("  Routen gesamt: %d | davon als free markiert: %d" % (total, free))
+          PYV
+          mkdir -p /opt/villaforge/workspace/free-route-hunter
+          cd /opt/villaforge/workspace/free-route-hunter
+          if [ ! -d .git ]; then git init -q && git remote add origin https://github.com/niknight1403/free-route-hunter.git 2>/dev/null || true; fi
+          cat > README.md <<'MD'
+          # Free Route Hunter - Autonome Gratis-Routen-Schmiede
+          Villa-Mission: Alle kostenlosen LLM-, API-, Tool- und Werkzeug-Routen finden, integrieren,
+          selbstoptimierend betreiben und die aktive Anbindungszahl stetig wachsen lassen.
+          Der Agenten-Schwarm dieser Villa entwickelt ausschliesslich ueber Gratis-Routen.
+          Struktur: docs/ (Routen-Funde mit Quelle+Rate-Limit), integrations/ (Registrierungs-Skripte),
+          reports/ (woechentliche Zuwachs-Berichte).
+          MD
+          mkdir -p docs integrations reports
+          git add -A 2>/dev/null && git commit -qm "init: Free Route Hunter Villa-Workspace" 2>/dev/null || true
+          ls -la /opt/villaforge/workspace/free-route-hunter | head -8
+          EOS
