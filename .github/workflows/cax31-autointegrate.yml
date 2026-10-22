@@ -27,10 +27,24 @@ jobs:
           PY
           cat /tmp/inventory.txt
           LOC=$(grep -m1 "^ollama-cax21 " /tmp/inventory.txt | awk '{print $4}')
-          [ "$LOC" = "?" ] || [ -z "$LOC" ] && LOC=$(grep -m1 "^ollama-cax11" /tmp/inventory.txt | awk '{print $4}')
-          [ "$LOC" = "?" ] || [ -z "$LOC" ] && LOC="fsn1"
+          if [ -z "$LOC" ] || [ "$LOC" = "?" ]; then
+            CXID=$(python3 -c "
+          import json
+          d=json.load(open('/tmp/servers.json'))
+          for s in d.get('servers',[]):
+              if s['name'].startswith('ollama-cax'):
+                  print(s['id']); break
+          ")
+            if [ -n "$CXID" ]; then
+              LOC=$(curl -s -m 20 -H "Authorization: Bearer $HETZNER_API_TOKEN" "https://api.hetzner.cloud/v1/servers/$CXID" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin).get('server',{})
+          print(((d.get('datacenter') or {}).get('location') or {}).get('name',''))" 2>/dev/null || echo "")
+            fi
+          fi
+          if [ -z "$LOC" ] || [ "$LOC" = "?" ]; then LOC="fsn1"; fi
           echo "Standort der Flotte: $LOC"
-          C31IP=$(grep -i cax31 /tmp/inventory.txt | awk '{print $3}' | head -1)
+          C31IP=$(grep -i cax31 /tmp/inventory.txt | awk '{print $3}' | head -1 || true)
           if [ -n "$C31IP" ]; then
             echo "CAX31 existiert bereits: $C31IP"
           else
