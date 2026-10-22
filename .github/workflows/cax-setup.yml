@@ -1,0 +1,42 @@
+name: CAX11-Inbetriebnahme (Ollama-Zweitknoten)
+on:
+  workflow_dispatch: {}
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Warten auf Boot, dann Ollama installieren und haerten
+        env:
+          CAX_SSH_KEY: ${{ secrets.CAX_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$CAX_SSH_KEY" > ~/.ssh/cax_key
+          chmod 600 ~/.ssh/cax_key
+          echo "== Warte auf SSH (max 3 min) =="
+          for i in $(seq 1 18); do
+            if ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -i ~/.ssh/cax_key root@2.28.12.63 "echo BOOT_OK" 2>/dev/null; then break; fi
+            sleep 10
+          done
+          SSH="ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 root@2.28.12.63"
+          $SSH "echo '== Specs =='; nproc; free -h | head -2; uname -m"
+          echo "== Ollama installieren =="
+          $SSH "curl -fsSL https://ollama.com/install.sh | sh" 2>&1 | tail -3
+          $SSH "mkdir -p /etc/systemd/system/ollama.service.d && printf '[Service]\nEnvironment=\"OLLAMA_HOST=0.0.0.0:11434\"\n' > /etc/systemd/system/ollama.service.d/host.conf && systemctl daemon-reload && systemctl restart ollama && sleep 3 && systemctl is-active ollama"
+          echo "== Modell ziehen (qwen2.5-coder:3b) =="
+          $SSH "ollama pull qwen2.5-coder:3b 2>&1 | tail -2"
+          $SSH "ollama list"
+          echo "== UFW haerten =="
+          $SSH "apt-get install -y -qq ufw >/dev/null 2>&1; ufw allow 22/tcp >/dev/null; ufw allow from 92.5.177.159 to any port 11434 proto tcp >/dev/null; ufw allow from 167.233.196.20 to any port 11434 proto tcp >/dev/null; ufw allow from 167.233.118.190 to any port 11434 proto tcp >/dev/null; echo y | ufw enable >/dev/null; ufw status numbered | head -10"
+          echo "== Lokaler Test =="
+          $SSH "curl -s -m 8 http://127.0.0.1:11434/api/tags | head -c 200"; echo
+      - name: Verifikation von der Oracle-VM aus
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "curl -s -m 10 http://2.28.12.63:11434/api/tags | head -c 300; echo; curl -s -m 20 http://2.28.12.63:11434/api/generate -d '{\"model\":\"qwen2.5-coder:3b\",\"prompt\":\"Antworte mit einem Wort: Hallo\",\"stream\":false}' | head -c 200"
