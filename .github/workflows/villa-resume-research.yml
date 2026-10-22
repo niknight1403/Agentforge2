@@ -1,0 +1,46 @@
+name: Villa-Resume-Recherche
+on:
+  workflow_dispatch: {}
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Hub-Routen und Villa-Steuerung finden
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Server-Dateien =="
+          ls /opt/villaforge/server/*.mjs /opt/villaforge/server/*.js 2>/dev/null | head -8
+          find /opt/villaforge/server -maxdepth 1 -type d | head -8
+          echo "== Framework =="
+          grep -oE "from '(express|fastify|hono|koa)'" /opt/villaforge/server/server.mjs 2>/dev/null | sort -u
+          echo "== Villa-Routen =="
+          grep -hoE "(app|router|api)?\.?(get|post|put|patch|delete)\(\s*[\"'][^\"']+" /opt/villaforge/server/server.mjs 2>/dev/null | grep -iE "villa|pause|resume|start|sched|run" | head -25
+          grep -rhoE "\"/api/[a-z0-9/_-]+\"|'/api/[a-z0-9/_-]+'" /opt/villaforge/server/*.mjs /opt/villaforge/server/routes/*.mjs 2>/dev/null | tr -d "\"'" | grep -iE "villa|pause|resume|start|sched|control" | sort -u | head -25
+          echo "== villa_scheduler Status =="
+          grep -c "scheduleVilla\|processNext\|scheduler" /opt/villaforge/server/server.mjs 2>/dev/null
+          echo "== control_settings =="
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          try:
+              for r in cur.execute("SELECT * FROM control_settings").fetchall()[:12]:
+                  print("  ", str(r)[:200])
+          except Exception as e:
+              print("control_settings-Fehler:", e)
+          print("VILLAS:", cur.execute("SELECT id, name, status FROM villas ORDER BY id").fetchall())
+          print("OFFENE TASKS PRO VILLA:", cur.execute("SELECT villa_id, COUNT(*) FROM tasks WHERE status='PENDING' GROUP BY villa_id ORDER BY 2 DESC").fetchall())
+          PYV
+          echo "== Hub-Health jetzt =="
+          curl -s -m 8 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); print('llm:', d.get('llm',{}).get('eligibleRoutes'), '/', d.get('llm',{}).get('configuredRoutes'), 'state:', d.get('llm',{}).get('state'))" 2>/dev/null || true
+          echo "== Syslog-Rate (15s) =="
+          S1=$(stat -c %s /var/log/syslog); sleep 15; S2=$(stat -c %s /var/log/syslog); echo "Delta: $(( S2 - S1 )) Bytes"
+          EOS
