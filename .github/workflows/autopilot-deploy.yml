@@ -1,0 +1,76 @@
+name: Autopilot-Deploy (Scorer + Autopilot live, Verifikation)
+on:
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Repo laden (Hub-Snapshot)
+        uses: actions/checkout@v4
+      - name: Module pruefen und uebertragen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -f hub-snapshot/autopilot.mjs && test -f hub-snapshot/scorer.mjs && test -f hub-snapshot/server.mjs && test -f hub-snapshot/control-store.mjs
+          grep -q "startAutopilot" hub-snapshot/server.mjs && echo "Verdraetung im Snapshot"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 hub-snapshot/scorer.mjs hub-snapshot/autopilot.mjs hub-snapshot/server.mjs hub-snapshot/control-store.mjs ubuntu@92.5.177.159:/tmp/
+      - name: Backup, Einsatz, Settings, Neustart
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          D=/opt/villaforge/server
+          TS=$(date +%Y%m%d-%H%M%S)
+          for F in scorer.mjs autopilot.mjs server.mjs control-store.mjs; do
+            [ -f "$D/$F" ] && cp "$D/$F" "$D/$F.bak-$TS"
+            node --check "/tmp/$F" && cp "/tmp/$F" "$D/$F" && echo "$F eingesetzt"
+          done
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
+          con.execute("INSERT OR REPLACE INTO control_settings VALUES ('autopilot','1')")
+          con.execute("INSERT OR REPLACE INTO control_settings VALUES ('autopilotInterval','5')")
+          con.commit()
+          print("Settings:", con.execute("SELECT key,value FROM control_settings WHERE key LIKE 'autopilot%'").fetchall())
+          PYV
+          systemctl restart villaforge-hub.service
+          sleep 25
+          systemctl is-active villaforge-hub.service
+          curl -s -m 10 http://localhost:12000/api/health -o /dev/null -w "Health HTTP %{http_code}\n"
+          EOS
+      - name: 8-Min-Verifikation
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=40 ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          sleep 180
+          echo "== /api/scores =="
+          curl -s -m 10 http://localhost:12000/api/scores | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          lf=d.get('localFirst',{})
+          print('scoredTasks:', d.get('scoredTasks'), '| localSharePct:', lf.get('localSharePct'))
+          for v in d.get('villas',[])[:5]:
+              print('  Villa', v['villaId'], '| Score', v['score'], '| open', v['open'], '| busyChurn', v['busyChurn'])"
+          sleep 240
+          echo "== Autopilot-Log =="
+          journalctl -u villaforge-hub.service --since "10 min ago" --no-pager | grep -i "autopilot" | tail -6
+          echo "== Flotten-/DB-Status =="
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
+          cur = con.cursor()
+          print("Villen:", cur.execute("SELECT status, COUNT(*) FROM villas GROUP BY status").fetchall())
+          print("Villa-Scores:", cur.execute("SELECT villa_id, score FROM villa_scores ORDER BY score DESC LIMIT 5").fetchall())
+          print("Task-Scores:", cur.execute("SELECT COUNT(*), ROUND(AVG(score),1) FROM task_scores").fetchone())
+          PYV
+          EOS
