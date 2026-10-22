@@ -5,7 +5,28 @@ export class LlmUnavailableError extends Error {
 }
 /** Single pass, no cooldown sleeps and no duplicate endpoint/model attempts. */
 export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clock=Date.now}) {
- const inFlight=new Map(),credentialBlocks=new Map();
+ const inFlight=new Map(),credentialBlocks=new Map(),permitWaiters=new Map();
+ async function acquire(base,limit,deadline) {
+  const current=inFlight.get(base)||0;
+  if(current<limit){inFlight.set(base,current+1);return true;}
+  const waitMs=Math.max(0,deadline-clock());
+  if(!waitMs)return false;
+  return new Promise(resolve=>{
+   let finished=false,timer;
+   const queue=permitWaiters.get(base)||[];
+   const waiter={
+    grant(){if(finished)return false;finished=true;clearTimeout(timer);resolve(true);return true;},
+    expire(){if(finished)return;finished=true;const i=queue.indexOf(waiter);if(i>=0)queue.splice(i,1);resolve(false);}
+   };
+   timer=setTimeout(()=>waiter.expire(),waitMs);
+   queue.push(waiter);permitWaiters.set(base,queue);
+  });
+ }
+ function release(base) {
+  const queue=permitWaiters.get(base);
+  while(queue?.length){const waiter=queue.shift();if(waiter.grant())return;}
+  inFlight.set(base,Math.max(0,(inFlight.get(base)||1)-1));
+ }
  return async function cascade(messages,opts={}) {
   const attempted=[],seen=new Set();
   const ordered=routes().filter(r=>r.provider!=='offline' && (!freeOnlyEnabled()||isFreeRoute(r)) && (!r.key_env||key(r.key_env)))
@@ -21,8 +42,9 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    if(seen.has(identity))continue;seen.add(identity);
    if(clock()>=deadline)break;
    const limit=isLocalRoute(r)?Math.max(1,Number(process.env.OLLAMA_MAX_PARALLEL)||1):Math.max(1,Number(process.env.VF_LLM_ROUTE_CONCURRENCY)||3);
-   if((inFlight.get(r.base_url)||0)>=limit) {attempted.push({route:r.name,code:'BUSY'});continue;}
-   inFlight.set(r.base_url,(inFlight.get(r.base_url)||0)+1);
+   const slotDeadline=isLocalRoute(r)?deadline:cloudDeadline;
+   if(!await acquire(r.base_url,limit,slotDeadline)){attempted.push({route:r.name,code:'BUSY'});continue;}
+   if(clock()>=deadline){release(r.base_url);break;}
    const started=clock();
    try {
     const defaultMs=isLocalRoute(r)?90000:Math.max(500,Math.min(Number(process.env.VF_LLM_CLOUD_TIMEOUT_MS)||8000,30000));
@@ -36,7 +58,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
     const code=e.busy?'BUSY':e.status ? `HTTP_${e.status}` : /timeout|abort/i.test(e.name||'')?'TIMEOUT':(e.code||'CONNECTION_ERROR');
     attempted.push({route:r.name,code});failure(r,e);
     opts.onFailover?.(r.name,code);
-   }finally {inFlight.set(r.base_url,Math.max(0,(inFlight.get(r.base_url)||1)-1));}
+   }finally {release(r.base_url);}
   }
   throw new LlmUnavailableError(attempted);
  };

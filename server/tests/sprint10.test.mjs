@@ -27,12 +27,12 @@ const t = now();
 db.prepare("INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES ('AI Marketplace','AOCS-EW Plugin-Marktplatz','CREATED',10,1,?,?)").run(t, t);
 const villaId = Number(db.prepare('SELECT id FROM villas ORDER BY id DESC LIMIT 1').get().id);
 
-test('Scheduler: strikt sequenziell (1 Slot) und alle Startstellen ueber scheduleVilla', () => {
-  assert.equal(schedulerStatus().slots, 1, 'Default muss 1 sein: eine Villa nach der anderen');
+test('Scheduler: mindestens 3 Villen parallel und alle Startstellen ueber scheduleVilla', () => {
+  assert.ok(schedulerStatus().slots >= 3, 'drei Villen muessen parallel startbar sein');
   const srv = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8');
   assert.ok(!/[^A-Za-z.]orchestrate\(/.test(srv.replace(/scheduleVilla\(/g, '')), 'server.mjs startet keine Villa direkt');
   const sched = readFileSync(new URL('../scheduler.mjs', import.meta.url), 'utf8');
-  assert.ok(sched.includes('VF_VILLA_SLOTS ?? 1'), 'Slot-Default 1');
+  assert.ok(sched.includes('VF_VILLA_SLOTS ?? 3'), 'Slot-Default 3');
   assert.ok(sched.includes('export function scheduleVilla'), 'scheduleVilla exportiert');
 });
 

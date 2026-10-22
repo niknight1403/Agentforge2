@@ -1,11 +1,12 @@
 /**
- * Villa-Scheduler: nicht alle Villen gleichzeitig, sondern die weitesten zuerst.
+ * Villa-Scheduler: bis zu drei Villen laufen parallel; weitere warten fair in der Queue.
  *
  * Problem: Nach einem Neustart setzte der Hub alle unterbrochenen Villen
  * gleichzeitig fort (11 Villen x 4 Agenten). Auf 4 Kernen mit einem einzigen
  * Ollama endet das im Dauerstau, und selbst /api/health antwortet nicht mehr.
  *
- * Loesung: Es laufen hoechstens VF_VILLA_SLOTS Villen gleichzeitig (Default 2).
+ * Loesung: Es laufen standardmaessig drei Villen gleichzeitig. Weitere Laeufe
+ * bleiben einzeln steuerbar und warten in einer fairen Queue.
  * Die Reihenfolge bestimmt der Fortschritt: Villen, die am weitesten sind,
  * werden zuerst fertig gebaut; danach rueckt die naechste nach. Dadurch
  * entstehen schneller vollstaendige Ergebnisse statt vieler halbfertiger.
@@ -18,13 +19,10 @@ import { db } from './db.mjs';
 import { getSetting } from './control-store.mjs';
 import { orchestrate } from './agents.mjs';
 
-// v1.42.0 — FOKUS-MODUS (Nutzerdirektive 2026-10-18): "Die Villen sollen nicht
-// staendig rotieren, sondern Projekt fuer Projekt fertigstellen." Der Fokus-Modus
-// ist Standard: Genau EINE Villa laeuft (die fortschrittlichste zuerst) und wird
-// erst fertig gebaut, bevor die naechste startet. Rotation (VF_VILLA_SLOTS > 1)
-// gibt es nur noch bei explizitem VF_FOCUS_MODE=0.
-export const FOCUS_MODE = () => process.env.VF_FOCUS_MODE !== '0';
-const SLOTS = () => (FOCUS_MODE() ? 1 : Math.max(1, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? 1)) || 1));
+// Fokus laesst sich weiterhin explizit fuer laengere Projektlaeufe aktivieren,
+// begrenzt aber nicht mehr die Zahl manuell startbarer Villen.
+export const FOCUS_MODE = () => process.env.VF_FOCUS_MODE === '1';
+const SLOTS = () => Math.max(3, Math.min(4, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? 3)) || 3));
 
 /** Fortschritt und Rang aller Villen in einer einzigen Abfrage. */
 export function villaRanking() {
@@ -68,6 +66,14 @@ export function schedulerStatus() {
   };
 }
 
+/** Entfernt einen wartenden Lauf ohne andere Villen oder Slots anzuhalten. */
+export function cancelScheduledVilla(id) {
+  const index = queue.indexOf(Number(id));
+  if (index < 0) return false;
+  queue.splice(index, 1);
+  return true;
+}
+
 function pump() {
   while (starter && active.size < SLOTS() && queue.length) {
     const id = queue.shift();
@@ -107,8 +113,8 @@ export function enqueueVillas(ids) {
   return schedulerStatus();
 }
 
-/** v1.40.0 — Einheitlicher Einstieg: Villen laufen NIEMALS direkt, sondern
- *  immer ueber den Scheduler (strikte Reihenfolge, Default 1 Slot). */
+/** Einheitlicher Einstieg: alle automatischen und manuellen Starts laufen
+ *  ueber denselben Scheduler (Default 3 Slots). */
 export function scheduleVilla(id, { concurrency = 0, maxRounds = 6 } = {}) {
   configureScheduler({ start: (vid) => orchestrate(vid, { concurrency, maxRounds }) });
   const status = enqueueVillas([id]);

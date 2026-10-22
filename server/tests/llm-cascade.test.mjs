@@ -32,10 +32,11 @@ test('Vollausfall erzeugt 503 statt erfundener Planer-Antwort oder Token-Abrechn
  await assert.rejects(run([]),e=>e instanceof LlmUnavailableError&&e.statusCode===503&&!JSON.stringify(e).includes('private-key'));
  db.exec('DELETE FROM routes');await assert.rejects(chat([{role:'user',content:'Baue ein Projekt'}]),e=>e.code==='LLM_UNAVAILABLE');
 });
-test('Lokaler Parallelitätsdeckel blockiert nicht den unabhängigen Reserve-Endpunkt',async()=>{
- let release;const wait=new Promise(r=>release=r);const rows=[route(1,'ollama'),route(2,'lmstudio')];
- const run=createCascade({routes:()=>rows,key:()=>'',call:async r=>r.id===1?(await wait,answer):answer});
- const first=run([]);const second=await run([]);assert.equal(second.failovers[0].code,'BUSY');release();await first;
+test('Lokaler Parallelitätsdeckel reiht Requests ein statt parallele Villen als BUSY zu stoppen',async()=>{
+ let release;const wait=new Promise(r=>release=r);const rows=[route(1,'ollama'),route(2,'lmstudio')];let calls=0;
+ const run=createCascade({routes:()=>rows,key:()=>'',call:async r=>{if(r.id===1){calls++;await wait;}return answer;}});
+ const first=run([]);const second=run([]);await new Promise(r=>setImmediate(r));assert.equal(calls,1);
+ release();const [a,b]=await Promise.all([first,second]);assert.equal(calls,2);assert.equal(a.failovers.length,0);assert.equal(b.failovers.length,0);
 });
 test('Keine doppelten Requests für denselben Endpoint und dasselbe Modell',async()=>{
  let n=0;const r=route(1,'gemini');const run=createCascade({routes:()=>[r,{...r,id:2}],key:()=>'',call:async()=>{n++;throw Error('down');}});

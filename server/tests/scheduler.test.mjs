@@ -6,14 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 process.env.VF_DB = join(mkdtempSync(join(tmpdir(), 'vf-sched-')), 'test.db');
-// Dieser Test prueft den klassischen ROTATIONS-Pfad: Fokus-Modus (v1.42,
-// Standard = genau 1 Slot) muss dafuer explizit aus sein, sonst
-// ignoriert der Scheduler VF_VILLA_SLOTS und der Test misst den
-// falschen Modus. Der Fokus-Modus hat seinen eigenen Test unten.
-process.env.VF_FOCUS_MODE = '0';
-process.env.VF_VILLA_SLOTS = '2';
+// Drei manuell gestartete Villen muessen parallel laufen koennen.
+process.env.VF_VILLA_SLOTS = '3';
 const { db, now } = await import('../db.mjs');
-const { villaRanking, enqueueVillas, configureScheduler, schedulerStatus, _resetScheduler } = await import('../scheduler.mjs');
+const { villaRanking, enqueueVillas, configureScheduler, schedulerStatus, cancelScheduledVilla, _resetScheduler } = await import('../scheduler.mjs');
 
 function villa(name, done, open, failed = 0) {
   const t = now();
@@ -33,7 +29,7 @@ test('Rangfolge: meister Fortschritt zuerst, Fehler kosten', () => {
   assert.ok(order.indexOf(clean) < order.indexOf(faulty), 'bei gleichem Fortschritt: Fehler zurueck');
 });
 
-test('Slot-Grenze: 2 gleichzeitig, weiteste zuerst, Rest rueckt nach', async () => {
+test('Slot-Grenze: 3 gleichzeitig, weiteste zuerst, Rest rueckt nach', async () => {
   _resetScheduler();
   const a = villa('A', 1, 9);
   const b = villa('B', 9, 1);
@@ -47,17 +43,30 @@ test('Slot-Grenze: 2 gleichzeitig, weiteste zuerst, Rest rueckt nach', async () 
     releases.set(id, () => { current -= 1; resolve(); });
   }) });
   enqueueVillas([a, b, c, d]);
-  assert.deepEqual(started, [b, d], 'die zwei weitesten starten');
-  assert.equal(schedulerStatus().queued, 2);
+  assert.deepEqual(started, [b, d, c], 'die drei weitesten starten');
+  assert.equal(schedulerStatus().queued, 1);
   releases.get(b)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [b, d, c], 'B fertig -> C rueckt nach');
+  assert.deepEqual(started, [b, d, c, a], 'B fertig -> A rueckt nach');
   releases.get(d)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [b, d, c, a], 'D fertig -> A rueckt nach');
+  assert.deepEqual(started, [b, d, c, a], 'D fertig, kein weiterer Lauf wartet');
   releases.get(c)(); releases.get(a)();
   await new Promise((r) => setImmediate(r));
-  assert.ok(peak <= 2, `Spitze ${peak} ueber Grenze`);
+  assert.ok(peak <= 3, `Spitze ${peak} ueber Grenze`);
+});
+
+test('Einzelstopp entfernt nur die gewaehlte Villa aus der Warteschlange', () => {
+  _resetScheduler();
+  const a = villa('Aktiv A', 1, 2), b = villa('Aktiv B', 2, 1), c = villa('Aktiv C', 3, 1), queued = villa('Wartend', 0, 5);
+  configureScheduler({ start: () => new Promise(() => {}) });
+  enqueueVillas([a, b, c, queued]);
+  assert.equal(schedulerStatus().active.length, 3);
+  assert.deepEqual(schedulerStatus().queue, [queued]);
+  assert.equal(cancelScheduledVilla(queued), true);
+  assert.equal(cancelScheduledVilla(queued), false);
+  assert.equal(schedulerStatus().queued, 0);
+  _resetScheduler();
 });
 
 test('Doppeltes Einreihen startet nur einmal', async () => {

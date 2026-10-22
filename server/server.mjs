@@ -14,7 +14,7 @@ import { userStore, usersExist, userForRequest, userForToken, verifyPassword, cr
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, TOOL_SPECS, toolSpecs, memoryContext, setSource, analyzeProject, refreshAgentPrompts, PROMPT_VERSION, ROLES, runTool } from './agents.mjs';
 import { packState, packSummary, setPackEnabled } from './packs.mjs';
 import { resumePendingVillas } from './resume.mjs';
-import { schedulerStatus, villaRanking, enqueueVillas, configureScheduler, scheduleVilla} from './scheduler.mjs';
+import { schedulerStatus, villaRanking, enqueueVillas, configureScheduler, scheduleVilla, cancelScheduledVilla} from './scheduler.mjs';
 import { maintenanceTick, pruneOldData, dbSize } from './maintenance.mjs';
 import { cmdGateStatus } from './fs-tools.mjs';
 import { bus, emit } from './events.mjs';
@@ -159,7 +159,7 @@ function serveStatic(req, res, pathname) {
 
 /* --------------------------- API --------------------------- */
 syncCascadeRoutes();
-const masterControl = createMasterControl({ chat, createVilla, isRunning, stopVilla, toolSpecs, packState, setPackEnabled, emit, startVilla(id) { scheduleVilla(id); return { queued: id }; } });
+const masterControl = createMasterControl({ chat, createVilla, isRunning, stopVilla, cancelScheduledVilla, toolSpecs, packState, setPackEnabled, emit, startVilla(id) { scheduleVilla(id); return { queued: id }; } });
 if (process.argv.includes('--check')) {
   console.log(JSON.stringify({ ok: true, host: HOST, port: PORT, version: VERSION, routing: routingSummary() }, null, 2));
   process.exit(0);
@@ -578,7 +578,7 @@ async function api(req, res, url) {
       memories: db.prepare('SELECT * FROM memories WHERE villa_id = ? ORDER BY importance DESC, id DESC LIMIT 200').all(id),
       reports: db.prepare('SELECT id, villa_id, kind, title, content, created_at FROM reports WHERE villa_id = ? ORDER BY id DESC LIMIT 50').all(id),
       audit: db.prepare('SELECT * FROM audit WHERE villa_id = ? ORDER BY id DESC LIMIT 200').all(id),
-      running: isRunning(id)
+      running: isRunning(id), queued: schedulerStatus().queue.includes(id)
     });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'DELETE') {
@@ -590,6 +590,7 @@ async function api(req, res, url) {
     if (isRunning(id) || villa.status === 'RUNNING') {
       stopVilla(id);
     }
+    cancelScheduledVilla(id);
 
     const targetTables = ['tasks', 'agents', 'memories', 'messages', 'audit', 'reports', 'council'];
     const counts = {};
@@ -638,15 +639,22 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'orchestrate' && m === 'POST') {
     const id = Number(parts[2]);
+    const villa = db.prepare('SELECT status FROM villas WHERE id=?').get(id);
+    if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
+    if (villa.status === 'ARCHIVED') return json(res, 409, { error: 'Archivierte Villa zuerst wiederherstellen.' });
     const b = await readBody(req).catch(() => ({}));
-    if (isRunning(id)) return json(res, 202, { ok: true, alreadyRunning: true });
-    scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6 }); // 0 = automatisch, eine Villa nach der anderen
-    return json(res, 202, { ok: true, started: true });
+    db.prepare('UPDATE villas SET autonomy=1,updated_at=? WHERE id=?').run(now(), id);
+    if (isRunning(id)) return json(res, 202, { ok: true, alreadyRunning: true, started: true });
+    const scheduled = scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6 });
+    return json(res, 202, { ok: true, started: scheduled.active.includes(id), queued: scheduled.queue.includes(id), scheduler: scheduled });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'stop' && m === 'POST') {
     const id = Number(parts[2]);
+    if (!db.prepare('SELECT id FROM villas WHERE id=?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
+    const cancelled = cancelScheduledVilla(id);
     const stopped = stopVilla(id);
-    return json(res, 200, { ok: true, stopped });
+    db.prepare('UPDATE villas SET autonomy=0,status=?,updated_at=? WHERE id=?').run(stopped ? 'STOPPING' : 'PAUSED', now(), id);
+    return json(res, 200, { ok: true, stopped, cancelled, status: stopped ? 'STOPPING' : 'PAUSED' });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'messages' && m === 'GET') {
     const id = Number(parts[2]);

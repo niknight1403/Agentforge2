@@ -13,10 +13,14 @@ CREATE TABLE IF NOT EXISTS control_messages (id INTEGER PRIMARY KEY AUTOINCREMEN
 CREATE TABLE IF NOT EXISTS control_turns (request_id TEXT PRIMARY KEY, message TEXT NOT NULL, status TEXT NOT NULL, response TEXT, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS control_dismissals (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL);
 `);
-export const SETTING_RULES = { defaultAgentCount: [3, 1000, 24], villaSlots: [1, 4, 2], suggestionCount: [1, 8, 4] };
+export const SETTING_RULES = { defaultAgentCount: [3, 1000, 24], villaSlots: [3, 4, 3], suggestionCount: [1, 8, 4] };
 export function getSetting(key, fallback = SETTING_RULES[key]?.[2]) {
   const row = db.prepare('SELECT value FROM control_settings WHERE key=?').get(key);
-  return row ? JSON.parse(row.value) : fallback;
+  const value = row ? JSON.parse(row.value) : fallback;
+  // Older installations may have persisted the former 1–2 villa limit.
+  // Keep the displayed and effective setting aligned with the supported floor.
+  if (key === 'villaSlots') return Math.max(3, Math.min(4, Number(value) || 3));
+  return value;
 }
 export function setSetting(key, value) {
   const rule = SETTING_RULES[key];
