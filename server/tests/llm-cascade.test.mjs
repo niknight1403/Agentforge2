@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 process.env.VF_DB=join(mkdtempSync(join(tmpdir(),'cascade-')),'db');
 process.env.VF_LLM_FREE_ONLY='0';
 const {createCascade,LlmUnavailableError}=await import('../llm-cascade.mjs');
-const {syncCascadeRoutes}=await import('../llm-config.mjs');
+const {syncCascadeRoutes,isFreeRoute,routeTier}=await import('../llm-config.mjs');
 const {db}=await import('../db.mjs');
 const {chat,resolveKey,routingStatus}=await import('../llm.mjs');
 function route(id,provider,key_env='',extra={}){return {id,name:provider,provider,base_url:`http://${provider}`,model:'test',key_env,priority:id,...extra};}
@@ -42,8 +42,10 @@ test('Keine doppelten Requests für denselben Endpoint und dasselbe Modell',asyn
  await assert.rejects(run([]));assert.equal(n,1);
 });
 test('Kaskade ist dauerhaft und idempotent; deaktivierte Einträge bleiben deaktiviert',()=>{
- db.exec('DELETE FROM routes');assert.ok(syncCascadeRoutes().added>=4);assert.equal(syncCascadeRoutes().added,0);
+ db.exec('DELETE FROM routes');assert.ok(syncCascadeRoutes().added>=8);assert.equal(syncCascadeRoutes().added,0);
  assert.equal(db.prepare('SELECT model FROM routes WHERE name=?').get('Cascade: Gemini').model,'gemini-3.5-flash-lite');
+ assert.equal(db.prepare('SELECT model FROM routes WHERE name=?').get('Cascade: Cerebras').model,'gpt-oss-120b');
+ assert.equal(db.prepare('SELECT model FROM routes WHERE name=?').get('Cascade: Mistral').model,'mistral-small-latest');
  db.prepare('UPDATE routes SET enabled=0 WHERE name=?').run('Cascade: Ollama local');syncCascadeRoutes();assert.equal(db.prepare('SELECT enabled FROM routes WHERE name=?').get('Cascade: Ollama local').enabled,0);
  db.prepare('INSERT OR REPLACE INTO secrets(name,value,updated_at) VALUES (?,?,0)').run('GOOGLE_API_KEY','test-only');assert.equal(resolveKey('GEMINI_API_KEY'),'test-only');
 });
@@ -62,14 +64,28 @@ test('Free-only mode uses approved free routes and skips paid or unknown cloud r
  const rows=[
   {...route(1,'gemini'),model:'gemini-3.5-flash-lite'},
   {...route(2,'gemini'),model:'gemini-3.5-pro'},
-  {...route(3,'openrouter'),model:'google/gemma-4-31b-it:free'},
-  {...route(4,'openrouter'),model:'anthropic/claude-sonnet'},
-  {...route(5,'huggingface'),model:'meta-llama/Llama-3.3-70B-Instruct'},
-  route(6,'xai'),route(7,'ollama')
+  {...route(3,'cerebras'),model:'gpt-oss-120b'},
+  {...route(4,'cerebras'),model:'paid-model'},
+  {...route(5,'groq'),model:'openai/gpt-oss-120b'},
+  {...route(6,'mistral'),model:'mistral-small-latest'},
+  {...route(7,'mistral'),model:'mistral-large-latest'},
+  {...route(8,'openrouter'),model:'google/gemma-4-31b-it:free'},
+  {...route(9,'openrouter'),model:'anthropic/claude-sonnet'},
+  {...route(10,'huggingface'),model:'meta-llama/Llama-3.3-70B-Instruct'},
+  route(11,'xai'),route(12,'ollama')
  ];
- const seen=[];const run=createCascade({routes:()=>rows,key:()=>true,call:async r=>{seen.push(r.id);if(r.id===1)throw Error('temporary');return answer;}});
- await run([]);assert.deepEqual(seen,[1,3]);
+ const seen=[];const run=createCascade({routes:()=>rows,key:()=>true,call:async r=>{seen.push(r.id);if(r.id!==12)throw Error('temporary');return answer;}});
+ await run([]);assert.deepEqual(seen,[1,3,5,6,8,12]);
+ assert.equal(isFreeRoute({...route(20,'cerebras'),model:'qwen-3.8-27b'}),true);
+ assert.equal(isFreeRoute({...route(21,'mistral'),model:'mistral-large-latest'}),false);
  process.env.VF_LLM_FREE_ONLY='0';
+});
+
+test('Lernende Kaskade bevorzugt pro Prioritätsgruppe die bewährte schnellere Route',async()=>{
+ const rows=[route(1,'groq','',{priority:2,weight:0.5,lat_ms:900}),route(2,'groq','',{priority:2,weight:1.8,lat_ms:180})];
+ assert.equal(routeTier(rows[0]),routeTier(rows[1]));
+ const seen=[];const run=createCascade({routes:()=>rows,key:()=>'',call:async r=>{seen.push(r.id);return answer;}});
+ await run([]);assert.deepEqual(seen,[2]);
 });
 test('Routing readiness marks blocked paid routes ineligible',()=>{
  process.env.VF_LLM_FREE_ONLY='1';db.exec('DELETE FROM routes');

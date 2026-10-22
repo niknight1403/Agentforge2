@@ -18,8 +18,8 @@
 
   <!-- ============ KOPFZEILE (sticky, Handy-optimiert) ============ -->
   <header class="topbar">
-    <div class="brand"><span class="logo-mark" aria-hidden="true">✦</span><span><strong>CyberSarah</strong><small>CONTROL CENTER</small></span></div>
-    <button id="masterOpenBtn" class="master-nav" type="button" aria-label="Master-Agent öffnen">✦</button><div class="topbar-status"><span id="healthDot" class="dot"></span><span id="healthText">verbinde…</span></div>
+    <div class="brand"><span class="logo-mark" aria-hidden="true">✦</span><span><strong>VillaForge</strong><small>DEVELOPMENT HUB</small></span></div>
+    <button id="masterOpenBtn" class="master-nav" type="button" aria-label="Master-Agent öffnen">✦ <span>Master</span></button><div class="topbar-status"><span id="healthDot" class="dot"></span><span id="healthText">verbinde…</span></div>
   </header>
 
   <!-- ============ ANSICHT: ÜBERSICHT ============ -->
@@ -27,8 +27,8 @@
     <section class="profile-card">
       <div class="avatar" aria-hidden="true">S</div>
       <div class="profile-text">
-        <h1>Willkommen zurück,<br /><span>Sarah</span></h1>
-        <div class="profile-badges"><span class="badge role">Administrator</span><span class="badge online">● Online</span></div>
+        <h1>Dein<br /><span>Arbeitsbereich</span></h1>
+        <div class="profile-badges"><span class="badge role">Deep Agent Studio</span><span id="systemBadge" class="badge">Verbinde …</span></div>
       </div>
     </section>
 
@@ -51,9 +51,9 @@
 
     <div class="duo-grid">
       <section class="card quality-card" aria-label="Qualitätstor">
-        <div class="card-head"><p class="eyebrow">QUALITÄTSTOR</p><span class="chip ok" id="gateChip">AKTIV</span></div>
-        <p class="card-big"><span class="ok-ico" aria-hidden="true">✓</span> Echter Code erzwungen</p>
-        <p class="card-sub">npm-Test &amp; Python-Tor prüfen jede Aufgabe</p>
+        <div class="card-head"><p class="eyebrow">SYSTEMSTATUS</p><span class="chip" id="gateChip">PRÜFT</span></div>
+        <p class="card-big"><span class="ok-ico" aria-hidden="true">✓</span><span id="systemHeadline">Verbindung wird geprüft</span></p>
+        <p class="card-sub" id="systemDetail">Live-Status und verfügbare KI-Routen werden geladen.</p>
       </section>
       <section class="card products-card" aria-label="GitHub-Produkte">
         <div class="card-head"><p class="eyebrow">GITHUB-PRODUKTE</p><span class="chip push" id="pushChip">0</span></div>
@@ -103,7 +103,7 @@
 
   <!-- ============ ANSICHT: KONTO ============ -->
   <main id="view-konto" class="view" aria-label="Konto">
-    <section class="profile-card compact"><div class="avatar" aria-hidden="true">S</div><div class="profile-text"><h1>Sarah</h1><p class="hint" style="margin:0">CyberSarah Administrator · dein Konto</p></div></section>
+    <section class="profile-card compact"><div class="avatar" aria-hidden="true">V</div><div class="profile-text"><h1 id="accountName">Mein Konto</h1><p id="accountDetail" class="hint" style="margin:0">VillaForge · Sitzung wird geprüft</p></div></section>
     <section class="section-block"><div class="section-head"><h2>LLM-Routen</h2><span id="routeCount" class="section-pill">0</span></div>
       <div id="routeList" class="list"></div>
       <details class="advanced"><summary>Neue Route hinzufügen</summary><label>Name<input id="rName" placeholder="Mein Endpunkt" /></label><label>Base URL<input id="rUrl" type="url" placeholder="https://api.example.com/v1" /></label><label>Modell<input id="rModel" placeholder="model-name" /></label><label>Key-Variable<input id="rKeyEnv" placeholder="MY_API_KEY" /></label><button id="addRouteBtn" class="primary block">Route speichern</button></details>
@@ -170,7 +170,7 @@
   <!-- ============ BOTTOM-NAVIGATION (Daumen-reichweitentauglich) ============ -->
   <nav class="bottomnav" role="navigation" aria-label="Hauptnavigation">
     <button class="nav-item active" data-view="home"><span class="nav-ico">◈</span>Übersicht</button>
-    <button class="nav-item" data-view="chat"><span class="nav-ico">◌</span>Chat</button>
+    <button class="nav-item" data-view="chat"><span class="nav-ico">◌</span>Projekte</button>
     <button class="nav-item" data-view="agents"><span class="nav-ico">⌘</span>Agenten</button>
     <button class="nav-item" data-view="konto"><span class="nav-ico">◉</span>Konto</button>
     <button class="nav-item fab" id="newVillaBtn" aria-label="Neue Villa">＋</button>

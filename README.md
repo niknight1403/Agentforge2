@@ -8,12 +8,31 @@ Ein Router wechselt standardmäßig zwischen **kostenlosen LLM-Anbindungen** und
 bei Bedarf ein lokales Modell. Ohne erreichbares Sprachmodell bleibt die App bedienbar
 und zeigt klar an, dass KI-Aufgaben derzeit nicht ausgeführt werden können.
 
+## Neu in 1.47.0 — Mehr kostenlose Modelle und adaptive Kaskade
+
+- **Neue Standardrouten**: Cerebras GPT-OSS/Qwen und Mistral Small erweitern
+  den kostenfreien Fallback hinter Gemini; die Schlüssel bleiben ausschließlich
+  in Umgebungsvariablen oder im Secrets-Store.
+- **Kostenbremse bleibt aktiv**: Free-Only erlaubt nur bekannte kostenlose
+  Modell-IDs. Unbekannte, bezahlte und kreditbasierte Routen werden übersprungen.
+- **Lernende Routenwahl**: Erfolgsgewichtung wird innerhalb derselben Priorität
+  pro Modellantwort berücksichtigt; Latenz, Fehler und Kontingent-Cooldowns
+  aktualisieren die Wahl im laufenden Betrieb.
+- **Sicherer Dauerbetrieb**: Bei ausgeschöpften Freikontingenten pausiert die
+  Kaskade in den nächsten zulässigen Fallback; nach Neustarts greift die
+  vorhandene Wiederaufnahme für unterbrochene Aufgaben.
+- **Android- und Hub-Version synchronisiert**: `1.47.0`, Android-Versioncode
+  `44`; der Tag-Build prüft Unit-Tests, Syntax und Versionsgleichheit.
+
+Kostenlose Anbieter nutzen variable Kontingente und Limits. Einen unbegrenzten
+kostenlosen 24/7-Modellbetrieb kann kein Anbieter garantieren; mit aktivierten
+Schlüsseln verteilt VillaForge Anfragen über die zulässigen Routen und wechselt
+bei Fehlern weiter.
+
 ## Neu in 1.46.0 — Produktstudio-Oberfläche
 
-- **Übersicht für Desktop und Mobilgeräte**: Das Dashboard ordnet Status, aktive Villa und Aktionen auf großen Bildschirmen in einer klaren Arbeitsfläche; auf dem Handy bleibt die Bedienung kompakt.
-- **Projekte schneller finden**: Villen lassen sich nach Name und Beschreibung suchen, sowohl in der Übersicht als auch beim Öffnen des Deep-Agent-Chats.
-- **Ruhigere, lesbare Gestaltung**: Neon-Glühen wurde reduziert, Fokuszustände und Karten sind klarer, und die Android-App nutzt dieselbe gedämpfte Akzentpalette.
-- **Ehrliche Produktkennzeichnung**: Eine unbelegte „Unlimited“-Anzeige wurde durch die tatsächliche Funktion der App ersetzt.
+- Responsives Dashboard, Suche nach Villenname und Beschreibung sowie klarere
+  Bedienelemente und einheitlichere Farben auf Web und Android.
 
 ## Neu in 1.45.0 — Kostenbewusste KI und Release-Stabilität
 
