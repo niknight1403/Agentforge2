@@ -16,33 +16,40 @@ jobs:
           chmod 600 ~/.ssh/oracle_key
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=40 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
           set -uo pipefail
-          measure() {
-            NODE=$1; MODEL=$2
-            echo "-- $NODE $MODEL --"
-            curl -s -m 8 http://$NODE:11434/api/ps | python3 -c "import json,sys;d=json.load(sys.stdin);print('geladen:',[m['name'] for m in d.get('models',[])])" 2>/dev/null || echo "api/ps nicht lesbar"
-            START=$(date +%s.%N)
-            R=$(curl -s -m 240 http://$NODE:11434/api/generate -d "{\"model\":\"$MODEL\",\"prompt\":\"Antworte nur mit dem Wort OK.\",\"stream\":false,\"options\":{\"num_predict\":8}}" 2>&1)
-            END=$(date +%s.%N)
-            echo "$R" | python3 -c "import json,sys
-try:
-  d=json.load(sys.stdin);print('Antwort:',repr(d.get('response','')[:40]),'| eval_count:',d.get('eval_count'),'| load_ms:',round(d.get('load_duration',0)/1e6),'| gen_ms:',round(d.get('eval_duration',0)/1e6))
-except Exception as e:
-  print('Fehler/Timeout:',e)" 2>&1
-            python3 -c "print('Gesamtdauer: %.1f s' % ($END - $START))"
-          }
-          measure 2.28.12.63 qwen2.5-coder:3b
-          measure 2.31.45.241 qwen2.5-coder:7b
-          measure 2.31.64.65 qwen2.5-coder:7b
-          measure 2.31.77.72 qwen2.5-coder:32b
-          echo "== Hub-Routen-Reihenfolge (aus DB) =="
-          python3 - <<'PYV'
+          cat > /tmp/lat.py <<'PYV'
+          import json, sys, time, urllib.request
+          node, model = sys.argv[1], sys.argv[2]
+          print("-- %s %s --" % (node, model))
+          try:
+              ps = json.load(urllib.request.urlopen("http://%s:11434/api/ps" % node, timeout=8))
+              print("geladen:", [m["name"] for m in ps.get("models", [])])
+          except Exception as e:
+              print("api/ps nicht lesbar:", e)
+          body = json.dumps({"model": model, "prompt": "Antworte nur mit dem Wort OK.", "stream": False, "options": {"num_predict": 8}}).encode()
+          req = urllib.request.Request("http://%s:11434/api/generate" % node, data=body, headers={"Content-Type": "application/json"})
+          t0 = time.time()
+          try:
+              d = json.load(urllib.request.urlopen(req, timeout=240))
+              print("Antwort:", repr(d.get("response", "")[:40]), "| load_ms:", round(d.get("load_duration", 0) / 1e6), "| gen_ms:", round(d.get("eval_duration", 0) / 1e6))
+          except Exception as e:
+              print("Fehler/Timeout:", e)
+          print("Gesamtdauer: %.1f s" % (time.time() - t0))
+          PYV
+          python3 /tmp/lat.py 2.28.12.63 qwen2.5-coder:3b
+          python3 /tmp/lat.py 2.31.45.241 qwen2.5-coder:7b
+          python3 /tmp/lat.py 2.31.64.65 qwen2.5-coder:7b
+          python3 /tmp/lat.py 2.31.77.72 qwen2.5-coder:32b
+          echo "== Hub-Routen aus DB =="
+          cat > /tmp/routes.py <<'PYV'
           import sqlite3
           con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
           cur = con.cursor()
           cols = [r[1] for r in cur.execute("PRAGMA table_info(routes)").fetchall()]
           print("Spalten:", cols)
+          keep = ('id', 'name', 'model', 'priority', 'enabled', 'status', 'fail_count')
           for r in cur.execute("SELECT * FROM routes ORDER BY priority DESC LIMIT 12").fetchall():
               d = dict(zip(cols, r))
-              print({k: d[k] for k in cols if k in ('id','name','model','priority','enabled','base_url','status','fail_count')})
+              print({k: d[k] for k in cols if k in keep})
           PYV
+          python3 /tmp/routes.py
           EOS
