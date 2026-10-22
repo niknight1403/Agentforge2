@@ -371,6 +371,22 @@ async function api(req, res, url) {
     return json(res, 404, { error: `Unbekannter Webhook-Endpunkt: ${p}` });
   }
 
+  /* ------------- Oeffentliche Flotten-Bruecke (fuer CyberSarah) -----------
+   * v1.47.0 — Liest das Control Center (Render) den VillaForge-Status ohne
+   * Admin-Session: nur aggregierte, nicht-sensitive Flottendaten.
+   */
+  if (p === '/api/public/fleet' && m === 'GET') {
+    return json(res, 200, {
+      villas: db.prepare("SELECT status, COUNT(*) c FROM villas WHERE status!='ARCHIVED' GROUP BY status").all(),
+      scheduler: schedulerStatus(),
+      scores: villaScores().slice(0, 10).map((v) => ({ villaId: v.villaId, name: v.name, score: v.score, doneLastHour: v.doneLastHour, open: v.open, avgTaskScore: v.avgTaskScore })),
+      scoredTasks: db.prepare('SELECT COUNT(*) c, ROUND(AVG(score),1) avg FROM task_scores').get(),
+      localFirst: localFirstReport(),
+      messenger: messengerStatus(),
+      ts: Date.now(),
+    });
+  }
+
   /* --------------------------- Auth --------------------------- */
   if (p === '/api/auth/login' && m === 'POST') {
     const b = await readBody(req);
