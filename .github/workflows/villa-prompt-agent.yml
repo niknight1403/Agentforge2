@@ -20,9 +20,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key && chmod 600 ~/.ssh/oracle_key
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo REFRESH='$REFRESH' bash -s" <<'EOS'
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=40 -o TCPKeepAlive=yes -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo REFRESH='$REFRESH' bash -s" <<'EOS'
           set -uo pipefail
-          python3 - <<'PYV'
+          python3 -u - <<'PYV'
           import sqlite3, json, os, time, urllib.request
           REFRESH = os.environ.get("REFRESH", "false") == "true"
           CASCADE = [
