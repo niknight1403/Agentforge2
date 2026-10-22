@@ -1,0 +1,110 @@
+name: Villa-Prompt-Agent (Ideen -> Qualitaets-Prompts)
+on:
+  workflow_dispatch:
+    inputs:
+      refresh_all:
+        description: 'Alle Villen neu verfeinern (auch mit echter Vision)'
+        required: false
+        default: 'false'
+  schedule:
+    - cron: '23 */6 * * *'
+jobs:
+  prompt_agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Villen-Ideen analysieren, verfeinern, Visionen + Tasks erzeugen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          REFRESH: ${{ github.event.inputs.refresh_all || 'false' }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key && chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo REFRESH='$REFRESH' bash -s" <<'EOS'
+          set -uo pipefail
+          python3 - <<'PYV'
+          import sqlite3, json, os, time, urllib.request
+          REFRESH = os.environ.get("REFRESH", "false") == "true"
+          CASCADE = [
+              ("qwen2.5-coder:32b", "http://2.31.77.72:11434"),
+              ("qwen2.5-coder:7b",  "http://2.31.45.241:11434"),
+              ("qwen2.5-coder:7b",  "http://2.31.64.65:11434"),
+              ("qwen2.5-coder:3b",  "http://2.28.12.63:11434"),
+          ]
+          PLACEHOLDER = "Kein Sprachmodell erreichbar"
+          def llm(prompt, max_retries=2):
+              last_err = None
+              for attempt in range(max_retries):
+                  for model, base in CASCADE:
+                      try:
+                          body = json.dumps({"model": model, "prompt": prompt, "stream": False,
+                                             "format": "json", "options": {"temperature": 0.4}}).encode()
+                          req = urllib.request.Request(base + "/api/generate", data=body,
+                              headers={"Content-Type": "application/json"})
+                          resp = json.load(urllib.request.urlopen(req, timeout=600))
+                          txt = (resp.get("response") or "").strip()
+                          data = json.loads(txt)
+                          if data.get("vision") and data.get("mission_prompt") and isinstance(data.get("next_steps"), list):
+                              return model, data
+                          last_err = "unvollstaendige JSON-Felder"
+                      except Exception as e:
+                          last_err = "%s: %s" % (base, str(e)[:120])
+                          continue
+              raise SystemExit("FEHLER: keine Kaskaden-Antwort (%s)" % last_err)
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          villas = cur.execute("SELECT id, name, idea, status, autonomy, mode, vision FROM villas ORDER BY id").fetchall()
+          print("== Prompt-Agent Start | Villen:", len(villas), "| refresh_all:", REFRESH, "==")
+          processed, skipped = 0, 0
+          for vid, name, idea, status, autonomy, mode, vision in villas:
+              need = REFRESH or (not vision) or (PLACEHOLDER in str(vision))
+              print("--- Villa %s '%s' | %s | %s" % (vid, name, status, "verfeinern" if need else "Vision ok"))
+              if not need:
+                  skipped += 1
+                  continue
+              if not idea or len(str(idea).strip()) < 40:
+                  print("   uebersprungen: keine substanzielle Idee hinterlegt"); skipped += 1; continue
+              idea_txt = str(idea)[:3500]
+              meta = "\n".join([
+                  "Du bist ein Senior-Software-Architekt und Prompt-Engineer. Analysiere die folgende Projekt-Idee (Rohfassung des Owners) und hole das Maximum an Entwicklungsqualitaet heraus.",
+                  "",
+                  "VILLA: " + str(name) + " (Modus: " + str(mode) + ", Autonomie: " + str(autonomy) + ", Status: " + str(status) + ")",
+                  "IDEE (ROHFASSUNG):",
+                  idea_txt,
+                  "",
+                  "Erstelle daraus:",
+                  '1. "vision": Praezise, ambitionierte aber erreichbare Produkt-Vision in 2-3 Saetzen (Deutsch). Konkret, keine Floskeln.',
+                  '2. "mission_prompt": Ein deutlich verbesserter, strukturierter Missions-Prompt mit den Abschnitten ZIEL, KONTEXT, ANFORDERUNGEN (nummeriert, priorisiert), ABNAHMEKRITERIEN (pruefbar: Build UND Tests gruen oder belegter Befund), ARBEITSWEISE (echtes Repository patchen, niemals Platzhalter oder erfundene Werte), SCHUTZREGELN (keine Secrets im Code, keine Spekulation ohne Beleg). Deutsch, max. 600 Woerter. Behalte alle Fakten der Original-Idee bei; ergaenze nur Struktur, Praezision und pruefbare Kriterien.',
+                  '3. "next_steps": Genau 3 konkrete, sofort umsetzbare naechste Schritte (je 1 Satz, Deutsch, je mit klarem Verifikationspunkt).',
+                  "",
+                  'Antworte AUSSCHLIESSLICH mit validem JSON: {"vision": "...", "mission_prompt": "...", "next_steps": ["...", "...", "..."]}',
+              ])
+              t0 = time.time()
+              model, data = llm(meta)
+              dur = int(time.time() - t0)
+              cur.execute("UPDATE villas SET vision=? WHERE id=?", (data["vision"][:2000], vid))
+              ex = cur.execute("SELECT id FROM villa_proposals WHERE villa_id=? AND kind='prompt_agent' AND status='ready'",
+                               (vid,)).fetchone()
+              items = json.dumps({"mission_prompt": data["mission_prompt"], "next_steps": data["next_steps"]},
+                                 ensure_ascii=False)
+              if ex:
+                  cur.execute("UPDATE villa_proposals SET title=?, summary=?, items=?, extra=? WHERE id=?",
+                              ("Prompt-Agent: " + name, data["vision"][:500], items, "Modell: " + model, ex[0]))
+                  print("   Proposal aktualisiert (id %s)" % ex[0])
+              else:
+                  cur.execute("INSERT INTO villa_proposals (villa_id, kind, title, summary, items, status, round, extra) VALUES (?,?,?,?,?,?,0,?)",
+                              (vid, "prompt_agent", "Prompt-Agent: " + name, data["vision"][:500], items, "ready", "Modell: " + model))
+                  print("   Proposal angelegt")
+              for step in data["next_steps"][:3]:
+                  title = str(step)[:120]
+                  dup = cur.execute("SELECT id FROM tasks WHERE villa_id=? AND title=? AND status IN ('pending','in_progress','assigned')",
+                                    (vid, title)).fetchone()
+                  if not dup:
+                      cur.execute("INSERT INTO tasks (villa_id, agent_id, title, description, status, priority, result, retry_count) VALUES (?,?,?,?,'pending',5,'',0)",
+                                  (vid, None, title, "Vom Prompt-Agent abgeleitet. " + str(step)[:2000]))
+              con.commit()
+              processed += 1
+              print("   Vision gesetzt | Modell: %s | %ds | naechste Schritte: %d" % (model, dur, len(data["next_steps"][:3])))
+          print("== Prompt-Agent Ende | verfeinert: %d | uebersprungen: %d ==" % (processed, skipped))
+          PYV
+          EOS
