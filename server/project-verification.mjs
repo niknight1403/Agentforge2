@@ -43,6 +43,14 @@ export function inspectProject(id){
   walk(root);return {root:canonical,files,bytes,sourceFiles,securityFindings,fingerprint:hash.update(canonical).digest('hex')};
  }catch(e){return {root,files,bytes,sourceFiles:0,securityFindings,fingerprint:'',error:existsSync(root)?e.message:'Projektordner fehlt'};}
 }
+function qualityFor(project,checks){
+ return calculateQualityGate({
+  syntax:checks.build?.status==='passed'?100:0,
+  tests:checks.tests?.status==='passed'&&checks.smoke?.status==='passed'?100:checks.tests?.status==='passed'?50:0,
+  security:staticSecurityScore(project.securityFindings),
+  performance:staticPerformanceScore(project.bytes),
+ });
+}
 export function projectReadiness(id){
  const project=inspectProject(id),blockers=[];
  if(project.error)blockers.push(project.error);
@@ -52,12 +60,7 @@ export function projectReadiness(id){
  let checks={};if(fresh){try{checks=JSON.parse(row.checks);if(row.status!=='passed')blockers.push(...JSON.parse(row.blockers));}catch{blockers.push('Prüfnachweis ungültig');}}
  if(row&&!fresh)blockers.push('Prüfnachweis veraltet oder Quellstand geändert');
  for(const kind of ['build','tests','smoke'])if(checks[kind]?.status!=='passed')blockers.push(`${kind}: ${checks[kind]?.reason||'kein aktueller erfolgreicher Nachweis'}`);
- const quality=calculateQualityGate({
-  syntax:checks.build?.status==='passed'?100:0,
-  tests:checks.tests?.status==='passed'&&checks.smoke?.status==='passed'?100:checks.tests?.status==='passed'?50:0,
-  security:staticSecurityScore(project.securityFindings),
-  performance:staticPerformanceScore(project.bytes),
- });
+ const quality=qualityFor(project,checks);
  if(fresh&&!quality.passed)blockers.push(`Quality Gate: ${quality.score}/100 < ${quality.threshold}`);
  const verified=blockers.length===0&&quality.passed;
  return {verified,status:verified?'verified':fresh?'blocked':'unverified',blockers,checks,quality,verifiedAt:fresh?row.verified_at:null,fingerprint:project.fingerprint,sourceFiles:project.sourceFiles};
@@ -76,9 +79,11 @@ export function verificationPlan(root){
  }));
 }
 function saveVerification(id,project,checks,blockers){
+ const quality=qualityFor(project,checks);
+ if(!quality.passed)blockers.push(`Quality Gate: ${quality.score}/100 < ${quality.threshold}`);
  const passed=blockers.length===0;
  db.prepare('INSERT OR REPLACE INTO project_verifications VALUES (?,?,?,?,?,?)').run(id,project.fingerprint||'',passed?'passed':'blocked',JSON.stringify(checks),JSON.stringify(blockers),now());
- return {ok:passed,checks,blockers};
+ return {ok:passed,checks,blockers,quality};
 }
 const verifying=new Map();
 export async function verifyProjectRuntime(id,{runner=runCommand}={}){
