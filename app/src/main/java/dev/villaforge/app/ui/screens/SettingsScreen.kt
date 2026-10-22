@@ -28,7 +28,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.villaforge.app.net.HubClient
 import dev.villaforge.app.net.LlmRoute
-import dev.villaforge.app.ui.FEATURE_PACKS
 import dev.villaforge.app.ui.MainViewModel
 import dev.villaforge.app.ui.UiState
 import dev.villaforge.app.ui.components.KeyRow
@@ -39,7 +38,7 @@ import dev.villaforge.app.ui.theme.TextMuted
 
 /* Einstellungen (v1.14.0): in Sektionskarten geordnet, Overline-Labels. */
 @Composable
-fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
+fun SettingsScreen(state: UiState, viewModel: MainViewModel, onCapabilities: () -> Unit = {}) {
     var url by remember { mutableStateOf(state.serverUrl) }
     var keyName by remember { mutableStateOf("") }
     var keyValue by remember { mutableStateOf("") }
@@ -73,19 +72,10 @@ fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
             }
         }
 
-        SectionHeader("Feature Packs")
-        FEATURE_PACKS.forEach { pack ->
-            var on by rememberSaveable(pack.id) { mutableStateOf(true) }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(pack.title, fontWeight = FontWeight.SemiBold)
-                    Text(pack.desc, style = muted(), color = TextMuted)
-                }
-                Spacer(Modifier.width(8.dp))
-                Switch(checked = on, onCheckedChange = { on = it })
-            }
+        SectionCard("KI-Werkstatt") {
+            Text("Packs, Werkzeuge, Skills und Connectoren direkt im Hub verwalten.", style = muted(), color = TextMuted)
+            Button(onClick = onCapabilities, modifier = Modifier.fillMaxWidth()) { Text("Werkzeuge öffnen") }
         }
-        Spacer(Modifier.padding(4.dp))
 
         SectionCard("Hub-Adresse") {
             OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("https://…") }, modifier = Modifier.fillMaxWidth())
@@ -176,7 +166,7 @@ fun SettingsScreen(state: UiState, viewModel: MainViewModel) {
         val versionName = androidx.compose.runtime.remember(versionContext) {
             try { versionContext.packageManager.getPackageInfo(versionContext.packageName, 0).versionName ?: "?" } catch (_: Exception) { "?" }
         }
-        Text("VillaForge App v${'$'}versionName", style = muted(), color = TextMuted)
+        Text("VillaForge App v$versionName", style = muted(), color = TextMuted)
     }
 }
 

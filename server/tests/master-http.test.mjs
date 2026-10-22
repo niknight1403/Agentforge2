@@ -31,3 +31,25 @@ test('Master API: status, honest LLM outage, stable retry, history, suggestions 
  assert.ok(Array.isArray((await call('/api/master/duplicates/archive',{})).body.archived));
  const malformed=await call('/api/master/chat',{message:'Status',requestId:'x'});assert.equal(malformed.status,400);
 });
+
+test('Master actions: mobile controls are validated and restricted',async()=>{
+ const action=(type,args,confirmation='')=>call('/api/master/actions',{action:{type,args},confirmation});
+ let response=await action('set_pack',{id:'monitoring',enabled:false});
+ assert.equal(response.status,200);
+ let status=(await call('/api/master/status')).body;
+ assert.equal(status.packs.features.find(p=>p.id==='monitoring').enabled,false);
+ await action('set_pack',{id:'monitoring',enabled:true});
+ status=(await call('/api/master/status')).body;
+ assert.equal(status.packs.features.find(p=>p.id==='monitoring').enabled,true);
+ const tool=status.tools[0];
+ assert.ok(tool?.name);
+ assert.equal((await action('set_tool',{name:tool.name,enabled:false})).status,200);
+ assert.equal((await call('/api/master/status')).body.tools.find(t=>t.name===tool.name).enabled,false);
+ await action('set_tool',{name:tool.name,enabled:true});
+ assert.equal((await action('upsert_skill',{id:'mobile_skill',title:'App-Hilfe',instructions:'Erkläre den nächsten Schritt.',enabled:true})).status,200);
+ assert.equal((await call('/api/master/status')).body.skills.find(s=>s.id==='mobile_skill').enabled,1);
+ assert.equal((await action('upsert_connector',{id:'unsafe',title:'Intern',endpoint:'http://127.0.0.1/private',enabled:true})).status,400);
+ assert.equal((await action('upsert_connector',{id:'public_json',title:'Beispiel',endpoint:'https://example.com/data.json',enabled:true})).status,200);
+ assert.equal((await call('/api/master/status')).body.connectors.find(c=>c.id==='public_json').last_status,'configured');
+ assert.equal((await action('start_villa',{villaId:1})).status,400);
+});

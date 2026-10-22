@@ -19,11 +19,12 @@ import dev.villaforge.app.ui.UiState
 import dev.villaforge.app.ui.theme.*
 
 @Composable
-fun MasterScreen(state: UiState, viewModel: MainViewModel) {
+fun MasterScreen(state: UiState, viewModel: MainViewModel, suggestedPrompt: String = "", onPromptUsed: () -> Unit = {}) {
     var input by rememberSaveable { mutableStateOf("") }
     var expanded by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     LaunchedEffect(Unit) { viewModel.loadMaster() }
+    LaunchedEffect(suggestedPrompt) { if (suggestedPrompt.isNotBlank()) { input = suggestedPrompt; onPromptUsed() } }
     LaunchedEffect(state.masterMessages.size) {
         if (state.masterMessages.isNotEmpty()) listState.animateScrollToItem(state.masterMessages.lastIndex)
     }

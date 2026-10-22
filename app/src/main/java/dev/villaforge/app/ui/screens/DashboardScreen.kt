@@ -58,6 +58,7 @@ import dev.villaforge.app.ui.theme.NeonPink
 import dev.villaforge.app.ui.theme.TextMuted
 import dev.villaforge.app.ui.theme.TextMain
 import dev.villaforge.app.ui.theme.Success
+import dev.villaforge.app.ui.theme.Warn
 
 /*
  * Uebersicht (v1.31.0, Cyber-Neon-Redesign): Empfangs-Dashboard im
@@ -76,7 +77,8 @@ fun DashboardScreen(
     onDiagnostics: () -> Unit = {},
     onSettings: () -> Unit = {},
     onSuperagent: () -> Unit = {},
-    onDeepAgent: () -> Unit = {}
+    onDeepAgent: () -> Unit = {},
+    onCapabilities: () -> Unit = {}
 ) {
     val s = state.stats
     val agents = s?.optInt("agents") ?: 0
@@ -169,52 +171,48 @@ fun DashboardScreen(
             MetricChip(if (state.online && s != null) "$uptimeHours h" else "—", "Laufzeit", NeonPink, Modifier.weight(1f))
         }
 
-        /* ---- Drei Einstiegskarten ---- */
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            GlassCard(accent = NeonCyan, modifier = Modifier.weight(1f)) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Shield, null, tint = NeonCyan, modifier = Modifier.size(26.dp))
-                    Spacer(Modifier.height(6.dp))
-                    Text("Systemstatus", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Spacer(Modifier.height(10.dp))
-                    Text(if (state.online) "Online" else "Offline", color = if (state.online) NeonCyan else TextMuted, style = MaterialTheme.typography.titleLarge)
-                    Spacer(Modifier.height(6.dp))
+        /* Klare KI-Verfügbarkeit aus dem echten Hub-Zustand. */
+        GlassCard(accent = ElectricBlue, modifier = Modifier.fillMaxWidth().clickable { onChat() }) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                NeonIconPlate(icon = { Icon(Icons.Filled.SmartToy, null, tint = ElectricBlue) }, accent = ElectricBlue, size = 48.dp)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("KI-Assistent", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = TextMain)
                     Text(
-                        if (state.online) "Hub verbunden" else "Hub nicht erreichbar",
-                        style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp
+                        if (!state.online) "Hub offline"
+                        else if (llmState == "recently_verified") "Modellantwort kürzlich bestätigt"
+                        else if (llmState == "unavailable") "Modell aktuell nicht erreichbar"
+                        else "Modellverbindung noch ungeprüft",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (llmState == "recently_verified" && state.online) Success else Warn
                     )
                 }
+                Text("Öffnen ›", color = ElectricBlue, fontWeight = FontWeight.SemiBold)
             }
-            GlassCard(accent = ElectricBlue, modifier = Modifier.weight(1f)) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth().clickable { onChat() }
-                ) {
-                    Icon(Icons.Filled.ChatBubble, null, tint = ElectricBlue, modifier = Modifier.size(26.dp))
-                    Spacer(Modifier.height(6.dp))
-                    Text("KI-Chat", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Spacer(Modifier.height(10.dp))
-                    Text(modelLabel, color = ElectricBlue, style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(6.dp))
-                    Text(if (llmState == "recently_verified") "Kürzlich echte Antwort" else "Modellverbindung prüfen", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
+            Spacer(Modifier.height(8.dp))
+            Text("Letzte bestätigte Route: $activeRoute", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+        }
+        GlassCard(accent = NeonCyan, modifier = Modifier.fillMaxWidth().clickable { onCapabilities() }) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.Shield, null, tint = NeonCyan, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("KI-Werkstatt", fontWeight = FontWeight.SemiBold, color = TextMain)
+                    Text("Packs · Werkzeuge · Skills · Connectoren", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                 }
+                Text("Öffnen ›", color = NeonCyan)
             }
-            GlassCard(accent = NeonPink, modifier = Modifier.weight(1f)) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth().clickable { onVillas() }
-                ) {
-                    Icon(Icons.Filled.Folder, null, tint = NeonPink, modifier = Modifier.size(26.dp))
-                    Spacer(Modifier.height(6.dp))
-                    Text("Villen", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Spacer(Modifier.height(10.dp))
-                    NeonRing(
-                        if (state.villas.isNotEmpty()) running.toFloat() / state.villas.size else 0f,
-                        "$running", NeonPink
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text("${state.villas.size} Villen · $running aktiv · $waiting warten", style = MaterialTheme.typography.labelSmall, color = TextMuted, fontSize = 10.sp)
+        }
+        GlassCard(accent = NeonPink, modifier = Modifier.fillMaxWidth().clickable { onVillas() }) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.Folder, null, tint = NeonPink, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Villen", fontWeight = FontWeight.SemiBold, color = TextMain)
+                    Text("${state.villas.size} Villen · $running aktiv · $waiting warten",
+                        style = MaterialTheme.typography.bodySmall, color = TextMuted)
                 }
+                Text("Öffnen ›", color = NeonPink)
             }
         }
 
@@ -348,7 +346,7 @@ fun DashboardScreen(
                     Text("SUPERAGENT", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
                     Text("Autonome KI-Assistentin · Villa-Evolution", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                     Spacer(Modifier.height(6.dp))
-                    NeonChip("LIVE AKTIV", NeonCyan)
+                    NeonChip(if (state.online && state.live) "LIVE" else "NICHT LIVE", if (state.online && state.live) NeonCyan else Warn)
                 }
                 TextButton(onClick = onSuperagent) { Text("Öffnen ›") }
             }

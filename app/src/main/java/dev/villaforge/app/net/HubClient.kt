@@ -295,6 +295,9 @@ class HubClient(context: Context) {
     }
     suspend fun masterSuggestions(): JSONArray = JSONArray(execute("GET", "/api/master/suggestions"))
     suspend fun masterStatus(): JSONObject = JSONObject(execute("GET", "/api/master/status"))
+    suspend fun masterAction(type: String, args: JSONObject, confirmation: String = ""): JSONObject =
+        JSONObject(execute("POST", "/api/master/actions",
+            JSONObject().put("action", JSONObject().put("type", type).put("args", args)).put("confirmation", confirmation)))
     suspend fun masterChat(message: String, requestId: String = java.util.UUID.randomUUID().toString()): JSONObject =
         JSONObject(execute("POST", "/api/master/chat", JSONObject().put("message", message).put("requestId", requestId)))
     suspend fun masterTurn(requestId: String): JSONObject = JSONObject(execute("GET", "/api/master/turn/$requestId"))

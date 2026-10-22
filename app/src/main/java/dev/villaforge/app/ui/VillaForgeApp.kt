@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -49,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.villaforge.app.ui.screens.CapabilitiesScreen
 import dev.villaforge.app.ui.screens.ChatScreen
 import dev.villaforge.app.ui.screens.CreateVillaScreen
 import dev.villaforge.app.ui.screens.DevScreen
@@ -75,15 +77,16 @@ import dev.villaforge.app.ui.theme.TextMuted
  * leben in ui/screens/, Bausteine in ui/components/, der Parser in core/.
  * Hier bleibt nur die Navigation mit sanften uebergangen zurueck.
  */
-private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, MASTER, DEV, DEEP, DEEP_CHAT, SETTINGS, DIAGNOSTICS }
+private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, MASTER, DEV, DEEP, DEEP_CHAT, SETTINGS, DIAGNOSTICS, CAPABILITIES }
 
-private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.MASTER, Screen.DIAGNOSTICS, Screen.SETTINGS)
+private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.MASTER, Screen.DIAGNOSTICS, Screen.SETTINGS, Screen.CAPABILITIES)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VillaForgeApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf(Screen.DASHBOARD) }
+    var masterPrompt by remember { mutableStateOf("") }
 
     /* Quality-Layer v2: EIN zentraler Aurora-Hintergrund auf App-Ebene. */
     Box(Modifier.fillMaxSize().auroraBg()) {
@@ -138,9 +141,9 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     NavigationBarItem(selected = screen == Screen.LIST, onClick = { viewModel.closeDetail(); screen = Screen.LIST },
                         icon = { Icon(Icons.Filled.Home, contentDescription = "Villen", tint = if (screen == Screen.LIST) NeonCyan else TextMuted) },
                         label = { Text("Villen") })
-                    NavigationBarItem(selected = screen == Screen.SETTINGS, onClick = { viewModel.closeDetail(); screen = Screen.SETTINGS },
-                        icon = { Icon(Icons.Filled.Person, contentDescription = "Konto", tint = if (screen == Screen.SETTINGS) NeonCyan else TextMuted) },
-                        label = { Text("Konto") })
+                    NavigationBarItem(selected = screen == Screen.CAPABILITIES, onClick = { viewModel.closeDetail(); screen = Screen.CAPABILITIES },
+                        icon = { Icon(Icons.Filled.Build, contentDescription = "Werkzeuge", tint = if (screen == Screen.CAPABILITIES) NeonCyan else TextMuted) },
+                        label = { Text("Werkzeuge") })
                 }
             }
         },
@@ -149,7 +152,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                 Button(onClick = { screen = Screen.CREATE }, shape = RoundedCornerShape(16.dp)) {
                     Icon(Icons.Filled.Add, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Deep Agent")
+                    Text("Neue Villa")
                 }
             }
         }
@@ -179,9 +182,10 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                         onDiagnostics = { screen = Screen.DIAGNOSTICS },
                         onSettings = { screen = Screen.SETTINGS },
                         onSuperagent = { screen = Screen.MASTER },
-                        onDeepAgent = { screen = Screen.DEEP }
+                        onDeepAgent = { screen = Screen.DEEP },
+                        onCapabilities = { screen = Screen.CAPABILITIES }
                     )
-                    Screen.MASTER -> MasterScreen(state, viewModel)
+                    Screen.MASTER -> MasterScreen(state, viewModel, masterPrompt) { masterPrompt = "" }
                     Screen.CREATE -> CreateVillaScreen(state, viewModel) { id ->
                         viewModel.openVilla(id)
                         screen = Screen.CHAT
@@ -191,7 +195,8 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     Screen.DEV -> DevScreen(state, viewModel, onOpenVilla = { id -> viewModel.openVilla(id); screen = Screen.DEV })
                     Screen.DEEP -> DeepAgentScreen(state, viewModel, onOpenProject = { id -> viewModel.openDeepProject(id); screen = Screen.DEEP_CHAT }, onBack = { screen = Screen.DASHBOARD })
                     Screen.DEEP_CHAT -> DeepChatScreen(state, viewModel, onBack = { screen = Screen.DEEP })
-                    Screen.SETTINGS -> SettingsScreen(state, viewModel)
+                    Screen.SETTINGS -> SettingsScreen(state, viewModel) { screen = Screen.CAPABILITIES }
+                    Screen.CAPABILITIES -> CapabilitiesScreen(state, viewModel) { prompt -> masterPrompt = prompt; screen = Screen.MASTER }
                     Screen.DIAGNOSTICS -> DiagnosticsScreen(state, viewModel)
                 }
             }

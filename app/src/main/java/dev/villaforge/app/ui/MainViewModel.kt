@@ -137,6 +137,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } finally { _state.update { it.copy(masterBusy = false) } }
     }
 
+    /** Live-Katalog des Hubs laden. */
+    fun loadCapabilities() = viewModelScope.launch {
+        _state.update { it.copy(masterBusy = true, masterError = null) }
+        try {
+            val status = client.masterStatus()
+            _state.update { it.copy(masterStatus = status, masterLoaded = true) }
+        } catch (e: Exception) {
+            _state.update { it.copy(masterError = "Funktionen nicht erreichbar: " + (e.message ?: "Hub offline")) }
+        } finally { _state.update { it.copy(masterBusy = false) } }
+    }
+
+    /** Validierte, reversible Hub-Konfiguration. */
+    fun updateCapability(type: String, args: org.json.JSONObject, confirmation: String = "") = viewModelScope.launch {
+        if (_state.value.masterBusy) return@launch
+        _state.update { it.copy(masterBusy = true, masterError = null, message = "") }
+        try {
+            client.masterAction(type, args, confirmation)
+            val status = client.masterStatus()
+            _state.update { it.copy(masterStatus = status, message = "Änderung gespeichert.") }
+        } catch (e: Exception) {
+            _state.update { it.copy(masterError = "Änderung fehlgeschlagen: " + (e.message ?: "unbekannt")) }
+        } finally { _state.update { it.copy(masterBusy = false) } }
+    }
+
     /* ---- Deep Agent: eigene App-Projekte (v1.37.0) ---- */
 
     /** Projekt-Verlauf laden. */
