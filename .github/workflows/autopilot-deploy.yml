@@ -37,6 +37,7 @@ jobs:
           con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
           con.execute("INSERT OR REPLACE INTO control_settings VALUES ('autopilot','1')")
           con.execute("INSERT OR REPLACE INTO control_settings VALUES ('autopilotInterval','5')")
+          con.execute("INSERT OR REPLACE INTO control_settings VALUES ('scoreLLM','1')")
           con.commit()
           print("Settings:", con.execute("SELECT key,value FROM control_settings WHERE key LIKE 'autopilot%'").fetchall())
           PYV
@@ -66,6 +67,9 @@ jobs:
           journalctl -u villaforge-hub.service --since "10 min ago" --no-pager | grep -i "autopilot" | tail -6
           echo "== Messenger-Log =="
           journalctl -u villaforge-hub.service --since "10 min ago" --no-pager | grep -i "messenger" | tail -3
+          echo "== Public-Fleet + scoreLLM =="
+          curl -s -m 10 http://localhost:12000/api/public/fleet | python3 -c "import json,sys; d=json.load(sys.stdin); print('Public-Fleet OK:', d['villas'], '| scored:', d['scoredTasks'])"
+          python3 -c "import sqlite3; con=sqlite3.connect('/opt/villaforge/server/data/villaforge.db'); print('scoreLLM:', con.execute(\"SELECT value FROM control_settings WHERE key='scoreLLM'\").fetchone())"
           echo "== IPN-Gateway (Sprint 3, live) =="
           curl -s -m 10 http://localhost:12000/api/v1/webhooks/status | head -c 400; echo
           echo "== Flotten-/DB-Status =="
