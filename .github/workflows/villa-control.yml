@@ -31,8 +31,9 @@ jobs:
         run: |
           MODE='${{ github.event.inputs.mode }}'
           IDS='${{ github.event.inputs.ids }}'
-          /tmp/sshcmd "sudo MODE='$MODE' IDS='$IDS' bash -s" << 'EOS'
+          /tmp/sshcmd "sudo bash -s '$MODE' '$IDS'" << 'EOS'
           set -e
+          MODE="$1"; IDS="$2"
           tee /tmp/villa-control.mjs >/dev/null << 'NODEJS'
           import { DatabaseSync } from 'node:sqlite';
           const [mode, idsArg] = process.argv.slice(2);

@@ -57,15 +57,17 @@ jobs:
           sleep 20
           systemctl is-active "$UNIT"
           echo "== 6) Health + Scheduler nach Neustart =="
-          curl -s -m 10 http://localhost:3000/api/health | head -c 300; echo
-          SCHED=$(curl -s -m 10 http://localhost:3000/api/scheduler || true)
-          echo "$SCHED" | head -c 400; echo
+          ss -tlnp | grep -i node || echo "(kein node-Port sichtbar)"
+          HEALTH=$(curl -s -m 15 https://hub.cybersarah-ki.com/api/health || curl -s -m 10 http://localhost:3000/api/health || true)
+          echo "Health: $(echo "$HEALTH" | head -c 300)"
+          SCHED=$(curl -s -m 15 https://hub.cybersarah-ki.com/api/scheduler || true)
+          echo "Scheduler: $(echo "$SCHED" | head -c 400)"
           echo "== 7) Stabilitaetstest: 7 Minuten Beobachtung =="
           sleep 420
           echo "-- Zeitpunkt T+7min --"
           systemctl is-active "$UNIT"
           T0=$(date +%s%N)
-          curl -s -m 10 http://localhost:3000/api/health > /tmp/h.json
+          curl -s -m 15 https://hub.cybersarah-ki.com/api/health > /tmp/h.json || curl -s -m 10 http://localhost:3000/api/health > /tmp/h.json || true
           T1=$(date +%s%N)
           echo "Health-Antwortzeit: $(( (T1-T0)/1000000 )) ms"
           python3 - <<'PYV'
