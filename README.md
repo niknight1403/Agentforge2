@@ -1,13 +1,5 @@
 # VillaForge
 
-## GitHub-Changelog-Agent 1.49.0
-
-- GitHub-Push-Webhooks werden mit `X-Hub-Signature-256` anhand des unveränderten Bodys geprüft und pro Delivery-ID idempotent verarbeitet.
-- Der Agent erstellt ohne kostenpflichtige Dienste einen strukturierten Changelog aus Commit-Nachrichten und postet ihn als Klartext via Telegram Bot API.
-- Telegram-Ausfälle geben den Event-Claim frei, damit GitHub erneut zustellen kann; fehlende Zugangsdaten werden im Gateway-Status klar angezeigt.
-- Einrichtung: `GITHUB_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN` und `TELEGRAM_CHAT_ID` setzen; einen GitHub-Webhook mit Content-Type JSON, Ereignis `push` und derselben Signaturphrase auf `/api/v1/webhooks/github` konfigurieren.
-- Versionen synchronisiert: Hub `1.49.0`, Android-Versioncode `46`.
-
 ## Villa-Steuerung 1.48.0
 
 - Drei Villen können standardmäßig parallel laufen. Bei höherer Auslastung werden weitere Starts sichtbar und fair vorgemerkt.
