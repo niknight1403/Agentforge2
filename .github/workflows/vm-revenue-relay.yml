@@ -1,0 +1,67 @@
+name: VM Revenue-Relay (Nginx)
+on:
+  workflow_dispatch: {}
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Scan-Relay im Hub-Nginx einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          HETZNER_IP: ${{ vars.HETZNER_PUBLIC_IP }}
+        run: |
+          set -euo pipefail
+          test -n "$HETZNER_IP"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<EOS
+          set -euo pipefail
+          F=/etc/nginx/sites-enabled/villaforge-hub
+          grep -q "revenue-api" "\$F" && { echo "Relay bereits vorhanden."; exit 0; }
+          cp "\$F" "\$F.bak-sprint372"
+          python3 - "\$F" "\$HETZNER_IP" <<'PY'
+          import sys
+          path, ip = sys.argv[1], sys.argv[2]
+          s = open(path).read()
+          block = f'''    # Sprint 372: Revenue-OS-Scan-Relay — nur die zwei key-geschuetzten Pfade.
+          location = /revenue-api/api/hara/scan {{
+              proxy_pass http://{ip}:18741/api/hara/scan;
+              proxy_http_version 1.1;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_read_timeout 120s;
+          }}
+          location = /revenue-api/api/expansion/scan {{
+              proxy_pass http://{ip}:18741/api/expansion/scan;
+              proxy_http_version 1.1;
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_read_timeout 120s;
+          }}
+          '''
+          # Vor den bestehenden location-Bloecken einfuegen
+          idx = s.find("    location /")
+          assert idx > 0, "location-Block nicht gefunden"
+          s = s[:idx] + block + s[idx:]
+          open(path, "w").write(s)
+          print("Relay-Block eingefuegt.")
+          PY
+          nginx -t
+          systemctl reload nginx
+          echo "nginx neu geladen."
+          echo == Relay-Test (403 erwartet: Key fehlt) ==
+          curl -s -o /tmp/relaytest -w "HTTP=%{http_code}\n" -m 40 -X POST "https://hub.cybersarah-ki.com/revenue-api/api/hara/scan" -H "Content-Type: application/json" -d "{}"
+          head -c 200 /tmp/relaytest; echo
+          echo == Hub weiter erreichbar? ==
+          curl -s -o /dev/null -w "Hub-HTTP=%{http_code}\n" -m 20 https://hub.cybersarah-ki.com/api/health || true
+          echo == Ollama-Port ==
+          ss -tlnp | grep -E ":(11434)" || echo kein-11434
+          echo == Hub-Health lokal ==
+          curl -s -m 10 http://127.0.0.1:12000/api/health | head -c 150; echo
+          echo == Syslog-Delta (20s) ==
+          S1=\$(stat -c %s /var/log/syslog); sleep 20; S2=\$(stat -c %s /var/log/syslog); echo "Delta: \$(( S2 - S1 )) Bytes"
+          echo == Platz ==
+          df -h / | tail -1
+          EOS
