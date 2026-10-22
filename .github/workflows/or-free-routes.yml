@@ -21,9 +21,21 @@ jobs:
           for f in /opt/ccc/repo/.env /opt/ccc/.env /opt/ccc/repo/.env.production; do
             [ -f "$f" ] && grep -q "OPENROUTER_API_KEY=" "$f" && ENVF="$f" && break
           done
-          if [ -z "$ENVF" ]; then echo "KEINE_CCC_ENV_GEFUNDEN"; exit 0; fi
+          if [ -z "$ENVF" ]; then
+            echo "== Fallback: Unit-Datei der CCC-Instanz =="
+            systemctl cat cybersarah-ccc 2>/dev/null | grep -oE "OPENROUTER_API_KEY[_0-9]*=[^ \"']+" > /tmp/unit_or.env
+            if [ -s /tmp/unit_or.env ]; then
+              mkdir -p /etc/systemd/system/villaforge-hub.service.d
+              { echo "[Service]"; while IFS= read -r line; do echo "Environment=\"$line\""; done < /tmp/unit_or.env; } > /etc/systemd/system/villaforge-hub.service.d/openrouter.conf
+              echo "Keys aus Unit: $(cut -d= -f1 /tmp/unit_or.env | tr '\n' ' ')"
+              systemctl daemon-reload
+            else
+              echo "KEINE_OR_KEYS_GEFUNDEN"; exit 0
+            fi
+          else
           echo "ENV-Datei: $ENVF"
           grep -cE "^OPENROUTER_API_KEY" "$ENVF"
+          fi
           echo "== Hub-Unit-Dropin mit OR-Keys =="
           mkdir -p /etc/systemd/system/villaforge-hub.service.d
           python3 - "$ENVF" <<'PYU'
