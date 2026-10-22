@@ -10,77 +10,65 @@ jobs:
         id: create
         env:
           HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
-          CAX_SSH_KEY: ${{ secrets.CAX_SSH_KEY }}
         run: |
           set -euo pipefail
           echo "== Bestand pruefen =="
-          curl -s -m 30 -H "Authorization: Bearer $HETZNER_API_TOKEN" "https://api.hetzner.cloud/v1/servers" > /tmp/servers.json
-          python3 - <<'PY' > /tmp/inventory.txt
-          import json
-          d = json.load(open('/tmp/servers.json'))
-          for s in d.get('servers', []):
-              typ = s.get('server_type', {})
-              tname = typ.get('name', '?') if isinstance(typ, dict) else str(typ)
-              dc = s.get('datacenter', {}) or {}
-              loc = (dc.get('location', {}) or {}).get('name', '?') if isinstance(dc, dict) else '?'
-              print(s['name'], tname, s['public_net']['ipv4']['ip'], loc, s['status'])
+          python3 - <<'PY'
+          import json, os, urllib.request
+          tok = os.environ["HETZNER_API_TOKEN"]
+          def get(url):
+              req = urllib.request.Request(url, headers={"Authorization": "Bearer " + tok})
+              return json.load(urllib.request.urlopen(req, timeout=30))
+          servers = get("https://api.hetzner.cloud/v1/servers").get("servers", [])
+          lines, loc, c31ip, fleetid = [], "", "", ""
+          for s in servers:
+              st = s.get("server_type", {})
+              tname = st.get("name", "?") if isinstance(st, dict) else "?"
+              if not fleetid and s["name"].startswith("ollama-cax"):
+                  fleetid = str(s["id"])
+              if "cax31" in s["name"].lower():
+                  c31ip = s["public_net"]["ipv4"]["ip"]
+              lines.append("%s %s %s %s %s" % (s["name"], tname, s["public_net"]["ipv4"]["ip"], "?", s["status"]))
+          if fleetid:
+              det = get("https://api.hetzner.cloud/v1/servers/" + fleetid)
+              loc = ((det.get("server", {}).get("datacenter") or {}).get("location") or {}).get("name", "")
+          open("/tmp/inventory.txt", "w").write("\n".join(lines) + "\n")
+          open("/tmp/loc.txt", "w").write(loc or "")
+          open("/tmp/c31ip.txt", "w").write(c31ip or "")
+          open("/tmp/fleetid.txt", "w").write(fleetid or "")
           PY
           cat /tmp/inventory.txt
-          LOC=$(grep -m1 "^ollama-cax21 " /tmp/inventory.txt | awk '{print $4}')
-          if [ -z "$LOC" ] || [ "$LOC" = "?" ]; then
-            CXID=$(python3 -c "
-          import json
-          d=json.load(open('/tmp/servers.json'))
-          for s in d.get('servers',[]):
-              if s['name'].startswith('ollama-cax'):
-                  print(s['id']); break
-          ")
-            if [ -n "$CXID" ]; then
-              LOC=$(curl -s -m 20 -H "Authorization: Bearer $HETZNER_API_TOKEN" "https://api.hetzner.cloud/v1/servers/$CXID" | python3 -c "
-          import json,sys
-          d=json.load(sys.stdin).get('server',{})
-          print(((d.get('datacenter') or {}).get('location') or {}).get('name',''))" 2>/dev/null || echo "")
-            fi
-          fi
-          if [ -z "$LOC" ] || [ "$LOC" = "?" ]; then LOC="fsn1"; fi
+          LOC=$(cat /tmp/loc.txt)
+          if [ -z "$LOC" ]; then LOC="fsn1"; fi
           echo "Standort der Flotte: $LOC"
-          C31IP=$(grep -i cax31 /tmp/inventory.txt | awk '{print $3}' | head -1 || true)
-          if [ -n "$C31IP" ]; then
-            echo "CAX31 existiert bereits: $C31IP"
-          else
-            echo "== SSH-Key ableiten (aus CAX_SSH_KEY) =="
-            mkdir -p ~/.ssh && printf '%s\n' "$CAX_SSH_KEY" > ~/.ssh/cax_key && chmod 600 ~/.ssh/cax_key
-            PUBKEY=$(ssh-keygen -y -f ~/.ssh/cax_key)
-            KEY_ID=$(curl -s -m 30 -H "Authorization: Bearer $HETZNER_API_TOKEN" "https://api.hetzner.cloud/v1/ssh_keys" | python3 -c "
-            import json,sys
-            ks=json.load(sys.stdin).get('ssh_keys',[])
-            print(ks[0]['id'] if ks else '')")
-            if [ -z "$KEY_ID" ]; then
-              KEY_ID=$(printf '%s' "$PUBKEY" | python3 -c "import json,sys;print(json.dumps({'name':'fleet-key','public_key':sys.stdin.read().strip()}))" \
-                | xargs -0 -I{} curl -s -m 30 -X POST -H "Authorization: Bearer $HETZNER_API_TOKEN" -H "Content-Type: application/json" \
-                  "https://api.hetzner.cloud/v1/ssh_keys" -d @- \
-                | python3 -c "import json,sys;print(json.load(sys.stdin).get('ssh_key',{}).get('id',''))")
-              echo "SSH-Key registriert: $KEY_ID"
-            else
-              echo "SSH-Key vorhanden: $KEY_ID"
-            fi
+          C31IP=$(cat /tmp/c31ip.txt)
+          if [ -z "$C31IP" ]; then
             echo "== Server ollama-cax31 (Typ cax31, Standort $LOC) anlegen =="
-            RESP=$(python3 -c "
-            import json
-            print(json.dumps({'name':'ollama-cax31','server_type':'cax31','image':'ubuntu-24.04','ssh_keys':[int('$KEY_ID')],'location':'$LOC'}))" \
-              | curl -s -m 60 -X POST -H "Authorization: Bearer $HETZNER_API_TOKEN" -H "Content-Type: application/json" \
-                "https://api.hetzner.cloud/v1/servers" -d @-)
-            echo "$RESP" > /tmp/create.json
             python3 - <<'PY'
-            import json
-            d = json.load(open('/tmp/create.json'))
-            srv, act, err = d.get('server') or {}, d.get('action') or {}, d.get('error') or {}
-            if err: raise SystemExit(f"FEHLER: Hetzner-API: {err.get('message')}")
-            print("SRV_ID=%s" % srv.get('id'), "ACTION=%s" % act.get('id'))
-            open('/tmp/ids.txt','w').write(f"{srv.get('id')} {act.get('id')}")
+            import json, os, urllib.request
+            tok = os.environ["HETZNER_API_TOKEN"]
+            def api(url, method="GET", body=None):
+                data = json.dumps(body).encode() if body is not None else None
+                req = urllib.request.Request(url, data=data, method=method, headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+                return json.load(urllib.request.urlopen(req, timeout=60))
+            keys = api("https://api.hetzner.cloud/v1/ssh_keys").get("ssh_keys", [])
+            key_id = keys[0]["id"] if keys else None
+            loc = open("/tmp/loc.txt").read().strip() or "fsn1"
+            body = {"name": "ollama-cax31", "server_type": "cax31", "image": "ubuntu-24.04", "location": loc}
+            if key_id:
+                body["ssh_keys"] = [key_id]
+                print("SSH-Key aus Projekt:", key_id)
+            resp = api("https://api.hetzner.cloud/v1/servers", "POST", body)
+            srv, act = resp.get("server") or {}, resp.get("action") or {}
+            open("/tmp/create.txt", "w").write(json.dumps(resp))
+            print("Server-ID:", srv.get("id"), "Action:", act.get("id"))
             PY
-            read SRVID ACTION < /tmp/ids.txt
-            echo "Server-ID $SRVID, Action $ACTION"
+            SRVID=$(python3 -c "import json;print((json.load(open('/tmp/create.txt')).get('server') or {}).get('id',''))")
+            ACTION=$(python3 -c "import json;print((json.load(open('/tmp/create.txt')).get('action') or {}).get('id',''))")
+            if [ -z "$SRVID" ]; then
+              python3 -c "import json;d=json.load(open('/tmp/create.txt'));print('FEHLER:', (d.get('error') or {}).get('message', d))"
+              exit 1
+            fi
             for i in $(seq 1 40); do
               ST=$(curl -s -m 20 -H "Authorization: Bearer $HETZNER_API_TOKEN" "https://api.hetzner.cloud/v1/actions/$ACTION" | python3 -c "import json,sys;print(json.load(sys.stdin).get('action',{}).get('status',''))")
               [ "$ST" = "finished" ] && break
@@ -97,8 +85,10 @@ jobs:
               [ -n "$C31IP" ] && break
               sleep 6
             done
-            [ -z "$C31IP" ] && { echo "FEHLER: keine IPv4 nach Timeout"; exit 1; }
+            if [ -z "$C31IP" ]; then echo "FEHLER: keine IPv4 nach Timeout"; exit 1; fi
             echo "CAX31 aktiv: $C31IP"
+          else
+            echo "CAX31 existiert bereits: $C31IP"
           fi
           echo "cax31=$C31IP" >> "$GITHUB_OUTPUT"
       - name: Auf SSH warten, dann Specs pruefen
@@ -114,7 +104,7 @@ jobs:
             if ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 root@$SIP "echo BOOT_OK" 2>/dev/null; then OK=1; break; fi
             sleep 10
           done
-          [ "$OK" = "1" ] || { echo "FEHLER: SSH nicht erreichbar"; exit 1; }
+          if [ "$OK" != "1" ]; then echo "FEHLER: SSH nicht erreichbar"; exit 1; fi
           ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 root@$SIP \
             "echo '== Specs =='; nproc; free -h | head -2; uname -m; df -h / | tail -1"
       - name: Ollama installieren und staerkstes STABILES Modell bestimmen
@@ -129,13 +119,12 @@ jobs:
           $SSH "command -v ollama >/dev/null || curl -fsSL https://ollama.com/install.sh | sh" 2>&1 | tail -2
           $SSH "mkdir -p /etc/systemd/system/ollama.service.d && printf '[Service]\nEnvironment=\"OLLAMA_HOST=0.0.0.0:11434\"\n' > /etc/systemd/system/ollama.service.d/host.conf && systemctl daemon-reload && systemctl restart ollama && sleep 3 && systemctl is-active ollama"
           RAM_MB=$($SSH "free -m | awk '/Mem:/{print \$2}'")
-          echo "Verfuegbaren RAM: ${RAM_MB} MB"
-          # 32B q4 benoetigt ~21 GB inkl. Kontext; Reserve >= 6 GB fuer OS/Stabilitaet
+          echo "Verfuegbarer RAM: ${RAM_MB} MB"
           if [ "$RAM_MB" -ge 30000 ]; then
             echo "== Versuch 1: qwen2.5-coder:32b (staerkstes) =="
             $SSH "ollama pull qwen2.5-coder:32b 2>&1 | tail -2"
             $SSH "ollama list"
-            echo "== Stabilitaetstest 32b (Antwort muss kommen, RAM-Reserve geprueft) =="
+            echo "== Stabilitaetstest 32b =="
             TEST=$($SSH "curl -s -m 300 http://127.0.0.1:11434/api/generate -d '{\"model\":\"qwen2.5-coder:32b\",\"prompt\":\"Antworte mit einem Wort: Hallo\",\"stream\":false}' | head -c 400" || true)
             FREEMEM=$($SSH "free -m | awk '/Mem:/{print \$7}'")
             echo "Testantwort: $(echo "$TEST" | head -c 120)"
@@ -145,7 +134,7 @@ jobs:
               echo "model=qwen2.5-coder:32b" >> "$GITHUB_OUTPUT"
               echo "label=CAX31 (32B)" >> "$GITHUB_OUTPUT"
             else
-              echo "32b nicht stabil (Antwort/Reserve unzureichend) — Fallback auf 14b"
+              echo "32b nicht stabil — Fallback auf 14b"
               $SSH "ollama rm qwen2.5-coder:32b 2>/dev/null || true"
               echo "model=qwen2.5-coder:14b" >> "$GITHUB_OUTPUT"
               echo "label=CAX31 (14B)" >> "$GITHUB_OUTPUT"
@@ -155,8 +144,7 @@ jobs:
             echo "model=qwen2.5-coder:14b" >> "$GITHUB_OUTPUT"
             echo "label=CAX31 (14B)" >> "$GITHUB_OUTPUT"
           fi
-          MODEL=$(grep -oP '(?<=^model=).*' "$GITHUB_OUTPUT" || true)
-          MODEL=$(cat "$GITHUB_OUTPUT" | sed -n 's/^model=//p')
+          MODEL=$(sed -n 's/^model=//p' "$GITHUB_OUTPUT")
           if [ "$MODEL" = "qwen2.5-coder:14b" ]; then
             echo "== Modell ziehen: qwen2.5-coder:14b =="
             $SSH "ollama pull qwen2.5-coder:14b 2>&1 | tail -2"
