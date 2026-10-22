@@ -1,0 +1,36 @@
+name: Hub-Route-Integration (Recherche)
+on:
+  workflow_dispatch: {}
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Routes-Tabelle und Hub-Verifikation erkunden
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Routes-Tabelle =="
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          cols = [d[1] for d in cur.execute("PRAGMA table_info(routes)").fetchall()]
+          print("Spalten:", cols)
+          for row in cur.execute("SELECT * FROM routes LIMIT 30").fetchall():
+              print("  ", str(row)[:260])
+          PYV
+          echo "== Route-Code im Hub =="
+          grep -n "eligibleRoutes" /opt/villaforge/server/server.mjs 2>/dev/null | head -4
+          grep -rhoE "/api/[a-z0-9/_:-]*(route|llm|verify)[a-z0-9/_:-]*" /opt/villaforge/server/server.mjs /opt/villaforge/server/*.mjs 2>/dev/null | sort -u | head -12
+          echo "== CAX21-1 Inferenz-Speed (7B) =="
+          curl -s -m 90 http://2.31.45.241:11434/api/generate -d '{"model":"qwen2.5-coder:7b","prompt":"Schreibe eine add-Funktion in Python","stream":false}' -o /tmp/gen.json
+          python3 -c "import json,re; d=json.load(open('/tmp/gen.json')); t=d.get('total_duration',0)/1e9; e=d.get('eval_count',0); print('Antwort-Zeichen:', len(d.get('response','')), '| Speed:', round(e/t,1) if t>0 else '?', 'tok/s')"
+          rm -f /tmp/gen.json
+          EOS
