@@ -1,13 +1,12 @@
 # VillaForge
 
-## Neu in 1.50.0 — GitHub-Changelog-Agent
+## GitHub-Changelog-Agent 1.50.0
 
 - GitHub-Push-Webhooks werden mit `X-Hub-Signature-256` anhand des unveränderten Bodys geprüft und pro Delivery-ID idempotent verarbeitet.
 - Der Agent erstellt ohne kostenpflichtige Dienste einen strukturierten Changelog aus Commit-Nachrichten und postet ihn als Klartext via Telegram Bot API.
 - Telegram-Ausfälle geben den Event-Claim frei, damit GitHub erneut zustellen kann; fehlende Zugangsdaten werden im Gateway-Status klar angezeigt.
-- Einrichtung: `GITHUB_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN` und `TELEGRAM_CHAT_ID` setzen; GitHub auf JSON, Event `push` und `/api/v1/webhooks/github` einstellen.
+- Einrichtung: `GITHUB_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN` und `TELEGRAM_CHAT_ID` setzen; einen GitHub-Webhook mit Content-Type JSON, Ereignis `push` und derselben Signaturphrase auf `/api/v1/webhooks/github` konfigurieren.
 - Versionen synchronisiert: Hub `1.50.0`, Android-Versioncode `47`.
-
 
 ## Villa-Steuerung 1.48.0
 
@@ -259,6 +258,32 @@ node server/server.mjs --check  # Konfiguration trocken prüfen, ohne Port zu be
 Ungültige Konfiguration (z. B. `PORT=abc`) bricht mit klarer Meldung und Exit 1 ab.
 
 Danach im Browser öffnen: `http://localhost:12000/`
+
+### Optional: OpenHands Agent Canvas
+
+OpenHands Agent Canvas kann separat neben dem VillaForge-Hub laufen. Die Integration
+ändert oder ersetzt den VillaForge-Master-Agenten nicht: Im Konto-Bereich erscheint
+ein Link, sobald `OPENHANDS_CANVAS_URL` in der Hub-Umgebung gesetzt ist.
+
+Für einen lokalen Start mit Docker:
+
+```bash
+cp .env.openhands.example .env.openhands
+mkdir -p ./openhands-projects ./.openhands
+# LOCAL_BACKEND_API_KEY in .env.openhands durch ein starkes Zufallsgeheimnis ersetzen.
+docker compose --env-file .env.openhands -f docker-compose.openhands.yml up -d
+```
+
+Der Compose-Dienst bindet standardmäßig nur an `127.0.0.1:8000` und mountet nur
+`openhands-projects/` als Arbeitsbereich. Das OpenHands-Canvas ist damit auf
+demselben Rechner erreichbar unter `http://127.0.0.1:8000/canvas`. Für den Zugriff
+von einem anderen Gerät muss ein HTTPS-Reverse-Proxy eingerichtet und die dadurch
+erreichbare URL als `OPENHANDS_CANVAS_URL` in der VillaForge-Hub-Umgebung gesetzt
+werden. Docker-Port oder Canvas nicht ungeschützt im öffentlichen Internet freigeben.
+
+Die OpenHands-Instanz besitzt ihren eigenen Agent Server, eigene Konfiguration und
+eigene Automationen. Gespräche und Ausführungen werden nicht automatisch in
+VillaForge übertragen. Das Canvas kann bei Bedarf eigene Agent-Backends verbinden.
 
 - Health: `GET /api/health`
 - Oberfläche: `/`

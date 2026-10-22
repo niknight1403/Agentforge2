@@ -91,6 +91,33 @@ async function checkHealth() {
   }
 }
 
+async function loadOpenHandsCanvas() {
+  const state = $('#openhandsState');
+  const link = $('#openhandsLink');
+  const help = $('#openhandsHelp');
+  if (!state || !link || !help) return;
+  try {
+    const integration = await api('/api/integrations/openhands');
+    if (integration.enabled && /^https?:$/.test(new URL(integration.url).protocol)) {
+      state.textContent = 'URL konfiguriert';
+      link.href = integration.url;
+      link.hidden = false;
+      help.textContent = 'Canvas wird separat betrieben. Die URL wird beim Öffnen in einem neuen Tab geladen.';
+    } else if (integration.state === 'invalid_configuration') {
+      state.textContent = 'Konfiguration prüfen';
+      help.textContent = 'OPENHANDS_CANVAS_URL ist ungültig. Erlaubt sind HTTP- oder HTTPS-URLs ohne Zugangsdaten.';
+    } else {
+      state.textContent = 'Nicht eingerichtet';
+      link.hidden = true;
+      help.textContent = 'Zum Aktivieren OPENHANDS_CANVAS_URL im Hub konfigurieren.';
+    }
+  } catch {
+    state.textContent = 'Status nicht verfügbar';
+    link.hidden = true;
+    help.textContent = 'Canvas-Status konnte nicht geladen werden.';
+  }
+}
+
 /* ---------- Villen ---------- */
 const statusLabel = (status) => ({ RUNNING: 'läuft', COMPLETED: 'fertig', PLANNING: 'plant', PAUSED: 'pausiert', STOPPING: 'stoppt', FAILED: 'Fehler' })[status] || status || 'bereit';
 
@@ -402,5 +429,5 @@ $('#addSecretBtn').addEventListener('click', addSecret);
 document.querySelectorAll('.tab-chip').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#detailPanel').hidden) closeWorkspace(); });
 
-function boot() { checkSession(); checkHealth(); loadVillas(); loadRoutes(); loadSecrets(); connectEvents(); }
+function boot() { checkSession(); checkHealth(); loadOpenHandsCanvas(); loadVillas(); loadRoutes(); loadSecrets(); connectEvents(); }
 boot(); setInterval(checkHealth, 20000);
