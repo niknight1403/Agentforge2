@@ -10,86 +10,77 @@ jobs:
         id: create
         env:
           HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
+          CAX_SSH_KEY: ${{ secrets.CAX_SSH_KEY }}
         run: |
           set -euo pipefail
-          echo "== Bestand pruefen =="
-          python3 - <<'PY'
-          import json, os, urllib.request
+          mkdir -p ~/.ssh && printf '%s\n' "$CAX_SSH_KEY" > ~/.ssh/cax_key && chmod 600 ~/.ssh/cax_key
+          PUBKEY=$(ssh-keygen -y -f ~/.ssh/cax_key 2>/dev/null || echo "")
+          export PUBKEY
+          cat > /tmp/cax31_create.py <<'PYEOF'
+          import json, os, time, urllib.request
           tok = os.environ["HETZNER_API_TOKEN"]
-          def get(url):
-              req = urllib.request.Request(url, headers={"Authorization": "Bearer " + tok})
-              return json.load(urllib.request.urlopen(req, timeout=30))
-          servers = get("https://api.hetzner.cloud/v1/servers").get("servers", [])
-          lines, loc, c31ip, fleetid = [], "", "", ""
+          def api(url, method="GET", body=None, timeout=60):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(url, data=data, method=method,
+                  headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+              return json.load(urllib.request.urlopen(req, timeout=timeout))
+          servers = api("https://api.hetzner.cloud/v1/servers").get("servers", [])
+          loc, c31 = "", None
           for s in servers:
               st = s.get("server_type", {})
               tname = st.get("name", "?") if isinstance(st, dict) else "?"
-              if not fleetid and s["name"].startswith("ollama-cax"):
-                  fleetid = str(s["id"])
+              print("%-16s %-6s %-15s %s" % (s["name"], tname, s["public_net"]["ipv4"]["ip"], s["status"]))
+              if s["name"].startswith("ollama-cax") and not loc:
+                  det = api("https://api.hetzner.cloud/v1/servers/" + str(s["id"]))
+                  loc = ((det.get("server", {}).get("datacenter") or {}).get("location") or {}).get("name", "")
               if "cax31" in s["name"].lower():
-                  c31ip = s["public_net"]["ipv4"]["ip"]
-              lines.append("%s %s %s %s %s" % (s["name"], tname, s["public_net"]["ipv4"]["ip"], "?", s["status"]))
-          if fleetid:
-              det = get("https://api.hetzner.cloud/v1/servers/" + fleetid)
-              loc = ((det.get("server", {}).get("datacenter") or {}).get("location") or {}).get("name", "")
-          open("/tmp/inventory.txt", "w").write("\n".join(lines) + "\n")
-          open("/tmp/loc.txt", "w").write(loc or "")
-          open("/tmp/c31ip.txt", "w").write(c31ip or "")
-          open("/tmp/fleetid.txt", "w").write(fleetid or "")
-          PY
-          cat /tmp/inventory.txt
-          LOC=$(cat /tmp/loc.txt)
-          if [ -z "$LOC" ]; then LOC="fsn1"; fi
-          echo "Standort der Flotte: $LOC"
+                  c31 = s["public_net"]["ipv4"]["ip"]
+          if not loc:
+              loc = "fsn1"
+          print("Standort der Flotte:", loc)
+          if c31:
+              print("CAX31 existiert bereits:", c31)
+          else:
+              keys = api("https://api.hetzner.cloud/v1/ssh_keys").get("ssh_keys", [])
+              if keys:
+                  key_id = keys[0]["id"]
+                  print("SSH-Key aus Projekt:", key_id)
+              else:
+                  pub = os.environ.get("PUBKEY", "").strip()
+                  if not pub:
+                      raise SystemExit("FEHLER: kein SSH-Key im Projekt und CAX_SSH_KEY nicht ableitbar")
+                  key_id = api("https://api.hetzner.cloud/v1/ssh_keys", "POST",
+                               {"name": "fleet-key", "public_key": pub})["ssh_key"]["id"]
+                  print("SSH-Key registriert:", key_id)
+              body = {"name": "ollama-cax31", "server_type": "cax31", "image": "ubuntu-24.04",
+                      "ssh_keys": [key_id], "location": loc}
+              resp = api("https://api.hetzner.cloud/v1/servers", "POST", body)
+              srv, act = resp.get("server") or {}, resp.get("action") or {}
+              if not srv:
+                  err = resp.get("error") or {}
+                  raise SystemExit("FEHLER Hetzner-API: %s" % err.get("message", resp))
+              print("Server-ID:", srv["id"], "Action:", act.get("id"))
+              for _ in range(60):
+                  st = api("https://api.hetzner.cloud/v1/actions/" + str(act["id"]), timeout=20).get("action", {}).get("status")
+                  if st == "finished":
+                      break
+                  if st == "error":
+                      raise SystemExit("FEHLER: Action-Status error")
+                  time.sleep(5)
+              for _ in range(30):
+                  d = api("https://api.hetzner.cloud/v1/servers/" + str(srv["id"]), timeout=20).get("server", {})
+                  ip = (d.get("public_net", {}) or {}).get("ipv4", {}).get("ip", "")
+                  if ip and d.get("status") == "running":
+                      c31 = ip
+                      break
+                  time.sleep(6)
+              if not c31:
+                  raise SystemExit("FEHLER: keine IPv4 nach Timeout")
+              print("CAX31 aktiv:", c31)
+          open("/tmp/c31ip.txt", "w").write(c31)
+          PYEOF
+          python3 /tmp/cax31_create.py
           C31IP=$(cat /tmp/c31ip.txt)
-          if [ -z "$C31IP" ]; then
-            echo "== Server ollama-cax31 (Typ cax31, Standort $LOC) anlegen =="
-            python3 - <<'PY'
-            import json, os, urllib.request
-            tok = os.environ["HETZNER_API_TOKEN"]
-            def api(url, method="GET", body=None):
-                data = json.dumps(body).encode() if body is not None else None
-                req = urllib.request.Request(url, data=data, method=method, headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
-                return json.load(urllib.request.urlopen(req, timeout=60))
-            keys = api("https://api.hetzner.cloud/v1/ssh_keys").get("ssh_keys", [])
-            key_id = keys[0]["id"] if keys else None
-            loc = open("/tmp/loc.txt").read().strip() or "fsn1"
-            body = {"name": "ollama-cax31", "server_type": "cax31", "image": "ubuntu-24.04", "location": loc}
-            if key_id:
-                body["ssh_keys"] = [key_id]
-                print("SSH-Key aus Projekt:", key_id)
-            resp = api("https://api.hetzner.cloud/v1/servers", "POST", body)
-            srv, act = resp.get("server") or {}, resp.get("action") or {}
-            open("/tmp/create.txt", "w").write(json.dumps(resp))
-            print("Server-ID:", srv.get("id"), "Action:", act.get("id"))
-            PY
-            SRVID=$(python3 -c "import json;print((json.load(open('/tmp/create.txt')).get('server') or {}).get('id',''))")
-            ACTION=$(python3 -c "import json;print((json.load(open('/tmp/create.txt')).get('action') or {}).get('id',''))")
-            if [ -z "$SRVID" ]; then
-              python3 -c "import json;d=json.load(open('/tmp/create.txt'));print('FEHLER:', (d.get('error') or {}).get('message', d))"
-              exit 1
-            fi
-            for i in $(seq 1 40); do
-              ST=$(curl -s -m 20 -H "Authorization: Bearer $HETZNER_API_TOKEN" "https://api.hetzner.cloud/v1/actions/$ACTION" | python3 -c "import json,sys;print(json.load(sys.stdin).get('action',{}).get('status',''))")
-              [ "$ST" = "finished" ] && break
-              [ "$ST" = "error" ] && { echo "FEHLER beim Anlegen (Action-Status error)"; exit 1; }
-              sleep 5
-            done
-            echo "Server erstellt, warte auf public IPv4..."
-            for i in $(seq 1 30); do
-              C31IP=$(curl -s -m 20 -H "Authorization: Bearer $HETZNER_API_TOKEN" "https://api.hetzner.cloud/v1/servers/$SRVID" | python3 -c "
-              import json,sys
-              d=json.load(sys.stdin).get('server',{})
-              ip=(d.get('public_net',{}) or {}).get('ipv4',{}).get('ip','')
-              print(ip if ip and d.get('status')=='running' else '')")
-              [ -n "$C31IP" ] && break
-              sleep 6
-            done
-            if [ -z "$C31IP" ]; then echo "FEHLER: keine IPv4 nach Timeout"; exit 1; fi
-            echo "CAX31 aktiv: $C31IP"
-          else
-            echo "CAX31 existiert bereits: $C31IP"
-          fi
           echo "cax31=$C31IP" >> "$GITHUB_OUTPUT"
       - name: Auf SSH warten, dann Specs pruefen
         env:
