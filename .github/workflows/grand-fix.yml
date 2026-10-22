@@ -1,0 +1,80 @@
+name: Grand-Fix (Routen + rsyslog-Bremse + Spam-Diagnose)
+on:
+  workflow_dispatch: {}
+jobs:
+  grandfix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Hub stoppen, Routen eintragen, Syslog daemmen, verifizieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Spam-Diagnose (Detail) =="
+          tail -c 400000 /var/log/syslog | grep -oE "[A-Za-z0-9._-]+\[[0-9]+\]" | sort | uniq -c | sort -rn | head -3
+          systemctl show cybersarah-ccc -p NRestarts -p ExecMainStartTimestamp
+          echo "-- Fehler-Snapshot (40 Zeilen) --"
+          grep "node\[" /var/log/syslog | tail -40 | cut -c60-420 | head -40
+          echo "== Hub stoppen =="
+          systemctl stop villaforge-hub 2>/dev/null || systemctl stop villaforge 2>/dev/null || true
+          sleep 3
+          echo "== Routen eintragen =="
+          python3 - <<'PYV'
+          import sqlite3, time
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db", timeout=30)
+          cur = con.cursor()
+          row = cur.execute("SELECT provider, priority FROM routes WHERE base_url LIKE '%11434%' ORDER BY priority LIMIT 1").fetchone()
+          prov = row[0] if row else "ollama"
+          basep = (row[1] if row else 5) + 1
+          nodes = [
+              ("Cascade: Ollama CAX11 (3B)", "http://2.28.12.63:11434", "qwen2.5-coder:3b", basep),
+              ("Cascade: Ollama CAX21-1 (7B)", "http://2.31.45.241:11434", "qwen2.5-coder:7b", basep + 1),
+              ("Cascade: Ollama CAX21-2 (7B)", "http://2.31.64.65:11434", "qwen2.5-coder:7b", basep + 2),
+          ]
+          for name, url, model, prio in nodes:
+              ex = cur.execute("SELECT id FROM routes WHERE base_url=?", (url,)).fetchone()
+              if ex:
+                  cur.execute("UPDATE routes SET model=?, enabled=1, status='IDLE', dead=0, cooldown_until=0 WHERE id=?", (model, ex[0]))
+                  print("aktualisiert:", name)
+              else:
+                  cur.execute("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used, cooldown_until, lat_ms, tokens, dead) VALUES (?,?,?,?,?,1,1,?,0.2,'IDLE',0,0,0,0,0,0,0)", (name, prov, url, model, "", prio))
+                  print("eingefuegt:", name, "Prioritaet", prio)
+          cur.execute("UPDATE routes SET enabled=0 WHERE status='ERROR' AND fail > 1000")
+          print("Tote-Routen deaktiviert:", cur.rowcount)
+          con.commit()
+          for r in cur.execute("SELECT name, priority, enabled, status FROM routes WHERE enabled=1 ORDER BY priority").fetchall():
+              print("  ", r)
+          con.close()
+          PYV
+          echo "== rsyslog imjournal-Ratelimit =="
+          grep -n "imjournal" /etc/rsyslog.conf /etc/rsyslog.d/*.conf 2>/dev/null | head -3
+          sed -i 's|module(load="imjournal")|module(load="imjournal" Ratelimit.Interval="60" Ratelimit.Burst="300")|' /etc/rsyslog.conf 2>/dev/null
+          grep -n "imjournal" /etc/rsyslog.conf | head -2
+          systemctl restart rsyslog
+          sleep 2
+          systemctl is-active rsyslog
+          echo "== Hub starten =="
+          systemctl start villaforge-hub 2>/dev/null || systemctl start villaforge 2>/dev/null || true
+          sleep 12
+          systemctl is-active villaforge-hub 2>/dev/null || systemctl is-active villaforge 2>/dev/null || true
+          echo "== Verifikation =="
+          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
+          curl -s -m 10 -X POST -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/routeforge/tick | head -c 150; echo
+          sleep 8
+          curl -s -m 10 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); l=d.get('llm',{}); print('LLM:', l.get('eligibleRoutes'), '/', l.get('configuredRoutes'), 'state:', l.get('state'))"
+          curl -s -m 10 -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/scheduler | head -c 220; echo
+          echo "== Syslog-Rate nach Bremse (30s) =="
+          S1=$(stat -c %s /var/log/syslog); sleep 30; S2=$(stat -c %s /var/log/syslog); echo "Delta: $(( S2 - S1 )) Bytes"
+          echo "== Tabellen in ccc-DB und revenue_os =="
+          PSQL="sudo -u postgres psql -tAc"
+          $PSQL -d cybersarah -c "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" | head -20 | tr '\n' ' '
+          echo
+          $PSQL -d revenue_os -c "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" 2>/dev/null | head -20 | tr '\n' ' '
+          echo
+          EOS
