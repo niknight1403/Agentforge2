@@ -1,13 +1,12 @@
 # VillaForge
 
-## Neu in 1.50.0 — GitHub-Changelog-Agent
+## GitHub-Changelog-Agent 1.50.0
 
 - GitHub-Push-Webhooks werden mit `X-Hub-Signature-256` anhand des unveränderten Bodys geprüft und pro Delivery-ID idempotent verarbeitet.
 - Der Agent erstellt ohne kostenpflichtige Dienste einen strukturierten Changelog aus Commit-Nachrichten und postet ihn als Klartext via Telegram Bot API.
 - Telegram-Ausfälle geben den Event-Claim frei, damit GitHub erneut zustellen kann; fehlende Zugangsdaten werden im Gateway-Status klar angezeigt.
-- Einrichtung: `GITHUB_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN` und `TELEGRAM_CHAT_ID` setzen; GitHub auf JSON, Event `push` und `/api/v1/webhooks/github` einstellen.
+- Einrichtung: `GITHUB_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN` und `TELEGRAM_CHAT_ID` setzen; einen GitHub-Webhook mit Content-Type JSON, Ereignis `push` und derselben Signaturphrase auf `/api/v1/webhooks/github` konfigurieren.
 - Versionen synchronisiert: Hub `1.50.0`, Android-Versioncode `47`.
-
 
 ## Villa-Steuerung 1.48.0
 
@@ -20,8 +19,9 @@ VillaForge ist ein privates System zum Erstellen von **Deep Agents**, die eine I
 **Villa mit bis zu 1000 Agenten** autonom planen, umsetzen und abschließen.
 
 Beim Anlegen einer Villa öffnet sich automatisch das Chat-Fenster mit dem Deep Agent.
-Ein Router wechselt standardmäßig zwischen **kostenlosen LLM-Anbindungen** und nutzt
-bei Bedarf ein lokales Modell. Ohne erreichbares Sprachmodell bleibt die App bedienbar
+Routine-Rollen verwenden standardmäßig zuerst lokale Modelle; Code-, Architektur-
+und Review-Rollen eskalieren zuerst zu freigegebenen Cloud-Routen und fallen bei
+Ausfall lokal zurück. Ohne erreichbares Sprachmodell bleibt die App bedienbar
 und zeigt klar an, dass KI-Aufgaben derzeit nicht ausgeführt werden können.
 
 ## Neu in 1.47.0 — Mehr kostenlose Modelle und adaptive Kaskade
@@ -434,26 +434,34 @@ und ohne echte Keys — Tests laufen vollstaendig im Offline-Planer.
 
 ## Kostenlose LLM-Routen (Katalog)
 
-Die automatische Kaskade ist standardmäßig auf kostenlose Routen begrenzt
-(`VF_LLM_FREE_ONLY=1`). Sie versucht Gemini Flash-Lite, danach Groq GPT-OSS
-und kostenlose OpenRouter-Modelle und zuletzt lokal gehostete Modelle. Unbekannte,
-bezahlte und kreditbasierte Routen werden übersprungen. Zum bewussten Zulassen
-weiterer aktivierter Routen kann `VF_LLM_FREE_ONLY=0` gesetzt werden.
+Die automatische Kaskade ist standardmäßig auf geprüfte kostenlose Routen begrenzt
+(`VF_LLM_FREE_ONLY=1`). Routine-Arbeit nutzt lokale Modelle zuerst; Qualitätsrollen
+wie Coder, Architekt und Reviewer eskalieren zu freigegebenen Cloud-Routen und fallen
+danach lokal zurück. Testguthaben, bezahlte Anbieter und unbekannte Routen sind
+gesperrt. Weitere aktivierte Routen lassen sich bewusst mit `VF_LLM_FREE_ONLY=0`
+zulassen.
 
-| Prioritaet | Route | Modell | Key |
-| --- | --- | --- | --- |
-| 1 | Google Gemini 3.5 Flash-Lite | `gemini-3.5-flash-lite` | `GEMINI_API_KEY` |
-| 2 | Groq GPT-OSS 120B / 20B | `openai/gpt-oss-120b`, `openai/gpt-oss-20b` | `GROQ_API_KEY` |
-| 3 | OpenRouter kostenlose Modelle | Modell-ID mit `:free` | `OPENROUTER_API_KEY` |
-| 4 | Ollama oder LM Studio lokal | lokal installiertes Modell | keiner |
+| Route | Modell | Key |
+| --- | --- | --- |
+| Google Gemini 3.1 Flash-Lite | `gemini-3.1-flash-lite` | `GEMINI_API_KEY` |
+| Groq Free-Plan | GPT-OSS 120B / 20B und unterstützte Free-Modelle | `GROQ_API_KEY` |
+| OpenRouter Free Models Router | `openrouter/free` oder explizite `:free`-Modelle | `OPENROUTER_API_KEY` |
+| Ollama oder LM Studio lokal | lokal installiertes Modell | keiner |
 
-Kostenlose Kontingente haben Anbieterlimits und sind nicht unbegrenzt verfügbar.
+Kostenlose Cloud-Kontingente haben Anbieterlimits und sind nicht unbegrenzt verfügbar.
 Bei erschöpftem Kontingent wechselt der Hub zur nächsten kostenlosen Route oder
 meldet, dass kein Modell erreichbar ist. Gemini-Flash-Lite-Anfragen im kostenlosen
 Tarif können vom Anbieter zur Produktverbesserung verwendet werden; sende darüber
 keine vertraulichen Quelltexte oder Kundendaten. Die Gemini-Standardroute wird
-bei vorhandenen Installationen automatisch von `auto` und Gemini 2.0 Flash auf
-Flash-Lite aktualisiert; ausdrücklich konfigurierte andere Modelle bleiben bestehen.
+bei vorhandenen Installationen automatisch von veralteten Standardwerten auf
+Gemini 3.1 Flash-Lite aktualisiert; ausdrücklich konfigurierte andere Modelle
+bleiben bestehen.
+
+Hugging Face Inference Provider und Cerebras Testcredits gelten nicht als dauerhaft
+kostenlos. Diese Routen sind nur bei `VF_LLM_FREE_ONLY=0` freigegeben. Ein Route-
+Status `eligible` bedeutet, dass Filter, Key und Cooldown passen; erst ein
+erfolgreicher Modellaufruf bestätigt die Erreichbarkeit. Siehe
+[Routenbetrieb und Diagnose](docs/ROUTING.md).
 
 Für Cloud-Nutzung einen Anbieter-Key als Umgebungsvariable oder über
 „API-Key hinterlegen“ speichern. Ein Gemini-Key lässt sich kostenlos in
@@ -464,22 +472,22 @@ begrenzen die Zahl und Geschwindigkeit kostenloser Anfragen.
 
 ### Gratis-Betrieb und Kontingent-Selbstheilung
 
-Gratis-Stufen haben enge Token-Fenster (z. B. Groq: 8.000 Token pro Minute und
-Modell). Ein Agentenaufruf verbraucht grob 3.000-4.000 Token, also passen nur
-wenige Anrufe pro Minute ins Fenster. Der Hub behandelt das als NORMAL und nicht
-als Fehler:
+Kostenlose Cloud-Stufen haben anbieter-, konto- und modellabhängige Limits; prüfe
+die aktuellen Limits beim jeweiligen Anbieter. Der Hub behandelt 429 als temporäre
+Sperre der betroffenen Route und versucht zugelassene Alternativen:
 
-- **429 (Rate Limit)** sperrt die betroffene Route nur kurz (45 s) und eskaliert
-  nicht – das Fenster entleert sich, dann geht es weiter.
+- **429 (Rate Limit)** setzt für die Route einen Cooldown von mindestens zwei
+  Minuten, maximal zehn Minuten oder entsprechend `Retry-After`.
 - **Transienter Offline-Fall** (Keys vorhanden, aber alle Kontingente gerade
   voll): Der Agentenlauf wartet und wiederholt den Schritt (zweimal), die
   Orchestrierung schiebt offline gescheiterte Aufgaben zurück in die
   Warteschlange (zwei Extraversuche) und pausiert kurz zwischen den Runden.
   Erst danach bleibt die Aufgabe ehrlich `FAILED` und die Villa `PAUSED` statt
   falschen Erfolg zu melden.
-- **Bewusster Offline-Betrieb** (gar kein Key konfiguriert): Aufgaben laufen
-  direkt über den lokalen Planer und werden `DONE` – der Hub probiert keine
-  toten 401er-Kaskaden ab. Auch das ist ein gültiger Modus.
+- **Keine nutzbare Route** (Key fehlt, lokales Modell nicht erreichbar oder
+  Free-Only sperrt alle Cloud-Routen): KI-Aufgaben werden nicht als erledigt
+  markiert. Der Hub meldet die fehlende Route; Oberfläche und manuelle Verwaltung
+  bleiben nutzbar.
 - `VF_RATE_WAIT_MS` (Standard 45000) steuert die Wartezeit zwischen den
   Wiederholungen – für Tests niedrig setzbar.
 
