@@ -1,0 +1,269 @@
+name: CAX41-Upgrade (32B-Modell, CAX31-Rueckbau nach Verifikation)
+on:
+  workflow_dispatch:
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: CAX41 auf Hetzner anlegen (falls nicht vorhanden)
+        id: create
+        env:
+          HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
+          CAX_SSH_KEY: ${{ secrets.CAX_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && printf '%s\n' "$CAX_SSH_KEY" > ~/.ssh/cax_key && chmod 600 ~/.ssh/cax_key
+          PUBKEY=$(ssh-keygen -y -f ~/.ssh/cax_key 2>/dev/null || echo "")
+          export PUBKEY
+          cat > /tmp/cax41_state.py <<'PYEOF'
+          import json, os, time, urllib.request, urllib.error
+          tok = os.environ["HETZNER_API_TOKEN"]
+          def api(url, method="GET", body=None, timeout=60):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(url, data=data, method=method,
+                  headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+              try:
+                  return json.load(urllib.request.urlopen(req, timeout=timeout))
+              except urllib.error.HTTPError as e:
+                  raise SystemExit("HTTP %s bei %s: %s" % (e.code, url, e.read().decode()[:300]))
+          def norm(k):
+              parts = k.strip().split()
+              return parts[0] + " " + parts[1] if len(parts) >= 2 else k.strip()
+          pub = os.environ.get("PUBKEY", "").strip()
+          if not pub:
+              raise SystemExit("FEHLER: CAX_SSH_KEY nicht als Public-Key ableitbar")
+          keys = api("https://api.hetzner.cloud/v1/ssh_keys").get("ssh_keys", [])
+          fleet_key = next((k["id"] for k in keys if norm(k.get("public_key", "")) == norm(pub)), None)
+          if not fleet_key:
+              fleet_key = api("https://api.hetzner.cloud/v1/ssh_keys", "POST",
+                              {"name": "cax-fleet-key", "public_key": pub})["ssh_key"]["id"]
+              print("Fleet-Key registriert:", fleet_key)
+          else:
+              print("Fleet-Key bereits im Projekt:", fleet_key)
+          servers = api("https://api.hetzner.cloud/v1/servers").get("servers", [])
+          loc, c41, c41srv = "", None, None
+          for s in servers:
+              st = s.get("server_type", {})
+              tname = st.get("name", "?") if isinstance(st, dict) else "?"
+              print("%-16s %-6s %-15s %s" % (s["name"], tname, s["public_net"]["ipv4"]["ip"], s["status"]))
+              if not loc and s["name"].startswith("ollama-cax"):
+                  det = api("https://api.hetzner.cloud/v1/servers/" + str(s["id"]))
+                  loc = ((det.get("server", {}).get("datacenter") or {}).get("location") or {}).get("name", "")
+              if s["name"] == "ollama-cax41":
+                  c41, c41srv = s["public_net"]["ipv4"]["ip"], s
+          if not loc:
+              loc = "fsn1"
+          print("Standort der Flotte:", loc)
+          state = {"fleet_key": fleet_key, "loc": loc, "c41": c41 or "",
+                   "c41srv": c41srv["id"] if c41srv else "",
+                   "mode": "reuse" if c41srv else "create"}
+          json.dump(state, open("/tmp/state.json", "w"))
+          if c41:
+              print("CAX41 vorhanden:", c41)
+          else:
+              print("Kein CAX41 vorhanden — wird neu angelegt.")
+          PYEOF
+          cat > /tmp/cax41_create.py <<'PYEOF'
+          import json, os, time, urllib.request, urllib.error
+          tok = os.environ["HETZNER_API_TOKEN"]
+          st = json.load(open("/tmp/state.json"))
+          def api(url, method="GET", body=None, timeout=60):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(url, data=data, method=method,
+                  headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+              try:
+                  return json.load(urllib.request.urlopen(req, timeout=timeout))
+              except urllib.error.HTTPError as e:
+                  raise SystemExit("HTTP %s bei %s: %s" % (e.code, url, e.read().decode()[:300]))
+          body = {"name": "ollama-cax41", "server_type": "cax41", "image": "ubuntu-24.04",
+                  "ssh_keys": [int(st["fleet_key"])], "location": st["loc"]}
+          resp = api("https://api.hetzner.cloud/v1/servers", "POST", body)
+          srv, act = resp.get("server") or {}, resp.get("action") or {}
+          if not srv:
+              err = resp.get("error") or {}
+              raise SystemExit("FEHLER Hetzner-API: %s" % err.get("message", resp))
+          print("Server-ID:", srv["id"], "Action:", act.get("id"))
+          for _ in range(60):
+              a = api("https://api.hetzner.cloud/v1/actions/" + str(act["id"]), timeout=20).get("action", {}).get("status")
+              if a == "finished":
+                  break
+              if a == "error":
+                  raise SystemExit("FEHLER: Action-Status error")
+              time.sleep(5)
+          for _ in range(40):
+              d = api("https://api.hetzner.cloud/v1/servers/" + str(srv["id"]), timeout=20).get("server", {})
+              ip = (d.get("public_net", {}) or {}).get("ipv4", {}).get("ip", "")
+              if ip and d.get("status") == "running":
+                  open("/tmp/c41ip.txt", "w").write(ip)
+                  print("CAX41 aktiv:", ip)
+                  raise SystemExit(0)
+              time.sleep(6)
+          raise SystemExit("FEHLER: keine IPv4 nach Timeout")
+          PYEOF
+          python3 /tmp/cax41_state.py
+          MODE=$(python3 -c "import json;print(json.load(open('/tmp/state.json'))['mode'])")
+          C41IP=$(python3 -c "import json;print(json.load(open('/tmp/state.json'))['c41'])")
+          if [ "$MODE" = "reuse" ]; then
+            echo "== SSH-Probe gegen vorhandenen Server $C41IP =="
+            OK=0
+            for i in $(seq 1 15); do
+              if ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$C41IP "echo SSH_OK" 2>/dev/null; then OK=1; break; fi
+              sleep 20
+            done
+            if [ "$OK" = "1" ]; then
+              echo "SSH mit Fleet-Key funktioniert — Server wird weiterverwendet."
+              echo "$C41IP" > /tmp/c41ip.txt
+            else
+              echo "FEHLER: SSH auf vorhandenem CAX41 nicht moeglich"; exit 1
+            fi
+          else
+            python3 /tmp/cax41_create.py
+          fi
+          C41IP=$(cat /tmp/c41ip.txt)
+          echo "cax41=$C41IP" >> "$GITHUB_OUTPUT"
+      - name: Auf SSH warten, dann Specs pruefen
+        env:
+          CAX_SSH_KEY: ${{ secrets.CAX_SSH_KEY }}
+          SIP: ${{ steps.create.outputs.cax41 }}
+        run: |
+          set -euo pipefail
+          echo "== Warte auf SSH (max 10 min): $SIP =="
+          OK=0
+          for i in $(seq 1 60); do
+            if ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$SIP "echo BOOT_OK" 2>/dev/null; then OK=1; break; fi
+            sleep 10
+          done
+          if [ "$OK" != "1" ]; then echo "FEHLER: SSH nicht erreichbar"; exit 1; fi
+          ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 root@$SIP \
+            "echo '== Specs =='; nproc; free -h | head -2; uname -m; df -h / | tail -1"
+      - name: Ollama installieren und staerkstes STABILES Modell bestimmen
+        id: model
+        env:
+          CAX_SSH_KEY: ${{ secrets.CAX_SSH_KEY }}
+          SIP: ${{ steps.create.outputs.cax41 }}
+        run: |
+          set -euo pipefail
+          SSH="ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 root@$SIP"
+          echo "== Ollama installieren =="
+          $SSH "command -v ollama >/dev/null || curl -fsSL https://ollama.com/install.sh | sh" 2>&1 | tail -2
+          $SSH "mkdir -p /etc/systemd/system/ollama.service.d && printf '[Service]\nEnvironment=\"OLLAMA_HOST=0.0.0.0:11434\"\n' > /etc/systemd/system/ollama.service.d/host.conf && systemctl daemon-reload && systemctl restart ollama && sleep 3 && systemctl is-active ollama"
+          RAM_MB=$($SSH "free -m | awk '/Mem:/{print \$2}'")
+          echo "Verfuegbarer RAM: ${RAM_MB} MB"
+          if [ "$RAM_MB" -ge 30000 ]; then
+            echo "== Versuch 1: qwen2.5-coder:32b (staerkstes) =="
+            $SSH "ollama pull qwen2.5-coder:32b 2>&1 | tail -2"
+            $SSH "ollama list"
+            echo "== Stabilitaetstest 32b =="
+            TEST=$($SSH "curl -s -m 300 http://127.0.0.1:11434/api/generate -d '{\"model\":\"qwen2.5-coder:32b\",\"prompt\":\"Antworte mit einem Wort: Hallo\",\"stream\":false}' | head -c 400" || true)
+            FREEMEM=$($SSH "free -m | awk '/Mem:/{print \$7}'")
+            echo "Testantwort: $(echo "$TEST" | head -c 120)"
+            echo "Freier RAM nach Laden: ${FREEMEM} MB"
+            if echo "$TEST" | grep -q '"response"' && [ "$FREEMEM" -ge 3000 ]; then
+              echo "32b STABIL — wird als CAX41-Modell genutzt"
+              echo "model=qwen2.5-coder:32b" >> "$GITHUB_OUTPUT"
+              echo "label=CAX41 (32B)" >> "$GITHUB_OUTPUT"
+            else
+              echo "32b nicht stabil — Fallback auf 14b"
+              $SSH "ollama rm qwen2.5-coder:32b 2>/dev/null || true"
+              echo "model=qwen2.5-coder:14b" >> "$GITHUB_OUTPUT"
+              echo "label=CAX41 (14B)" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "RAM < 30 GB — direkt 14b"
+            echo "model=qwen2.5-coder:14b" >> "$GITHUB_OUTPUT"
+            echo "label=CAX41 (14B)" >> "$GITHUB_OUTPUT"
+          fi
+          MODEL=$(sed -n 's/^model=//p' "$GITHUB_OUTPUT")
+          if [ "$MODEL" = "qwen2.5-coder:14b" ]; then
+            echo "== Modell ziehen: qwen2.5-coder:14b =="
+            $SSH "ollama pull qwen2.5-coder:14b 2>&1 | tail -2"
+          fi
+          $SSH "ollama list"
+          echo "== UFW haerten =="
+          $SSH "apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq ufw >/dev/null 2>&1; ufw allow 22/tcp >/dev/null; ufw allow from 92.5.177.159 to any port 11434 proto tcp >/dev/null; ufw allow from 167.233.196.20 to any port 11434 proto tcp >/dev/null; ufw allow from 167.233.118.190 to any port 11434 proto tcp >/dev/null; echo y | ufw enable >/dev/null; ufw status | head -8"
+      - name: Route umschreiben + Vollverifikation (Oracle-VM)
+        id: hub
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          C41: ${{ steps.create.outputs.cax41 }}
+          MODEL: ${{ steps.model.outputs.model }}
+          LABEL: ${{ steps.model.outputs.label }}
+        run: |
+          set -euo pipefail
+          echo "CAX41=$C41 Modell=$MODEL"
+          mkdir -p ~/.ssh && printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key && chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo C41='$C41' MODEL='$MODEL' LABEL='$LABEL' bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Erreichbarkeit CAX41 ($C41) =="
+          for i in $(seq 1 45); do
+            if curl -s -m 15 "http://$C41:11434/api/tags" | grep -q "$MODEL"; then echo "MODELL_BEREIT"; break; fi
+            sleep 20
+          done
+          if ! curl -s -m 10 "http://$C41:11434/api/tags" | grep -q "$MODEL"; then
+            echo "FEHLER: $MODEL auf CAX41 nicht erreichbar"; exit 1
+          fi
+          echo "== Route in Hub-DB umschreiben (CAX31 -> CAX41) =="
+          python3 - <<'PYV'
+          import sqlite3, os
+          c41, model, label = os.environ["C41"], os.environ["MODEL"], os.environ["LABEL"]
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          name = "Cascade: Ollama {}".format(label)
+          url = "http://{}:11434".format(c41)
+          row = cur.execute("SELECT id FROM routes WHERE name LIKE 'Cascade: Ollama CAX31%'").fetchone()
+          if row:
+              cur.execute("UPDATE routes SET name=?, base_url=?, model=?, enabled=1, status='IDLE', ok=0, fail=0, lat_ms=0, dead=0, cooldown_until=0 WHERE id=?", (name, url, model, row[0]))
+              print("Route aktualisiert:", name, "->", url)
+          else:
+              ex2 = cur.execute("SELECT id FROM routes WHERE base_url=?", (url,)).fetchone()
+              if ex2:
+                  cur.execute("UPDATE routes SET name=?, model=?, enabled=1, status='IDLE', ok=0, fail=0, dead=0 WHERE id=?", (name, model, ex2[0]))
+                  print("Route aktualisiert (per URL):", name)
+              else:
+                  rowp = cur.execute("SELECT provider, priority FROM routes WHERE name LIKE 'Cascade: Ollama CAX31%'").fetchone()
+                  prov, prio = (rowp if rowp else ("ollama", 47))
+                  cur.execute("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used, cooldown_until, lat_ms, tokens, dead) VALUES (?,?,?,?,?,1,1,?,0.2,'IDLE',0,0,0,0,0,0,0)", (name, prov, url, model, "", prio))
+                  print("Route eingefuegt:", name, "Prioritaet", prio)
+          con.commit()
+          for r in cur.execute("SELECT name, priority, enabled, status FROM routes WHERE name LIKE 'Cascade: Ollama CAX%' ORDER BY priority").fetchall():
+              print("  ", r)
+          PYV
+          echo "== Hub-Neustart =="
+          systemctl restart villaforge-hub 2>/dev/null || systemctl restart villaforge 2>/dev/null || true
+          sleep 12
+          systemctl is-active villaforge-hub 2>/dev/null || systemctl is-active villaforge 2>/dev/null || true
+          echo "== Verifikation =="
+          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
+          curl -s -m 10 -X POST -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/routeforge/tick | head -c 200; echo
+          sleep 10
+          curl -s -m 10 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); l=d.get('llm',{}); print('LLM:', l.get('eligibleRoutes'), '/', l.get('configuredRoutes'), 'state:', l.get('state'))"
+          echo "== Testantwort vom CAX41 ($MODEL) =="
+          curl -s -m 300 "http://$C41:11434/api/generate" -d "{\"model\":\"$MODEL\",\"prompt\":\"Antworte mit einem Wort: Hallo\",\"stream\":false}" | head -c 300; echo
+          EOS
+      - name: Alten CAX31 nach erfolgreicher Verifikation rueckbauen
+        env:
+          HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "== Rueckbau des alten ollama-cax31 =="
+          python3 - <<'PYEOF'
+          import json, os, urllib.request, urllib.error
+          tok = os.environ["HETZNER_API_TOKEN"]
+          def api(url, method="GET", timeout=30):
+              req = urllib.request.Request(url, method=method, headers={"Authorization": "Bearer " + tok})
+              try:
+                  return json.load(urllib.request.urlopen(req, timeout=timeout))
+              except urllib.error.HTTPError as e:
+                  raise SystemExit("HTTP %s bei %s: %s" % (e.code, url, e.read().decode()[:300]))
+          servers = api("https://api.hetzner.cloud/v1/servers").get("servers", [])
+          for s in servers:
+              if s["name"] == "ollama-cax31":
+                  req = urllib.request.Request("https://api.hetzner.cloud/v1/servers/" + str(s["id"]), method="DELETE",
+                                               headers={"Authorization": "Bearer " + tok})
+                  urllib.request.urlopen(req, timeout=30)
+                  print("ollama-cax31 (ID %s, %s) geloescht." % (s["id"], s["public_net"]["ipv4"]["ip"]))
+                  break
+          else:
+              print("ollama-cax31 nicht (mehr) vorhanden — nichts zu rueckbauen.")
+          PYEOF
