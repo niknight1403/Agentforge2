@@ -21,7 +21,7 @@
 import { db, now } from './db.mjs';
 import { chat } from './llm.mjs';
 
-const MISSION_SECTIONS = ['ZIEL', 'KONTEXT', 'ANFORDERUNGEN', 'ABNAHMEKRITERIEN', 'ARBEITSWEISE', 'SCHUTZREGELN'];
+const MISSION_SECTIONS = ['ZIEL', 'KONTEXT', 'ANFORDERUNGEN', 'ABNAHMEKRITERIEN', 'ARBEITSWEISE', 'FEHLERBEHANDLUNG', 'SCHUTZREGELN'];
 const QUALITY_THRESHOLD = 85;
 
 /** Phase 2-Fallback: deterministischer Blueprint, besteht die Schleuse immer. */
@@ -37,6 +37,7 @@ export function fallbackBlueprint(idea) {
       '## ANFORDERUNGEN\nProduktionsreifer, vollstaendiger Code ohne Platzhalter; fehlerhafte Zustaende selbst heilen.',
       '## ABNAHMEKRITERIEN\nErgebnis nachweisbar: Tests, Builds oder Datei-Beweise im Resultat.',
       '## ARBEITSWEISE\nSchrittweise, evidenzbasiert, jede Annahme dokumentieren.',
+      '## FEHLERBEHANDLUNG\nFehlerbeweis sichern, kleinsten reversiblen Fix anwenden, betroffenen Test erneut ausfuehren; bei lokalem Modell-Ausfall ueber die konfigurierte Gratis-Kaskade eskalieren. Nie Erfolg behaupten, wenn Gate oder Policy blockiert.',
       '## SCHUTZREGELN\nKeine Secrets im Code, lokale Ressourcengrenzen respektieren, keine externen Nebenwirkungen ohne Auftrag.',
     ].join('\n'),
     tasks: [
@@ -63,7 +64,7 @@ export function blueprintScore(bp) {
 
 /** Phase 1+2: Blueprint via LLM-Kaskade (JSON-erzwungen), sonst null. */
 async function synthesizeBlueprintViaCascade(idea, domain) {
-  const sys = `Du bist die Agentforge2 Meta-Agent-Factory. Zerlege die Idee (Domain, Datenquellen, Trigger, Ausgaben, optimale Modell-Route) und synthetisiere einen spezialisierten Agenten-Blueprint. Antworte AUSSCHLIESSLICH JSON: {"name": "kurzer sprechender Name", "vision": "1-2 Saetze Zweck", "mission": "Missions-Prompt mit GENAU den Abschnitten ## ZIEL, ## KONTEXT, ## ANFORDERUNGEN, ## ABNAHMEKRITERIEN, ## ARBEITSWEISE, ## SCHUTZREGELN", "tasks": ["aufgabe1", "aufgabe2", "aufgabe3"]}`;
+  const sys = `Du bist die Agentforge2 Meta-Agent-Factory. Zerlege die Idee (Domain, Datenquellen, Trigger, Ausgaben, optimale Modell-Route) und synthetisiere einen spezialisierten Agenten-Blueprint. Antworte AUSSCHLIESSLICH JSON: {"name": "kurzer sprechender Name", "vision": "1-2 Saetze Zweck", "mission": "Missions-Prompt mit GENAU den Abschnitten ## ZIEL, ## KONTEXT, ## ANFORDERUNGEN, ## ABNAHMEKRITERIEN, ## ARBEITSWEISE, ## FEHLERBEHANDLUNG, ## SCHUTZREGELN", "tasks": ["aufgabe1", "aufgabe2", "aufgabe3"]}`;
   try {
     const out = await chat([
       { role: 'system', content: sys },
