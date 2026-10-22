@@ -13,12 +13,12 @@ function villa(name='Studio', idea='Musik produzieren', source='') {
   return Number(db.prepare('INSERT INTO villas(name,idea,status,created_at,updated_at,source_path) VALUES (?,?,?,?,?,?)').run(name,idea,'PAUSED',1,1,source).lastInsertRowid);
 }
 function task(id,title,status='PENDING') { db.prepare('INSERT INTO tasks(villa_id,title,status,created_at,updated_at) VALUES (?,?,?,?,?)').run(id,title,status,1,1); }
-function control(actions=[], create) {
+function control(actions=[], create, cancelScheduledVilla=()=>false) {
   let calls=0;
   const service = createMasterControl({
     chat: async () => ({content:JSON.stringify({answer:'Plan',actions})}),
     createVilla: create || (async args => { calls++; const id=villa(args.name,args.idea); return {villaId:id,rootId:1}; }),
-    isRunning: () => false, stopVilla: () => true,startVilla:id=>({started:id}),packState,setPackEnabled,
+    isRunning: () => false, stopVilla: () => false, cancelScheduledVilla, startVilla:id=>({started:id}),packState,setPackEnabled,
     toolSpecs:()=>[{name:'web_fetch',enabled:canUseTool('web_fetch').allowed}],emit:()=>{}
   });
   return {service,calls:()=>calls};
@@ -67,7 +67,8 @@ test('Unbekannte Aktionen oder ungültige Parameter verändern nichts', async ()
   const out=await service.turn({message:'Test',requestId:'turn-invalid-123'});assert.equal(out.ok,false);
   assert.equal(db.prepare('SELECT COUNT(*) c FROM control_skills').get().c,0);
   assert.throws(()=>validateAction({type:'set_setting',args:{key:'villaSlots',value:100}}),/ungültig/);
-  assert.equal(getSetting('villaSlots'),2);
+  assert.throws(()=>validateAction({type:'set_setting',args:{key:'villaSlots',value:2}}),/ungültig/);
+  assert.equal(getSetting('villaSlots'),3);
 });
 test('Connectoren sperren private Adressen und unbeauftragte Schlüsselzuordnung', () => {
   for (const ip of ['127.0.0.1','10.2.3.4','192.168.1.1','169.254.169.254','::1','fe80::1','::ffff:127.0.0.1']) assert.equal(publicAddress(ip),false,ip);
@@ -96,4 +97,18 @@ test('Ein unaufgeforderter Start verhindert den gesamten Plan vor der ersten Än
  const {service}=control([{type:'set_setting',args:{key:'suggestionCount',value:8}},{type:'start_villa',args:{villaId:id}}]);
  const out=await service.turn({message:'Ändere das Vorschlagslimit',requestId:'no-implicit-start-123'});
  assert.equal(out.ok,false);assert.equal(out.steps.length,0);assert.equal(getSetting('suggestionCount'),4);
+});
+test('Pausieren entfernt nur die vorgemerkte Villa und deaktiviert ihre Autonomie',async()=>{
+ const id=villa();const cancelled=[];
+ const {service}=control([{type:'pause_villa',args:{villaId:id}}],undefined,selected=>{cancelled.push(selected);return true;});
+ const out=await service.turn({message:'Pausiere Studio',requestId:'pause-villa-queue-1'});
+ assert.equal(out.ok,true);assert.deepEqual(cancelled,[id]);
+ const paused=db.prepare('SELECT status,autonomy FROM villas WHERE id=?').get(id);
+ assert.equal(paused.status,'PAUSED');assert.equal(paused.autonomy,0);
+});
+test('Expliziter Start reaktiviert eine zuvor pausierte Villa',async()=>{
+ const id=villa();db.prepare('UPDATE villas SET autonomy=0,status=\'PAUSED\' WHERE id=?').run(id);
+ const {service}=control([{type:'start_villa',args:{villaId:id}}]);
+ const out=await service.turn({message:'Starte Studio',requestId:'start-villa-resume-1'});
+ assert.equal(out.ok,true);assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(id).autonomy,1);
 });
