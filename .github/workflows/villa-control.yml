@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'pause | resume | pause_all | resume_all | status | set_idea'
+        description: 'pause | resume | pause_all | resume_all | status | set_idea | schema'
         required: true
         default: 'status'
       ids:
@@ -58,6 +58,11 @@ jobs:
           if (mode === 'status') {
             console.log('== STATUS ALLER VILLEN ==');
             list([]);
+            process.exit(0);
+          }
+          if (mode === 'schema') {
+            console.log('== SPALTEN: villas ==');
+            for (const c of db.prepare('PRAGMA table_info(villas)').all()) console.log(`${c.cid} ${c.name} ${c.type}`);
             process.exit(0);
           }
           const ids = (idsArg || '').split(',').map((s) => s.trim()).filter(Boolean).map(Number).filter(Boolean);
