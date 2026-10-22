@@ -8,6 +8,6 @@ test('Quality Gate nutzt 30/30/20/20 und blockiert unter 85',()=>{
  assert.equal(fail.score,65);assert.equal(fail.passed,false);
 });
 test('statische Security- und Performance-Signale sind konservativ',()=>{
- assert.equal(staticSecurityScore([]),100);assert.equal(staticSecurityScore(['secret']),70);
+ assert.equal(staticSecurityScore([]),100);assert.equal(staticSecurityScore(['secret']),0);
  assert.equal(staticPerformanceScore(900_000),100);assert.equal(staticPerformanceScore(12_000_000),70);
 });
