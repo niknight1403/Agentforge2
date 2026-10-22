@@ -1,0 +1,35 @@
+name: VM CCC-Konfig-Audit
+on:
+  workflow_dispatch: {}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Service-Konfiguration gegen Repo-Stand pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Unit-Datei (Secrets maskiert) =="
+          systemctl cat cybersarah-ccc | sed -E 's/(KEY|TOKEN|PASSWORD|SECRET)=([^" ]+)/\1=***MASKIERT***/g'
+          echo "== Restart-Politik =="
+          systemctl show cybersarah-ccc -p Restart -p RestartSec -p NRestarts -p User -p WorkingDirectory -p ExecMainStartTimestamp
+          echo "== Deployter Commit =="
+          git -C /opt/ccc/repo rev-parse HEAD 2>/dev/null
+          git -C /opt/ccc/repo log -1 --format="%h %s" 2>/dev/null
+          git -C /opt/ccc/repo remote get-url origin 2>/dev/null | sed 's#//.*@#//***@#'
+          echo "== dist-Stand =="
+          ls -la /opt/ccc/repo/dist/index.js 2>/dev/null | awk '{print $5, $6, $7, $8}'
+          echo "== .env vorhanden? =="
+          for f in /opt/ccc/.env /opt/ccc/repo/.env; do [ -f "$f" ] && echo "$f: $(grep -cE '^[A-Z]' "$f") Variablen" || echo "$f: fehlt"; done
+          echo "== Aktive Health-Endpoints =="
+          curl -s -m 8 http://127.0.0.1:13000/api/ready | head -c 200; echo
+          echo "== Abweichende Tabellen (Drizzle vs DB) =="
+          sudo -u postgres psql -Atq -d cybersarah -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"
+          EOS
