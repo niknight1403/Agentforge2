@@ -1,0 +1,32 @@
+name: VM PG-Status
+on:
+  workflow_dispatch: {}
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Postgres und nginx auf der VM pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          cat > /tmp/vmcheck.sh <<'EOS'
+          echo "== Uptime/Load =="; uptime
+          echo "== Speicher =="; free -m | head -2
+          echo "== Platz =="; df -h / | tail -1; df -i / | tail -1
+          echo "== PG-Dienste =="; systemctl list-units --type=service --no-legend | grep -iE 'postgres|nginx' || echo "keine PG/nginx Units aktiv"
+          echo "== PG-Cluster =="; sudo -u postgres pg_lsclusters 2>/dev/null || ls /etc/postgresql/ 2>/dev/null
+          echo "== pg_isready =="; sudo -u postgres pg_isready -h 127.0.0.1 -p 5432 || true
+          echo "== Ports =="; ss -tlnp | grep -E ':(5432|443|80)' || echo "5432/443 nicht erreichbar"
+          echo "== PG-Log =="; sudo -u postgres tail -n 15 /var/log/postgresql/postgresql-16-main.log 2>/dev/null || journalctl -u postgresql@16-main -n 15 --no-pager 2>/dev/null || echo "kein Log gefunden"
+          echo "== nginx-Status =="; systemctl is-active nginx; nginx -t 2>&1 | tail -2
+          echo "== cybersarah-DB =="; sudo -u postgres psql -Atq -d cybersarah -c "SELECT 'DB_OK '||count(*) FROM users;" 2>&1 | head -3
+          echo "== Verbindungen =="; sudo -u postgres psql -Atq -c "SELECT count(*) FROM pg_stat_activity;" 2>&1 | head -2
+          echo "== OOM-Kills (3h) =="; journalctl -k --since "3 hours ago" --no-pager 2>/dev/null | grep -iE 'oom|killed process' | tail -5 || true
+          EOS
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/vmcheck.sh ubuntu@92.5.177.159:/tmp/vmcheck.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash /tmp/vmcheck.sh"
