@@ -39,6 +39,15 @@ export async function maybeDeliverApk(villaId, L = () => {}) {
   if (open > 0) return { delivered: false, reason: 'open_tasks' };
   const v = db.prepare('SELECT id, name FROM villas WHERE id = ?').get(villaId);
   if (!v) return { delivered: false, reason: 'no_villa' };
+  const gate = maturity(villaId);
+  if (!gate.verified) {
+    return {
+      delivered: false,
+      reason: 'quality_gate',
+      score: gate.readiness?.quality?.score ?? gate.score,
+      blockers: gate.blockers,
+    };
+  }
   // Cooldown-Marker: max. eine APK-Delivery je Villa je 20 Stunden.
   let marker = {};
   try { marker = JSON.parse(readFileSync(APK_DELIVERY_LOG, 'utf8')); } catch { /* noch keine Delivery */ }
