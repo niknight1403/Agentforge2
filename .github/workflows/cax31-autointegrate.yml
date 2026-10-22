@@ -115,7 +115,7 @@ jobs:
             echo "== SSH-Probe gegen vorhandenen Server $C31IP =="
             OK=0
             for i in $(seq 1 15); do
-              if ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 root@$C31IP "echo SSH_OK" 2>/dev/null; then OK=1; break; fi
+              if ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$C31IP "echo SSH_OK" 2>/dev/null; then OK=1; break; fi
               sleep 20
             done
             if [ "$OK" = "1" ]; then
@@ -141,11 +141,11 @@ jobs:
           echo "== Warte auf SSH (max 10 min): $SIP =="
           OK=0
           for i in $(seq 1 60); do
-            if ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 root@$SIP "echo BOOT_OK" 2>/dev/null; then OK=1; break; fi
+            if ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$SIP "echo BOOT_OK" 2>/dev/null; then OK=1; break; fi
             sleep 10
           done
           if [ "$OK" != "1" ]; then echo "FEHLER: SSH nicht erreichbar"; exit 1; fi
-          ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 root@$SIP \
+          ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 root@$SIP \
             "echo '== Specs =='; nproc; free -h | head -2; uname -m; df -h / | tail -1"
       - name: Ollama installieren und staerkstes STABILES Modell bestimmen
         id: model
@@ -154,7 +154,7 @@ jobs:
           SIP: ${{ steps.create.outputs.cax31 }}
         run: |
           set -euo pipefail
-          SSH="ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 root@$SIP"
+          SSH="ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 root@$SIP"
           echo "== Ollama installieren =="
           $SSH "command -v ollama >/dev/null || curl -fsSL https://ollama.com/install.sh | sh" 2>&1 | tail -2
           $SSH "mkdir -p /etc/systemd/system/ollama.service.d && printf '[Service]\nEnvironment=\"OLLAMA_HOST=0.0.0.0:11434\"\n' > /etc/systemd/system/ollama.service.d/host.conf && systemctl daemon-reload && systemctl restart ollama && sleep 3 && systemctl is-active ollama"
