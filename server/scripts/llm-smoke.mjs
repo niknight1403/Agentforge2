@@ -4,8 +4,9 @@
  *
  * Die Keys kommen NIE ins Repo — sie werden aus der Umgebung gelesen:
  *   - lokal:      Shell-Export oder `--experimental-sqlite`-Start mit env
- *   - GitHub CI:  Repository-Secrets (GROQ_API_KEY, OPENROUTER_API_KEY,
- *                 GEMINI_API_KEY), injiziert im Workflow
+ *   - GitHub CI:  Repository-Secrets (GEMINI_API_KEY, CEREBRAS_API_KEY,
+ *                 GROQ_API_KEY, MISTRAL_API_KEY, OPENROUTER_API_KEY), injiziert
+ *                 im Workflow
  *
  * Ablauf:
  *   1. Ohne Key:  Ausgabe "SKIP", Exit 0 (CI bleibt gruen).
@@ -19,7 +20,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const KEY_NAMES = ['GROQ_API_KEY', 'OPENROUTER_API_KEY', 'GEMINI_API_KEY'];
+const KEY_NAMES = ['GEMINI_API_KEY','CEREBRAS_API_KEY','GROQ_API_KEY','MISTRAL_API_KEY','OPENROUTER_API_KEY'];
 const present = KEY_NAMES.filter((k) => process.env[k] && process.env[k].length > 8);
 if (!present.length) {
   console.log('SKIP: kein LLM-Key in der Umgebung ( Secrets fehlen). Offline-Modus bleibt erlaubt.');
