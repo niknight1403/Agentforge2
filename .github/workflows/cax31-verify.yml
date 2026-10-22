@@ -1,0 +1,31 @@
+name: CAX31-Route verifizieren (read-only)
+on:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Routenstatus + Health pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key && chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
+          curl -s -m 10 -X POST -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/routeforge/tick | head -c 300; echo
+          sleep 15
+          curl -s -m 10 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); l=d.get('llm',{}); print('LLM:', l.get('eligibleRoutes'), '/', l.get('configuredRoutes'), 'state:', l.get('state'))"
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          print("== CAX-Kaskadenrouten ==")
+          for r in cur.execute("SELECT name, priority, enabled, status, ok, fail, lat_ms, dead FROM routes WHERE name LIKE 'Cascade: Ollama CAX%' ORDER BY priority").fetchall():
+              print("  ", r)
+          PYV
+          echo "== Direkter Abruf vom CAX31 =="
+          curl -s -m 15 "http://2.31.77.72:11434/api/tags" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Modelle:', [m['name'] for m in d.get('models',[])])"
+          EOS
