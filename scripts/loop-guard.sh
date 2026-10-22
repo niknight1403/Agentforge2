@@ -82,7 +82,6 @@ if ! curl -fs -m 8 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
   curl -fs -m 8 http://127.0.0.1:11434/api/tags >/dev/null 2>&1 || { mark "OLLAMA_TOT"; FAILED=1; }
 fi
 systemctl is-active --quiet nginx || act "nginx"
-systemctl is-active --quiet revenue-bridge-relay 2>/dev/null || mark "RELAY_INAKTIV"
 
 # --- 6) Guard-Log (max 5 MB) ---
 GSZ=$(stat -c %s "$LOG" 2>/dev/null || echo 0)
