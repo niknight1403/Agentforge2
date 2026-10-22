@@ -1,6 +1,6 @@
 import { VERSION } from './version.mjs';
 import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStudioPreview } from './studio.mjs';
-import { syncCascadeRoutes } from './llm-config.mjs';
+import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config.mjs';
 import http from 'node:http';
 import { createMasterControl } from './master-control.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
@@ -94,7 +94,7 @@ if (db.prepare('SELECT COUNT(*) c FROM routes').get().c === 0) {
     'INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
   );
   for (const r of FREE_ROUTE_CATALOG) {
-    ins.run(r.name, r.provider, r.baseUrl, r.model, r.keyEnv, 1, 1, r.priority, 1, 'NEW', 0, 0, 0);
+    ins.run(r.name, r.provider, r.baseUrl, r.model, r.keyEnv, Number(isFreeRoute({provider:r.provider,base_url:r.baseUrl,model:r.model})), 1, r.priority, 1, 'NEW', 0, 0, 0);
   }
   console.log('[villaforge] Routen-Katalog initialisiert:', FREE_ROUTE_CATALOG.length);
 }
@@ -174,6 +174,7 @@ function serveStatic(req, res, pathname) {
 
 /* --------------------------- API --------------------------- */
 syncCascadeRoutes();
+syncFreeRouteFlags();
 const masterControl = createMasterControl({ chat, createVilla, isRunning, stopVilla, cancelScheduledVilla, toolSpecs, packState, setPackEnabled, emit, startVilla(id) { scheduleVilla(id); return { queued: id }; } });
 if (process.argv.includes('--check')) {
   console.log(JSON.stringify({ ok: true, host: HOST, port: PORT, version: VERSION, routing: routingSummary() }, null, 2));
