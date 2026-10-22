@@ -21,6 +21,7 @@ const { FREE_ROUTE_CATALOG } = await import('../routes.mjs');
 const { db } = await import('../db.mjs');
 const { chat } = await import('../llm.mjs');
 const { runTool, WORKSPACE } = await import('../agents.mjs');
+const { mediaCapabilities, generateMedia } = await import('../media.mjs');
 const { setPackEnabled, canUseTool } = await import('../packs.mjs');
 
 test('Katalog enthaelt die Fal.ai-LLM-Route mit Key-Env und fal.run-Basis', () => {
@@ -95,6 +96,53 @@ test('media_generate blockt sauber ohne FAL_KEY (freundliche Meldung)', async ()
   } finally {
     globalThis.fetch = origFetch;
   }
+});
+
+test('Capability-Register meldet jede Medienroute und den ehrlichen Status', () => {
+  db.prepare("UPDATE secrets SET value = '' WHERE name = 'FAL_KEY'").run();
+  const caps = mediaCapabilities();
+  for (const id of ['app_development', 'image_generation', 'image_editing', 'video_generation', 'audio_generation', 'live_performance']) {
+    assert.ok(caps.some((c) => c.id === id), `Capability ${id} fehlt`);
+  }
+  assert.equal(caps.find((c) => c.id === 'video_generation').status, 'needs_provider');
+  assert.match(caps.find((c) => c.id === 'video_generation').action, /FAL_KEY/);
+});
+
+test('media_prepare erstellt ein klares Video-Produktionspaket ohne Rendering vorzutäuschen', async () => {
+  db.prepare("UPDATE secrets SET value = '' WHERE name = 'FAL_KEY'").run();
+  const out = await runTool({ villaId: 9, agentId: 1 }, 'media_prepare', { type: 'video', title: 'Launch Clip', prompt: 'Produktdemo für Musiker', durationSeconds: 20 });
+  assert.match(out, /kein gerendertes Medium/);
+  const file = join(WORKSPACE, 'villa-9', 'media-video-Launch-Clip.md');
+  assert.ok(existsSync(file));
+  const text = readFileSync(file, 'utf8');
+  assert.match(text, /Shotlist/);
+  assert.match(text, /Rendering ausstehend/);
+});
+
+test('fal.ai-Routen rendern und speichern Video sowie Audio mit passendem Dateityp', async () => {
+  db.prepare("INSERT INTO secrets (name, value, updated_at) VALUES ('FAL_KEY', 'fal-test-key', 0) ON CONFLICT(name) DO UPDATE SET value='fal-test-key'").run();
+  for (const [type, model, url, mime, bytes] of [
+    ['video', 'fal-ai/wan/v2.7/text-to-video', 'https://cdn.fal.test/clip.mp4', 'video/mp4', [0, 0, 0, 24]],
+    ['audio', 'minimax/music-3', 'https://cdn.fal.test/track.mp3', 'audio/mpeg', [73, 68, 51]],
+  ]) {
+    const calls = [];
+    const result = await generateMedia({ villaId: 10, type, prompt: 'Testproduktion', filename: `test-${type}`, fetchImpl: async (target, init) => {
+      calls.push({ url: String(target), init });
+      if (String(target) === `https://fal.run/${model}`) return new Response(JSON.stringify({ [type]: { url } }), { status: 200 });
+      if (String(target) === url) return new Response(new Uint8Array(bytes), { status: 200, headers: { 'Content-Type': mime } });
+      throw new Error(`Unexpected request ${target}`);
+    }});
+    assert.equal(result.type, type);
+    assert.match(result.path, new RegExp(`test-${type}\\.${type === 'video' ? 'mp4' : 'mp3'}$`));
+    assert.equal(calls[0].init.headers.Authorization, 'Key fal-test-key');
+    assert.equal(readFileSync(join(WORKSPACE, result.path)).length, bytes.length);
+  }
+});
+
+test('Bildbearbeitung braucht eine öffentliche HTTPS-Quelle und blockt lokale Ziele', async () => {
+  db.prepare("INSERT INTO secrets (name, value, updated_at) VALUES ('FAL_KEY', 'fal-test-key', 0) ON CONFLICT(name) DO UPDATE SET value='fal-test-key'").run();
+  await assert.rejects(() => generateMedia({ villaId: 11, type: 'image_edit', prompt: 'Stil ändern', sourceImageUrl: 'http://127.0.0.1/private.png' }), /Sicherheitsgründen/);
+  await assert.rejects(() => generateMedia({ villaId: 11, type: 'image_edit', prompt: 'Stil ändern', sourceImageUrl: 'https://example.com/image.png', fetchImpl: async () => new Response(JSON.stringify({ images: [{ url: 'http://localhost/private.png' }] }), { status: 200 }) }), /Sicherheitsgründen/);
 });
 
 test('Medien-Pack schaltet das Werkzeug echt ab', () => {
