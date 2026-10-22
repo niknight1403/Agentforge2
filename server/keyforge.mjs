@@ -13,6 +13,7 @@
 // ============================================================================
 
 import { db, now } from './db.mjs';
+import { isFreeRoute } from './llm-config.mjs';
 
 // System-Log: jede Aktion von KeyForge/RouteForge landet hier (Charta-Forderung).
 db.exec(`
@@ -43,6 +44,7 @@ export function classifyKey(value) {
   if (/^sk-or-v1-/.test(v)) return 'openrouter';
   if (/^AIza/.test(v)) return 'google';
   if (/^AQ\./.test(v)) return 'google'; // Neues Google-Key-Format (2026, live verifiziert)
+  if (/^hf_/.test(v)) return 'huggingface';
   if (/^xai-/.test(v)) return 'xai';
   if (/^csk-/.test(v)) return 'cerebras';
   return null; // unidentifiziert: wird geloggt, aber nie geroutet
@@ -51,6 +53,7 @@ export function classifyKey(value) {
 export const PROVIDER_CATALOG = {
   groq: {
     label: 'Groq',
+    routeProvider: 'groq',
     baseUrl: 'https://api.groq.com/openai/v1',
     probeModel: 'openai/gpt-oss-120b',
     models: ['openai/gpt-oss-120b', 'qwen/qwen3.8-27b'],
@@ -59,17 +62,43 @@ export const PROVIDER_CATALOG = {
   },
   google: {
     label: 'Google Gemini',
+    routeProvider: 'gemini-openai',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    probeModel: 'gemini-flash-lite-latest',
-    models: ['gemini-flash-lite-latest'],
+    probeModel: 'gemini-3.1-flash-lite',
+    models: ['gemini-3.1-flash-lite'],
     routeOn429: true // Tageskontingent kehrt zurueck
   },
   openrouter: {
     label: 'OpenRouter',
+    routeProvider: 'openrouter',
     baseUrl: 'https://openrouter.ai/api/v1',
-    probeModel: 'nvidia/nemotron-3.5-lightning:free',
-    models: ['nvidia/nemotron-3.5-lightning:free'],
-    routeOn429: false // free-Modelle sind ohne Guthaben hart gedrosselt
+    probeModel: 'openrouter/free',
+    models: ['openrouter/free'],
+    routeOn429: false // free-Modelle koennen bei Tageslimit 429 liefern
+  },
+  cerebras: {
+    label: 'Cerebras',
+    routeProvider: 'cerebras',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    probeModel: 'gpt-oss-120b',
+    models: ['gpt-oss-120b', 'qwen-3.8-27b'],
+    routeOn429: true
+  },
+  huggingface: {
+    label: 'Hugging Face Inference',
+    routeProvider: 'huggingface',
+    baseUrl: 'https://router.huggingface.co/v1',
+    probeModel: process.env.VF_HF_MODEL || 'openai/gpt-oss-120b:cerebras',
+    models: [process.env.VF_HF_MODEL || 'openai/gpt-oss-120b:cerebras'],
+    routeOn429: false
+  },
+  xai: {
+    label: 'xAI',
+    routeProvider: 'xai',
+    baseUrl: 'https://api.x.ai/v1',
+    probeModel: process.env.VF_XAI_MODEL || '',
+    models: process.env.VF_XAI_MODEL ? [process.env.VF_XAI_MODEL] : [],
+    routeOn429: true
   }
 };
 
@@ -162,12 +191,20 @@ export async function keyforgeTick() {
     if (!provider) {
       for (const name of names) {
         if (!loggedRecently('unidentified', name, 24 * 60 * 60_000)) {
-          forgeLog('unidentified', `Key ${name} (${value.slice(0, 6)}..., ${value.length} Zeichen) keinem Provider zugeordnet - nicht geroutet`);
+          forgeLog('unidentified', `Key ${name} (${value.length} Zeichen) keinem Provider zugeordnet - nicht geroutet`);
         }
       }
       continue;
     }
     const spec = PROVIDER_CATALOG[provider];
+    if (!spec) {
+      forgeLog('unsupported', `Key ${names[0]} erkannt (${provider}), aber kein Routenadapter konfiguriert`);
+      continue;
+    }
+    if (!spec.models.length || !spec.probeModel) {
+      forgeLog('unconfigured', `${spec.label}: Modell fehlt; passenden Modellnamen in der Umgebung konfigurieren`);
+      continue;
+    }
     const owner = names.find((n) => hasRoutes(n)) || [...names].sort()[0];
 
     if (hasRoutes(owner)) continue; // bereits vollstaendig geroutet
@@ -191,8 +228,8 @@ export async function keyforgeTick() {
       const name = `${spec.label} ${model.split('/').pop()} (${owner})`;
       db.prepare(
         `INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used)
-         VALUES (?,?,?,?,?,1,1,?,1,'NEW',0,0,0)`
-      ).run(name, 'openai-compatible', spec.baseUrl, model, owner, p + i);
+         VALUES (?,?,?,?,?,?,1,?,1,'NEW',0,0,0)`
+      ).run(name, spec.routeProvider, spec.baseUrl, model, owner, Number(isFreeRoute({provider:spec.routeProvider,base_url:spec.baseUrl,model})), p + i);
       forgeLog('route', `Neue Route [${name}] P${p + i} mit Key ${owner} (${spec.label}, Probe: ${probe.state})`);
       actions.push({ key: owner, provider, route: name, priority: p + i, probe: probe.state });
     });
