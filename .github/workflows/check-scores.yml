@@ -1,0 +1,27 @@
+name: Scores-API-Check
+on:
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: API pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== HTTP-Status /api/scores =="
+          curl -s -m 10 -o /tmp/scores.json -w "HTTP %{http_code}\n" http://localhost:12000/api/scores
+          echo "== Body (erste 500 Zeichen) =="
+          head -c 500 /tmp/scores.json; echo
+          echo "== Route im Live-Code? =="
+          grep -n "api/scores" /opt/villaforge/server/server.mjs | head -3
+          echo "== Hub-Fehlerlog =="
+          journalctl -u villaforge-hub.service --since "30 min ago" --no-pager | grep -iE "error|scores" | grep -v "Autopilot:" | tail -6
+          EOS
