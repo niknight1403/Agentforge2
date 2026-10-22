@@ -84,10 +84,10 @@ jobs:
           } else if (mode === 'set_idea') {
             if (!idea || !ids.length) { console.error('set_idea benötigt idea und Villa-IDs.'); process.exit(1); }
             if (idea.length > 20000) { console.error('Idee zu lang: ' + idea.length); process.exit(1); }
-            const r = db.prepare(`UPDATE villas SET idea = ?, system_prompt = ?, updated_at = '${nowSql()}' WHERE id IN (${ids.map(() => '?').join(',')})`).run(idea, idea, ...ids);
-            console.log('SET_IDEA: ' + r.changes + ' Villa(n) aktualisiert (idea + system_prompt)');
-            const rows = db.prepare(`SELECT id, name, length(idea) AS ilen, length(system_prompt) AS plen, substr(system_prompt,1,160) AS head FROM villas WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
-            for (const v of rows) console.log(`[${v.id}] ${v.name} | idea ${v.ilen} Zeichen | system_prompt ${v.plen} Zeichen | Anfang: ${v.head}`);
+            const r = db.prepare(`UPDATE villas SET idea = ?, updated_at = '${nowSql()}' WHERE id IN (${ids.map(() => '?').join(',')})`).run(idea, ...ids);
+            console.log('SET_IDEA: ' + r.changes + ' Villa(n) aktualisiert');
+            const rows = db.prepare(`SELECT id, name, length(idea) AS ilen, substr(idea,1,160) AS head FROM villas WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+            for (const v of rows) console.log(`[${v.id}] ${v.name} | idea ${v.ilen} Zeichen | Anfang: ${v.head}`);
           } else {
             console.error('Unbekannter Modus: ' + mode);
             process.exit(1);
