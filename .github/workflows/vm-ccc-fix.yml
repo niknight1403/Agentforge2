@@ -1,0 +1,36 @@
+name: VM CCC-Instanz-Fix
+on:
+  workflow_dispatch: {}
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: CCC-VM-Stack (Port 13000) untersuchen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Service-Name =="
+          systemctl list-units --type=service --no-legend | grep -iE "ccc|cybersarah" | head -4
+          echo "== CCC-DB-Konfig =="
+          grep -E "^DATABASE_URL" /opt/ccc/.env /opt/ccc/repo/.env 2>/dev/null | sed "s/:[^@]*@/:***@/" | head -3
+          echo "== CCC-DB-Tabellen =="
+          DBN=$(grep -hoE "/[a-z_]+$" /opt/ccc/.env 2>/dev/null | head -1 | tr -d /)
+          echo "DB-Name laut .env: ${DBN:-unbekannt}"
+          for D in $(grep -hoE "DATABASE_URL=.*" /opt/ccc/.env 2>/dev/null | grep -oE "/[a-z_]+$" | tr -d / | sort -u); do
+            echo "-- DB $D:"
+            sudo -u postgres psql -Atq -d "$D" -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" 2>&1 | head -1
+            sudo -u postgres psql -Atq -d "$D" -c "SELECT to_regclass('public.modelRouterSettings');" 2>&1 | head -1
+          done
+          echo "== CCC-Service-Log (letzte 12, gefiltert) =="
+          U=$(systemctl list-units --type=service --no-legend | grep -iE "^ccc|cybersarah" | awk "{print \$1}" | head -1)
+          [ -n "$U" ] && journalctl -u "$U" -n 200 --no-pager 2>/dev/null | grep -vE "^\-\-|merge" | tail -12 | cut -c1-230
+          echo "== Syslog-Rate jetzt (20s) =="
+          S1=$(stat -c %s /var/log/syslog); sleep 20; S2=$(stat -c %s /var/log/syslog); echo "Delta: $(( S2 - S1 )) Bytes"
+          EOS
