@@ -19,7 +19,8 @@ test('Reale HTTP-Kaskade: 429 -> lokale Modell-Erkennung -> Chat; Retry-After bl
   let body='';req.on('data',c=>body+=c);req.on('end',()=>{model=JSON.parse(body).model;send(res,200,{choices:[{message:{content:'Fixture model response'}}],model,usage:{total_tokens:4}});});
  });
  db.exec('DELETE FROM routes');
- db.prepare('INSERT INTO routes(name,provider,base_url,model,priority) VALUES (?,?,?,?,?)').run('Test primary','gemini',primary,'cloud-model',1);
+ process.env.GEMINI_API_KEY = 'test-fixture-placeholder';
+ db.prepare('INSERT INTO routes(name,provider,base_url,model,priority,key_env) VALUES (?,?,?,?,?,?)').run('Test primary','gemini',primary,'cloud-model',1,'GEMINI_API_KEY');
  db.prepare('INSERT INTO routes(name,provider,base_url,model,priority) VALUES (?,?,?,?,?)').run('Test local','ollama',local,'auto',2);
  const out=await chat([{role:'user',content:'test'}]);assert.equal(out.offline,false);assert.equal(model,'installed-model');assert.equal(out.content,'Fixture model response');assert.equal(calls,1);
  const row=db.prepare('SELECT cooldown_until,fail FROM routes WHERE name=?').get('Test primary');assert.ok(row.cooldown_until>Date.now()+170000);assert.equal(row.fail,1);
