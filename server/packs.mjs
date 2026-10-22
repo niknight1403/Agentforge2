@@ -93,7 +93,7 @@ export const TOOL_PACKS = [
   { id: 'ausfuehrung', title: 'Ausfuehrung', description: 'Builds und Tests im Projekt starten (nur erlaubte Programme).', tools: ['project_run'] },
   { id: 'artefakte', title: 'Artefakte', description: 'Dateien im Villa-Workspace schreiben und auflisten.', tools: ['artifact_write', 'artifact_list'] },
   { id: 'recherche', title: 'Recherche', description: 'Websuche (DuckDuckGo, keyless), Seitenabruf mit Jina-Reader-Kaskade und konfigurierte JSON-Connectoren.', tools: ['web_search', 'web_fetch', 'connector_read'] },
-  { id: 'medien', title: 'Medien (Fal.ai)', description: 'Bilder und Medien mit Fal.ai erzeugen und im Workspace ablegen.', tools: ['media_generate'] },
+  { id: 'medien', title: 'Medienproduktion', description: 'Fähigkeiten prüfen, Bild-/Video-/Audio-Produktionspakete vorbereiten und Medien über konfigurierte Fal.ai-Routen rendern.', tools: ['media_capabilities', 'media_prepare', 'media_generate'] },
   { id: 'extern', title: 'Externe Integrationen (Fireflies & Asana)', description: 'Meeting-Protokolle aus Fireflies und Aufgaben-Sync nach Asana — brauchen je einen Token im Secrets-Store (FIREFLIES_API_KEY, ASANA_PAT).', tools: ['fireflies_transcripts', 'asana_list_projects', 'asana_create_task'] },
   { id: 'open-data', title: 'Offene Daten (keylos)', description: 'Wikipedia, Hacker News, Wetter, Waehrungen und Paket-Infos — alles ohne API-Key.', tools: ['wikipedia_search', 'hackernews_search', 'weather_lookup', 'currency_convert', 'package_info'] },
   { id: 'berichte', title: 'Berichte', description: 'Analyse-, Umsatz- und Review-Berichte ablegen.', tools: ['report_write'] }
