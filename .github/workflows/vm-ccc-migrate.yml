@@ -1,0 +1,50 @@
+name: VM CCC-DB Migration (Loop-Fix)
+on:
+  workflow_dispatch: {}
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: CCC-DB auf VM migrieren und Crash-Loop beenden
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== DATABASE_URL des Dienstes ermitteln =="
+          DB_URL=$(systemctl cat cybersarah-ccc 2>/dev/null | grep -oP 'DATABASE_URL="?\K[^"]*' | head -1)
+          DB_NAME=$(printf "%s" "$DB_URL" | grep -oE "/[a-z_]+$" | tr -d /)
+          echo "Ziel-DB: ${DB_NAME:-unbekannt} (Credentials nicht angezeigt)"
+          if [ -z "$DB_NAME" ]; then echo "Keine DATABASE_URL gefunden — Abbruch"; exit 1; fi
+          echo "== Tabellen vorher =="
+          sudo -u postgres psql -Atq -d "$DB_NAME" -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" 2>&1 | head -1
+          echo "== Migrationen ausfuehren =="
+          cd /opt/ccc/repo
+          export DATABASE_URL="$DB_URL"
+          if [ -f /opt/ccc/repo/node_modules/.bin/drizzle-kit ]; then
+            ./node_modules/.bin/drizzle-kit migrate 2>&1 | tail -8
+          else
+            npx --yes drizzle-kit@0.31.11 migrate 2>&1 | tail -8
+          fi
+          echo "== Kontrolle: modelRouterSettings =="
+          sudo -u postgres psql -Atq -d "$DB_NAME" -c "SELECT to_regclass('public.modelRouterSettings');"
+          sudo -u postgres psql -Atq -d "$DB_NAME" -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"
+          echo "== Dienst neu starten =="
+          systemctl restart cybersarah-ccc
+          sleep 12
+          systemctl is-active cybersarah-ccc
+          echo "== Journald-Hard-Limit gegen Log-Stuerme =="
+          mkdir -p /etc/systemd/journald.conf.d
+          printf "[Journal]\nRateLimitIntervalSec=5s\nRateLimitBurst=500\n" > /etc/systemd/journald.conf.d/99-ratelimit.conf
+          systemctl restart systemd-journald
+          echo "== Syslog-Rate nach Fix (30s) =="
+          S1=$(stat -c %s /var/log/syslog); sleep 30; S2=$(stat -c %s /var/log/syslog); echo "Delta: $(( S2 - S1 )) Bytes"
+          echo "== Letzte CCC-Fehler? =="
+          journalctl -u cybersarah-ccc --since "-40s" --no-pager 2>/dev/null | grep -ciE "does not exist|Unhandled" || true
+          df -h / | tail -1
+          EOS
