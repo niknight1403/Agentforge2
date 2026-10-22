@@ -1,0 +1,69 @@
+name: VM CCC-Update (main + Unit-Haertung)
+on:
+  workflow_dispatch: {}
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: CCC-Instanz auf main bringen und Unit haerten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Code auf main =="
+          cd /opt/ccc/repo
+          git fetch origin main --quiet 2>&1 | head -2
+          git reset --hard origin/main --quiet
+          git log -1 --format="%h %s" | cut -c1-90
+          echo "== Abhaengigkeiten + Build =="
+          npm ci --silent 2>&1 | tail -3
+          npm run build --silent 2>&1 | tail -3 || npm run build 2>&1 | tail -3
+          ls -la dist/index.js | awk '{print $5, $6, $7, $8}'
+          echo "== Migrationen (idempotent) =="
+          DB_URL=$(systemctl cat cybersarah-ccc 2>/dev/null | grep -oP 'DATABASE_URL="?\K[^"]*' | head -1)
+          cd /opt/ccc/repo && DATABASE_URL="$DB_URL" ./node_modules/.bin/drizzle-kit migrate 2>&1 | tail -2
+          echo "== Unit-File aktualisieren =="
+          python3 - <<'PYU'
+          import re
+          p = "/etc/systemd/system/cybersarah-ccc.service"
+          s = open(p).read()
+          dburl = re.search(r'Environment=DATABASE_URL="?(postgresql://[^"\n]+)"?', s).group(1)
+          rev_url = dburl.rsplit("/", 1)[0] + "/revenue_os"
+          s = re.sub(r"Environment=(REVENUE_OS_[A-Z_]+|RATE_LIMIT_[A-Z_]+|OLLAMA_[A-Z_]+)=.*\n", "", s)
+          env_new = (
+              "Environment=REVENUE_OS_DATABASE_URL=" + rev_url + "\n"
+              "Environment=REVENUE_OS_API_BASE_URL=http://167.233.196.20:18742\n"
+              "Environment=RATE_LIMIT_WINDOW_MS=60000\n"
+              "Environment=RATE_LIMIT_MAX_REQUESTS=600\n"
+              "Environment=OLLAMA_BASE_URL=http://127.0.0.1:11434\n"
+              "Environment=OLLAMA_MODEL=qwen2.5-coder:7b\n"
+              "Environment=OLLAMA_CODEGEN_MODEL=qwen2.5-coder:7b\n"
+          )
+          m = re.search(r"\n\[Install\]", s)
+          if m:
+              s = s[:m.start()] + "\n" + env_new + s[m.start():]
+          else:
+              s += "\n" + env_new
+          s = re.sub(r"^(MemoryMax|CPUQuota|LogRateLimit\w+)=.*\n", "", s, flags=re.M)
+          s = s.replace("RestartSec=5\n", "RestartSec=5\nMemoryMax=1500M\nCPUQuota=200%\nLogRateLimitIntervalSec=5s\nLogRateLimitBurst=100\n", 1)
+          open(p, "w").write(s)
+          print("Unit aktualisiert (ENV + Ressourcen + Log-Limit)")
+          PYU
+          systemctl daemon-reload
+          systemctl restart cybersarah-ccc
+          sleep 15
+          echo "== Verifikation =="
+          systemctl is-active cybersarah-ccc
+          curl -s -m 10 http://127.0.0.1:13000/api/ready | head -c 220; echo
+          echo "== Hub-Routen (fuer Villa-Resume) =="
+          grep -oE "app\.(get|post|put|patch|delete)\(\"[^\"]+\"" /opt/villaforge/server/server.mjs 2>/dev/null | sed "s/app\.//;s/\"//g" | grep -iE "villa|resume|pause|start|sched|master|control" | head -20
+          echo "== Syslog-Rate nach Update (25s) =="
+          S1=$(stat -c %s /var/log/syslog); sleep 25; S2=$(stat -c %s /var/log/syslog); echo "Delta: $(( S2 - S1 )) Bytes"
+          df -h / | tail -1
+          EOS
