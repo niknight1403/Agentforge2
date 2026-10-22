@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 110
     steps:
-      - name: CAX31 auf Hetzner anlegen (falls nicht vorhanden)
+      - name: CAX31 anlegen oder SSH-verifiziert weiterverwenden
         id: create
         env:
           HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
@@ -16,16 +16,33 @@ jobs:
           mkdir -p ~/.ssh && printf '%s\n' "$CAX_SSH_KEY" > ~/.ssh/cax_key && chmod 600 ~/.ssh/cax_key
           PUBKEY=$(ssh-keygen -y -f ~/.ssh/cax_key 2>/dev/null || echo "")
           export PUBKEY
-          cat > /tmp/cax31_create.py <<'PYEOF'
-          import json, os, time, urllib.request
+          cat > /tmp/cax31_state.py <<'PYEOF'
+          import json, os, time, urllib.request, urllib.error
           tok = os.environ["HETZNER_API_TOKEN"]
           def api(url, method="GET", body=None, timeout=60):
               data = json.dumps(body).encode() if body is not None else None
               req = urllib.request.Request(url, data=data, method=method,
                   headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
-              return json.load(urllib.request.urlopen(req, timeout=timeout))
+              try:
+                  return json.load(urllib.request.urlopen(req, timeout=timeout))
+              except urllib.error.HTTPError as e:
+                  raise SystemExit("HTTP %s bei %s: %s" % (e.code, url, e.read().decode()[:300]))
+          def norm(k):
+              parts = k.strip().split()
+              return parts[0] + " " + parts[1] if len(parts) >= 2 else k.strip()
+          pub = os.environ.get("PUBKEY", "").strip()
+          if not pub:
+              raise SystemExit("FEHLER: CAX_SSH_KEY nicht als Public-Key ableitbar")
+          keys = api("https://api.hetzner.cloud/v1/ssh_keys").get("ssh_keys", [])
+          fleet_key = next((k["id"] for k in keys if norm(k.get("public_key", "")) == norm(pub)), None)
+          if not fleet_key:
+              fleet_key = api("https://api.hetzner.cloud/v1/ssh_keys", "POST",
+                              {"name": "cax-fleet-key", "public_key": pub})["ssh_key"]["id"]
+              print("Fleet-Key registriert:", fleet_key)
+          else:
+              print("Fleet-Key bereits im Projekt:", fleet_key)
           servers = api("https://api.hetzner.cloud/v1/servers").get("servers", [])
-          loc, c31 = "", None
+          loc, c31, c31srv = "", None, None
           for s in servers:
               st = s.get("server_type", {})
               tname = st.get("name", "?") if isinstance(st, dict) else "?"
@@ -34,52 +51,84 @@ jobs:
                   det = api("https://api.hetzner.cloud/v1/servers/" + str(s["id"]))
                   loc = ((det.get("server", {}).get("datacenter") or {}).get("location") or {}).get("name", "")
               if "cax31" in s["name"].lower():
-                  c31 = s["public_net"]["ipv4"]["ip"]
+                  c31, c31srv = s["public_net"]["ipv4"]["ip"], s
           if not loc:
               loc = "fsn1"
           print("Standort der Flotte:", loc)
+          state = {"fleet_key": fleet_key, "loc": loc, "c31": c31 or "", "c31srv": c31srv["id"] if c31srv else "",
+                   "mode": "reuse" if c31srv else "create"}
+          json.dump(state, open("/tmp/state.json", "w"))
           if c31:
-              print("CAX31 existiert bereits:", c31)
+              print("CAX31 vorhanden:", c31)
           else:
-              keys = api("https://api.hetzner.cloud/v1/ssh_keys").get("ssh_keys", [])
-              if keys:
-                  key_id = keys[0]["id"]
-                  print("SSH-Key aus Projekt:", key_id)
-              else:
-                  pub = os.environ.get("PUBKEY", "").strip()
-                  if not pub:
-                      raise SystemExit("FEHLER: kein SSH-Key im Projekt und CAX_SSH_KEY nicht ableitbar")
-                  key_id = api("https://api.hetzner.cloud/v1/ssh_keys", "POST",
-                               {"name": "fleet-key", "public_key": pub})["ssh_key"]["id"]
-                  print("SSH-Key registriert:", key_id)
-              body = {"name": "ollama-cax31", "server_type": "cax31", "image": "ubuntu-24.04",
-                      "ssh_keys": [key_id], "location": loc}
-              resp = api("https://api.hetzner.cloud/v1/servers", "POST", body)
-              srv, act = resp.get("server") or {}, resp.get("action") or {}
-              if not srv:
-                  err = resp.get("error") or {}
-                  raise SystemExit("FEHLER Hetzner-API: %s" % err.get("message", resp))
-              print("Server-ID:", srv["id"], "Action:", act.get("id"))
-              for _ in range(60):
-                  st = api("https://api.hetzner.cloud/v1/actions/" + str(act["id"]), timeout=20).get("action", {}).get("status")
-                  if st == "finished":
-                      break
-                  if st == "error":
-                      raise SystemExit("FEHLER: Action-Status error")
-                  time.sleep(5)
-              for _ in range(30):
-                  d = api("https://api.hetzner.cloud/v1/servers/" + str(srv["id"]), timeout=20).get("server", {})
+              print("Kein CAX31 vorhanden — wird neu angelegt.")
+          PYEOF
+          cat > /tmp/cax31_create.py <<'PYEOF'
+          import json, os, time, urllib.request, urllib.error
+          tok = os.environ["HETZNER_API_TOKEN"]
+          st = json.load(open("/tmp/state.json"))
+          def api(url, method="GET", body=None, timeout=60):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(url, data=data, method=method,
+                  headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+              try:
+                  return json.load(urllib.request.urlopen(req, timeout=timeout))
+              except urllib.error.HTTPError as e:
+                  raise SystemExit("HTTP %s bei %s: %s" % (e.code, url, e.read().decode()[:300]))
+          def wait_server(srv_id):
+              for _ in range(40):
+                  d = api("https://api.hetzner.cloud/v1/servers/" + str(srv_id), timeout=20).get("server", {})
                   ip = (d.get("public_net", {}) or {}).get("ipv4", {}).get("ip", "")
                   if ip and d.get("status") == "running":
-                      c31 = ip
-                      break
+                      return ip
                   time.sleep(6)
-              if not c31:
-                  raise SystemExit("FEHLER: keine IPv4 nach Timeout")
-              print("CAX31 aktiv:", c31)
+              return ""
+          if os.path.exists("/tmp/recreate.txt") and st["c31srv"]:
+              print("Neu-Anlage: alter Server wird geloescht (SSH mit Fleet-Key nicht moeglich).")
+              api("https://api.hetzner.cloud/v1/servers/" + str(st["c31srv"]), "DELETE", timeout=30)
+              time.sleep(15)
+          body = {"name": "ollama-cax31", "server_type": "cax31", "image": "ubuntu-24.04",
+                  "ssh_keys": [int(st["fleet_key"])], "location": st["loc"]}
+          resp = api("https://api.hetzner.cloud/v1/servers", "POST", body)
+          srv, act = resp.get("server") or {}, resp.get("action") or {}
+          if not srv:
+              err = resp.get("error") or {}
+              raise SystemExit("FEHLER Hetzner-API: %s" % err.get("message", resp))
+          print("Server-ID:", srv["id"], "Action:", act.get("id"))
+          for _ in range(60):
+              a = api("https://api.hetzner.cloud/v1/actions/" + str(act["id"]), timeout=20).get("action", {}).get("status")
+              if a == "finished":
+                  break
+              if a == "error":
+                  raise SystemExit("FEHLER: Action-Status error")
+              time.sleep(5)
+          c31 = wait_server(srv["id"])
+          if not c31:
+              raise SystemExit("FEHLER: keine IPv4 nach Timeout")
+          print("CAX31 aktiv:", c31)
           open("/tmp/c31ip.txt", "w").write(c31)
           PYEOF
-          python3 /tmp/cax31_create.py
+          python3 /tmp/cax31_state.py
+          MODE=$(python3 -c "import json;print(json.load(open('/tmp/state.json'))['mode'])")
+          C31IP=$(python3 -c "import json;print(json.load(open('/tmp/state.json'))['c31'])")
+          if [ "$MODE" = "reuse" ]; then
+            echo "== SSH-Probe gegen vorhandenen Server $C31IP =="
+            OK=0
+            for i in $(seq 1 15); do
+              if ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 root@$C31IP "echo SSH_OK" 2>/dev/null; then OK=1; break; fi
+              sleep 20
+            done
+            if [ "$OK" = "1" ]; then
+              echo "SSH mit Fleet-Key funktioniert — Server wird weiterverwendet."
+              echo "$C31IP" > /tmp/c31ip.txt
+            else
+              echo "SSH mit Fleet-Key nicht moeglich — Neu-Anlage."
+              touch /tmp/recreate.txt
+              python3 /tmp/cax31_create.py
+            fi
+          else
+            python3 /tmp/cax31_create.py
+          fi
           C31IP=$(cat /tmp/c31ip.txt)
           echo "cax31=$C31IP" >> "$GITHUB_OUTPUT"
       - name: Auf SSH warten, dann Specs pruefen
@@ -89,9 +138,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && printf '%s\n' "$CAX_SSH_KEY" > ~/.ssh/cax_key && chmod 600 ~/.ssh/cax_key
-          echo "== Warte auf SSH (max 5 min): $SIP =="
+          echo "== Warte auf SSH (max 10 min): $SIP =="
           OK=0
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             if ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 root@$SIP "echo BOOT_OK" 2>/dev/null; then OK=1; break; fi
             sleep 10
           done
