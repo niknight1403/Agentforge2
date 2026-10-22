@@ -1,0 +1,71 @@
+name: Flotten-Finalisierung (Routen + Hub + Verifikation)
+on:
+  workflow_dispatch:
+    inputs:
+      cax31_ip:
+        description: 'CAX31-IP'
+        required: true
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Warte auf 14B, integriere Routen, verifiziere alles
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          C31: ${{ github.event.inputs.cax31_ip }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<EOS
+          set -uo pipefail
+          echo "== Warte auf 14B-Modell auf CAX31 (max 25 min) =="
+          FOUND=0
+          for i in \$(seq 1 50); do
+            if curl -s -m 5 http://$C31:11434/api/tags 2>/dev/null | grep -q "qwen2.5-coder:14b"; then echo "MODELL_BEREIT"; FOUND=1; break; fi
+            sleep 30
+          done
+          [ "\$FOUND" = "1" ] || { echo "CAX31-Modell nicht bereit — Routen fuer 3 Knoten + CAX31 trotzdem eintragen"; }
+          echo "== Routen in Hub-DB integrieren =="
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          row = cur.execute("SELECT provider, priority FROM routes WHERE base_url LIKE '%11434%' ORDER BY priority LIMIT 1").fetchone()
+          prov = row[0] if row else "ollama"
+          basep = (row[1] if row else 5) + 1
+          nodes = [
+              ("Cascade: Ollama CAX11 (3B)", "http://2.28.12.63:11434", "qwen2.5-coder:3b", basep),
+              ("Cascade: Ollama CAX21-1 (7B)", "http://2.31.45.241:11434", "qwen2.5-coder:7b", basep + 1),
+              ("Cascade: Ollama CAX21-2 (7B)", "http://2.31.64.65:11434", "qwen2.5-coder:7b", basep + 2),
+              ("Cascade: Ollama CAX31 (14B)", "http://$C31:11434", "qwen2.5-coder:14b", basep + 3),
+          ]
+          for name, url, model, prio in nodes:
+              ex = cur.execute("SELECT id FROM routes WHERE base_url=?", (url,)).fetchone()
+              if ex:
+                  cur.execute("UPDATE routes SET model=?, enabled=1, status='IDLE', dead=0, cooldown_until=0 WHERE id=?", (model, ex[0]))
+                  print("aktualisiert:", name)
+              else:
+                  cur.execute("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used, cooldown_until, lat_ms, tokens, dead) VALUES (?,?,?,?,?,1,1,?,0.2,'IDLE',0,0,0,0,0,0,0)", (name, prov, url, model, prio))
+                  print("eingefuegt:", name, "Prioritaet", prio)
+          cur.execute("UPDATE routes SET enabled=0 WHERE status='ERROR' AND fail > 1000")
+          print("Tote-OpenRouter-Routen deaktiviert:", cur.rowcount)
+          con.commit()
+          for r in cur.execute("SELECT name, priority, enabled, status FROM routes ORDER BY priority").fetchall():
+              print("  ", r)
+          PYV
+          echo "== Hub-Neustart =="
+          systemctl restart villaforge-hub 2>/dev/null || systemctl restart villaforge 2>/dev/null || true
+          sleep 12
+          systemctl is-active villaforge-hub 2>/dev/null || systemctl is-active villaforge 2>/dev/null || true
+          echo "== LLM-Status + Verifikation =="
+          TOK=\$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
+          curl -s -m 10 -X POST -H "Authorization: Bearer \$TOK" http://127.0.0.1:12000/api/routeforge/tick | head -c 200; echo
+          sleep 10
+          curl -s -m 10 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); l=d.get('llm',{}); print('LLM:', l.get('eligibleRoutes'), '/', l.get('configuredRoutes'), 'state:', l.get('state'))"
+          curl -s -m 10 -H "Authorization: Bearer \$TOK" http://127.0.0.1:12000/api/scheduler | head -c 260; echo
+          echo "== Syslog-Rate (15s) =="
+          S1=\$(stat -c %s /var/log/syslog); sleep 15; S2=\$(stat -c %s /var/log/syslog); echo "Delta: \$(( S2 - S1 )) Bytes"
+          EOS
