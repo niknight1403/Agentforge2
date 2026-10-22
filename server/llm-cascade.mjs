@@ -29,9 +29,13 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
  }
  return async function cascade(messages,opts={}) {
   const attempted=[],seen=new Set();
+  const cloudFirst=opts.cloudFirst===true;
+  const effectiveTier=(r)=>cloudFirst
+   ? routeTier(r)
+   : isLocalRoute(r) ? 0 : routeTier(r)+10;
   const ordered=routes().filter(r=>r.provider!=='offline' && (!freeOnlyEnabled()||isFreeRoute(r)) && (!r.key_env||key(r.key_env)))
    .filter(r=>Number(r.cooldown_until||0)<=clock())
-   .sort((a,b)=>routeTier(a)-routeTier(b)||Number(a.priority)-Number(b.priority)||Number(b.weight||1)-Number(a.weight||1)||Number(a.last_used||0)-Number(b.last_used||0)||a.id-b.id);
+   .sort((a,b)=>effectiveTier(a)-effectiveTier(b)||Number(a.priority)-Number(b.priority)||Number(b.weight||1)-Number(a.weight||1)||Number(a.last_used||0)-Number(b.last_used||0)||a.id-b.id);
   const deadline=clock()+Math.max(1000,Math.min(Number(opts.totalTimeoutMs)||120000,600000));
   const cloudDeadline=Math.min(deadline,clock()+Math.max(1000,Math.min(Number(process.env.VF_LLM_CLOUD_BUDGET_MS)||24000,60000)));
   for(const r of ordered) {
