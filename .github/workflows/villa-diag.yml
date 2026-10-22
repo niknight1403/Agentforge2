@@ -53,6 +53,17 @@ jobs:
           cur = con.cursor()
           print('Status/Autonomie:', cur.execute('SELECT status, autonomy, COUNT(*) FROM villas GROUP BY status, autonomy').fetchall())
           PYV
+          echo "== Echter Scheduler-Zustand (Hub-API, redigiert) =="
+          PW=$(systemctl show villaforge-hub.service -p Environment | grep -oP 'VF_ADMIN_PASSWORD=\K[^" ]+')
+          EM=$(systemctl show villaforge-hub.service -p Environment | grep -oP 'VF_ADMIN_EMAIL=\K[^" ]+')
+          TOK=$(curl -s -m 10 -X POST http://localhost:12000/api/auth/login -H 'Content-Type: application/json' -d "{\"email\":\"$EM\",\"password\":\"$PW\"}" | python3 -c "import json,sys;print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
+          if [ -n "$TOK" ]; then
+            curl -s -m 10 http://localhost:12000/api/scheduler -H "Authorization: Bearer $TOK" | python3 -c "import json,sys;d=json.load(sys.stdin);print('focusMode:',d.get('focusMode'),'| slots:',d.get('slots'),'| active:',d.get('active'),'| queued:',d.get('queued'),'| queue:',d.get('queue'))"
+            curl -s -m 10 "http://localhost:12000/api/health" -o /dev/null -w "Health HTTP %{http_code}\n"
+          else
+            echo "Login nicht moeglich (Token leer)"
+          fi
+
           echo "== VF_Fokus/Slot-Env (redigiert) =="
           systemctl show villaforge-hub.service -p Environment | grep -o 'VF_FOCUS_MODE=[^ ]*' || echo "VF_FOCUS_MODE nicht gesetzt"
           echo "(Env-Ausgabe redigiert: nur VF_FOCUS_MODE sichtbar)"
