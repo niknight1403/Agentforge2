@@ -1,0 +1,37 @@
+name: VM Spam-Fix (Hub-Schleife)
+on:
+  workflow_dispatch: {}
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Spam-Quelle identifizieren und stoppen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Aktuelle Spam-Muster =="
+          tail -c 500000 /var/log/syslog | grep -oE "[A-Za-z_-]+\\[[0-9]+\\]" | sort | uniq -c | sort -rn | head -5
+          tail -2 /var/log/syslog | cut -c1-250
+          echo "== Hub-DB-Konfig =="
+          grep -rE "DATABASE|PGHOST|POSTGRES" /opt/villaforge/.env 2>/dev/null | head -5 || true
+          systemctl cat villaforge-hub 2>/dev/null | grep -E "Environment|WorkingDir|ExecStart" | head -6 || true
+          echo "== modelRouterSettings in VM-PG? =="
+          sudo -u postgres psql -Atq -d cybersarah -c "SELECT to_regclass('public.modelRouterSettings');" 2>&1 | head -2
+          sudo -u postgres psql -Atq -d villaforge -c "SELECT to_regclass('public.modelRouterSettings');" 2>&1 | head -2
+          echo "== Rsyslog Rate-Limit hart setzen =="
+          printf "\$imjournalRatelimit.Interval 5\n\$imjournalRatelimit.Burst 500\n\$SystemLogRateLimitInterval 5\n\$SystemLogRateLimitBurst 500\n" > /etc/rsyslog.d/00-ratelimit.conf
+          systemctl restart rsyslog
+          echo "== Syslog kuerzen =="
+          truncate -s 0 /var/log/syslog
+          df -h / | tail -1
+          EOS
+          echo "== Nach 45s: Spam-Rate =="
+          sleep 45
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "stat -c %s /var/log/syslog; df -h / | tail -1"
