@@ -12,14 +12,14 @@ export const KEY_ALIASES={GEMINI_API_KEY:['GOOGLE_API_KEY'],HF_TOKEN:['HUGGINGFA
 const configuredGroqModel=process.env.VF_GROQ_MODEL==='llama-3.3-70b-versatile'?'openai/gpt-oss-120b':(process.env.VF_GROQ_MODEL||'openai/gpt-oss-120b');
 export function cascadeDefaults() {
  return [
-  ['Gemini','gemini','https://generativelanguage.googleapis.com/v1beta/openai',process.env.VF_GEMINI_MODEL||'gemini-3.5-flash-lite','GEMINI_API_KEY',10],
+  ['Gemini','gemini','https://generativelanguage.googleapis.com/v1beta/openai',process.env.VF_GEMINI_MODEL||'gemini-3.1-flash-lite','GEMINI_API_KEY',10],
   ['Cerebras','cerebras','https://api.cerebras.ai/v1',process.env.VF_CEREBRAS_MODEL||'gpt-oss-120b','CEREBRAS_API_KEY',12],
   ['Groq','groq','https://api.groq.com/openai/v1',configuredGroqModel,'GROQ_API_KEY',20],
   ['Mistral','mistral','https://api.mistral.ai/v1',process.env.VF_MISTRAL_MODEL||'mistral-small-latest','MISTRAL_API_KEY',21],
   ['OpenRouter Free','openrouter','https://openrouter.ai/api/v1','openrouter/free','OPENROUTER_API_KEY',22],
   // xAI is opt-in: it is not a free tier and must not silently incur charges.
   ...(process.env.VF_XAI_MODEL ? [['xAI','xai','https://api.x.ai/v1',process.env.VF_XAI_MODEL,'XAI_API_KEY',21]]:[]),
-  ['Hugging Face','huggingface','https://router.huggingface.co/v1',process.env.VF_HF_MODEL||'auto','HF_TOKEN',30],
+  ['Hugging Face','huggingface','https://router.huggingface.co/v1',process.env.VF_HF_MODEL||'openai/gpt-oss-120b:cerebras','HF_TOKEN',30],
   ['Ollama local','ollama',process.env.VF_LOCAL_LLM_URL||'http://127.0.0.1:11434/v1',process.env.VF_LOCAL_LLM_MODEL||'auto','',40],
   ['Local reserve','lmstudio',process.env.VF_LOCAL_LLM_SECONDARY_URL||'http://127.0.0.1:1234/v1',process.env.VF_LOCAL_LLM_SECONDARY_MODEL||'auto','',41]
  ].map(([name,provider,base_url,model,key_env,priority])=>({name:`Cascade: ${name}`,provider,base_url,model,key_env,priority}));
@@ -31,7 +31,7 @@ export function syncCascadeRoutes() {
   const existing=db.prepare('SELECT id,name,model FROM routes WHERE name=? OR (base_url=? AND model=?)').get(r.name,r.base_url,r.model);
   if(existing){
    const names={'Cascade: Gemini':['VF_GEMINI_MODEL'],'Cascade: Cerebras':['VF_CEREBRAS_MODEL'],'Cascade: Groq':['VF_GROQ_MODEL'],'Cascade: Mistral':['VF_MISTRAL_MODEL'],'Cascade: Hugging Face':['VF_HF_MODEL'],'Cascade: xAI':['VF_XAI_MODEL'],'Cascade: Ollama local':['VF_LOCAL_LLM_URL','VF_LOCAL_LLM_MODEL'],'Cascade: Local reserve':['VF_LOCAL_LLM_SECONDARY_URL','VF_LOCAL_LLM_SECONDARY_MODEL']};
-   const staleDefault=(r.name==='Cascade: Gemini'&&['auto','gemini-2.0-flash'].includes(existing.model)&&!process.env.VF_GEMINI_MODEL)||(r.name==='Cascade: Cerebras'&&existing.model==='llama-3.3-70b'&&!process.env.VF_CEREBRAS_MODEL)||(r.name==='Cascade: Groq'&&existing.model==='llama-3.3-70b-versatile'&&(!process.env.VF_GROQ_MODEL||process.env.VF_GROQ_MODEL==='llama-3.3-70b-versatile'));
+   const staleDefault=(r.name==='Cascade: Gemini'&&['auto','gemini-2.0-flash','gemini-3.5-flash-lite'].includes(existing.model)&&!process.env.VF_GEMINI_MODEL)||(r.name==='Cascade: Cerebras'&&existing.model==='llama-3.3-70b'&&!process.env.VF_CEREBRAS_MODEL)||(r.name==='Cascade: Groq'&&existing.model==='llama-3.3-70b-versatile'&&(!process.env.VF_GROQ_MODEL||process.env.VF_GROQ_MODEL==='llama-3.3-70b-versatile'));
    if(existing.name===r.name&&((names[r.name]||[]).some(k=>process.env[k])||staleDefault))db.prepare('UPDATE routes SET base_url=?,model=? WHERE id=?').run(r.base_url,r.model,existing.id);
    continue;
   }
@@ -39,23 +39,45 @@ export function syncCascadeRoutes() {
  }
  return {added};
 }
+export function syncFreeRouteFlags() {
+ let updated=0;
+ for(const row of db.prepare('SELECT id,provider,base_url,model,is_free FROM routes').all()) {
+  const free=Number(isFreeRoute(row));
+  if(Number(row.is_free)!==free) {db.prepare('UPDATE routes SET is_free=? WHERE id=?').run(free,row.id);updated++;}
+ }
+ return {updated};
+}
 export function isLocalRoute(r) {return ['ollama','lmstudio'].includes(r.provider)||/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(r.base_url||'');}
+/** Infer known provider families for manually-added OpenAI-compatible endpoints. */
+export function routeProvider(r) {
+ const declared=String(r?.provider||'').toLowerCase();
+ if(declared&&declared!=='openai-compatible')return declared;
+ let host='';try{host=new URL(r?.base_url||'').hostname.toLowerCase();}catch{}
+ if(host==='generativelanguage.googleapis.com')return 'gemini-openai';
+ if(host==='api.groq.com')return 'groq';
+ if(host==='openrouter.ai')return 'openrouter';
+ if(host==='api.cerebras.ai')return 'cerebras';
+ if(host==='api.mistral.ai')return 'mistral';
+ if(host==='router.huggingface.co')return 'huggingface';
+ if(host==='api.x.ai')return 'xai';
+ return declared||'openai-compatible';
+}
 /** Cost-safe default: unknown and credit-based cloud providers are opt-in. */
 export function isFreeRoute(r) {
  if(isLocalRoute(r)) return true;
- const provider=String(r.provider||'').toLowerCase();
+ const provider=routeProvider(r);
  const model=String(r.model||'').toLowerCase();
- if(provider==='gemini'||provider==='gemini-openai') return model==='gemini-3.5-flash-lite';
+ if(provider==='gemini'||provider==='gemini-openai') return model==='gemini-3.1-flash-lite';
  if(provider==='openrouter') return model==='openrouter/free'||model.endsWith(':free');
  if(provider==='groq') return ['openai/gpt-oss-120b','openai/gpt-oss-20b','qwen/qwen3.8-27b'].includes(model);
- if(provider==='cerebras') return ['gpt-oss-120b','qwen-3.8-27b'].includes(model);
- if(provider==='mistral') return model==='mistral-small-latest';
+ // Cerebras currently provides expiring trial credits, not a renewable free tier.
+ // Hugging Face free accounts have no included inference-provider credits.
  return false;
 }
 export function freeOnlyEnabled() {return !['0','false','off','no'].includes(String(process.env.VF_LLM_FREE_ONLY||'1').toLowerCase());}
 export function routeTier(r) {
  if(isLocalRoute(r)) return 6;
- const p=String(r.provider+' '+r.base_url).toLowerCase();
+ const p=String(routeProvider(r)+' '+r.base_url).toLowerCase();
  if(/gemini|generativelanguage/.test(p)) return 1;
  if(/cerebras/.test(p)) return 2;
  if(/groq/.test(p)) return 3;
