@@ -1,12 +1,12 @@
-name: Villa-Audit (Alle Villen + Aufgaben)
+name: Villa-Audit v2 (Spam + DB + LLM)
 on:
   workflow_dispatch: {}
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
-      - name: Villen-Stand auf der VM pruefen
+      - name: Tiefenpruefung
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
@@ -16,21 +16,32 @@ jobs:
           chmod 600 ~/.ssh/oracle_key
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
           set -uo pipefail
-          echo "== Hub-Layout =="
-          ls /opt/villaforge/server/src 2>/dev/null | head -12 || ls /opt/villaforge/server 2>/dev/null | head -12
-          echo "== API-Routen =="
-          grep -rhoE '"/api/[a-z0-9/_:-]+"' /opt/villaforge/server/src 2>/dev/null | tr -d '"' | sort -u | head -40
-          grep -rhoE "'/api/[a-z0-9/_:-]+'" /opt/villaforge/server/src 2>/dev/null | tr -d "'" | sort -u | head -40
-          echo "== Villa-DB =="
-          ls -la /opt/villaforge/server/data/ 2>/dev/null | head -8
-          find /opt/villaforge -maxdepth 3 -name "*.db" -o -maxdepth 3 -name "*.sqlite*" 2>/dev/null | head -5
-          echo "== Hub-Login-Test =="
-          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | head -c 400)
-          printf "%s" "$TOK" | head -c 200; echo
-          echo "== Scheduler-Status =="
-          curl -s -m 10 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps({k:d[k] for k in list(d)[:8]}, indent=1)[:600])" 2>/dev/null || true
-          echo "== Hub-Version =="
-          curl -s -m 8 http://127.0.0.1:12000/api/version 2>/dev/null | head -c 200; echo
-          echo "== Syslog-Rate (10s) =="
-          S1=$(stat -c %s /var/log/syslog); sleep 10; S2=$(stat -c %s /var/log/syslog); echo "Delta: $(( S2 - S1 )) Bytes"
+          echo "== SPAMMER JETZT =="
+          tail -c 400000 /var/log/syslog | grep -oE "[A-Za-z0-9._-]+\[[0-9]+\]" | sort | uniq -c | sort -rn | head -4
+          tail -1 /var/log/syslog | cut -c1-260
+          echo "== Loop-Guard-Log (letzte 5) =="
+          tail -5 /var/log/loop-guard.log 2>/dev/null || echo "kein Guard-Log"
+          echo "== cybersarah-ccc Restarts =="
+          systemctl show cybersarah-ccc -p NRestarts -p ExecMainStartTimestamp
+          echo "== Hub ExecStart =="
+          systemctl cat villaforge-hub 2>/dev/null | grep -E "ExecStart|WorkingDirectory" | head -3
+          echo "== Hub-API-Routen =="
+          HUBJS=$(systemctl cat villaforge-hub 2>/dev/null | grep ExecStart | grep -oE "/[^ ]+\.js" | head -1)
+          [ -n "$HUBJS" ] && grep -ohE "/api/[a-z0-9/_:-]+" "$HUBJS" 2>/dev/null | sort -u | head -30 || true
+          echo "== Villa-DB: Tabellen =="
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          tabs = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()]
+          print("Tabellen:", ", ".join(tabs))
+          for t in tabs:
+              if any(k in t.lower() for k in ("villa", "task", "agent", "draft", "job", "queue")):
+                  n = cur.execute("SELECT COUNT(*) FROM " + t).fetchone()[0]
+                  print("-- " + t + ": " + str(n) + " Zeilen")
+                  cols = [d[1] for d in cur.execute("PRAGMA table_info(" + t + ")").fetchall()]
+                  print("   Spalten:", ", ".join(cols[:14]))
+                  for row in cur.execute("SELECT * FROM " + t + " ORDER BY rowid DESC LIMIT 4").fetchall():
+                      print("   ", str(row)[:240])
+          PYV
           EOS
