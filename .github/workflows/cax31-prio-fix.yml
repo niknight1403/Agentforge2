@@ -1,0 +1,36 @@
+name: CAX31-Kaskadenprioritaet korrigieren (14B als letzte Stufe)
+on:
+  workflow_dispatch:
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Prioritaet auf 47 setzen, Hub neu starten, verifizieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key && chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          row = cur.execute("SELECT id FROM routes WHERE name LIKE 'Cascade: Ollama CAX31%'").fetchone()
+          if not row:
+              raise SystemExit("FEHLER: CAX31-Route nicht gefunden")
+          cur.execute("UPDATE routes SET priority=47 WHERE id=?", (row[0],))
+          con.commit()
+          for r in cur.execute("SELECT name, priority FROM routes WHERE name LIKE 'Cascade:%' ORDER BY priority").fetchall():
+              print("  ", r)
+          PYV
+          systemctl restart villaforge-hub 2>/dev/null || systemctl restart villaforge 2>/dev/null || true
+          sleep 12
+          systemctl is-active villaforge-hub 2>/dev/null || systemctl is-active villaforge 2>/dev/null || true
+          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
+          curl -s -m 10 -X POST -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/routeforge/tick | head -c 200; echo
+          sleep 8
+          curl -s -m 10 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); l=d.get('llm',{}); print('LLM:', l.get('eligibleRoutes'), '/', l.get('configuredRoutes'), 'state:', l.get('state'))"
+          EOS
