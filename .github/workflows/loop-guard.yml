@@ -1,0 +1,23 @@
+name: Loop-Guard (Stabilitaets-Agent)
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Waechter auf der VM ausfuehren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          bash -n scripts/loop-guard.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" < scripts/loop-guard.sh
