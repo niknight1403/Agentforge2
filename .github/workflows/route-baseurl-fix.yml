@@ -1,0 +1,72 @@
+name: Routen-Fix (base_url /v1, tote Modell-Routen aus, Reset, Flotte starten)
+on:
+  workflow_dispatch:
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Ollama-Routen reparieren und 5er-Betrieb verifizieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=60 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          DB=/opt/villaforge/server/data/villaforge.db
+          cat > /tmp/fixroutes.py <<'PYV'
+          import sqlite3, time
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
+          cur = con.cursor()
+          before = cur.execute("SELECT id, base_url, enabled FROM routes WHERE id BETWEEN 31 AND 36 ORDER BY id").fetchall()
+          print("Vorher:", before)
+          # 1) /v1 anhaengen (idempotent)
+          cur.execute("UPDATE routes SET base_url = base_url || '/v1' WHERE id BETWEEN 31 AND 36 AND base_url NOT LIKE '%/v1'")
+          print("base_url angepasst:", cur.rowcount)
+          # 2) Routen auf nicht installierte Modelle deaktivieren (33,34,35)
+          cur.execute("UPDATE routes SET enabled = 0 WHERE id IN (33,34,35)")
+          print("tote Modell-Routen deaktiviert:", cur.rowcount)
+          # 3) Cooldown/Fehlerzaehler/Status der echten Routen zuruecksetzen
+          cur.execute("UPDATE routes SET cooldown_until = 0, dead = 0, status = 'OK', fail = 0 WHERE id IN (31,32,36)")
+          print("Reset Routen 31/32/36:", cur.rowcount)
+          con.commit()
+          after = cur.execute("SELECT id, base_url, model, enabled, status FROM routes WHERE id BETWEEN 31 AND 36 ORDER BY id").fetchall()
+          for r in after: print("Nachher:", r)
+          PYV
+          python3 /tmp/fixroutes.py
+          echo "== Hub-Neustart (Routen-Cache leeren) =="
+          systemctl restart villaforge-hub.service
+          sleep 25
+          systemctl is-active villaforge-hub.service
+          echo "== Flotte starten (resume_all ueber Steuerungsskript) =="
+          cat > /tmp/resume.py <<'PYV'
+          import sqlite3, datetime
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
+          cur = con.cursor()
+          cur.execute("UPDATE villas SET autonomy = 1 WHERE status != 'ARCHIVED'")
+          con.commit()
+          print("Autonomie gesetzt:", cur.rowcount)
+          PYV
+          python3 /tmp/resume.py
+          echo "== Beobachtung 10 Minuten (developLoop-Takt 5 Min) =="
+          cat > /tmp/watch.py <<'PYV'
+          import sqlite3, json, urllib.request, sys
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
+          cur = con.cursor()
+          st = cur.execute("SELECT status, COUNT(*) FROM villas GROUP BY status").fetchall()
+          mv = cur.execute("SELECT COUNT(*) FROM tasks WHERE updated_at > datetime('now','-3 minutes')").fetchone()[0]
+          done = cur.execute("SELECT COUNT(*) FROM tasks WHERE status='DONE' AND updated_at > datetime('now','-10 minutes')").fetchone()[0]
+          rt = cur.execute("SELECT id, status, ok, fail FROM routes WHERE id IN (31,32,36)").fetchall()
+          print("Villen:", st, "| Task-Updates(3min):", mv, "| DONE(10min):", done, "| Routen(id,status,ok,fail):", rt)
+          PYV
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            sleep 60
+            echo -n "T+${i}min: "
+            python3 /tmp/watch.py
+          done
+          echo "== Hub-Log (Routen/Fehler) =="
+          journalctl -u villaforge-hub.service --since "12 min ago" --no-pager | grep -v "systemd\[1\]" | grep -iE "route|switch|fehl|error|villa|dauerentw" | tail -15
+          EOS
