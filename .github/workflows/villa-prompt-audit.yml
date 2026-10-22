@@ -1,0 +1,48 @@
+name: Villa-Prompt-Audit (Prompts + Integrationsdaten)
+on:
+  workflow_dispatch:
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Villa-Prompts und Schemata auslesen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key && chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          print("== ALLE TABELLEN ==")
+          tabs = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()]
+          print(tabs)
+          for t in ("villas", "tasks", "villa_proposals"):
+              if t in tabs:
+                  print("== SCHEMA", t, "==")
+                  print([c[1] for c in cur.execute("PRAGMA table_info(%s)" % t).fetchall()])
+          print("== VILLAS ==")
+          cols = [c[1] for c in cur.execute("PRAGMA table_info(villas)").fetchall()]
+          for row in cur.execute("SELECT * FROM villas ORDER BY id").fetchall():
+              d = dict(zip(cols, row))
+              print("--- VILLA", d.get("id"), "|", d.get("name"), "| status:", d.get("status"), "| autonomy:", d.get("autonomy"))
+              for k, v in d.items():
+                  if k in ("id", "name", "status", "autonomy", "created_at", "updated_at"): continue
+                  s = str(v)
+                  print("  %s: %s" % (k, s[:1200]))
+          for t in ("tasks", "villa_proposals"):
+              if t not in tabs: continue
+              print("== %s: STATUS-VERTEILUNG ==" % t.upper())
+              print(cur.execute("SELECT status, COUNT(*) FROM %s GROUP BY status" % t).fetchall())
+              cols2 = [c[1] for c in cur.execute("PRAGMA table_info(%s)" % t).fetchall()]
+              print("== %s: NEUESTES SAMPLE ==" % t.upper())
+              for row in cur.execute("SELECT * FROM %s ORDER BY id DESC LIMIT 2" % t).fetchall():
+                  d = dict(zip(cols2, row))
+                  for k, v in d.items():
+                      print("  %s: %s" % (k, str(v)[:400]))
+          PYV
+          EOS
