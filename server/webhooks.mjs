@@ -15,7 +15,7 @@
 import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
 import { emit } from './events.mjs';
 import { db } from './db.mjs';
-import { redisTrySetNx, redisAvailable } from './redis.mjs';
+import { redisTrySetNx, redisTryDel, redisAvailable } from './redis.mjs';
 
 // ── Persistenz: jedes eingehende Event wird revisionssicher geloggt ──
 export function initWebhookStore() {
@@ -62,6 +62,12 @@ export async function claimEventId(scope, eventId, ttlSeconds = 86_400) {
   if (claimEventId._mem.has(key)) return false;
   claimEventId._mem.set(key, now + ttlSeconds * 1_000);
   return true;
+}
+
+/** Gibt einen Event-Claim bei fehlgeschlagener Verarbeitung fuer Webhook-Retries frei. */
+export async function releaseEventId(scope, eventId) {
+  if (claimEventId._mem) claimEventId._mem.delete(`${scope}:${eventId}`);
+  return redisTryDel(`vf:wh:${scope}:${eventId}`);
 }
 
 // ── Hilfsfunktionen: konstante Zeit vergleichen, ohne Leaks ──
@@ -278,6 +284,7 @@ export function gatewayStatus() {
     slack: process.env.SLACK_WEBHOOK_URL ? 'konfiguriert' : 'deaktiviert',
     stripe: process.env.STRIPE_WEBHOOK_SECRET ? 'konfiguriert' : 'deaktiviert',
     digistore24: process.env.DIGISTORE24_PASSPHRASE ? 'konfiguriert' : 'deaktiviert',
+    githubTelegram: process.env.GITHUB_WEBHOOK_SECRET && process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID ? 'konfiguriert' : 'deaktiviert',
     universal: (process.env.WEBHOOK_API_KEYS || process.env.WEBHOOK_INTERNAL_TOKEN) ? 'konfiguriert' : 'deaktiviert'
   };
 }
