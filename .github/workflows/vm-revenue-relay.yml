@@ -9,7 +9,7 @@ jobs:
       - name: Scan-Relay im Hub-Nginx einrichten
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
-          HETZNER_IP: ${{ vars.HETZNER_PUBLIC_IP }}
+          HETZNER_IP: 167.233.196.20
         run: |
           set -euo pipefail
           test -n "$HETZNER_IP"
