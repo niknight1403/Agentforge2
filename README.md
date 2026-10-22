@@ -457,6 +457,22 @@ bei vorhandenen Installationen automatisch von veralteten Standardwerten auf
 Gemini 3.1 Flash-Lite aktualisiert; ausdrücklich konfigurierte andere Modelle
 bleiben bestehen.
 
+## Medien-Generator und Fähigkeitsprüfung
+
+Der Deep Agent prüft mit `media_capabilities` die Verfügbarkeit für App- und
+Live-Performance-Entwicklung sowie Bildgenerierung, Bildbearbeitung, Video und
+Audio. Mit konfiguriertem `FAL_KEY` kann `media_generate` über Fal.ai rendern;
+Modellrouten für jede Medienart sind in `.env.example` überschreibbar. Eine
+Mediengenerierung wird nur auf konkreten Auftrag ausgeführt und kann Kosten
+verursachen. Ohne Schlüssel bereitet `media_prepare` ein speicherbares
+Produktionspaket vor und meldet Rendering ausdrücklich als ausstehend. Das
+Paket ist kein fertiges Bild, Video oder Audio.
+
+Das Medien-Pack muss aktiviert sein. Quell- und Ausgabe-URLs benötigen HTTPS;
+private Hosts werden abgelehnt und Downloads haben ein Größenlimit. Live-
+Performance-Software kann Villaforge entwickeln, bauen und testen; echte
+Audiointerface-/MIDI-Hardware und Latenz müssen auf dem Zielgerät geprüft werden.
+
 Hugging Face Inference Provider und Cerebras Testcredits gelten nicht als dauerhaft
 kostenlos. Diese Routen sind nur bei `VF_LLM_FREE_ONLY=0` freigegeben. Ein Route-
 Status `eligible` bedeutet, dass Filter, Key und Cooldown passen; erst ein
