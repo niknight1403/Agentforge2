@@ -34,7 +34,22 @@ async function doLogin() {
   } catch (e) { $('#loginMsg').textContent = String(e); }
   finally { $('#loginBtn').disabled = false; }
 }
-async function checkSession() { try { const me = await api('/api/auth/me'); if (me.user) hideLogin(); } catch {} }
+async function checkSession() {
+  try {
+    const me = await api('/api/auth/me');
+    if (me.user) {
+      hideLogin();
+      const label = me.user.name || me.user.email || 'Mein Konto';
+      $('#accountName').textContent = label;
+      $('#accountDetail').textContent = me.user.email && me.user.name ? me.user.email : 'Angemeldet · VillaForge';
+      const initial = String(label).trim().charAt(0).toLocaleUpperCase('de-DE');
+      if (initial) document.querySelectorAll('.avatar').forEach(el => { el.textContent = initial; });
+    } else {
+      $('#accountName').textContent = 'Mein Konto';
+      $('#accountDetail').textContent = 'Nicht angemeldet';
+    }
+  } catch {}
+}
 
 /* ---------- Navigation (Bottom-Tabs) ---------- */
 function selectView(name) {
@@ -49,6 +64,12 @@ async function checkHealth() {
     const h = await api('/api/health');
     $('#healthDot').className = 'dot ok';
     $('#healthText').textContent = `Hub online · ${h.routes} Routen · v${h.version || ''}`;
+    $('#systemBadge').className = 'badge online'; $('#systemBadge').textContent = '● Hub online';
+    $('.quality-card').classList.remove('is-offline');
+    $('#gateChip').className = 'chip ok'; $('#gateChip').textContent = 'VERBUNDEN';
+    $('#systemHeadline').textContent = 'Hub erreichbar';
+    const llm = h.llm || {};
+    $('#systemDetail').textContent = `${llm.eligibleRoutes ?? 0} nutzbare KI-Routen · ${llm.freeOnly ? 'kostenfreie Routen bevorzugt' : 'Routenmodus aktiv'}`;
     $('#metricRoutes').textContent = h.routes ?? '–';
     const up = h.uptime || {}; const sys = Math.round(up.systemSec / 3600);
     $('#metricUptime').textContent = up.systemSec ? (sys >= 24 ? Math.floor(sys / 24) + 'd' : sys + 'h') : '–';
@@ -61,6 +82,11 @@ async function checkHealth() {
     $('#verNum').textContent = h.version || '–';
   } catch {
     $('#healthDot').className = 'dot err'; $('#healthText').textContent = 'Hub nicht erreichbar';
+    $('#systemBadge').className = 'badge status FAILED'; $('#systemBadge').textContent = '● Hub offline';
+    $('.quality-card').classList.add('is-offline');
+    $('#gateChip').className = 'chip'; $('#gateChip').textContent = 'OFFLINE';
+    $('#systemHeadline').textContent = 'Hub nicht erreichbar';
+    $('#systemDetail').textContent = 'Prüfe die Serververbindung und lade die Seite erneut.';
     $('#superagentStatus').className = 'chip'; $('#superagentStatus').textContent = 'OFFLINE';
   }
 }
@@ -335,7 +361,7 @@ $('#loginBtn').addEventListener('click', doLogin);
 $('#loginPassword').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 document.querySelectorAll('.bottomnav .nav-item[data-view]').forEach(n => n.addEventListener('click', () => {
   const v = n.dataset.view;
-  if (v === 'chat') { window.openVillaForgeMaster(); return; }
+  if (v === 'chat') { selectView('chat'); return; }
   if (v === 'agents') { selectView('agents'); loadFleet(); return; }
   selectView(v);
 }));
@@ -358,5 +384,5 @@ $('#addSecretBtn').addEventListener('click', addSecret);
 document.querySelectorAll('.tab-chip').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#detailPanel').hidden) closeWorkspace(); });
 
-function boot() { checkHealth(); loadVillas(); loadRoutes(); loadSecrets(); connectEvents(); }
-checkSession(); boot(); setInterval(checkHealth, 20000);
+function boot() { checkSession(); checkHealth(); loadVillas(); loadRoutes(); loadSecrets(); connectEvents(); }
+boot(); setInterval(checkHealth, 20000);
