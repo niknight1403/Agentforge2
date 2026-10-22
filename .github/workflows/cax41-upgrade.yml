@@ -6,30 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - name: Alten CAX31 vorab rueckbauen (Shared-Core-Limit freigeben)
-        env:
-          HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          echo "== Rueckbau des alten ollama-cax31 (IDempotent) =="
-          python3 - <<'PYEOF'
-          import json, os, urllib.request, urllib.error
-          tok = os.environ["HETZNER_API_TOKEN"]
-          def api(url, method="GET", timeout=30):
-              req = urllib.request.Request(url, method=method, headers={"Authorization": "Bearer " + tok})
-              return json.load(urllib.request.urlopen(req, timeout=timeout))
-          servers = api("https://api.hetzner.cloud/v1/servers").get("servers", [])
-          found = False
-          for s in servers:
-              if s["name"] == "ollama-cax31":
-                  found = True
-                  req = urllib.request.Request("https://api.hetzner.cloud/v1/servers/" + str(s["id"]), method="DELETE",
-                                               headers={"Authorization": "Bearer " + tok})
-                  urllib.request.urlopen(req, timeout=30)
-                  print("ollama-cax31 (ID %s, %s) geloescht — 8 Shared-Cores frei." % (s["id"], s["public_net"]["ipv4"]["ip"]))
-          if not found:
-              print("ollama-cax31 nicht vorhanden — nichts zu rueckbauen.")
-          PYEOF
+      # Bestehenden Modellknoten nur nach erfolgreicher Verifikation ersetzen.
       - name: CAX41 auf Hetzner anlegen (falls nicht vorhanden)
         id: create
         env:
@@ -254,18 +231,25 @@ jobs:
               print("  ", r)
           PYV
           echo "== Hub-Neustart =="
-          systemctl restart villaforge-hub 2>/dev/null || systemctl restart villaforge 2>/dev/null || true
+          systemctl restart villaforge-hub || systemctl restart villaforge
           sleep 12
-          systemctl is-active villaforge-hub 2>/dev/null || systemctl is-active villaforge 2>/dev/null || true
-          echo "== Verifikation =="
-          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
-          curl -s -m 10 -X POST -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/routeforge/tick | head -c 200; echo
-          sleep 10
-          curl -s -m 10 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); l=d.get('llm',{}); print('LLM:', l.get('eligibleRoutes'), '/', l.get('configuredRoutes'), 'state:', l.get('state'))"
+          systemctl is-active --quiet villaforge-hub || systemctl is-active --quiet villaforge
+          echo "== Verifikation der neuen Route =="
+          python3 - <<'PYV'
+          import os, sqlite3
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          row = con.execute("SELECT enabled, base_url, model FROM routes WHERE base_url=? AND model=?",
+              ("http://{}:11434".format(os.environ["C41"]), os.environ["MODEL"])).fetchone()
+          assert row is not None and row[0] == 1, "CAX41-Route fehlt oder ist deaktiviert"
+          print("CAX41-Route aktiviert")
+          PYV
+          curl -fsS -m 10 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); assert d.get('llm',{}).get('eligibleRoutes',0)>0, 'Keine nutzbare LLM-Route'; print('LLM-Routen:',d['llm']['eligibleRoutes'])"
           echo "== Testantwort vom CAX41 ($MODEL) =="
-          curl -s -m 300 "http://$C41:11434/api/generate" -d "{\"model\":\"$MODEL\",\"prompt\":\"Antworte mit einem Wort: Hallo\",\"stream\":false}" | head -c 300; echo
+          curl -fsS -m 300 "http://$C41:11434/api/generate" -d "{\"model\":\"$MODEL\",\"prompt\":\"Antworte mit einem Wort: Hallo\",\"stream\":false}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d.get('response','').strip(), 'Leere Modellantwort'; print('Modellantwort erfolgreich')"
           EOS
+          echo 'verified=true' >> "$GITHUB_OUTPUT"
       - name: Alten CAX31 nach erfolgreicher Verifikation rueckbauen
+        if: steps.hub.outputs.verified == 'true'
         env:
           HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
         run: |
