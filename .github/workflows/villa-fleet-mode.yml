@@ -45,7 +45,8 @@ jobs:
           print("  Villen gesamt:", cur.execute("SELECT COUNT(*) FROM villas").fetchall()[0][0])
           PYV
           echo "== 4) Fokus-Modus deaktivieren (VF_FOCUS_MODE=0, Drop-in) =="
-          UNIT=$(systemctl list-units --type=service --no-legend | grep -oE '^[a-z0-9-]*hub[a-z0-9-]*\.service' | head -1)
+          UNIT=$(systemctl list-units --type=service --no-legend | awk '{print $1}' | grep -iE 'villaforge|hub' | head -1 || true)
+          if [ -z "$UNIT" ]; then UNIT=villaforge-hub.service; fi
           echo "Unit: $UNIT"
           mkdir -p /etc/systemd/system/$UNIT.d
           printf '[Service]\nEnvironment=VF_FOCUS_MODE=0\n' > /etc/systemd/system/$UNIT.d/fleet.conf

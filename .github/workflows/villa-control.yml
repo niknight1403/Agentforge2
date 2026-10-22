@@ -37,16 +37,13 @@ jobs:
           import { DatabaseSync } from 'node:sqlite';
           const [mode, idsArg] = process.argv.slice(2);
           const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
-          const nowSql = () => strftime_now();
-          function strftime_now() {
-            return new Date().toISOString().replace('T',' ').replace('Z','') + 'Z';
-          }
+          const nowSql = () => new Date().toISOString();
           function list(ids) {
             const ph = ids.map(() => '?').join(',');
             const rows = ids.length
-              ? db.prepare(\`SELECT id, name, status, autonomy FROM villas WHERE id IN (\${ph}) ORDER BY id\`).all(...ids)
+              ? db.prepare(`SELECT id, name, status, autonomy FROM villas WHERE id IN (${ph}) ORDER BY id`).all(...ids)
               : db.prepare('SELECT id, name, status, autonomy FROM villas ORDER BY id').all();
-            for (const v of rows) console.log(\`[\${v.id}] \${v.name} | status: \${v.status} | autonomy: \${v.autonomy}\`);
+            for (const v of rows) console.log(`[${v.id}] ${v.name} | status: ${v.status} | autonomy: ${v.autonomy}`);
             return rows.length;
           }
           if (mode === 'status') {
@@ -63,13 +60,13 @@ jobs:
             list(ids);
           };
           if (mode === 'pause') {
-            apply(\`UPDATE villas SET autonomy = 0, status = 'PAUSED', updated_at = '\${nowSql()}'\`, 'PAUSE');
+            apply(`UPDATE villas SET autonomy = 0, status = 'PAUSED', updated_at = '${nowSql()}'`, 'PAUSE');
           } else if (mode === 'pause_all') {
-            apply(\`UPDATE villas SET autonomy = 0, status = 'PAUSED', updated_at = '\${nowSql()}'\`, 'PAUSE_ALL');
+            apply(`UPDATE villas SET autonomy = 0, status = 'PAUSED', updated_at = '${nowSql()}'`, 'PAUSE_ALL');
           } else if (mode === 'resume') {
-            apply(\`UPDATE villas SET autonomy = 1, updated_at = '\${nowSql()}'\`, 'RESUME');
+            apply(`UPDATE villas SET autonomy = 1, updated_at = '${nowSql()}'`, 'RESUME');
           } else if (mode === 'resume_all') {
-            apply(\`UPDATE villas SET autonomy = 1, updated_at = '\${nowSql()}'\`, 'RESUME_ALL');
+            apply(`UPDATE villas SET autonomy = 1, updated_at = '${nowSql()}'`, 'RESUME_ALL');
           } else {
             console.error('Unbekannter Modus: ' + mode);
             process.exit(1);
