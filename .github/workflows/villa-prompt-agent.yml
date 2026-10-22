@@ -107,9 +107,9 @@ jobs:
                   print("   Proposal angelegt")
               for step in data["next_steps"][:3]:
                   title = str(step)[:120]
-                  dup = cur.execute("SELECT id FROM tasks WHERE villa_id=? AND title=? AND status IN ('pending','in_progress','assigned')", (vid, title)).fetchone()
+                  dup = cur.execute("SELECT id FROM tasks WHERE villa_id=? AND title=? AND status IN ('PENDING','READY','RUNNING','REVIEW')", (vid, title)).fetchone()
                   if not dup:
-                      cur.execute("INSERT INTO tasks (villa_id, agent_id, title, description, status, priority, result, retry_count, created_at, updated_at) VALUES (?,?,?,?,'pending',5,'',0,datetime('now'),datetime('now'))",
+                      cur.execute("INSERT INTO tasks (villa_id, agent_id, title, description, status, priority, result, retry_count, created_at, updated_at) VALUES (?,?,?,?,'PENDING',5,'',0,datetime('now'),datetime('now'))",
                                   (vid, None, title, "Vom Prompt-Agent abgeleitet. " + str(step)[:2000]))
               con.commit()
               processed += 1
