@@ -13,12 +13,12 @@ jobs:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
           set -euo pipefail
-          test -f hub-snapshot/autopilot.mjs && test -f hub-snapshot/scorer.mjs && test -f hub-snapshot/server.mjs && test -f hub-snapshot/control-store.mjs
+          test -f hub-snapshot/messenger.mjs && test -f hub-snapshot/autopilot.mjs && test -f hub-snapshot/scorer.mjs && test -f hub-snapshot/server.mjs && test -f hub-snapshot/control-store.mjs
           grep -q "startAutopilot" hub-snapshot/server.mjs && echo "Verdraetung im Snapshot"
           mkdir -p ~/.ssh
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 hub-snapshot/scorer.mjs hub-snapshot/autopilot.mjs hub-snapshot/server.mjs hub-snapshot/control-store.mjs ubuntu@92.5.177.159:/tmp/
+          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 hub-snapshot/scorer.mjs hub-snapshot/autopilot.mjs hub-snapshot/messenger.mjs hub-snapshot/server.mjs hub-snapshot/control-store.mjs ubuntu@92.5.177.159:/tmp/
       - name: Backup, Einsatz, Settings, Neustart
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
@@ -28,7 +28,7 @@ jobs:
           set -uo pipefail
           D=/opt/villaforge/server
           TS=$(date +%Y%m%d-%H%M%S)
-          for F in scorer.mjs autopilot.mjs server.mjs control-store.mjs; do
+          for F in scorer.mjs autopilot.mjs messenger.mjs server.mjs control-store.mjs; do
             [ -f "$D/$F" ] && cp "$D/$F" "$D/$F.bak-$TS"
             node --check "/tmp/$F" && cp "/tmp/$F" "$D/$F" && echo "$F eingesetzt"
           done
@@ -64,6 +64,10 @@ jobs:
           sleep 240
           echo "== Autopilot-Log =="
           journalctl -u villaforge-hub.service --since "10 min ago" --no-pager | grep -i "autopilot" | tail -6
+          echo "== Messenger-Log =="
+          journalctl -u villaforge-hub.service --since "10 min ago" --no-pager | grep -i "messenger" | tail -3
+          echo "== IPN-Gateway (Sprint 3, live) =="
+          curl -s -m 10 http://localhost:12000/api/v1/webhooks/status | head -c 400; echo
           echo "== Flotten-/DB-Status =="
           python3 - <<'PYV'
           import sqlite3

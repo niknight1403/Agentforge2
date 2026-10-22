@@ -19,6 +19,7 @@ import { schedulerStatus, villaRanking, enqueueVillas, configureScheduler, sched
 // Heuristik bewertet DONE-Aufgaben, der Autopilot regelt die Flotte autonom
 // (Slot-Filling, Orphan-Rescue, Route-Healing, Local-First-Report).
 import { autopilotTick, startAutopilot, localFirstReport } from './autopilot.mjs';
+import { startMessenger, messengerStatus } from './messenger.mjs';
 import { scoresSnapshot, scoreRecentTasks, villaScores } from './scorer.mjs';
 import { maintenanceTick, pruneOldData, dbSize } from './maintenance.mjs';
 import { cmdGateStatus } from './fs-tools.mjs';
@@ -508,6 +509,9 @@ async function api(req, res, url) {
   }
   if (p === '/api/scores' && m === 'GET') {
     return json(res, 200, { ...scoresSnapshot(), localFirst: localFirstReport() });
+  }
+  if (p === '/api/messenger' && m === 'GET') {
+    return json(res, 200, messengerStatus());
   }
   if (p === '/api/tools' && m === 'GET') return json(res, 200, toolSpecs());
   // ---- Rollen-Katalog: alle verfuegbaren Agenten-Rollen inkl. AGI-Quintett ----
@@ -1062,6 +1066,9 @@ server.listen(PORT, HOST, () => {
   // AUTOPILOT (v1.45.0): Scorer + autonomer Flottenregler — erster Takt nach
   // 90 s, danach alle 5 Min (Setting 'autopilot' = 0 schaltet ihn ab).
   startAutopilot();
+
+  // MESSENGER-TRIGGER (v1.46.0): Telegram-Fernsteuerung, inaktiv ohne Token.
+  startMessenger();
 
   // Nach einem Neustart unterbrochene Laeufe fortsetzen (nur wenn erlaubt).
   if (process.env.VF_RESUME !== '0') {

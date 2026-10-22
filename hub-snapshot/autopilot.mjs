@@ -23,14 +23,14 @@
 import { db, now } from './db.mjs';
 import { getSetting } from './control-store.mjs';
 import { schedulerStatus, enqueueVillas } from './scheduler.mjs';
-import { scoreRecentTasks, villaScores } from './scorer.mjs';
+import { scoreRecentTasks, villaScores, deepScoreRecent } from './scorer.mjs';
 
 const LOCAL_HINTS = ['2.31.', '2.28.', '10.', '192.168.', '127.0.0.1', 'localhost'];
 
 const log = (msg) => console.log(`[villaforge] Autopilot: ${msg}`);
 
 /** Eine Autopilot-Runde. Gibt die ausgefuehrten Aktionen zurueck (fuer Log/Tests). */
-export function autopilotTick({ slots = null } = {}) {
+export async function autopilotTick({ slots = null } = {}) {
   const actions = [];
   if (Number(getSetting('autopilot', process.env.VF_AUTOPILOT ?? 1)) !== 1) return actions;
 
@@ -72,7 +72,16 @@ export function autopilotTick({ slots = null } = {}) {
     }
   } catch (e) { actions.push(`orphan-rescue FEHLER: ${String(e?.message || e).slice(0, 120)}`); }
 
-  // 4) Route-Healing — Fehler-Zaehler beruhigter, aktiver Routen nach 10 Min Ruhe zuruecksetzen.
+  // 4) LLM-Tiefenbewertung (Setting 'scoreLLM' = 1): max 5 Tasks/Takt gegen-
+  //    lesen — Default aus, damit die Kaskade den Villen-Agenten gehoert.
+  try {
+    if (Number(getSetting('scoreLLM', 0)) === 1) {
+      const deep = await deepScoreRecent({ limit: 5 });
+      if (deep) actions.push(`deep-scored:${deep}`);
+    }
+  } catch { /* nie fatal */ }
+
+  // 5) Route-Healing — Fehler-Zaehler beruhigter, aktiver Routen nach 10 Min Ruhe zuruecksetzen.
   try {
     const healed = db.prepare(`
       UPDATE routes SET ok = 1, fail = 0, status = 'OK', cooldown_until = 0

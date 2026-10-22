@@ -18,6 +18,7 @@
  *   25% Stabilitaet (1 - Fehlerquote) abzueglich Busy-Churn.
  */
 import { db, now } from './db.mjs';
+import { chat } from './llm.mjs';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS task_scores (
@@ -109,6 +110,47 @@ export function villaScores() {
              avgTaskScore: Math.round(r.avg_task || 0) };
   }).sort((a, b) => b.score - a.score);
   return out;
+}
+
+let deepColsReady = false;
+function ensureDeepColumns() {
+  if (deepColsReady) return;
+  for (const col of ['deep INTEGER NOT NULL DEFAULT 0', 'llm_score INTEGER']) {
+    try { db.exec(`ALTER TABLE task_scores ADD COLUMN ${col}`); } catch { /* existiert schon */ }
+  }
+  deepColsReady = true;
+}
+
+/**
+ * v1.46.0 — LLM-TIEFENBEWERTUNG (Setting 'scoreLLM' = 1, Default aus):
+ * Heuristisch bewertete Aufgaben werden zusaetzlich vom lokalen Modell
+ * gegengelesen (Kapazitaetsschutz: max. `limit` pro Takt, bei LLM-Auslastung
+ * wird abgebrochen und der naechste Takt versucht es erneut). Der LLM-Score
+ * landet in llm_score, deep=1 markiert die fertige Tiefenpruefung.
+ */
+export async function deepScoreRecent({ limit = 5 } = {}) {
+  ensureDeepColumns();
+  const rows = db.prepare(`
+    SELECT s.task_id, t.title, t.result FROM task_scores s
+    JOIN tasks t ON t.id = s.task_id
+    WHERE s.deep = 0 ORDER BY s.created_at DESC LIMIT ?`).all(Math.max(1, Number(limit) || 5));
+  let deep = 0;
+  for (const r of rows) {
+    try {
+      const out = await chat([
+        { role: 'system', content: 'Du bewertest abgeschlossene Software-Aufgaben eines autonomen Agenten. Kriterien: Vollstaendigkeit, echte Erledigungs-Beweise (Tests/Builds/Dateien), fachliche Korrektheit. Antworte AUSSCHLIESSLICH mit JSON: {"score": <0-100>, "reason": "<max 15 Woerter>}' },
+        { role: 'user', content: `Aufgabe: ${String(r.title || '').slice(0, 200)}\nErgebnis: ${String(r.result || '').slice(0, 1500)}` },
+      ], { json: true });
+      const raw = typeof out === 'string' ? out : JSON.stringify(out);
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (!m) break; // kein brauchbares Modell-Ergebnis → naechster Takt
+      const parsed = JSON.parse(m[0]);
+      const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score) || 0)));
+      db.prepare('UPDATE task_scores SET deep = 1, llm_score = ? WHERE task_id = ?').run(score, r.task_id);
+      deep++;
+    } catch { break; } // LLM_UNAVAILABLE/BUSY: Kapazitaetsschutz, spaeter erneut
+  }
+  return deep;
 }
 
 /** Snapshot fuer /api/scores. */
