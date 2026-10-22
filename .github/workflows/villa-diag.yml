@@ -33,6 +33,7 @@ jobs:
           print("Slots-Setting:", cur.execute("SELECT value FROM control_settings WHERE key='villaSlots'").fetchone())
           print("Villen-Status:", cur.execute("SELECT status, COUNT(*) FROM villas GROUP BY status").fetchall())
           PYV
-          echo "== VF_*-Env des Hub =="
-          systemctl show villaforge-hub.service -p Environment
+          echo "== VF_Fokus/Slot-Env (redigiert) =="
+          systemctl show villaforge-hub.service -p Environment | grep -o 'VF_FOCUS_MODE=[^ ]*' || echo "VF_FOCUS_MODE nicht gesetzt"
+          echo "(Env-Ausgabe redigiert: nur VF_FOCUS_MODE sichtbar)"
           EOS
