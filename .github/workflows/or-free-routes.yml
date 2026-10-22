@@ -1,0 +1,96 @@
+name: OpenRouter-Free-Routen (Keys aus CCC-ENV in Hub)
+on:
+  workflow_dispatch: {}
+jobs:
+  orfree:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Keys uebernehmen, freie OR-Modelle eintragen, verifizieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== OpenRouter-Keys aus CCC-ENV =="
+          ENVF=""
+          for f in /opt/ccc/repo/.env /opt/ccc/.env /opt/ccc/repo/.env.production; do
+            [ -f "$f" ] && grep -q "OPENROUTER_API_KEY=" "$f" && ENVF="$f" && break
+          done
+          if [ -z "$ENVF" ]; then echo "KEINE_CCC_ENV_GEFUNDEN"; exit 0; fi
+          echo "ENV-Datei: $ENVF"
+          grep -cE "^OPENROUTER_API_KEY" "$ENVF"
+          echo "== Hub-Unit-Dropin mit OR-Keys =="
+          mkdir -p /etc/systemd/system/villaforge-hub.service.d
+          python3 - "$ENVF" <<'PYU'
+          import sys
+          lines = open(sys.argv[1]).read().splitlines()
+          keys = {}
+          for l in lines:
+              if l.startswith("OPENROUTER_API_KEY") and "=" in l:
+                  k, v = l.split("=", 1)
+                  v = v.strip().strip('"').strip("'")
+                  if v:
+                      keys[k] = v
+          out = "[Service]\n"
+          for k, v in keys.items():
+              out += 'Environment="%s=%s"\n' % (k, v)
+          open("/etc/systemd/system/villaforge-hub.service.d/openrouter.conf", "w").write(out)
+          print("Keys in Dropin:", ", ".join(keys.keys()))
+          PYU
+          echo "== Hub stoppen + freie OR-Modelle eintragen =="
+          systemctl stop villaforge-hub
+          sleep 3
+          python3 - <<'PYV'
+          import json, sqlite3, urllib.request
+
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db", timeout=30)
+          cur = con.cursor()
+          dropin = open("/etc/systemd/system/villaforge-hub.service.d/openrouter.conf").read()
+          keys = [k for k in ("OPENROUTER_API_KEY", "OPENROUTER_API_KEY_2", "OPENROUTER_API_KEY_4", "OPENROUTER_API_KEY_6", "OPENROUTER_API_KEY_8") if ('"%s=' % k) in dropin]
+          print("Keys:", keys)
+          picked = []
+          try:
+              req = urllib.request.Request("https://openrouter.ai/api/v1/models")
+              data = json.load(urllib.request.urlopen(req, timeout=25))["data"]
+              free = [m for m in data
+                      if m.get("pricing", {}).get("prompt") == "0"
+                      and (m.get("architecture", {}) or {}).get("modality", "text") == "text"]
+              free.sort(key=lambda m: m.get("context_length") or 0, reverse=True)
+              existing = {r[0] for r in cur.execute("SELECT model FROM routes").fetchall()}
+              picked = [m["id"] for m in free if m["id"] not in existing][:5]
+          except Exception as e:
+              print("Katalog-Fehler:", e)
+          print("Freie Modelle:", picked)
+          for i, model in enumerate(picked):
+              key = keys[i % len(keys)] if keys else "OPENROUTER_API_KEY"
+              short = model.split("/")[-1].replace(":free", "")[:30]
+              ex = cur.execute("SELECT id FROM routes WHERE base_url=? AND model=?", ("https://openrouter.ai/api/v1", model)).fetchone()
+              if ex:
+                  cur.execute("UPDATE routes SET enabled=1, status='IDLE', dead=0, cooldown_until=0, key_env=? WHERE id=?", (key, ex[0]))
+                  print("aktualisiert:", short)
+              else:
+                  cur.execute("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used, cooldown_until, lat_ms, tokens, dead) VALUES (?,?,?,?,?,1,1,?,0.2,'IDLE',0,0,0,0,0,0,0)",
+                              ("Cascade: OpenRouter Free " + short, "openrouter", "https://openrouter.ai/api/v1", model, key, 50 + i))
+                  print("eingefuegt:", short, "Prioritaet", 50 + i)
+          con.commit()
+          print("-- Alle aktiven Routen --")
+          for r in cur.execute("SELECT name, priority FROM routes WHERE enabled=1 ORDER BY priority").fetchall():
+              print("  ", r)
+          con.close()
+          PYV
+          echo "== Hub starten + verifizieren =="
+          systemctl daemon-reload
+          systemctl start villaforge-hub
+          sleep 12
+          systemctl is-active villaforge-hub
+          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
+          curl -s -m 10 -X POST -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/routeforge/tick | head -c 120; echo
+          sleep 12
+          curl -s -m 10 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); l=d.get('llm',{}); print('LLM:', l.get('eligibleRoutes'), '/', l.get('configuredRoutes'), 'state:', l.get('state'))"
+          S1=$(stat -c %s /var/log/syslog); sleep 15; S2=$(stat -c %s /var/log/syslog); echo "Syslog-Delta: $(( S2 - S1 )) Bytes"
+          EOS
