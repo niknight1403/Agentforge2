@@ -4,11 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'pause | resume | pause_all | resume_all | status'
+        description: 'pause | resume | pause_all | resume_all | status | set_idea'
         required: true
         default: 'status'
       ids:
         description: 'Villa-IDs, kommasepariert (z.B. 4,7,8) — LEER = alle Villen'
+        required: false
+        default: ''
+      idea:
+        description: 'Neue Missions-ID (idea) für Modus set_idea (Base64-sicher übertragen)'
         required: false
         default: ''
 
@@ -28,15 +32,19 @@ jobs:
           chmod +x /tmp/sshcmd
 
       - name: Villa-Status in der Hub-DB setzen
+        env:
+          IDEA_INPUT: ${{ github.event.inputs.idea }}
         run: |
           MODE='${{ github.event.inputs.mode }}'
           IDS='${{ github.event.inputs.ids }}'
-          /tmp/sshcmd "sudo bash -s '$MODE' '$IDS'" << 'EOS'
+          IDEA_B64=$(printf '%s' "$IDEA_INPUT" | base64 -w0)
+          /tmp/sshcmd "sudo bash -s '$MODE' '$IDS' '$IDEA_B64'" << 'EOS'
           set -e
-          MODE="$1"; IDS="$2"
+          MODE="$1"; IDS="$2"; IDEA_B64="$3"
           F=/tmp/villa-control-$$.mjs; tee $F >/dev/null << 'NODEJS'
           import { DatabaseSync } from 'node:sqlite';
-          const [mode, idsArg] = process.argv.slice(2);
+          const [mode, idsArg, ideaB64] = process.argv.slice(2);
+          const idea = ideaB64 ? Buffer.from(ideaB64, 'base64').toString('utf8') : '';
           const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
           const nowSql = () => new Date().toISOString();
           function list(ids) {
@@ -68,11 +76,18 @@ jobs:
             apply(`UPDATE villas SET autonomy = 1, updated_at = '${nowSql()}'`, 'RESUME');
           } else if (mode === 'resume_all') {
             apply(`UPDATE villas SET autonomy = 1, updated_at = '${nowSql()}'`, 'RESUME_ALL');
+          } else if (mode === 'set_idea') {
+            if (!idea || !ids.length) { console.error('set_idea benötigt idea und Villa-IDs.'); process.exit(1); }
+            if (idea.length > 20000) { console.error('Idee zu lang: ' + idea.length); process.exit(1); }
+            const r = db.prepare(`UPDATE villas SET idea = ?, updated_at = '${nowSql()}' WHERE id IN (${ids.map(() => '?').join(',')})`).run(idea, ...ids);
+            console.log('SET_IDEA: ' + r.changes + ' Villa(n) aktualisiert');
+            const rows = db.prepare(`SELECT id, name, length(idea) AS len, substr(idea,1,160) AS head FROM villas WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+            for (const v of rows) console.log(`[${v.id}] ${v.name} | idea ${v.len} Zeichen | Anfang: ${v.head}`);
           } else {
             console.error('Unbekannter Modus: ' + mode);
             process.exit(1);
           }
           NODEJS
-          sudo node $F "$MODE" "$IDS"
+          sudo node $F "$MODE" "$IDS" "$IDEA_B64"
           rm -f $F
           EOS
