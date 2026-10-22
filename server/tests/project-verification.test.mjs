@@ -43,6 +43,11 @@ test('Prüfbefehle laufen wirklich: roter Nutzerfluss verhindert 100, reparierte
  writeFileSync(join(p,'smoke.mjs'),'import assert from "node:assert/strict"; import {value} from "./index.mjs"; assert.equal(value+1,2);');
  assert.equal((await verifyProjectRuntime(id)).ok,true);assert.equal(maturity(id).score,100);
 });
+test('Gewichtetes Quality Gate blockiert hart codierte Secrets trotz gruener Build-Tests',async()=>{
+ const id=villa(),p=project(id);writeFileSync(join(p,'index.mjs'),"export const API_KEY='sk-abcdefghijklmnopqrstuvwxyz123456';");
+ await verifyProjectRuntime(id,{runner:async()=>({ok:true})});
+ const ready=projectReadiness(id);assert.equal(ready.quality.passed,false);assert.ok(ready.quality.score<85);assert.equal(ready.verified,false);
+});
 test('Noch offene Produktaufgaben sperren 100 trotz technisch erfolgreicher Prüfungen',async()=>{
  const id=villa();project(id);await verifyProjectRuntime(id,{runner:async()=>({ok:true})});
  db.prepare("INSERT INTO tasks(villa_id,title,status,created_at,updated_at) VALUES (?,'Fehlendes Kernfeature','PENDING',?,?)").run(id,now(),now());
