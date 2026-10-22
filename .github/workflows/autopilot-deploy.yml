@@ -18,7 +18,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 hub-snapshot/scorer.mjs hub-snapshot/autopilot.mjs hub-snapshot/messenger.mjs hub-snapshot/factory.mjs hub-snapshot/server.mjs hub-snapshot/control-store.mjs ubuntu@92.5.177.159:/tmp/
+          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 hub-snapshot/scorer.mjs hub-snapshot/autopilot.mjs hub-snapshot/messenger.mjs hub-snapshot/factory.mjs hub-snapshot/factory-seed.json hub-snapshot/server.mjs hub-snapshot/control-store.mjs ubuntu@92.5.177.159:/tmp/
       - name: Backup, Einsatz, Settings, Neustart
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
@@ -67,6 +67,30 @@ jobs:
           journalctl -u villaforge-hub.service --since "10 min ago" --no-pager | grep -i "autopilot" | tail -6
           echo "== Messenger-Log =="
           journalctl -u villaforge-hub.service --since "10 min ago" --no-pager | grep -i "messenger" | tail -3
+          echo "== Factory-Seed: 3 Spezialagenten idempotent anlegen =="
+          python3 - <<'PYSEED'
+          import sqlite3, json, time
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db', timeout=30)
+          cur = con.cursor()
+          seed = json.load(open('/opt/villaforge/server/factory-seed.json'))
+          for a in seed["agents"]:
+              ex = cur.execute("SELECT id FROM villas WHERE name = ?", (a["name"],)).fetchone()
+              if ex:
+                  print("  existiert:", a["name"], "id", ex[0])
+                  continue
+              t = int(time.time())
+              r = cur.execute("INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?,?)", (a["name"], a["idea"], "CREATED", 1000, a.get("autonomy", 0), t, t))
+              vid = r.lastrowid
+              try:
+                  cur.execute("UPDATE villas SET vision = ? WHERE id = ?", (a["idea"], vid))
+              except Exception:
+                  pass
+              for i, task in enumerate(a["tasks"]):
+                  cur.execute("INSERT INTO tasks (villa_id, title, description, status, priority, created_at, updated_at) VALUES (?,?,?,?,?,?,?)", (vid, task, a["mission"], "PENDING", max(1, 3 - i), t, t))
+              print("  angelegt:", a["name"], "id", vid, "| Tasks:", len(a["tasks"]))
+          con.commit()
+          print("Seed abgeschlossen")
+          PYSEED
           echo "== Public-Fleet + scoreLLM =="
           curl -s -m 10 http://localhost:12000/api/public/fleet | python3 -c "import json,sys; d=json.load(sys.stdin); print('Public-Fleet OK:', d['villas'], '| scored:', d['scoredTasks'])"
           python3 -c "import sqlite3; con=sqlite3.connect('/opt/villaforge/server/data/villaforge.db'); print('scoreLLM:', con.execute(\"SELECT value FROM control_settings WHERE key='scoreLLM'\").fetchone())"
