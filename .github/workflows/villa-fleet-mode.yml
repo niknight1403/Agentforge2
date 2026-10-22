@@ -1,0 +1,83 @@
+name: Villa-Flottenmodus (5 parallel, 24/7, Auto-Rotation)
+on:
+  workflow_dispatch:
+    inputs:
+      slots:
+        description: 'Gleichzeitige Villen-Slots'
+        required: false
+        default: '5'
+jobs:
+  fleet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Flotte aktivieren und Stabilitaet pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          SLOTS: ${{ github.event.inputs.slots || '5' }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=40 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo SLOTS='$SLOTS' bash -s" <<'EOS'
+          set -euo pipefail
+          echo "== 1) Task-Status auf Hub-Konvention (UPPERCASE) heben =="
+          python3 -u - <<'PYV'
+          import sqlite3
+          DB = "/opt/villaforge/server/data/villaforge.db"
+          con = sqlite3.connect(DB)
+          cur = con.cursor()
+          for new, olds in [("PENDING", ["pending", "assigned"]), ("RUNNING", ["in_progress"])]:
+              for o in olds:
+                  n = cur.execute("UPDATE tasks SET status=? WHERE status=?", (new, o)).rowcount
+                  if n: print("  %s -> %s: %d" % (o, new, n))
+          print("  Task-Status jetzt:", cur.execute("SELECT status, COUNT(*) FROM tasks GROUP BY status").fetchall())
+          print("== 2) Scheduler-Slots auf " + __import__('os').environ.get('SLOTS','5') + " setzen ==")
+          S = __import__('os').environ.get('SLOTS', '5')
+          cur.execute("INSERT OR REPLACE INTO control_settings VALUES ('villaSlots', ?)", (S,))
+          con.commit()
+          print("  control_settings.villaSlots =", cur.execute("SELECT value FROM control_settings WHERE key='villaSlots'").fetchone()[0])
+          print("== 3) Alle Villen in die 24/7-Rotation (autonomy=1) ==")
+          n = cur.execute("UPDATE villas SET autonomy=1 WHERE autonomy=0").rowcount
+          con.commit()
+          print("  autonomy angehoben bei %d Villa(s)" % n)
+          print("  Villen gesamt:", cur.execute("SELECT COUNT(*) FROM villas").fetchall()[0][0])
+          PYV
+          echo "== 4) Fokus-Modus deaktivieren (VF_FOCUS_MODE=0, Drop-in) =="
+          UNIT=$(systemctl list-units --type=service --no-legend | grep -oE '^[a-z0-9-]*hub[a-z0-9-]*\.service' | head -1)
+          echo "Unit: $UNIT"
+          mkdir -p /etc/systemd/system/$UNIT.d
+          printf '[Service]\nEnvironment=VF_FOCUS_MODE=0\n' > /etc/systemd/system/$UNIT.d/fleet.conf
+          systemctl daemon-reload
+          systemctl show "$UNIT" -p Environment | grep -o 'VF_FOCUS_MODE=[^ ]*' || echo "WARNUNG: VF_FOCUS_MODE nicht in Unit-Environment sichtbar"
+          echo "== 5) Hub-Neustart =="
+          systemctl restart "$UNIT"
+          sleep 20
+          systemctl is-active "$UNIT"
+          echo "== 6) Health + Scheduler nach Neustart =="
+          curl -s -m 10 http://localhost:3000/api/health | head -c 300; echo
+          SCHED=$(curl -s -m 10 http://localhost:3000/api/scheduler || true)
+          echo "$SCHED" | head -c 400; echo
+          echo "== 7) Stabilitaetstest: 7 Minuten Beobachtung =="
+          sleep 420
+          echo "-- Zeitpunkt T+7min --"
+          systemctl is-active "$UNIT"
+          T0=$(date +%s%N)
+          curl -s -m 10 http://localhost:3000/api/health > /tmp/h.json
+          T1=$(date +%s%N)
+          echo "Health-Antwortzeit: $(( (T1-T0)/1000000 )) ms"
+          python3 - <<'PYV'
+          import json, sqlite3, datetime
+          d = json.load(open('/tmp/h.json'))
+          print("Health:", d.get('version'), "| ok:", d.get('ok'), "| Routen:", d.get('routes'))
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          print("Villen-Status:", cur.execute("SELECT status, COUNT(*) FROM villas GROUP BY status").fetchall())
+          print("Laufende Villen:", cur.execute("SELECT id, name FROM villas WHERE status='RUNNING' ORDER BY id").fetchall())
+          rows = cur.execute("SELECT COUNT(*) FROM tasks WHERE updated_at > datetime('now','-7 minutes')").fetchone()[0]
+          print("Aufgaben-Bewegung (letzte 7 Min):", rows)
+          print("Offene Aufgaben je laufender Villa:", cur.execute("SELECT villa_id, COUNT(*) FROM tasks WHERE status IN ('PENDING','READY','RUNNING','REVIEW') GROUP BY villa_id").fetchall())
+          PYV
+          echo "== Flottenmodus aktiv: 5 Slots, Auto-Rotation, 24/7 =="
+          EOS
