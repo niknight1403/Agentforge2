@@ -8,6 +8,13 @@ Ein Router wechselt standardmäßig zwischen **kostenlosen LLM-Anbindungen** und
 bei Bedarf ein lokales Modell. Ohne erreichbares Sprachmodell bleibt die App bedienbar
 und zeigt klar an, dass KI-Aufgaben derzeit nicht ausgeführt werden können.
 
+## Neu in 1.46.0 — Produktstudio-Oberfläche
+
+- **Übersicht für Desktop und Mobilgeräte**: Das Dashboard ordnet Status, aktive Villa und Aktionen auf großen Bildschirmen in einer klaren Arbeitsfläche; auf dem Handy bleibt die Bedienung kompakt.
+- **Projekte schneller finden**: Villen lassen sich nach Name und Beschreibung suchen, sowohl in der Übersicht als auch beim Öffnen des Deep-Agent-Chats.
+- **Ruhigere, lesbare Gestaltung**: Neon-Glühen wurde reduziert, Fokuszustände und Karten sind klarer, und die Android-App nutzt dieselbe gedämpfte Akzentpalette.
+- **Ehrliche Produktkennzeichnung**: Eine unbelegte „Unlimited“-Anzeige wurde durch die tatsächliche Funktion der App ersetzt.
+
 ## Neu in 1.45.0 — Kostenbewusste KI und Release-Stabilität
 
 - **Kostenlose LLM-Kaskade als Standard**: Gemini Flash-Lite zuerst, danach

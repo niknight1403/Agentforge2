@@ -72,6 +72,21 @@ function villaCardHtml(v) {
   return `<button class="villa-card" data-id="${v.id}"><div><b>${esc(v.name)}</b><small>${esc((v.idea || '').slice(0, 105))}</small></div><div style="display:flex;align-items:center;gap:8px"><span class="badge status ${esc(v.status)}">${esc(statusLabel(v.status))}</span><span class="chev">›</span></div></button>`;
 }
 
+function renderVillaLists(villas = latestVillas) {
+  const homeQuery = ($('#villaSearch')?.value || '').trim().toLocaleLowerCase('de-DE');
+  const chatQuery = ($('#chatVillaSearch')?.value || '').trim().toLocaleLowerCase('de-DE');
+  const matches = (query) => villas.filter(v => `${v.name || ''} ${v.idea || ''}`.toLocaleLowerCase('de-DE').includes(query));
+  const homeMatches = matches(homeQuery);
+  const chatMatches = matches(chatQuery);
+  $('#villaList').innerHTML = homeMatches.length
+    ? homeMatches.slice(0, homeQuery ? homeMatches.length : 12).map(villaCardHtml).join('')
+    : `<p class="empty-state">${villas.length ? 'Keine Villa passt zu deiner Suche.' : 'Noch keine Villa. Tippe unten auf ＋.'}</p>`;
+  $('#chatPickList').innerHTML = chatMatches.length
+    ? chatMatches.map(villaCardHtml).join('')
+    : `<p class="empty-state">${villas.length ? 'Kein Projekt passt zu deiner Suche.' : 'Erstelle zuerst eine Villa, um mit ihrem Deep Agent zu arbeiten.'}</p>`;
+  document.querySelectorAll('.villa-card').forEach(el => el.addEventListener('click', () => openVilla(Number(el.dataset.id))));
+}
+
 function renderOverview(villas) {
   const active = villas.find(v => v.status === 'RUNNING') || villas.find(v => v.status === 'PLANNING') || villas[0] || null;
   const totalDone = villas.reduce((n, v) => n + (v.tasks_done || 0), 0);
@@ -91,13 +106,7 @@ function renderOverview(villas) {
     $('#ringFg').style.strokeDashoffset = 213.6;
     $('#activeVillaCard').removeAttribute('data-id');
   }
-  $('#villaList').innerHTML = villas.length
-    ? villas.slice(0, 12).map(villaCardHtml).join('')
-    : '<p class="empty-state">Noch keine Villa. Tippe unten auf ＋.</p>';
-  $('#chatPickList').innerHTML = villas.length
-    ? villas.map(villaCardHtml).join('')
-    : '<p class="empty-state">Erst eine Villa erstellen, dann chattest du mit deinem Deep Agent.</p>';
-  document.querySelectorAll('.villa-card').forEach(el => el.addEventListener('click', () => openVilla(Number(el.dataset.id))));
+  renderVillaLists(villas);
   updateActivity(totalDone);
 }
 
@@ -331,6 +340,8 @@ document.querySelectorAll('.bottomnav .nav-item[data-view]').forEach(n => n.addE
   selectView(v);
 }));
 $('#newVillaBtn').addEventListener('click', openSheet);
+$('#villaSearch').addEventListener('input', () => renderVillaLists());
+$('#chatVillaSearch').addEventListener('input', () => renderVillaLists());
 $('#createBackdrop').addEventListener('click', closeSheet);
 $('#createBtn').addEventListener('click', createVilla);
 $('#activeVillaCard').addEventListener('click', () => { const id = $('#activeVillaCard').dataset.id; if (id) openVilla(Number(id)); else openSheet(); });

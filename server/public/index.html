@@ -75,7 +75,8 @@
     </section>
 
     <section class="section-block" aria-label="Deine Villen">
-      <div class="section-head"><h2>Deine Villen</h2><span id="villaCount" class="section-pill">0</span></div>
+      <div class="section-head"><div><p class="eyebrow">PROJEKTE</p><h2>Deine Villen</h2></div><span id="villaCount" class="section-pill">0</span></div>
+      <label class="search-field"><span class="visually-hidden">Villen durchsuchen</span><input id="villaSearch" type="search" placeholder="Villen durchsuchen …" autocomplete="off" /></label>
       <div id="villaList" class="villa-list"><div class="skeleton"></div><div class="skeleton"></div></div>
     </section>
     <div class="spacer"></div>
@@ -84,7 +85,8 @@
   <!-- ============ ANSICHT: CHAT ============ -->
   <main id="view-chat" class="view" aria-label="Chat">
     <section class="section-block"><div class="section-head"><h2>KI-Chat</h2></div>
-      <p class="hint">Wähle eine Villa – der Deep Agent wartet auf deine Anweisung.</p>
+      <p class="hint">Öffne ein Projekt, um direkt mit seinem Deep Agent zu arbeiten.</p>
+      <label class="search-field"><span class="visually-hidden">Chat-Projekt suchen</span><input id="chatVillaSearch" type="search" placeholder="Projekt suchen …" autocomplete="off" /></label>
       <div id="chatPickList" class="villa-list"><div class="skeleton"></div></div>
     </section>
     <div class="spacer"></div>

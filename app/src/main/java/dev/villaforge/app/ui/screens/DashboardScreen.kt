@@ -1,6 +1,5 @@
 package dev.villaforge.app.ui.screens
 
-import dev.villaforge.app.ui.components.GoldChip
 import dev.villaforge.app.ui.theme.Gold
 import dev.villaforge.app.ui.theme.GoldGradient
 import androidx.compose.foundation.background
@@ -122,7 +121,7 @@ fun DashboardScreen(
                 Text("VillaForge", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = TextMain)
                 Text("CONTROL CENTER", style = MaterialTheme.typography.labelSmall, color = TextMuted, letterSpacing = 2.sp)
                 Spacer(Modifier.height(4.dp))
-                GoldChip("ELITE · UNLIMITED")
+                Text("PROJEKTSTUDIO · DEEP AGENT", style = MaterialTheme.typography.labelSmall, color = TextMuted)
             }
             Box(
                 Modifier
