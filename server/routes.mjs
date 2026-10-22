@@ -1,5 +1,6 @@
 /**
- * Katalog kostenlos nutzbarer, OpenAI-kompatibler LLM-Endpunkte.
+ * Katalog bekannter OpenAI-kompatibler LLM-Endpunkte. Ob eine Route im
+ * kostenfreien Modus verwendbar ist, entscheidet zentral isFreeRoute().
  * Keys werden ausschliesslich aus Umgebungsvariablen oder dem Secrets-Store
  * gelesen, niemals im Code hinterlegt.
  */
@@ -31,7 +32,7 @@ export const FREE_ROUTE_CATALOG = [
     priority: 2
   },
   {
-    name: 'Cerebras GPT-OSS 120B (free tier)',
+    name: 'Cerebras GPT-OSS 120B (Testguthaben / kostenpflichtig)',
     provider: 'cerebras',
     baseUrl: 'https://api.cerebras.ai/v1',
     model: 'gpt-oss-120b',
@@ -39,7 +40,7 @@ export const FREE_ROUTE_CATALOG = [
     priority: 2
   },
   {
-    name: 'Cerebras Qwen 3.8 27B (free tier)',
+    name: 'Cerebras Qwen 3.8 27B (Testguthaben / kostenpflichtig)',
     provider: 'cerebras',
     baseUrl: 'https://api.cerebras.ai/v1',
     model: 'qwen-3.8-27b',
@@ -47,10 +48,10 @@ export const FREE_ROUTE_CATALOG = [
     priority: 2
   },
   {
-    name: 'Google Gemini 3.5 Flash-Lite (free tier)',
+    name: 'Google Gemini 3.1 Flash-Lite (free tier)',
     provider: 'gemini-openai',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-3.5-flash-lite',
+    model: 'gemini-3.1-flash-lite',
     keyEnv: 'GEMINI_API_KEY',
     priority: 3
   },
@@ -58,7 +59,7 @@ export const FREE_ROUTE_CATALOG = [
     name: 'OpenRouter (freie Modelle)',
     provider: 'openrouter',
     baseUrl: 'https://openrouter.ai/api/v1',
-    model: 'google/gemma-4-31b-it:free',
+    model: 'openrouter/free',
     keyEnv: 'OPENROUTER_API_KEY',
     priority: 4
   },
@@ -68,12 +69,12 @@ export const FREE_ROUTE_CATALOG = [
     name: 'Fal.ai OpenRouter (freie Modelle)',
     provider: 'fal',
     baseUrl: 'https://fal.run/openrouter/router/openai/v1',
-    model: 'google/gemma-4-31b-it:free',
+    model: 'openrouter/free',
     keyEnv: 'FAL_KEY',
     priority: 4
   },
   {
-    name: 'HuggingFace Router (free tier)',
+    name: 'Hugging Face Inference (Credits erforderlich)',
     provider: 'huggingface',
     baseUrl: 'https://router.huggingface.co/v1',
     model: 'meta-llama/Llama-3.3-70B-Instruct',
@@ -121,7 +122,7 @@ export const FREE_ROUTE_CATALOG = [
     priority: 7
   },
   {
-    name: 'Mistral Small (free tier)',
+    name: 'Mistral Small (Kontingent laut Konto)',
     provider: 'mistral',
     baseUrl: 'https://api.mistral.ai/v1',
     model: 'mistral-small-latest',
@@ -150,11 +151,11 @@ export const FREE_ROUTE_CATALOG = [
   {
     // Remote-GPU-Wrapper 2/2 — Hugging Face Inference Providers
     // (OpenAI-kompatibler Router, freies Kontingent pro Konto/Monat):
-    // Eigenstaendiger Inference-Providers-Dienst; kein ZeroGPU-Space.
+    // Free accounts haben keine enthaltenen Inference-Provider-Credits.
     name: 'Hugging Face Inference Providers',
     provider: 'huggingface',
     baseUrl: 'https://router.huggingface.co/v1',
-    model: 'meta-llama/Llama-3.3-70B-Instruct',
+    model: 'openai/gpt-oss-120b:cerebras',
     keyEnv: 'HF_TOKEN',
     priority: 6
   },
