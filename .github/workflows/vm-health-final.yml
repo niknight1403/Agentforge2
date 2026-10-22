@@ -1,0 +1,29 @@
+name: VM Health Final
+on:
+  workflow_dispatch: {}
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Finale VM-Gesundheitspruefung
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Platz =="; df -h / | tail -1
+          echo "== Load =="; uptime
+          echo "== Syslog-Delta 30s (Spam gestoppt?) =="
+          S1=$(stat -c %s /var/log/syslog); sleep 30; S2=$(stat -c %s /var/log/syslog); echo "Delta: $(( S2 - S1 )) Bytes"
+          echo "== Ollama =="; ss -tlnp | grep 11434 || echo kein-11434
+          curl -s -m 10 http://127.0.0.1:11434/api/tags 2>/dev/null | head -c 150; echo
+          echo "== Hub-Health =="; curl -s -m 10 http://127.0.0.1:12000/api/health | head -c 200; echo
+          echo "== PG =="; sudo -u postgres pg_isready -h 127.0.0.1 -p 5432
+          echo "== revenue_os Zeilen =="
+          sudo -u postgres psql -Atq -d revenue_os -c "SELECT 'hara_proposals '||COUNT(*) FROM hara_proposals; SELECT 'cross_sell_rules '||COUNT(*) FROM cross_sell_rules; SELECT 'customer_subscriptions '||COUNT(*) FROM customer_subscriptions;" 2>&1 | head -5
+          EOS
