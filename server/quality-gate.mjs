@@ -16,5 +16,5 @@ export function staticPerformanceScore(bytes){
 }
 export function staticSecurityScore(findings=[]){
  const n=Array.isArray(findings)?findings.length:99;
- return n===0?100:n===1?70:n===2?50:30;
+ return n===0?100:0;
 }
