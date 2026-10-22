@@ -1,0 +1,38 @@
+name: Villa-Diagnose (Hub-Log + Scheduler-Interna)
+on:
+  workflow_dispatch:
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Hub-Log und Scheduler-Interna pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=40 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Hub-Prozess aktiv seit / Uptime =="
+          systemctl is-active villaforge-hub.service
+          ps -o etime= -C node | head -2
+          echo "== Letzte Hub-Logzeilen (developLoop/Scheduler) =="
+          journalctl -u villaforge-hub.service --since "15 min ago" --no-pager | grep -iE "villa|develop|schedul|runde|aufgab|slot|error|orchestr" | tail -25 || echo "(keine Treffer)"
+          echo "== Task-Bewegung letzte 10 Min (je Villa) =="
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          rows = cur.execute("SELECT villa_id, COUNT(*) FROM tasks WHERE status IN ('PENDING','READY') GROUP BY villa_id ORDER BY villa_id").fetchall()
+          print("Offene (PENDING/READY) je Villa:", rows)
+          mv = cur.execute("SELECT villa_id, COUNT(*) FROM tasks WHERE updated_at > datetime('now','-10 minutes') GROUP BY villa_id").fetchall()
+          print("Bewegung letzte 10 Min:", mv)
+          print("Slots-Setting:", cur.execute("SELECT value FROM control_settings WHERE key='villaSlots'").fetchone())
+          print("Villen-Status:", cur.execute("SELECT status, COUNT(*) FROM villas GROUP BY status").fetchall())
+          PYV
+          echo "== VF_*-Env des Hub =="
+          systemctl show villaforge-hub.service -p Environment
+          EOS
