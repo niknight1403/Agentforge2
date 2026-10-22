@@ -1,0 +1,111 @@
+name: Freie-LLM-und-Werkzeug-Routen (Knoten + Hub)
+on:
+  workflow_dispatch: {}
+jobs:
+  routes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Modelle auf Knoten ziehen
+        env:
+          CAX_SSH_KEY: ${{ secrets.CAX_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$CAX_SSH_KEY" > ~/.ssh/cax_key
+          chmod 600 ~/.ssh/cax_key
+          SSH="ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 root@"
+          echo "== CAX11: llama3.2:3b + nomic-embed-text =="
+          ${SSH}2.28.12.63 "ollama pull llama3.2:3b 2>&1 | tail -1; ollama pull nomic-embed-text 2>&1 | tail -1; ollama list"
+          echo "== CAX21-1: llama3.1:8b =="
+          ${SSH}2.31.45.241 "ollama pull llama3.1:8b 2>&1 | tail -1; ollama list"
+          echo "== CAX21-2: gemma2:9b =="
+          ${SSH}2.31.64.65 "ollama pull gemma2:9b 2>&1 | tail -1; ollama list"
+      - name: Hub-Routen eintragen (lokale + freie Cloud-Modelle) und verifizieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Verfuegbare OpenRouter-Keys im Hub =="
+          systemctl cat villaforge-hub 2>/dev/null | grep -oE "OPENROUTER_API_KEY[_0-9]*" | sort -u > /tmp/orkeys.txt || true
+          cat /tmp/orkeys.txt
+          echo "== Hub stoppen =="
+          systemctl stop villaforge-hub
+          sleep 3
+          echo "== Routen eintragen =="
+          python3 - <<'PYV'
+          import json, sqlite3, urllib.request
+
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db", timeout=30)
+          cur = con.cursor()
+
+          def upsert_route(name, provider, url, model, key_env, prio, is_free):
+              ex = cur.execute("SELECT id FROM routes WHERE base_url=? AND model=?", (url, model)).fetchone()
+              if ex:
+                  cur.execute("UPDATE routes SET name=?, enabled=1, status='IDLE', dead=0, cooldown_until=0, key_env=? WHERE id=?",
+                              (name, key_env, ex[0]))
+                  print("aktualisiert:", name)
+              else:
+                  cur.execute(
+                      "INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used, cooldown_until, lat_ms, tokens, dead) VALUES (?,?,?,?,?,?,1,?,0.2,'IDLE',0,0,0,0,0,0,0)",
+                      (name, provider, url, model, key_env, is_free, prio))
+                  print("eingefuegt:", name, "Prioritaet", prio)
+
+          # 1) Lokale Werkzeug-Modelle auf den drei Knoten
+          upsert_route("Cascade: Ollama CAX21-1 (llama3.1 8B)", "ollama", "http://2.31.45.241:11434", "llama3.1:8b", "", 44, 1)
+          upsert_route("Cascade: Ollama CAX21-2 (gemma2 9B)", "ollama", "http://2.31.64.65:11434", "gemma2:9b", "", 45, 1)
+          upsert_route("Cascade: Ollama CAX11 (llama3.2 3B)", "ollama", "http://2.28.12.63:11434", "llama3.2:3b", "", 46, 1)
+
+          # 2) Freie OpenRouter-Modelle live ermitteln, nur mit vorhandenen Keys
+          try:
+              keys = [l.strip() for l in open("/tmp/orkeys.txt") if l.strip()]
+          except FileNotFoundError:
+              keys = []
+          print("Keys:", keys)
+          picked = []
+          try:
+              req = urllib.request.Request("https://openrouter.ai/api/v1/models")
+              data = json.load(urllib.request.urlopen(req, timeout=25))["data"]
+              free = [m for m in data
+                      if m.get("pricing", {}).get("prompt") == "0"
+                      and (m.get("architecture", {}) or {}).get("modality", "text") == "text"]
+              free.sort(key=lambda m: m.get("context_length") or 0, reverse=True)
+              existing = {r[0] for r in cur.execute("SELECT model FROM routes").fetchall()}
+              picked = [m["id"] for m in free if m["id"] not in existing][:5]
+          except Exception as e:
+              print("OpenRouter-Katalog nicht erreichbar:", e)
+          print("Freie Modelle:", picked)
+          for i, model in enumerate(picked):
+              key = keys[i % len(keys)] if keys else "OPENROUTER_API_KEY"
+              short = model.split("/")[-1].replace(":free", "")[:28]
+              upsert_route("Cascade: OpenRouter Free " + short, "openrouter",
+                           "https://openrouter.ai/api/v1", model, key, 48 + i, 1)
+          con.commit()
+          print("-- Aktive Routen --")
+          for r in cur.execute("SELECT name, priority, model FROM routes WHERE enabled=1 ORDER BY priority").fetchall():
+              print("  ", r)
+          con.close()
+          PYV
+          echo "== Hub starten =="
+          systemctl start villaforge-hub
+          sleep 12
+          systemctl is-active villaforge-hub
+          echo "== Verifikation =="
+          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
+          curl -s -m 10 -X POST -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/routeforge/tick | head -c 120; echo
+          sleep 12
+          curl -s -m 10 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); l=d.get('llm',{}); print('LLM:', l.get('eligibleRoutes'), '/', l.get('configuredRoutes'), 'state:', l.get('state'))"
+          echo "== Knoten-Modelle =="
+          for IP in 2.28.12.63 2.31.45.241 2.31.64.65; do
+            echo "-- $IP --"
+            curl -s -m 8 http://$IP:11434/api/tags | python3 -c "import json,sys; print(', '.join(m['name'] for m in json.load(sys.stdin).get('models',[])))"
+          done
+          echo "== Syslog-Rate (20s) =="
+          S1=$(stat -c %s /var/log/syslog); sleep 20; S2=$(stat -c %s /var/log/syslog); echo "Delta: $(( S2 - S1 )) Bytes"
+          rm -f /tmp/orkeys.txt
+          EOS
