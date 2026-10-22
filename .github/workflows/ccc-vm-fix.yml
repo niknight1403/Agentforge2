@@ -1,0 +1,51 @@
+name: CCC-VM Fix-Deploy (Ledger-Reset + Log-Truncate)
+on:
+  workflow_dispatch: {}
+jobs:
+  vmfix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: VM-Code aktualisieren, Ledger resetten, Spam-Logs truncate, verifizieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          WD=$(systemctl show cybersarah-ccc -p WorkingDirectory --value)
+          echo "Arbeitsverzeichnis: $WD"
+          [ -d "$WD" ] || { echo "VERZEICHNIS FEHLT"; exit 1; }
+          echo "== Syslog-Groesse vor Truncate =="
+          du -sh /var/log/syslog* 2>/dev/null | head -3
+          df -h / | tail -1
+          echo "== Code aktualisieren =="
+          cd "$WD"
+          git fetch origin 2>&1 | tail -1
+          git reset --hard origin/main 2>&1 | tail -1
+          git log -1 --oneline
+          echo "== Bauen =="
+          npm ci --no-audit --no-fund 2>&1 | tail -2
+          npm run build 2>&1 | tail -3
+          echo "== Ledger-Reset in DB =="
+          sudo -u postgres psql -d cybersarah -c "DELETE FROM \"modelRouterSettings\" WHERE \"key\"='selfHealing.incidentIndex';" 2>&1 | tail -1
+          echo "== Spam-Logs truncate =="
+          truncate -s 0 /var/log/syslog /var/log/syslog.1 2>/dev/null
+          journalctl --rotate >/dev/null 2>&1
+          journalctl --vacuum-time=2h >/dev/null 2>&1
+          echo "== Neustart =="
+          systemctl restart cybersarah-ccc
+          sleep 25
+          systemctl is-active cybersarah-ccc
+          echo "== Verifikation =="
+          PORT=$(systemctl show cybersarah-ccc -p Environment --value | grep -oE 'PORT=[0-9]+' | cut -d= -f2)
+          PORT=${PORT:-3000}
+          curl -s -m 10 http://127.0.0.1:$PORT/api/ready | head -c 150; echo
+          echo "== Syslog-Rate nach Fix (60s) =="
+          S1=$(stat -c %s /var/log/syslog); sleep 60; S2=$(stat -c %s /var/log/syslog); echo "Delta: $(( S2 - S1 )) Bytes"
+          echo "== Platte nach Cleanup =="
+          df -h / | tail -1
+          EOS
