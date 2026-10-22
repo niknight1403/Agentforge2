@@ -1,0 +1,51 @@
+name: Villa-Probe (eine Villa starten und live beobachten)
+on:
+  workflow_dispatch:
+    inputs:
+      villa_id:
+        description: 'Villa-ID'
+        required: true
+        default: '5'
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Villa starten, 4 Minuten beobachten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          VID: ${{ github.event.inputs.villa_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=40 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo VID=$VID bash -s" <<'EOS'
+          set -uo pipefail
+          PW=$(systemctl show villaforge-hub.service -p Environment | grep -oP 'VF_ADMIN_PASSWORD=\K[^" ]+')
+          EM=$(systemctl show villaforge-hub.service -p Environment | grep -oP 'VF_ADMIN_EMAIL=\K[^" ]+')
+          TOK=$(curl -s -m 10 -X POST http://localhost:12000/api/auth/login -H 'Content-Type: application/json' -d "{\"email\":\"$EM\",\"password\":\"$PW\"}" | python3 -c "import json,sys;print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
+          [ -n "$TOK" ] || { echo "Login fehlgeschlagen"; exit 1; }
+          DB=/opt/villaforge/server/data/villaforge.db
+          echo "== Vorher: Villa $VID =="
+          sqlite3 $DB "SELECT id, status, autonomy FROM villas WHERE id=$VID" 2>/dev/null || python3 -c "import sqlite3;print(sqlite3.connect('$DB').execute('SELECT id,status,autonomy FROM villas WHERE id=$VID').fetchall())"
+          echo "== Start via API =="
+          curl -s -m 15 -X POST http://localhost:12000/api/villas/$VID/orchestrate -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{}'
+          echo
+          for i in 1 2 3 4 5 6 7 8; do
+            sleep 30
+            python3 - <<PYV
+          import sqlite3, urllib.request, json
+          con = sqlite3.connect('$DB')
+          cur = con.cursor()
+          st = cur.execute("SELECT status FROM villas WHERE id=$VID").fetchone()
+          tk = cur.execute("SELECT status, COUNT(*) FROM tasks WHERE villa_id=$VID GROUP BY status").fetchall()
+          msgs = cur.execute("SELECT COUNT(*) FROM messages WHERE villa_id=$VID AND created_at > datetime('now','-40 seconds')").fetchone()[0]
+          req = urllib.request.Request('http://localhost:12000/api/scheduler', headers={'Authorization': 'Bearer $TOK'})
+          sc = json.load(urllib.request.urlopen(req, timeout=10))
+          print("T+%ds | villa:" % ($i*30), st, "| tasks:", tk, "| msgs(40s):", msgs, "| active:", sc.get('active'))
+          PYV
+          done
+          echo "== Hub-Log waehrend des Laufs =="
+          journalctl -u villaforge-hub.service --since "5 min ago" --no-pager | grep -v "systemd\[1\]" | tail -25
+          EOS
