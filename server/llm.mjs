@@ -127,7 +127,8 @@ function routeRpm(route) {
   const n = String(route.name || '').toLowerCase();
   if (n.includes('gemini')) return Number(process.env.VF_RPM_GEMINI) || 8;   // Free-Tier ~10 RPM
   if (n.includes('groq')) return Number(process.env.VF_RPM_GROQ) || 20;
-  if (n.includes('cerebras')) return Number(process.env.VF_RPM_CEREBRAS) || 15;
+  if (n.includes('cerebras')) return Number(process.env.VF_RPM_CEREBRAS) || 10;
+  if (n.includes('mistral')) return Number(process.env.VF_RPM_MISTRAL) || 5;
   if (n.includes('openrouter')) return Number(process.env.VF_RPM_OPENROUTER) || 12;
   return Number(process.env.VF_RPM_DEFAULT) || 30;
 }
