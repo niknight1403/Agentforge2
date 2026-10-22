@@ -218,6 +218,14 @@ export function createMasterControl(deps) {
           const row = db.prepare('SELECT response,status,request_id FROM control_turns WHERE request_id=?').get(p.split('/').pop());
           json(res,row ? 200 : 404,row ? row.response ? JSON.parse(row.response) : {pending:true,requestId:row.request_id} : {error:'Anfrage nicht gefunden.'});
         }
+        else if (p === '/api/master/actions' && req.method === 'POST') {
+          const body = await readBody(req);
+          const action = validateAction(body.action, String(body.confirmation || ''));
+          if (!['set_pack','set_tool','upsert_skill','upsert_connector','test_connector'].includes(action.type))
+            throw new Error('Diese Aktion ist nur im Master-Chat erlaubt.');
+          const step = await execute(action);
+          json(res,200,{ok:true,step});
+        }
         else if (p === '/api/master/chat' && req.method === 'POST') {
           const body = await readBody(req);
           const out = await turn({...body,requestId:body.requestId || randomUUID()});
