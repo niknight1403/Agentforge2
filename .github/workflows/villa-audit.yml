@@ -1,12 +1,12 @@
-name: Villa-Audit v2 (Spam + DB + LLM)
+name: Villa-Audit v3 (Task-Status + Spammer)
 on:
   workflow_dispatch: {}
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
     steps:
-      - name: Tiefenpruefung
+      - name: Task-Verteilung und Spammer-Identifikation
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
@@ -16,32 +16,23 @@ jobs:
           chmod 600 ~/.ssh/oracle_key
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
           set -uo pipefail
-          echo "== SPAMMER JETZT =="
-          tail -c 400000 /var/log/syslog | grep -oE "[A-Za-z0-9._-]+\[[0-9]+\]" | sort | uniq -c | sort -rn | head -4
-          tail -1 /var/log/syslog | cut -c1-260
-          echo "== Loop-Guard-Log (letzte 5) =="
-          tail -5 /var/log/loop-guard.log 2>/dev/null || echo "kein Guard-Log"
-          echo "== cybersarah-ccc Restarts =="
-          systemctl show cybersarah-ccc -p NRestarts -p ExecMainStartTimestamp
-          echo "== Hub ExecStart =="
-          systemctl cat villaforge-hub 2>/dev/null | grep -E "ExecStart|WorkingDirectory" | head -3
-          echo "== Hub-API-Routen =="
-          HUBJS=$(systemctl cat villaforge-hub 2>/dev/null | grep ExecStart | grep -oE "/[^ ]+\.js" | head -1)
-          [ -n "$HUBJS" ] && grep -ohE "/api/[a-z0-9/_:-]+" "$HUBJS" 2>/dev/null | sort -u | head -30 || true
-          echo "== Villa-DB: Tabellen =="
+          echo "== Spammer-Prozess 2900428 =="
+          systemctl status 2900428 2>/dev/null | head -3 || ps -p 2900428 -o pid,cmd --no-headers 2>/dev/null || echo "Prozess weg"
+          echo "== Letzte Syslog-Zeilen (Muster) =="
+          tail -c 200000 /var/log/syslog | grep "node\[" | tail -3 | cut -c1-200
+          echo "== Task-Status-Verteilung =="
           python3 - <<'PYV'
           import sqlite3
           con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
           cur = con.cursor()
-          tabs = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()]
-          print("Tabellen:", ", ".join(tabs))
-          for t in tabs:
-              if any(k in t.lower() for k in ("villa", "task", "agent", "draft", "job", "queue")):
-                  n = cur.execute("SELECT COUNT(*) FROM " + t).fetchone()[0]
-                  print("-- " + t + ": " + str(n) + " Zeilen")
-                  cols = [d[1] for d in cur.execute("PRAGMA table_info(" + t + ")").fetchall()]
-                  print("   Spalten:", ", ".join(cols[:14]))
-                  for row in cur.execute("SELECT * FROM " + t + " ORDER BY rowid DESC LIMIT 4").fetchall():
-                      print("   ", str(row)[:240])
+          print("TASKS:", cur.execute("SELECT status, COUNT(*) FROM tasks GROUP BY status ORDER BY 2 DESC").fetchall())
+          print("VILLAS:", cur.execute("SELECT id, name, status, autonomy FROM villas ORDER BY id").fetchall())
+          print("PROPOSALS:", cur.execute("SELECT status, COUNT(*) FROM villa_proposals GROUP BY status").fetchall())
+          print("TASKS-ALTER: <24h aktiv:", cur.execute("SELECT COUNT(*) FROM tasks WHERE updated_at > datetime('now','-1 day')").fetchone()[0])
+          print("OFFEN ALT>48h:", cur.execute("SELECT COUNT(*) FROM tasks WHERE status IN ('pending','in_progress','assigned') AND updated_at < datetime('now','-2 days')").fetchone()[0])
           PYV
+          echo "== Loop-Guard Zwangs-Lauf =="
+          bash -c 'STATE_DIR=/var/lib/loop-guard LOG=/var/log/loop-guard.log; echo "manueller Check um $(date -u +%FT%TZ)" >> $LOG; df -h / | tail -1'
+          echo "== Syslog-Groesse =="
+          ls -la /var/log/syslog | awk '{print $5}'
           EOS
