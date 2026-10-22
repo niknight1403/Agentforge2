@@ -231,9 +231,9 @@ function renderAll(d) {
   const done = d.tasks.filter(t => t.status === 'DONE').length, total = d.tasks.length;
   const open = d.tasks.filter(t => ['PENDING', 'READY', 'RUNNING', 'REVIEW'].includes(t.status)).length;
   const pct = total ? Math.round(done / total * 100) : 0;
-  const active = d.running || ['RUNNING', 'STOPPING'].includes(d.villa.status);
-  $('#startBtn').hidden = active; $('#stopBtn').hidden = !active;
-  $('#workspaceStatus').textContent = active ? '● läuft' : statusLabel(d.villa.status);
+  const active = d.running || ['RUNNING', 'STOPPING'].includes(d.villa.status), queued = !!d.queued;
+  $('#startBtn').hidden = active || queued; $('#stopBtn').hidden = !active && !queued;
+  $('#workspaceStatus').textContent = queued ? 'wartet auf Startslot' : active ? '● läuft' : statusLabel(d.villa.status);
   $('#workspaceStatus').className = 'chip ' + (active ? 'ok' : '');
   $('#dStats').innerHTML = `<div class="stat"><b>${done}/${total}</b>erledigt</div><div class="stat"><b>${open}</b>offen</div><div class="stat"><b>${d.agents.length}</b>Agenten</div>`;
   $('#progressBar').style.width = pct + '%';
@@ -302,8 +302,26 @@ async function sendChat() {
   } catch (e) { pending.innerHTML = `<span class="meta">Fehler</span>${esc(String(e))}`; }
   finally { btn.disabled = false; log.scrollTop = log.scrollHeight; refreshCurrent(); }
 }
-async function startDevelopment() { if (!currentVilla) return; $('#startBtn').disabled = true; await api(`/api/villas/${currentVilla.villa.id}/orchestrate`, { method: 'POST', body: { concurrency: 4, maxTasks: 500, adaptive: true } }); await refreshCurrent(); toast('Entwicklung gestartet'); }
-async function stopDevelopment() { if (!currentVilla) return; await api(`/api/villas/${currentVilla.villa.id}/stop`, { method: 'POST' }); await refreshCurrent(); toast('Entwicklung gestoppt'); }
+async function startDevelopment() {
+  if (!currentVilla) return;
+  const btn = $('#startBtn'); btn.disabled = true;
+  try {
+    const out = await api(`/api/villas/${currentVilla.villa.id}/orchestrate`, { method: 'POST', body: { concurrency: 4, maxTasks: 500, adaptive: true } });
+    if (out.error) { toast(out.error); return; }
+    await refreshCurrent();
+    toast(out.queued ? 'Villa vorgemerkt und startet, sobald ein Slot frei ist' : 'Entwicklung gestartet');
+  } catch (e) { toast('Start fehlgeschlagen: ' + String(e.message || e)); }
+  finally { btn.disabled = false; }
+}
+async function stopDevelopment() {
+  if (!currentVilla) return;
+  try {
+    const out = await api(`/api/villas/${currentVilla.villa.id}/stop`, { method: 'POST' });
+    if (out.error) { toast(out.error); return; }
+    await refreshCurrent();
+    toast(out.cancelled ? 'Villa aus der Warteschlange entfernt' : out.stopped ? 'Villa wird sicher angehalten' : 'Villa pausiert');
+  } catch (e) { toast('Stopp fehlgeschlagen: ' + String(e.message || e)); }
+}
 
 /* ---------- Routen & Keys (Konto) ---------- */
 async function loadRoutes() {
