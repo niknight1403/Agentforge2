@@ -1,0 +1,53 @@
+name: Spam-Fix + Villa-Routen (kombiniert)
+on:
+  workflow_dispatch: {}
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Unit pruefen, Spammer identifizieren, Hub-Routen greppen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Unit-Limits jetzt =="
+          grep -E "RestartSec|MemoryMax|CPUQuota|LogRateLimit" /etc/systemd/system/cybersarah-ccc.service || echo "KEINE LIMITS IM UNIT!"
+          echo "== Spammer jetzt =="
+          tail -c 300000 /var/log/syslog | grep -oE "[A-Za-z0-9._-]+\[[0-9]+\]" | sort | uniq -c | sort -rn | head -3
+          echo "== Fehlerbeispiel (5 Zeilen) =="
+          grep "node\[" /var/log/syslog | tail -5 | cut -c1-220
+          echo "== NRestarts =="
+          systemctl show cybersarah-ccc -p NRestarts
+          echo "== Unit-Limits JETZT nachziehen =="
+          python3 - <<'PYU'
+          p = "/etc/systemd/system/cybersarah-ccc.service"
+          s = open(p).read()
+          for line in ("MemoryMax=1500M\n", "CPUQuota=200%\n", "LogRateLimitIntervalSec=5s\n", "LogRateLimitBurst=100\n"):
+              key = line.split("=")[0]
+              if key + "=" not in s:
+                  if "\n[Install]" in s:
+                      s = s.replace("\n[Install]", "\n" + line + "[Install]", 1)
+                  else:
+                      s += "\n" + line
+          open(p, "w").write(s)
+          print("Limits im Unit ergaenzt")
+          PYU
+          grep -cE "MemoryMax|CPUQuota|LogRateLimit" /etc/systemd/system/cybersarah-ccc.service
+          systemctl daemon-reload
+          systemctl restart cybersarah-ccc
+          sleep 20
+          echo "== Syslog-Rate nach Fix (20s) =="
+          S1=$(stat -c %s /var/log/syslog); sleep 20; S2=$(stat -c %s /var/log/syslog); echo "Delta: $(( S2 - S1 )) Bytes"
+          echo "== Hub-Routen (vollstaendig) =="
+          grep -rhoE "(get|post|put|patch|delete)\(['\"][^'\"]+" /opt/villaforge/server/server.mjs /opt/villaforge/server/server/*.mjs /opt/villaforge/server/*.mjs 2>/dev/null | grep -iE "villa|sched|llm|verif|resume|pause|control|master" | sort -u | head -30
+          echo "== Scheduler-Status (auth) =="
+          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
+          curl -s -m 10 -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/scheduler | head -c 400; echo
+          curl -s -m 10 -H "Authorization: Bearer $TOK" "http://127.0.0.1:12000/api/villas" | head -c 250; echo
+          EOS
