@@ -1,0 +1,49 @@
+name: LLM-JSON-Format-Probe (response_format + Version je Knoten)
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Exakte Hub-Anfrage (json_object) nachstellen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=40 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          K=$(systemctl show villaforge-hub.service -p Environment | grep -oP 'OLLAMA_API_KEY=\K[^" ]+' | head -1)
+          cat > /tmp/jp.py <<'PYV'
+          import json, sys, time, urllib.request, urllib.error
+          node, model, key = sys.argv[1], sys.argv[2], sys.argv[3]
+          def call(label, body):
+              req = urllib.request.Request(
+                  "http://%s:11434/v1/chat/completions" % node,
+                  data=json.dumps(body).encode(),
+                  headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
+              t0 = time.time()
+              try:
+                  d = json.load(urllib.request.urlopen(req, timeout=200))
+                  print(label, "-> OK (%.1fs):" % (time.time()-t0), repr(d.get("choices",[{}])[0].get("message",{}).get("content","")[:50]))
+              except urllib.error.HTTPError as e:
+                  print(label, "-> HTTP", e.code, "| Body:", e.read()[:200])
+              except Exception as e:
+                  print(label, "-> FEHLER:", e)
+          try:
+              v = json.load(urllib.request.urlopen("http://%s:11434/api/version" % node, timeout=8))
+              print(node, "Ollama-Version:", v.get("version"))
+          except Exception as e:
+              print(node, "Version nicht lesbar:", e)
+          base = {"model": model, "messages": [{"role": "user", "content": 'Antworte als JSON: {"ok": true}'}], "max_tokens": 60, "temperature": 0.6}
+          call("ohne response_format", dict(base))
+          call("mit json_object   ", {**base, "response_format": {"type": "json_object"}})
+          PYV
+          python3 /tmp/jp.py 2.31.45.241 qwen2.5-coder:7b "$K"
+          python3 /tmp/jp.py 2.31.64.65 qwen2.5-coder:7b "$K"
+          python3 /tmp/jp.py 2.28.12.63 qwen2.5-coder:3b "$K"
+          python3 /tmp/jp.py 2.31.77.72 qwen2.5-coder:32b "$K"
+          EOS
