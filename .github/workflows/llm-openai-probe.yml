@@ -1,0 +1,54 @@
+name: LLM-OpenAI-Pfad-Probe (Routen-Details + /v1/chat/completions)
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: OpenAI-kompatiblen Pfad je Knoten testen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=40 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "== Routen-Details (id 31-36) =="
+          cat > /tmp/rt.py <<'PYV'
+          import sqlite3
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
+          cur = con.cursor()
+          for r in cur.execute("SELECT id, name, base_url, model, ok, fail, dead, cooldown_until, lat_ms, last_used, status, enabled FROM routes WHERE id BETWEEN 31 AND 36 ORDER BY id").fetchall():
+              print(r)
+          PYV
+          python3 /tmp/rt.py
+          echo "== Hub-API-Key (nur Laenge/Prefix) =="
+          K=$(systemctl show villaforge-hub.service -p Environment | grep -oP 'OLLAMA_API_KEY=\K[^" ]+' | head -1)
+          python3 -c "print('Key-Laenge:', len('$K'), '| Prefix:', '$K'[:6])"
+          echo "== /v1/chat/completions je Knoten (mit Key) =="
+          cat > /tmp/v1probe.py <<'PYV'
+          import json, sys, time, urllib.request, urllib.error
+          node, model, key = sys.argv[1], sys.argv[2], sys.argv[3]
+          body = json.dumps({"model": model, "messages": [{"role": "user", "content": "Antworte nur mit OK."}], "max_tokens": 8}).encode()
+          for path in ("/v1/chat/completions",):
+              req = urllib.request.Request("http://%s:11434%s" % (node, path), data=body, headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
+              t0 = time.time()
+              try:
+                  d = json.load(urllib.request.urlopen(req, timeout=200))
+                  c = d.get("choices", [{}])[0].get("message", {}).get("content", "")
+                  print(node, path, "-> OK:", repr(c[:20]), "| %.1fs" % (time.time() - t0))
+              except urllib.error.HTTPError as e:
+                  print(node, path, "-> HTTP", e.code, e.read()[:120])
+              except Exception as e:
+                  print(node, path, "-> FEHLER:", e)
+          PYV
+          K=$(systemctl show villaforge-hub.service -p Environment | grep -oP 'OLLAMA_API_KEY=\K[^" ]+' | head -1)
+          python3 /tmp/v1probe.py 2.28.12.63 qwen2.5-coder:3b "$K"
+          python3 /tmp/v1probe.py 2.31.45.241 qwen2.5-coder:7b "$K"
+          python3 /tmp/v1probe.py 2.31.77.72 qwen2.5-coder:32b "$K"
+          echo "== forge-Log: letzte Routen-Switches/Fehler =="
+          tail -30 /opt/villaforge/server/data/forge.log 2>/dev/null | grep -iE "switch|error|ollama|cax|llm|unavail" | tail -20 || journalctl -u villaforge-hub.service --since "30 min ago" --no-pager | grep -iE "switch|llm|unavail|route" | tail -20
+          EOS
