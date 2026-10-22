@@ -9,16 +9,16 @@ Web-UI nutzen exakt diese Schnittstelle.
 
 ## Gratis-Kontingente und Selbstheilung
 
-Gratis-LLM-Stufen arbeiten mit engen Token-Fenstern (Groq z. B. 8.000 TPM je
-Modell). Der Hub interpretiert erschöpfte Kontingente als Warte-Situation, nicht
-als Endfehler:
+Kostenlose Cloud-Limits variieren nach Anbieter, Konto und Modell. Der Hub sperrt
+eine abgewiesene Route zeitweise, versucht weitere zugelassene Routen und hält
+KI-Arbeit bei vollständigem Ausfall offen:
 
 | Situation | Verhalten |
 | --- | --- |
-| 429 von einem Anbieter | Route pausiert 45 s, danach neuer Versuch; keine Eskalation |
-| Alle Kontingente voll | Agentenschritt wartet `VF_RATE_WAIT_MS` (45 s) und wiederholt sich (max. 2x); Orchestrierung reiht offline gescheiterte Aufgaben wieder ein (max. 2x) und wartet zwischen Runden |
+| 429 von einem Anbieter | Route-Cooldown mindestens 2 min, höchstens 10 min oder entsprechend `Retry-After`; Failover zur nächsten zulässigen Route |
+| Alle Kontingente voll | Agentenschritt wartet `VF_RATE_WAIT_MS` (45 s) und wiederholt sich (max. 2x); Orchestrierung reiht fehlgeschlagene Aufgaben wieder ein (max. 2x) und wartet zwischen Runden |
 | Trotzdem erfolglos | Aufgabe bleibt `FAILED`, Villa endet `PAUSED` (nie falsches `COMPLETED`) |
-| Kein Key konfiguriert | Bewusster Offline-Betrieb: Planer-Antworten, Aufgaben werden `DONE`, kein 401er-Proben |
+| Keine nutzbare Route | KI-Aufgabe bleibt offen/fehlgeschlagen; kein erfundener Offline-Plan wird als KI-Ergebnis oder `DONE` ausgegeben |
 
 Scheitert eine Route, steht eine Zeile im Hub-Log:
 `[villaforge] Route fehlgeschlagen (<Name>): <Fehler>`.
