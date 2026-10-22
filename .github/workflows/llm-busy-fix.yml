@@ -1,0 +1,95 @@
+name: LLM-Busy-Fix (Live-Patch, Parallelitaet, Neustart, 12-Min-Verifikation)
+on:
+  workflow_dispatch:
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Patch + Env + Neustart + Verifikation
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          CAX_SSH_KEY: ${{ secrets.CAX_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          printf '%s\n' "$CAX_SSH_KEY" > ~/.ssh/cax_key
+          chmod 600 ~/.ssh/oracle_key ~/.ssh/cax_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=60 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          F=/opt/villaforge/server/agents.mjs
+          echo "== Backup =="
+          cp "$F" "$F.bak-$(date +%Y%m%d-%H%M%S)" && ls -1 "$F".bak-* | tail -1
+          echo "== Live-Patch (2 Ersetzungen) =="
+          cat > /tmp/patch_busy.py <<'PYV'
+          p = '/opt/villaforge/server/agents.mjs'
+          s = open(p).read()
+          old = """        if(e.code==='LLM_UNAVAILABLE') {
+          job.stop=true;
+          db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run('LLM_UNAVAILABLE: Warte auf echte Modellverbindung.',now(),task.id);
+          emit('task',{villaId,taskId:task.id,status:'PENDING',code:e.code});
+          return;
+        }"""
+          new = """        if(e.code==='LLM_UNAVAILABLE') {
+          db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run('LLM_UNAVAILABLE: Warte auf echte Modellverbindung.',now(),task.id);
+          emit('task',{villaId,taskId:task.id,status:'PENDING',code:e.code});
+          llmBusyWait.set(villaId, now() + 30_000);
+          console.log(`[villaforge] Villa ${villaId}: alle Routen BUSY — Task ${task.id} zurueckgestellt, 30s Drosselpause.`);
+          return;
+        }"""
+          assert s.count(old) == 1, "LLM_UNAVAILABLE-Block nicht gefunden (Abbruch, kein Neustart)"
+          s = s.replace(old, new)
+          old_vt = "const verifyThrottle = new Map();"
+          assert s.count(old_vt) == 1, "verifyThrottle-Anker nicht gefunden (Abbruch, kein Neustart)"
+          s = s.replace(old_vt, old_vt + "\nconst llmBusyWait = new Map();")
+          old_loop = """      if (now() - runStart > budgetMs) break; // Slot fair rotieren lassen
+
+      const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(villaId);"""
+          new_loop = """      if (now() - runStart > budgetMs) break; // Slot fair rotieren lassen
+
+      const busyUntil = llmBusyWait.get(villaId) || 0;
+      if (busyUntil > now()) { await new Promise((r) => setTimeout(r, busyUntil - now())); continue; }
+
+      const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(villaId);"""
+          assert s.count(old_loop) == 1, "Loop-Kopf nicht gefunden (Abbruch, kein Neustart)"
+          s = s.replace(old_loop, new_loop)
+          open(p, 'w').write(s)
+          print("Live-Patch OK (Busy-Retry)")
+          PYV
+          python3 /tmp/patch_busy.py
+          node --check "$F" && echo "Node-Syntax OK"
+          echo "== Hub-Env: OLLAMA_MAX_PARALLEL=2 =="
+          mkdir -p /etc/systemd/system/villaforge-hub.service.d
+          printf '[Service]\nEnvironment="OLLAMA_MAX_PARALLEL=2"\n' > /etc/systemd/system/villaforge-hub.service.d/llmparallel.conf
+          systemctl daemon-reload
+          systemctl restart villaforge-hub.service
+          sleep 25
+          systemctl is-active villaforge-hub.service
+          curl -s -m 10 http://localhost:12000/api/health -o /dev/null -w "Health HTTP %{http_code}\n"
+          EOS
+          echo "== Ollama-Knoten: OLLAMA_NUM_PARALLEL=2 =="
+          for N in 2.31.45.241 2.31.64.65 2.28.12.63 2.31.77.72; do
+            ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=15 root@$N \
+              "mkdir -p /etc/systemd/system/ollama.service.d && printf '[Service]\nEnvironment=\"OLLAMA_NUM_PARALLEL=2\"\n' > /etc/systemd/system/ollama.service.d/numparallel.conf && systemctl daemon-reload && systemctl restart ollama && sleep 3 && systemctl is-active ollama" && echo "  $N: OK"
+          done
+          echo "== 12-Min-Verifikation =="
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=60 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          sleep 300
+          cat > /tmp/verify.py <<'PYV'
+          import sqlite3
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
+          cur = con.cursor()
+          print("Villen:", cur.execute("SELECT status, COUNT(*) FROM villas GROUP BY status").fetchall())
+          done = cur.execute("SELECT COUNT(*) FROM tasks WHERE status='DONE' AND (updated_at > datetime('now','-12 minutes') OR updated_at > strftime('%Y-%m-%dT%H:%M','now','-12 minutes'))").fetchone()[0]
+          print("DONE letzte 12 Min:", done)
+          print("RUNNING-Tasks je Villa:", cur.execute("SELECT villa_id, COUNT(*) FROM tasks WHERE status='RUNNING' GROUP BY villa_id").fetchall())
+          PYV
+          python3 /tmp/verify.py
+          sleep 240
+          echo "--- Zweite Messung ---"
+          python3 /tmp/verify.py
+          echo "== Hub-Log (BUSY/Wiederherstellung) =="
+          journalctl -u villaforge-hub.service --since "13 min ago" --no-pager | grep -iE "BUSY|drossel|verwaist|dauerentw|reaper" | tail -12
+          EOS
