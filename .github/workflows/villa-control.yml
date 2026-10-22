@@ -34,7 +34,7 @@ jobs:
           /tmp/sshcmd "sudo bash -s '$MODE' '$IDS'" << 'EOS'
           set -e
           MODE="$1"; IDS="$2"
-          tee /tmp/villa-control.mjs >/dev/null << 'NODEJS'
+          F=/tmp/villa-control-$$.mjs; tee $F >/dev/null << 'NODEJS'
           import { DatabaseSync } from 'node:sqlite';
           const [mode, idsArg] = process.argv.slice(2);
           const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
@@ -73,6 +73,6 @@ jobs:
             process.exit(1);
           }
           NODEJS
-          sudo node /tmp/villa-control.mjs "$MODE" "$IDS"
-          rm -f /tmp/villa-control.mjs
+          sudo node $F "$MODE" "$IDS"
+          rm -f $F
           EOS
