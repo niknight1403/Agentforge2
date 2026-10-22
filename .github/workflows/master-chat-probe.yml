@@ -1,0 +1,62 @@
+name: Master-Chat-Probe
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: master-chat-probe
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Master-Chat direkt testen
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Login, Chat, History, Health
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+
+          base = 'https://hub.cybersarah-ki.com'
+
+          def call(method, path, token=None, body=None, timeout=90):
+              headers = {'Content-Type': 'application/json'}
+              if token: headers['Authorization'] = 'Bearer ' + token
+              req = urllib.request.Request(base + path, method=method, headers=headers,
+                                           data=json.dumps(body).encode() if body else None)
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as r:
+                      return r.status, json.loads(r.read() or b'{}')
+              except urllib.error.HTTPError as e:
+                  try: return e.code, json.loads(e.read() or b'{}')
+                  except Exception: return e.code, {}
+
+          print('== 1) Login ==')
+          st, data = call('POST', '/api/auth/login', body={'email': os.environ['VF_ADMIN_EMAIL'], 'password': os.environ['VF_ADMIN_PASSWORD']})
+          print('HTTP', st, '| Token:', 'ja' if data.get('token') else 'NEIN')
+          tok = data.get('token')
+
+          print('== 2) Health (LLM-Kaskade) ==')
+          st, h = call('GET', '/api/health')
+          print('HTTP', st, '| llm:', json.dumps(h.get('llm', {}))[:300])
+
+          print('== 3) Master-Chat ==')
+          st, resp = call('POST', '/api/master/chat', tok, {'message': 'Diagnose: Antworte bitte kurz mit dem Satz "Rauchtest-Pong" und lege KEINE Villa an.'})
+          print('HTTP', st, '| Response:', json.dumps(resp)[:500])
+
+          print('== 4) History (letzte 2) ==')
+          st, hist = call('GET', '/api/master/history', tok)
+          msgs = hist if isinstance(hist, list) else hist.get('messages', hist.get('history', []))
+          if isinstance(msgs, list):
+              for m in msgs[-2:]:
+                  print(json.dumps({k: str(v)[:150] for k, v in m.items()})[:300])
+          else:
+              print('History-Form:', json.dumps(hist)[:300])
+          PY
