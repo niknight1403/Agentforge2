@@ -64,7 +64,9 @@ function isUsable(route) {
   if (route.provider === 'offline') return false;
   if (Number(route.cooldown_until || 0) > now()) return false;
   // Key-lose Routen (z.B. lokales Ollama) sind offen und immer benutzbar.
-  if (!route.key_env) return true;
+  // Nur lokale Modelle duerfen ohne Token laufen. Cloud-Endpunkte ohne key_env
+  // duerfen nicht versehentlich als frei/oeffentlich behandelt werden.
+  if (!route.key_env) return isLocalRoute(route);
   return !!resolveKey(route.key_env);
 }
 
