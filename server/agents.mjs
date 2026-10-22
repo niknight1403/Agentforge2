@@ -1064,10 +1064,9 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
   // verhungern in der Scheduler-Queue. Nach dem Budget endet der Lauf planmaessig
   // (PAUSED), der Slot rotiert fair zur naechsten Villa (Least-Recently-Started).
   const runStart = now();
-  // v1.42.0 — Fokus-Modus: Die fokussierte Villa bekommt ein lange Lauf-Budget
-  // (min. 120 Min), damit sie ihr Projekt abschliessen kann, bevor der Slot
-  // weiterzieht. Nutzerdirektive: Projekt fuer Projekt fertigstellen.
-  const focusRun = process.env.VF_FOCUS_MODE !== '0';
+  // Lange fokussierte Laufzeit ist jetzt opt-in; standardmaessig rotiert jede
+  // Villa fair nach dem normalen Laufbudget, waehrend drei Villen parallel laufen.
+  const focusRun = process.env.VF_FOCUS_MODE === '1';
   const budgetMs = focusRun
     ? Math.max(120 * 60_000, Number(process.env.VF_RUN_BUDGET_MIN || 20) * 60_000)
     : Math.max(5 * 60_000, Number(process.env.VF_RUN_BUDGET_MIN || 20) * 60_000);
@@ -1183,7 +1182,12 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
       // Sanftes Tempo, wenn ein Durchlauf nichts Fertiges brachte (Routen
       // gedrosselt/ohne Key): 60 Sekunden Pause statt endloses Haemmern.
       const freshDone = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status = 'DONE' AND updated_at >= ?").get(villaId, batchStart).c;
-      if (freshDone === 0) await new Promise((r) => setTimeout(r, 60_000));
+      if (freshDone === 0) {
+        // Stopp waehrend eines gedrosselten Leerlaufs nicht erst nach einer
+        // vollen Minute bemerken.
+        const waitUntil = Date.now() + 60_000;
+        while (!job.stop && Date.now() < waitUntil) await new Promise((r) => setTimeout(r, Math.min(250, waitUntil - Date.now())));
+      }
     }
 
     // Der Lauf endet nur durch Stopp, Autonomie-Aus oder Fehler. Ein
