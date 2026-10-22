@@ -1,4 +1,4 @@
-name: VM Disk-Fix (Logs + PG-Restart)
+name: VM Disk-Fix 2 (Syslog-Spam + Haertung)
 on:
   workflow_dispatch: {}
 jobs:
@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - name: Logs aufraeumen und Postgres starten
+      - name: Syslog kuerzen, Logging haerten, DB verifizieren
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
@@ -16,20 +16,18 @@ jobs:
           chmod 600 ~/.ssh/oracle_key
           SSHO="ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159"
           $SSHO "sudo bash -c '
-          echo == VORHER ==; df -h / | tail -1
-          echo == Groesste Log-Verzeichnisse ==; du -shx /var/log/* 2>/dev/null | sort -rh | head -12
-          echo == Groesste Einzeldateien in /var/log ==; find /var/log -type f -size +100M -printf \"%s %p\n\" 2>/dev/null | sort -rn | head -8
-          echo == Journal aufräumen ==; journalctl --vacuum-time=2d --vacuum-size=2G 2>&1 | tail -2
-          echo == Journald-Limit dauerhaft ==; mkdir -p /etc/systemd/journald.conf.d; printf \"[Journal]\nSystemMaxUse=2G\nRuntimeMaxUse=1G\n\" > /etc/systemd/journald.conf.d/size-limit.conf; systemctl restart systemd-journald
-          echo == Logrotate anwenden ==; logrotate -f /etc/logrotate.conf 2>&1 | tail -3 || true
-          echo == Alte komprimierte Logs weg ==; find /var/log -name \"*.gz\" -mtime +3 -delete 2>/dev/null; find /var/log -name \"*.1\" -mtime +3 -delete 2>/dev/null || true
-          echo == Nachher ==; df -h / | tail -1
+          echo == Syslog-Spam-Muster ==; tail -c 200000 /var/log/syslog | grep -oE \"^Oct 2?2 [0-9:]+ [a-zA-Z0-9-]+ [a-zA-Z0-9._/-]+\" | awk \"{print \\\$4}\" | sort | uniq -c | sort -rn | head -8 || true
+          tail -3 /var/log/syslog | cut -c1-200
+          echo == Kuerzen ==; truncate -s 0 /var/log/syslog; rm -f /var/log/syslog.1; truncate -s 50M /var/log/postgresql/postgresql-16-main.log 2>/dev/null || true; rm -f /var/log/postgresql/postgresql-16-main.log.1 /var/log/postgresql/postgresql-16-main.log.2.gz
+          echo == Journald-Limit ==; mkdir -p /etc/systemd/journald.conf.d; printf \"[Journal]\nSystemMaxUse=2G\n\" > /etc/systemd/journald.conf.d/size-limit.conf; systemctl restart systemd-journald
+          echo == Rsyslog-Rate-Limit ==; printf \"\$imjournalRatelimit.Interval 10\n\$imjournalRatelimit.Burst 20000\n\$SystemLogRateLimitInterval 10\n\$SystemLogRateLimitBurst 20000\n\" > /etc/rsyslog.d/00-ratelimit.conf; systemctl restart rsyslog
+          echo == Logrotate-State ==; rm -f /var/lib/logrotate/status.tmp; logrotate -f /etc/logrotate.conf 2>&1 | tail -2 || true
+          echo == Nachher ==; df -h / | tail -1; du -shx /var/log | tail -1
           '"
           $SSHO "sudo bash -c '
-          echo == PG neu starten ==; systemctl restart postgresql@16-main 2>&1 || systemctl restart postgresql 2>&1 || true
-          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do sleep 5; if sudo -u postgres pg_isready -h 127.0.0.1 -p 5432 -t 5 2>/dev/null | grep -q \"accepting connections\"; then echo PG-READY; break; fi; echo \"warte... (\$i)\"; done
-          sudo -u postgres pg_isready -h 127.0.0.1 -p 5432 2>&1
-          echo == DB-Check ==; sudo -u postgres psql -Atq -d cybersarah -c \"SELECT count(*) FROM users;\" 2>&1 | head -2
-          echo == PG-Log ==; sudo -u postgres tail -n 5 /var/log/postgresql/postgresql-16-main.log 2>&1 | tail -5
-          echo == Top-CPU ==; ps aux --sort=-%cpu | head -6
+          echo == PG-Check ==; sudo -u postgres pg_isready -h 127.0.0.1 -p 5432
+          echo == Users ==; sudo -u postgres psql -Atq -d cybersarah -c \"SELECT email, role FROM users LIMIT 5;\"
+          echo == Draft-Queue ==; sudo -u postgres psql -Atq -d cybersarah -c \"SELECT kind, status, COUNT(*) FROM \\\"draftQueue\\\" GROUP BY kind, status ORDER BY kind;\"
           '"
+          echo == App-Check ==; curl -s -m 30 https://cybersarah-control-center-hmlc.onrender.com/api/ready | head -c 300; echo
+          curl -s -m 20 -o /dev/null -w "App-Wurzel HTTP=%{http_code}\n" https://cybersarah-control-center-hmlc.onrender.com/
