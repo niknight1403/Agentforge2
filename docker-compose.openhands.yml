@@ -1,0 +1,11 @@
+services:
+  agent-canvas:
+    image: ghcr.io/openhands/agent-canvas:1.31.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${OPENHANDS_PORT:-8000}:8000"
+    environment:
+      LOCAL_BACKEND_API_KEY: ${LOCAL_BACKEND_API_KEY:?Set LOCAL_BACKEND_API_KEY in .env.openhands}
+    volumes:
+      - ${OPENHANDS_STATE_PATH:-./.openhands}:/home/openhands/.openhands
+      - ${PROJECTS_PATH:?Set PROJECTS_PATH in .env.openhands}:/projects

@@ -34,6 +34,7 @@ import {
   authorizeUniversalRequest, gatewayStatus
 } from './webhooks.mjs';
 import { verifyGitHubSignature, buildCommitChangelog, sendTelegramChangelog } from './github-changelog.mjs';
+import { openHandsCanvasStatus } from './openhands.mjs';
 import { createReadStream, existsSync as fsExists } from 'node:fs';
 
 const PORT = Number(process.env.PORT || 12000);
@@ -465,6 +466,9 @@ async function api(req, res, url) {
   // Ausnahme: der SSE-Eventstrom (/api/events) laesst sich aus dem Browser
   // nicht mit Headern verbinden; er uebertraegt nur Fortschrittsereignisse.
   if (needAuth && p !== '/api/events') return json(res, 401, { error: 'Login erforderlich.' });
+  if (p === '/api/integrations/openhands' && m === 'GET') {
+    return json(res, 200, openHandsCanvasStatus());
+  }
   if (await masterControl.handle(req, res, url, readBody, json, openMode || isAdmin)) return;
 
   // ---- Routen ----

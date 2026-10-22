@@ -260,6 +260,32 @@ Ungültige Konfiguration (z. B. `PORT=abc`) bricht mit klarer Meldung und Exit 1
 
 Danach im Browser öffnen: `http://localhost:12000/`
 
+### Optional: OpenHands Agent Canvas
+
+OpenHands Agent Canvas kann separat neben dem VillaForge-Hub laufen. Die Integration
+ändert oder ersetzt den VillaForge-Master-Agenten nicht: Im Konto-Bereich erscheint
+ein Link, sobald `OPENHANDS_CANVAS_URL` in der Hub-Umgebung gesetzt ist.
+
+Für einen lokalen Start mit Docker:
+
+```bash
+cp .env.openhands.example .env.openhands
+mkdir -p ./openhands-projects ./.openhands
+# LOCAL_BACKEND_API_KEY in .env.openhands durch ein starkes Zufallsgeheimnis ersetzen.
+docker compose --env-file .env.openhands -f docker-compose.openhands.yml up -d
+```
+
+Der Compose-Dienst bindet standardmäßig nur an `127.0.0.1:8000` und mountet nur
+`openhands-projects/` als Arbeitsbereich. Das OpenHands-Canvas ist damit auf
+demselben Rechner erreichbar unter `http://127.0.0.1:8000/canvas`. Für den Zugriff
+von einem anderen Gerät muss ein HTTPS-Reverse-Proxy eingerichtet und die dadurch
+erreichbare URL als `OPENHANDS_CANVAS_URL` in der VillaForge-Hub-Umgebung gesetzt
+werden. Docker-Port oder Canvas nicht ungeschützt im öffentlichen Internet freigeben.
+
+Die OpenHands-Instanz besitzt ihren eigenen Agent Server, eigene Konfiguration und
+eigene Automationen. Gespräche und Ausführungen werden nicht automatisch in
+VillaForge übertragen. Das Canvas kann bei Bedarf eigene Agent-Backends verbinden.
+
 - Health: `GET /api/health`
 - Oberfläche: `/`
 - Ereignisstrom (SSE): `/api/events`
