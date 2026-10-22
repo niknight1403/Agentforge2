@@ -1,0 +1,31 @@
+name: VM Relay umschalten (18742)
+on:
+  workflow_dispatch: {}
+jobs:
+  switch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Nginx-Relay auf socat-Port 18742 umstellen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -euo pipefail
+          F=/etc/nginx/sites-enabled/villaforge-hub
+          sed -i 's|:18741/api|:18742/api|g' "$F"
+          grep -n "18742" "$F" | head -4
+          nginx -t
+          systemctl reload nginx
+          echo "nginx neu geladen."
+          echo "== Test VM -> Hetzner socat (403 erwartet) =="
+          curl -s -o /tmp/rt -w "HTTP=%{http_code}\n" -m 30 -X POST "http://167.233.196.20:18742/api/hara/scan" -H "Content-Type: application/json" -d "{}"
+          head -c 200 /tmp/rt; echo
+          echo "== Test via Hub-Relay (403 erwartet) =="
+          curl -s -o /tmp/rt2 -w "HTTP=%{http_code}\n" -m 40 -X POST "https://hub.cybersarah-ki.com/revenue-api/api/hara/scan" -H "Content-Type: application/json" -d "{}"
+          head -c 200 /tmp/rt2; echo
+          EOS
