@@ -28,11 +28,12 @@ import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDe
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
 import {
-  initWebhookStore, claimEventId, markWebhookProcessed, logWebhookEvent,
+  initWebhookStore, claimEventId, releaseEventId, markWebhookProcessed, logWebhookEvent,
   verifyStripeSignature, handleStripeEvent,
   verifyDigistore24Signature, handleDigistore24Event,
   authorizeUniversalRequest, gatewayStatus
 } from './webhooks.mjs';
+import { verifyGitHubSignature, buildCommitChangelog, sendTelegramChangelog } from './github-changelog.mjs';
 import { createReadStream, existsSync as fsExists } from 'node:fs';
 
 const PORT = Number(process.env.PORT || 12000);
@@ -141,6 +142,19 @@ function readBody(req) {
       if (!raw) return resolveP({});
       try { resolveP(JSON.parse(raw)); } catch (e) { reject(e); }
     });
+    req.on('error', reject);
+  });
+}
+
+function readRawBody(req, limit = 5_000_000) {
+  return new Promise((resolveP, reject) => {
+    const chunks = []; let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) { reject(new Error('Webhook-Nutzlast zu gross')); req.destroy(); return; }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolveP(Buffer.concat(chunks)));
     req.on('error', reject);
   });
 }
@@ -318,6 +332,32 @@ async function api(req, res, url) {
 
     if (sub === 'status' && m === 'GET') {
       return json(res, 200, { ok: true, gateway: gatewayStatus() });
+    }
+
+    if (sub === 'github' && m === 'POST') {
+      let raw;
+      try { raw = await readRawBody(req); } catch (e) { return json(res, 413, { received: false, error: String(e.message || e) }); }
+      const signature = verifyGitHubSignature(raw, req.headers['x-hub-signature-256'], process.env.GITHUB_WEBHOOK_SECRET);
+      if (!signature.ok) return json(res, 401, { received: false, error: signature.error });
+      if (String(req.headers['x-github-event'] || '') !== 'push') return json(res, 200, { received: true, ignored: true, reason: 'Nur push-Events werden verarbeitet.' });
+      let payload;
+      try { payload = JSON.parse(raw.toString('utf8')); } catch { return json(res, 400, { received: false, error: 'Kein gueltiges JSON' }); }
+      const delivery = String(req.headers['x-github-delivery'] || '').slice(0, 120);
+      if (!delivery) return json(res, 400, { received: false, error: 'X-GitHub-Delivery fehlt' });
+      const existing = logWebhookEvent('github', delivery, { repository: payload?.repository?.full_name, ref: payload?.ref, commits: payload?.commits?.length || 0 });
+      if (existing?.status === 'PROCESSED') return json(res, 200, { received: true, duplicate: true, delivery });
+      if (!Array.isArray(payload?.commits) || payload.commits.length === 0) {
+        markWebhookProcessed('github', delivery);
+        return json(res, 200, { received: true, delivery, ignored: true, reason: 'Push ohne Commits.' });
+      }
+      const claim = await claimEventId('github', delivery, 300);
+      if (claim === false) return json(res, 202, { received: true, duplicate: true, delivery, queued: true });
+      const message = buildCommitChangelog(payload);
+      const result = await sendTelegramChangelog(message);
+      if (!result.sent) { await releaseEventId('github', delivery); return json(res, 503, { received: false, delivery, error: result.reason, retry: true }); }
+      markWebhookProcessed('github', delivery);
+      emit({ webhook: 'github', delivery, repository: payload?.repository?.full_name, commits: payload?.commits?.length || 0 });
+      return json(res, 200, { received: true, delivery, posted: true, telegramMessageId: result.messageId });
     }
 
     if (sub === 'stripe' && m === 'POST') {
