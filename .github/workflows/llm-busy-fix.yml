@@ -6,22 +6,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Gepatchtes Server-Modul aus Repo laden
+      - name: Repo laden (enthiel haelt Hub-Snapshot)
         uses: actions/checkout@v4
-        with:
-          repository: niknight1403/AgentForge
-          ref: main
-          path: hub
       - name: Datei pruefen und auf VM uebertragen
         run: |
           set -euo pipefail
-          test -f hub/server/agents.mjs
-          grep -q "llmBusyWait" hub/server/agents.mjs && echo "Patch im Repo-Modul vorhanden"
-          grep -q "getSetting('reapMinutes'" hub/server/agents.mjs && echo "Reaper-Patch im Repo-Modul vorhanden"
+          test -f hub-snapshot/agents.mjs
+          grep -q "llmBusyWait" hub-snapshot/agents.mjs && echo "Busy-Patch im Snapshot vorhanden"
+          grep -q "getSetting('reapMinutes'" hub-snapshot/agents.mjs && echo "Reaper-Patch im Snapshot vorhanden"
           mkdir -p ~/.ssh
           printf '%s\n' "${ORACLE_SSH_KEY}" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 hub/server/agents.mjs ubuntu@92.5.177.159:/tmp/agents.mjs.new
+          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 hub-snapshot/agents.mjs ubuntu@92.5.177.159:/tmp/agents.mjs.new
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
       - name: Backup, Einsatz, Hub-Env, Neustart
