@@ -11,10 +11,15 @@ const {db}=await import('../db.mjs');
 const {chat,resolveKey,routingStatus}=await import('../llm.mjs');
 function route(id,provider,key_env='',extra={}){return {id,name:provider,provider,base_url:`http://${provider}`,model:'test',key_env,priority:id,...extra};}
 const answer={content:'Echte Antwort',model:'test'};
-test('Primary -> Secondary -> Backup -> Local: fixe Kaskade trotz anderer Priorität',async()=>{
+test('Routine ist local-first und vermeidet Cloud wenn Ollama antwortet',async()=>{
+ const rows=[route(1,'ollama'),route(2,'huggingface'),route(3,'groq'),route(4,'gemini')],seen=[];
+ const run=createCascade({routes:()=>rows,key:()=>true,call:async r=>{seen.push(r.provider);return answer;}});
+ const out=await run([]);assert.deepEqual(seen,['ollama']);assert.equal(out.offline,false);assert.equal(out.failovers.length,0);
+});
+test('Komplexe Aufgaben koennen cloud-first eskalieren und fallen auf lokal zurueck',async()=>{
  const rows=[route(1,'ollama'),route(2,'huggingface'),route(3,'groq'),route(4,'gemini')],seen=[];
  const run=createCascade({routes:()=>rows,key:()=>true,call:async r=>{seen.push(r.provider);if(r.provider!=='ollama')throw Object.assign(new Error('failure'),{status:429});return answer;}});
- const out=await run([]);assert.deepEqual(seen,['gemini','groq','huggingface','ollama']);assert.equal(out.offline,false);assert.equal(out.failovers.length,3);
+ const out=await run([],{cloudFirst:true});assert.deepEqual(seen,['gemini','groq','huggingface','ollama']);assert.equal(out.failovers.length,3);
 });
 test('Fehlende Keys, Cooldowns und Offline-Einträge werden ohne Netzwerkaufruf übersprungen',async()=>{
  const seen=[];const run=createCascade({routes:()=>[route(1,'gemini','MISSING'),route(2,'groq','',{cooldown_until:Date.now()+60000}),route(3,'offline'),route(4,'ollama')],key:()=>'',call:async r=>{seen.push(r.provider);return answer;}});
@@ -23,9 +28,9 @@ test('Fehlende Keys, Cooldowns und Offline-Einträge werden ohne Netzwerkaufruf 
 test('Kein Schlaf vor Failover; Timeout, 429, 5xx und leere Antworten fallen durch',async()=>{
  for(const err of [Object.assign(new Error('429'),{status:429}),Object.assign(new Error('500'),{status:503}),Object.assign(new Error('timeout'),{name:'TimeoutError'})]){
   const seen=[];const run=createCascade({routes:()=>[route(1,'gemini'),route(2,'ollama')],key:()=>'',call:async(r,_,opts)=>{seen.push(r.id);assert.ok(opts.timeoutMs<=90000);if(r.id===1)throw err;return answer;}});
-  await run([]);assert.deepEqual(seen,[1,2]);
+  await run([],{cloudFirst:true});assert.deepEqual(seen,[1,2]);
  }
- const run=createCascade({routes:()=>[route(1,'gemini'),route(2,'ollama')],key:()=>'',call:async r=>r.id===1?{content:''}:answer});assert.equal((await run([])).offline,false);
+ const run=createCascade({routes:()=>[route(1,'gemini'),route(2,'ollama')],key:()=>'',call:async r=>r.id===1?{content:''}:answer});assert.equal((await run([],{cloudFirst:true})).offline,false);
 });
 test('Vollausfall erzeugt 503 statt erfundener Planer-Antwort oder Token-Abrechnung',async()=>{
  const run=createCascade({routes:()=>[route(1,'ollama')],key:()=>'',call:async()=>{throw new Error('private-key-must-not-leak');}});
@@ -53,12 +58,12 @@ test('Kaskade ist dauerhaft und idempotent; deaktivierte Einträge bleiben deakt
 test('Cloud-Zeitbudget reserviert Kapazität für das lokale Modell',async()=>{
  let time=0;const seen=[];const rows=[route(1,'gemini'),route(2,'groq'),route(3,'huggingface'),route(4,'ollama')];
  const run=createCascade({routes:()=>rows,key:()=>'',clock:()=>time,call:async r=>{seen.push(r.provider);if(r.provider!=='ollama'){time+=24000;throw Error('timeout');}return answer;}});
- await run([]);assert.deepEqual(seen,['gemini','ollama']);
+ await run([],{cloudFirst:true});assert.deepEqual(seen,['gemini','ollama']);
 });
 test('Abgelaufener Schlüssel wird nicht mit jedem Modell desselben Providers erneut versucht',async()=>{
  const rows=[route(1,'gemini','KEY',{model:'a'}),route(2,'gemini','ALIAS',{model:'b'}),route(3,'ollama')];let seen=[];
  const run=createCascade({routes:()=>rows,key:()=> 'same-test-key',call:async r=>{seen.push(r.id);if(r.id!==3)throw Object.assign(Error('unauthorized'),{status:401});return answer;}});
- await run([]);assert.deepEqual(seen,[1,3]);seen=[];await run([]);assert.deepEqual(seen,[3]);
+ await run([],{cloudFirst:true});assert.deepEqual(seen,[1,3]);seen=[];await run([],{cloudFirst:true});assert.deepEqual(seen,[3]);
 });
 test('Free-only mode uses approved free routes and skips paid or unknown cloud routes',async()=>{
  process.env.VF_LLM_FREE_ONLY='1';
@@ -76,7 +81,7 @@ test('Free-only mode uses approved free routes and skips paid or unknown cloud r
   route(11,'xai'),route(12,'ollama')
  ];
  const seen=[];const run=createCascade({routes:()=>rows,key:()=>true,call:async r=>{seen.push(r.id);if(r.id!==12)throw Error('temporary');return answer;}});
- await run([]);assert.deepEqual(seen,[1,3,5,6,8,12]);
+ await run([],{cloudFirst:true});assert.deepEqual(seen,[1,3,5,6,8,12]);
  assert.equal(isFreeRoute({...route(20,'cerebras'),model:'qwen-3.8-27b'}),true);
  assert.equal(isFreeRoute({...route(21,'mistral'),model:'mistral-large-latest'}),false);
  process.env.VF_LLM_FREE_ONLY='0';
