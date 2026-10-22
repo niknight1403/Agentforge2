@@ -14,6 +14,9 @@ delete process.env.DIGISTORE24_PASSPHRASE;
 delete process.env.WEBHOOK_API_KEYS;
 delete process.env.WEBHOOK_INTERNAL_TOKEN;
 delete process.env.SLACK_WEBHOOK_URL;
+delete process.env.GITHUB_WEBHOOK_SECRET;
+delete process.env.TELEGRAM_BOT_TOKEN;
+delete process.env.TELEGRAM_CHAT_ID;
 
 const {
   verifyStripeSignature, verifyDigistore24Signature,
@@ -122,6 +125,14 @@ test('Gateway-Status meldet ehrlich, was konfiguriert ist', () => {
   assert.equal(s.slack, 'deaktiviert');
   assert.equal(s.universal, 'deaktiviert');
   assert.equal(s.digistore24, 'deaktiviert');
+  assert.equal(s.githubTelegram, 'deaktiviert');
+  process.env.GITHUB_WEBHOOK_SECRET = 'secret';
+  process.env.TELEGRAM_BOT_TOKEN = 'token';
+  process.env.TELEGRAM_CHAT_ID = 'chat';
+  assert.equal(gatewayStatus().githubTelegram, 'konfiguriert');
+  delete process.env.GITHUB_WEBHOOK_SECRET;
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_CHAT_ID;
 });
 
 const { logWebhookEvent, markWebhookProcessed } = await import('../webhooks.mjs');
