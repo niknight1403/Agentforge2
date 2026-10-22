@@ -1,0 +1,41 @@
+name: Oracle-Disk-Report
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: oracle-disk-report
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    name: Speicherplatz-Report der Oracle-VM
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Disk-Report via SSH
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'bash -s' <<'EOS'
+          echo "== Dateisystem =="
+          df -h | grep -vE "tmpfs|udev|overlay|shm"
+          echo "== Inodes =="
+          df -i / | tail -1
+          echo "== Groesste Verzeichnisse (root) =="
+          sudo du -sh /* 2>/dev/null | sort -rh | head -8
+          echo "== Ollama-Modelle =="
+          du -sh /usr/share/ollama/.ollama/models 2>/dev/null || echo "kein Modellverzeichnis"
+          ollama list 2>/dev/null || sudo -u ollama ollama list 2>/dev/null || echo "ollama list nicht verfuegbar"
+          echo "== Docker =="
+          (docker system df 2>/dev/null || sudo docker system df 2>/dev/null || echo "kein Docker")
+          echo "== RAM =="
+          free -h | head -2
+          EOS
