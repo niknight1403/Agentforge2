@@ -1,15 +1,16 @@
-name: Villa-Steuerung (Pause/Resume direkt in der DB)
+name: Villa-Steuerung (Start/Stop/Status direkt in der DB)
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'pause oder resume'
+        description: 'pause | resume | pause_all | resume_all | status'
         required: true
-        default: 'pause'
+        default: 'status'
       ids:
-        description: 'Villa-IDs, kommasepariert (z.B. 4,7,8)'
-        required: true
+        description: 'Villa-IDs, kommasepariert (z.B. 4,7,8) — LEER = alle Villen'
+        required: false
+        default: ''
 
 jobs:
   steuerung:
@@ -30,22 +31,49 @@ jobs:
         run: |
           MODE='${{ github.event.inputs.mode }}'
           IDS='${{ github.event.inputs.ids }}'
-          /tmp/sshcmd 'bash -s' << EOS
+          /tmp/sshcmd 'bash -s' << 'EOS'
           set -e
           tee /tmp/villa-control.mjs >/dev/null << 'NODEJS'
           import { DatabaseSync } from 'node:sqlite';
           const [mode, idsArg] = process.argv.slice(2);
-          const ids = idsArg.split(',').map((s) => s.trim()).filter(Boolean).map(Number);
-          if (!ids.length) { console.error('Keine gueltigen IDs'); process.exit(1); }
           const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
-          const ph = ids.map(() => '?').join(',');
-          const sql = mode === 'resume'
-            ? \`UPDATE villas SET autonomy = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id IN (\${ph})\`
-            : \`UPDATE villas SET autonomy = 0, status = 'PAUSED', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id IN (\${ph})\`;
-          const r = db.prepare(sql).run(...ids);
-          const rows = db.prepare(\`SELECT id, name, status, autonomy FROM villas WHERE id IN (\${ph})\`).all(...ids);
-          for (const v of rows) console.log(\`[\${v.id}] \${v.name} | status: \${v.status} | autonomy: \${v.autonomy}\`);
-          if (r.changes !== ids.length) { console.error('Warnung: ' + r.changes + ' von ' + ids.length + ' Villen aktualisiert'); }
+          const nowSql = () => strftime_now();
+          function strftime_now() {
+            return new Date().toISOString().replace('T',' ').replace('Z','') + 'Z';
+          }
+          function list(ids) {
+            const ph = ids.map(() => '?').join(',');
+            const rows = ids.length
+              ? db.prepare(\`SELECT id, name, status, autonomy FROM villas WHERE id IN (\${ph}) ORDER BY id\`).all(...ids)
+              : db.prepare('SELECT id, name, status, autonomy FROM villas ORDER BY id').all();
+            for (const v of rows) console.log(\`[\${v.id}] \${v.name} | status: \${v.status} | autonomy: \${v.autonomy}\`);
+            return rows.length;
+          }
+          if (mode === 'status') {
+            console.log('== STATUS ALLER VILLEN ==');
+            list([]);
+            process.exit(0);
+          }
+          const ids = (idsArg || '').split(',').map((s) => s.trim()).filter(Boolean).map(Number).filter(Boolean);
+          const apply = (sql, label) => {
+            const r = ids.length
+              ? db.prepare(sql + ' WHERE id IN (' + ids.map(() => '?').join(',') + ')').run(...ids)
+              : db.prepare(sql).run();
+            console.log(label + ': ' + r.changes + ' Villa(n) aktualisiert');
+            list(ids);
+          };
+          if (mode === 'pause') {
+            apply(\`UPDATE villas SET autonomy = 0, status = 'PAUSED', updated_at = '\${nowSql()}'\`, 'PAUSE');
+          } else if (mode === 'pause_all') {
+            apply(\`UPDATE villas SET autonomy = 0, status = 'PAUSED', updated_at = '\${nowSql()}'\`, 'PAUSE_ALL');
+          } else if (mode === 'resume') {
+            apply(\`UPDATE villas SET autonomy = 1, updated_at = '\${nowSql()}'\`, 'RESUME');
+          } else if (mode === 'resume_all') {
+            apply(\`UPDATE villas SET autonomy = 1, updated_at = '\${nowSql()}'\`, 'RESUME_ALL');
+          } else {
+            console.error('Unbekannter Modus: ' + mode);
+            process.exit(1);
+          }
           NODEJS
           sudo node /tmp/villa-control.mjs "$MODE" "$IDS"
           rm -f /tmp/villa-control.mjs
