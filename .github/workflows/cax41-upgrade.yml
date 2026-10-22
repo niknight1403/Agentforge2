@@ -6,6 +6,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
+      - name: Alten CAX31 vorab rueckbauen (Shared-Core-Limit freigeben)
+        env:
+          HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "== Rueckbau des alten ollama-cax31 (IDempotent) =="
+          python3 - <<'PYEOF'
+          import json, os, urllib.request, urllib.error
+          tok = os.environ["HETZNER_API_TOKEN"]
+          def api(url, method="GET", timeout=30):
+              req = urllib.request.Request(url, method=method, headers={"Authorization": "Bearer " + tok})
+              return json.load(urllib.request.urlopen(req, timeout=timeout))
+          servers = api("https://api.hetzner.cloud/v1/servers").get("servers", [])
+          found = False
+          for s in servers:
+              if s["name"] == "ollama-cax31":
+                  found = True
+                  req = urllib.request.Request("https://api.hetzner.cloud/v1/servers/" + str(s["id"]), method="DELETE",
+                                               headers={"Authorization": "Bearer " + tok})
+                  urllib.request.urlopen(req, timeout=30)
+                  print("ollama-cax31 (ID %s, %s) geloescht — 8 Shared-Cores frei." % (s["id"], s["public_net"]["ipv4"]["ip"]))
+          if not found:
+              print("ollama-cax31 nicht vorhanden — nichts zu rueckbauen.")
+          PYEOF
       - name: CAX41 auf Hetzner anlegen (falls nicht vorhanden)
         id: create
         env:
