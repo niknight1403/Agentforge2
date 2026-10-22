@@ -1,0 +1,60 @@
+name: Flottenfix (VF_FOCUS_MODE in Unit-Datei verankern)
+on:
+  workflow_dispatch:
+jobs:
+  fixfocus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Fokus-Modus in Unit verankern, Hub neu starten, 5er-Betrieb verifizieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=40 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -euo pipefail
+          UNIT=villaforge-hub.service
+          FRAG=$(systemctl show $UNIT -p FragmentPath --value)
+          echo "Unit-Datei: $FRAG"
+          echo "== Drop-in-Situation =="
+          systemctl show $UNIT -p DropInPaths --value || true
+          ls -la /etc/systemd/system/$UNIT.d/ 2>/dev/null || echo "(kein .d-Verzeichnis)"
+          echo "== VF_FOCUS_MODE direkt in die Unit-Datei schreiben =="
+          if grep -q '^Environment=VF_FOCUS_MODE=' "$FRAG"; then
+            echo "  bereits vorhanden"
+          else
+            sed -i '/^ExecStart=/i Environment=VF_FOCUS_MODE=0' "$FRAG"
+            echo "  eingefuegt"
+          fi
+          systemctl daemon-reload
+          systemctl restart $UNIT
+          sleep 20
+          systemctl is-active $UNIT
+          echo "== Verifikation: Env-Merge =="
+          systemctl show $UNIT -p Environment | grep -o 'VF_FOCUS_MODE=[^ ]*' || (echo "FEHLER: immer noch nicht gemergt"; exit 1)
+          echo "== Warte auf Scheduler-Anlauf (developLoop-Takt) und beobachte 8 Minuten =="
+          sleep 480
+          echo "-- T+8min --"
+          systemctl is-active $UNIT
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
+          cur = con.cursor()
+          st = cur.execute("SELECT status, COUNT(*) FROM villas GROUP BY status").fetchall()
+          print("Villen-Status:", st)
+          run = cur.execute("SELECT id, name FROM villas WHERE status='RUNNING' ORDER BY id").fetchall()
+          print("Laufende Villen (%d):" % len(run), [r[0] for r in run])
+          mv = cur.execute("SELECT COUNT(*) FROM tasks WHERE updated_at > datetime('now','-8 minutes')").fetchone()[0]
+          print("Task-Bewegung letzte 8 Min:", mv)
+          import urllib.request, json
+          try:
+              h = json.load(urllib.request.urlopen("https://hub.cybersarah-ki.com/api/health", timeout=10))
+              print("Health:", h.get("version"), "| ok:", h.get("ok"))
+          except Exception as e:
+              print("Health nicht erreichbar:", e)
+          PYV
+          echo "== Fix abgeschlossen =="
+          EOS
