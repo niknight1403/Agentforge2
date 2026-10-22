@@ -1,11 +1,12 @@
 {
-  "checked_at": "2026-10-21T05:12:38.183780+00:00",
-  "master_reply_ok": true,
+  "checked_at": "2026-10-22T12:39:04.045246+00:00",
+  "master_reply_ok": false,
   "villa_created": false,
   "villa_deleted": false,
   "created_villa_id": null,
-  "master_reply": "Keine Einstellungen ge\u00e4ndert.\nBitte beschreibe die gew\u00fcnschte \u00c4nderung genauer.",
+  "master_reply": "Nicht abgeschlossen: Kein echtes Sprachmodell erreichbar. Cloud-Zug\u00e4nge, Modellstatus und lokale LLM-Verbindung pr\u00fcfen; die Anfrage wurde nicht durch einen regelbasierten Planer ersetzt.",
   "errors": [
+    "Master-History hat keinen verifizierten Reply oder Villa-ID. Text: Nicht abgeschlossen: Kein echtes Sprachmodell erreichbar. Cloud-Zug\u00e4nge, Modellstatus und lokale LLM-Verbindung pr\u00fcfen; die Anfrage wurde nicht durch einen regelbasierten Planer ersetzt.",
     "4) keine Villa deren Name 'Master-Rauchtest' enthaelt gefunden."
   ]
 }
