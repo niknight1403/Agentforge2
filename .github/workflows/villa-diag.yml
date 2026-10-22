@@ -17,6 +17,12 @@ jobs:
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=40 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
           set -uo pipefail
           echo "== Hub-Prozess aktiv seit / Uptime =="
+          echo "== LIVE developLoop im deployten Code =="
+          grep -n "developLoop" /opt/villaforge/server/server.mjs | head -3
+          sed -n "$(grep -n 'const developLoop' /opt/villaforge/server/server.mjs | head -1 | cut -d: -f1),+28p" /opt/villaforge/server/server.mjs
+          echo "== LIVE SLOTS-Definition =="
+          grep -n "SLOTS\|FOCUS_MODE" /opt/villaforge/server/scheduler.mjs | head -6
+
           systemctl is-active villaforge-hub.service
           ps -o etime= -C node | head -2
           echo "== Letzte Hub-Logzeilen (developLoop/Scheduler) =="
