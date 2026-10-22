@@ -1,107 +1,140 @@
-name: CAX31-Autointegration (Secrets-basiert)
+name: CAX31-Autointegration (Hetzner-API, Secrets-basiert)
 on:
   workflow_dispatch:
 jobs:
   integrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 90
     steps:
-      - name: CAX31-IP aus Secrets ermitteln
-        id: discover
+      - name: CAX31 auf Hetzner anlegen (falls nicht vorhanden)
+        id: create
         env:
-          HETZNER_NODES: ${{ secrets.HETZNER_NODES }}
           HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
+          CAX_SSH_KEY: ${{ secrets.CAX_SSH_KEY }}
         run: |
           set -euo pipefail
-          KNOWN="92.5.177.159 2.28.12.63 2.31.45.241 2.31.64.65 167.233.196.20 167.233.118.190"
-          IPS=$(printf '%s' "$HETZNER_NODES" | grep -oE "[0-9]{1,3}(\.[0-9]{1,3}){3}" | sort -u || true)
-          # Fallback: Hetzner-Cloud-API nach Server-IPs befragen (nur Lesezugriff)
-          if [ -z "$IPS" ] && [ -n "$HETZNER_API_TOKEN" ]; then
-            IPS=$(curl -s -m 20 -H "Authorization: Bearer $HETZNER_API_TOKEN" \
-              "https://api.hetzner.cloud/v1/servers" \
-              | python3 -c "import json,sys; print('\n'.join(s['public_net']['ipv4']['ip'] for s in json.load(sys.stdin).get('servers',[])))" 2>/dev/null | sort -u || true)
+          HZ="curl -s -m 30 -H \"Authorization: Bearer $HETZNER_API_TOKEN\""
+          echo "== Bestand pruefen =="
+          EXIST=$(curl -s -m 30 -H "Authorization: Bearer $HETZNER_API_TOKEN" "https://api.hetzner.cloud/v1/servers" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          for s in d.get('servers',[]):
+              typ = s.get('server_type',{}).get('name','?') if isinstance(s.get('server_type'),dict) else '?'
+              print(s['name'], typ, s['public_net']['ipv4']['ip'], s['datacenter']['location']['name'])
+          " )
+          echo "$EXIST"
+          LOC=$(echo "$EXIST" | grep "ollama-cax21 " | awk '{print $4}' | head -1)
+          [ -z "$LOC" ] && LOC=$(echo "$EXIST" | grep "ollama-cax11" | awk '{print $4}' | head -1)
+          echo "Standort der Flotte: ${LOC:-fsn1}"
+          C31IP=$(echo "$EXIST" | grep -i "cax31" | awk '{print $3}' | head -1)
+          if [ -n "$C31IP" ]; then
+            echo "CAX31 existiert bereits: $C31IP"
+          else
+            echo "== SSH-Key ableiten (aus CAX_SSH_KEY) =="
+            mkdir -p ~/.ssh && printf '%s\n' "$CAX_SSH_KEY" > ~/.ssh/cax_key && chmod 600 ~/.ssh/cax_key
+            PUBKEY=$(ssh-keygen -y -f ~/.ssh/cax_key)
+            KEY_ID=$(curl -s -m 30 -H "Authorization: Bearer $HETZNER_API_TOKEN" "https://api.hetzner.cloud/v1/ssh_keys" | python3 -c "
+            import json,sys
+            ks=json.load(sys.stdin).get('ssh_keys',[])
+            print(ks[0]['id'] if ks else '')")
+            if [ -z "$KEY_ID" ]; then
+              KEY_ID=$(curl -s -m 30 -X POST -H "Authorization: Bearer $HETZNER_API_TOKEN" -H "Content-Type: application/json" \
+                "https://api.hetzner.cloud/v1/ssh_keys" \
+                -d "{\"name\":\"fleet-key\",\"public_key\":$(python3 -c "import json,sys;print(json.dumps(open('/dev/stdin').read().strip()))" <<< "$PUBKEY")}" \
+                | python3 -c "import json,sys;print(json.load(sys.stdin).get('ssh_key',{}).get('id',''))")
+              echo "SSH-Key registriert: $KEY_ID"
+            else
+              echo "SSH-Key vorhanden: $KEY_ID"
+            fi
+            echo "== Server ollama-cax31 (cax31) anlegen =="
+            BODY=$(python3 -c "
+            import json
+            print(json.dumps({'name':'ollama-cax31','server_type':'cax31','image':'ubuntu-24.04','ssh_keys':[int('$KEY_ID')],'location':'${LOC:-fsn1}'}))")
+            RESP=$(curl -s -m 60 -X POST -H "Authorization: Bearer $HETZNER_API_TOKEN" -H "Content-Type: application/json" \
+              "https://api.hetzner.cloud/v1/servers" -d "$BODY")
+            ACTION=$(echo "$RESP" | python3 -c "import json,sys;print(json.load(sys.stdin).get('action',{}).get('id',''))")
+            SRVID=$(echo "$RESP" | python3 -c "import json,sys;print(json.load(sys.stdin).get('server',{}).get('id',''))")
+            if [ -z "$SRVID" ]; then echo "$RESP" | head -c 400; echo; echo "FEHLER: Server-Anlegen fehlgeschlagen"; exit 1; fi
+            echo "Server-ID $SRVID, Action $ACTION"
+            for i in $(seq 1 40); do
+              ST=$(curl -s -m 20 -H "Authorization: Bearer $HETZNER_API_TOKEN" "https://api.hetzner.cloud/v1/actions/$ACTION" | python3 -c "import json,sys;print(json.load(sys.stdin).get('action',{}).get('status',''))")
+              [ "$ST" = "finished" ] && break
+              [ "$ST" = "error" ] && { echo "FEHLER beim Anlegen (Action-Status error)"; exit 1; }
+              sleep 5
+            done
+            echo "Server erstellt, warte auf public IPv4..."
+            for i in $(seq 1 30); do
+              C31IP=$(curl -s -m 20 -H "Authorization: Bearer $HETZNER_API_TOKEN" "https://api.hetzner.cloud/v1/servers/$SRVID" | python3 -c "
+              import json,sys
+              d=json.load(sys.stdin).get('server',{})
+              ip=d.get('public_net',{}).get('ipv4',{}).get('ip','')
+              st=d.get('status','')
+              print(ip if ip and st=='running' else '')")
+              [ -n "$C31IP" ] && break
+              sleep 6
+            done
+            [ -z "$C31IP" ] && { echo "FEHLER: keine IPv4 nach Timeout"; exit 1; }
+            echo "CAX31 aktiv: $C31IP"
           fi
-          NEW=""
-          for ip in $IPS; do
-            skip=0
-            for k in $KNOWN; do [ "$ip" = "$k" ] && skip=1; done
-            [ "$skip" -eq 0 ] && NEW="$NEW $ip"
-          done
-          NEW=$(echo $NEW | xargs)
-          echo "Neue Kandidaten: ${NEW:-keine}"
-          if [ -z "$NEW" ]; then echo "FEHLER: keine neue Knoten-IP in Secrets gefunden"; exit 1; fi
-          echo "candidates<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$NEW" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-      - name: Knoten identifizieren (SSH-Test, Specs)
-        id: probe
+          echo "cax31=$C31IP" >> "$GITHUB_OUTPUT"
+      - name: Auf SSH warten, dann Specs pruefen
         env:
           CAX_SSH_KEY: ${{ secrets.CAX_SSH_KEY }}
-          CANDIDATES: ${{ steps.discover.outputs.candidates }}
+          SIP: ${{ steps.create.outputs.cax31 }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && printf '%s\n' "$CAX_SSH_KEY" > ~/.ssh/cax_key && chmod 600 ~/.ssh/cax_key
-          CAX31=""
-          for ip in $CANDIDATES; do
-            echo "== Teste $ip =="
-            OUT=$(ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 root@$ip \
-              "echo SPECS; nproc; free -m | awk '/Mem:/{print \$2}'; uname -m; which ollama >/dev/null 2>&1 && echo OLLAMA_DA || echo OLLAMA_NEIN" 2>&1) || { echo "  SSH fehlgeschlagen: $ip"; continue; }
-            CPU=$(echo "$OUT" | sed -n 's/^SPECS$//;2p')
-            MEM=$(echo "$OUT" | sed -n '3p')
-            ARCH=$(echo "$OUT" | sed -n '4p')
-            OLL=$(echo "$OUT" | sed -n '5p')
-            echo "  CPU=$CPU MEM=${MEM}MB ARCH=$ARCH OLLAMA=$OLL"
-            # CAX31: >=8 vCPU, >=30000 MB RAM
-            if [ "${CPU:-0}" -ge 8 ] && [ "${MEM:-0}" -ge 30000 ]; then
-              CAX31="$ip"; echo "  -> als CAX31 identifiziert"; break
-            fi
+          echo "== Warte auf SSH (max 5 min): $SIP =="
+          OK=0
+          for i in $(seq 1 30); do
+            if ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 root@$SIP "echo BOOT_OK" 2>/dev/null; then OK=1; break; fi
+            sleep 10
           done
-          if [ -z "$CAX31" ]; then echo "FEHLER: kein Kandidat erfuellt CAX31-Spezifikation (8 vCPU / 32 GB)"; exit 1; fi
-          echo "cax31=$CAX31" >> "$GITHUB_OUTPUT"
-      - name: Ollama + 14B-Modell installieren und haerten
+          [ "$OK" = "1" ] || { echo "FEHLER: SSH nicht erreichbar"; exit 1; }
+          SSH="ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 root@$SIP"
+          $SSH "echo '== Specs =='; nproc; free -h | head -2; uname -m; df -h / | tail -1"
+      - name: Ollama + qwen2.5-coder:14b installieren, UFW haerten
         env:
           CAX_SSH_KEY: ${{ secrets.CAX_SSH_KEY }}
-          SIP: ${{ steps.probe.outputs.cax31 }}
+          SIP: ${{ steps.create.outputs.cax31 }}
         run: |
           set -euo pipefail
           SSH="ssh -i ~/.ssh/cax_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 root@$SIP"
-          echo "== Ollama-Installationsstand pruefen =="
-          if ! $SSH "which ollama >/dev/null 2>&1"; then
-            echo "== Ollama installieren =="
-            $SSH "curl -fsSL https://ollama.com/install.sh | sh" 2>&1 | tail -2
-            $SSH "mkdir -p /etc/systemd/system/ollama.service.d && printf '[Service]\nEnvironment=\"OLLAMA_HOST=0.0.0.0:11434\"\n' > /etc/systemd/system/ollama.service.d/host.conf && systemctl daemon-reload && systemctl restart ollama && sleep 3 && systemctl is-active ollama"
-          else
-            $SSH "mkdir -p /etc/systemd/system/ollama.service.d && printf '[Service]\nEnvironment=\"OLLAMA_HOST=0.0.0.0:11434\"\n' > /etc/systemd/system/ollama.service.d/host.conf && systemctl daemon-reload && systemctl restart ollama && sleep 2 && systemctl is-active ollama"
-          fi
-          echo "== Modell ziehen: qwen2.5-coder:14b =="
+          echo "== Ollama installieren =="
+          $SSH "command -v ollama >/dev/null || curl -fsSL https://ollama.com/install.sh | sh" 2>&1 | tail -2
+          $SSH "mkdir -p /etc/systemd/system/ollama.service.d && printf '[Service]\nEnvironment=\"OLLAMA_HOST=0.0.0.0:11434\"\n' > /etc/systemd/system/ollama.service.d/host.conf && systemctl daemon-reload && systemctl restart ollama && sleep 3 && systemctl is-active ollama"
+          echo "== Modell ziehen: qwen2.5-coder:14b (kann dauern) =="
           $SSH "ollama pull qwen2.5-coder:14b 2>&1 | tail -2"
           $SSH "ollama list"
           echo "== UFW haerten =="
-          $SSH "apt-get install -y -qq ufw >/dev/null 2>&1; ufw allow 22/tcp >/dev/null; ufw allow from 92.5.177.159 to any port 11434 proto tcp >/dev/null; ufw allow from 167.233.196.20 to any port 11434 proto tcp >/dev/null; ufw allow from 167.233.118.190 to any port 11434 proto tcp >/dev/null; echo y | ufw enable >/dev/null; ufw status | head -8"
-      - name: Route in Hub integrieren + Verifikation (Oracle-VM)
+          $SSH "apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq ufw >/dev/null 2>&1; ufw allow 22/tcp >/dev/null; ufw allow from 92.5.177.159 to any port 11434 proto tcp >/dev/null; ufw allow from 167.233.196.20 to any port 11434 proto tcp >/dev/null; ufw allow from 167.233.118.190 to any port 11434 proto tcp >/dev/null; echo y | ufw enable >/dev/null; ufw status | head -8"
+      - name: Route in Hub integrieren + Vollverifikation (Oracle-VM)
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
-          C31: ${{ steps.probe.outputs.cax31 }}
+          C31: ${{ steps.create.outputs.cax31 }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key && chmod 600 ~/.ssh/oracle_key
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<EOS
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo C31='$C31' bash -s" <<'EOS'
           set -uo pipefail
-          echo "== Erreichbarkeit CAX31 (\$C31) =="
-          curl -s -m 15 "http://\$C31:11434/api/tags" | head -c 300; echo
-          if ! curl -s -m 10 "http://\$C31:11434/api/tags" | grep -q "qwen2.5-coder:14b"; then
+          echo "== Erreichbarkeit CAX31 ($C31) =="
+          for i in $(seq 1 30); do
+            if curl -s -m 15 "http://$C31:11434/api/tags" | grep -q "qwen2.5-coder:14b"; then echo "MODELL_BEREIT"; break; fi
+            sleep 20
+          done
+          curl -s -m 15 "http://$C31:11434/api/tags" | head -c 300; echo
+          if ! curl -s -m 10 "http://$C31:11434/api/tags" | grep -q "qwen2.5-coder:14b"; then
             echo "FEHLER: qwen2.5-coder:14b auf CAX31 nicht erreichbar"; exit 1
           fi
           echo "== Route in Hub-DB integrieren =="
           python3 - <<'PYV'
-          import sqlite3
+          import sqlite3, os
+          c31 = os.environ["C31"]
           con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db")
           cur = con.cursor()
           row = cur.execute("SELECT provider, priority FROM routes WHERE base_url LIKE '%11434%' ORDER BY priority LIMIT 1").fetchone()
           prov = row[0] if row else "ollama"
           basep = (row[1] if row else 5) + 1
-          import os
-          c31 = os.environ.get("C31", "")
           nodes = [
               ("Cascade: Ollama CAX11 (3B)", "http://2.28.12.63:11434", "qwen2.5-coder:3b", basep),
               ("Cascade: Ollama CAX21-1 (7B)", "http://2.31.45.241:11434", "qwen2.5-coder:7b", basep + 1),
@@ -125,10 +158,10 @@ jobs:
           sleep 12
           systemctl is-active villaforge-hub 2>/dev/null || systemctl is-active villaforge 2>/dev/null || true
           echo "== Verifikation =="
-          TOK=\$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
-          curl -s -m 10 -X POST -H "Authorization: Bearer \$TOK" http://127.0.0.1:12000/api/routeforge/tick | head -c 200; echo
+          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
+          curl -s -m 10 -X POST -H "Authorization: Bearer $TOK" http://127.0.0.1:12000/api/routeforge/tick | head -c 200; echo
           sleep 10
           curl -s -m 10 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); l=d.get('llm',{}); print('LLM:', l.get('eligibleRoutes'), '/', l.get('configuredRoutes'), 'state:', l.get('state'))"
           echo "== Testantwort vom CAX31 (14B) =="
-          curl -s -m 90 "http://\$C31:11434/api/generate" -d '{"model":"qwen2.5-coder:14b","prompt":"Antworte mit einem Wort: Hallo","stream":false}' | head -c 200; echo
+          curl -s -m 120 "http://$C31:11434/api/generate" -d '{"model":"qwen2.5-coder:14b","prompt":"Antworte mit einem Wort: Hallo","stream":false}' | head -c 300; echo
           EOS
