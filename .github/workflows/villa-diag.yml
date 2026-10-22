@@ -33,6 +33,20 @@ jobs:
           print("Slots-Setting:", cur.execute("SELECT value FROM control_settings WHERE key='villaSlots'").fetchone())
           print("Villen-Status:", cur.execute("SELECT status, COUNT(*) FROM villas GROUP BY status").fetchall())
           PYV
+          echo "== LLM-/Kaskaden-Meldungen der letzten 25 Min =="
+          journalctl -u villaforge-hub.service --since "25 min ago" --no-pager | grep -iE "LLM|kaskade|route|verfuegbar|unavailable|verbind|ECONN|timeout|pau" | tail -30 || echo "(keine Treffer)"
+          echo "== Ollama-Knoten erreichbar? (nur Statuscode) =="
+          for node in 2.31.77.72 2.31.45.241 2.31.64.65 2.28.12.63; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -m 8 http://$node:11434/api/tags || echo "FAIL")
+            echo "  $node:11434 -> $code"
+          done
+          echo "== Villen: Status + Autonomie =="
+          python3 - <<'PYV'
+          import sqlite3
+          con = sqlite3.connect('/opt/villaforge/server/data/villaforge.db')
+          cur = con.cursor()
+          print('Status/Autonomie:', cur.execute('SELECT status, autonomy, COUNT(*) FROM villas GROUP BY status, autonomy').fetchall())
+          PYV
           echo "== VF_Fokus/Slot-Env (redigiert) =="
           systemctl show villaforge-hub.service -p Environment | grep -o 'VF_FOCUS_MODE=[^ ]*' || echo "VF_FOCUS_MODE nicht gesetzt"
           echo "(Env-Ausgabe redigiert: nur VF_FOCUS_MODE sichtbar)"
