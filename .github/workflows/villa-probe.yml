@@ -29,11 +29,14 @@ jobs:
           DB=/opt/villaforge/server/data/villaforge.db
           echo "== Vorher: Villa $VID =="
           sqlite3 $DB "SELECT id, status, autonomy FROM villas WHERE id=$VID" 2>/dev/null || python3 -c "import sqlite3;print(sqlite3.connect('$DB').execute('SELECT id,status,autonomy FROM villas WHERE id=$VID').fetchall())"
+          echo "== Journal-Mitschnitt starten =="
+          journalctl -u villaforge-hub.service -f --no-pager > /tmp/probe_journal.log 2>&1 &
+          JP=$!
           echo "== Start via API =="
           curl -s -m 15 -X POST http://localhost:12000/api/villas/$VID/orchestrate -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{}'
           echo
           for i in 1 2 3 4 5 6 7 8; do
-            sleep 30
+            sleep 45
             python3 - <<PYV
           import sqlite3, urllib.request, json
           con = sqlite3.connect('$DB')
@@ -46,6 +49,7 @@ jobs:
           print("T+%ds | villa:" % ($i*30), st, "| tasks:", tk, "| msgs(40s):", msgs, "| active:", sc.get('active'))
           PYV
           done
-          echo "== Hub-Log waehrend des Laufs =="
-          journalctl -u villaforge-hub.service --since "5 min ago" --no-pager | grep -v "systemd\[1\]" | tail -25
+          kill $JP 2>/dev/null || true
+          echo "== Hub-Log WAHREND DES LAUFS (ungefiltert, letzte 80) =="
+          grep -v "systemd\[1\]" /tmp/probe_journal.log | tail -80
           EOS
