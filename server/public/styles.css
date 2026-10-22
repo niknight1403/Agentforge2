@@ -530,3 +530,121 @@ button.compact { font-size: 11px; font-weight: 700; padding: 7px 10px; border-ra
 .villa-card:focus-visible, .card:focus-visible, .nav-item:focus-visible, .tab-chip:focus-visible, .suggestion:focus-visible, button:focus-visible {
   outline: 2px solid rgba(0, 229, 255, 0.85); outline-offset: 2px;
 }
+
+/* ============================================================
+   1.46 UI refresh: calmer product studio, clearer hierarchy,
+   searchable projects, and a real desktop layout.
+   ============================================================ */
+:root {
+  --bg: #0A0F17;
+  --card: rgba(19, 28, 40, 0.94);
+  --card-solid: #131C28;
+  --border: rgba(154, 177, 205, 0.17);
+  --cyan: #69D8D0;
+  --purple: #9B91E8;
+  --pink: #E79BB7;
+  --green: #68D6A1;
+  --blue: #78B8EA;
+  --text: #EFF4FA;
+  --muted: #A4B1C2;
+}
+body { background: var(--bg); letter-spacing: 0.005em; }
+.aurora {
+  background:
+    radial-gradient(54% 34% at 88% -8%, rgba(110, 99, 180, 0.12), transparent 66%),
+    radial-gradient(48% 28% at 0% 10%, rgba(65, 151, 151, 0.09), transparent 62%);
+}
+.aurora::after { opacity: 0.16; animation: none; }
+.topbar { background: rgba(10, 15, 23, 0.94); border-color: var(--border); }
+.logo-mark, .avatar, .robot-glow { box-shadow: none; }
+.logo-mark { background: rgba(105, 216, 208, 0.1); border-color: rgba(105, 216, 208, 0.22); }
+.avatar { background: linear-gradient(145deg, #74D8D0, #A49AEA); }
+.profile-card, .card, .stat-tile, .villa-card, .row, .suggestion {
+  background-color: var(--card-solid);
+  border-color: var(--border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  backdrop-filter: none;
+}
+.profile-card::after { display: none; }
+.card::before { opacity: 0.42; }
+.stat-tile { background: linear-gradient(160deg, rgba(105, 216, 208, 0.06), var(--card-solid) 62%); }
+.profile-text h1 span, .stat-tile b, .card-big {
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  color: var(--cyan);
+}
+.badge.role, .chip, .section-pill { color: #C9C4FA; }
+.badge.online, .chip.ok { box-shadow: none; }
+.active-villa { border-color: rgba(105, 216, 208, 0.3); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2); }
+.ring-fg, .spark polyline, .ring { filter: none; }
+.superagent-card { border-color: rgba(155, 145, 232, 0.3); background: linear-gradient(135deg, rgba(155, 145, 232, 0.1), rgba(19, 28, 40, 0.96)); }
+.robot-glow { color: var(--purple); background: rgba(155, 145, 232, 0.1); border-color: rgba(155, 145, 232, 0.24); animation: none; }
+.primary, .tab-chip.active {
+  color: #071717;
+  background: linear-gradient(135deg, #79DED5, #78B8EA);
+  box-shadow: 0 5px 16px rgba(105, 216, 208, 0.16);
+}
+.primary:focus-visible, .send-button:focus-visible { outline-color: #A9FFF6; }
+input, textarea { background: rgba(7, 12, 19, 0.72); border-color: var(--border); }
+input:focus, textarea:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(105, 216, 208, 0.12); }
+button:disabled { cursor: wait; opacity: 0.62; }
+.villa-card, .suggestion { transition: border-color 0.18s ease, background-color 0.18s ease; }
+.villa-card::before { opacity: 0.5; background: linear-gradient(180deg, var(--cyan), var(--purple)); }
+.villa-card:active, .suggestion:active { transform: none; background-color: #192535; border-color: rgba(105, 216, 208, 0.48); }
+.villa-card .chev, .suggestion span, .tap-hint, .section-pill { color: var(--cyan); }
+.tab-chip.active { border-color: transparent; box-shadow: none; }
+.bottomnav { background: rgba(15, 22, 32, 0.97); border-color: var(--border); }
+.nav-item.active .nav-ico { filter: none; }
+.nav-item.fab .nav-ico { background: linear-gradient(135deg, #79DED5, #78B8EA); box-shadow: 0 6px 20px rgba(105, 216, 208, 0.2); }
+.master-nav { border: 1px solid var(--border); border-radius: 12px; padding: 0 13px; background: rgba(155, 145, 232, 0.12); color: #D5D0FF; }
+.toast { border-color: var(--border); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); }
+.search-field { display: block; margin: 10px 0 12px; }
+.search-field input { min-height: 48px; border-radius: 14px; padding-left: 15px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.villa-list { gap: 9px; }
+.villa-card { min-height: 68px; padding: 14px 16px; border-radius: 15px; }
+.villa-card > div:first-child { min-width: 0; }
+.villa-card b { font-size: 14px; line-height: 1.35; }
+.villa-card small { line-height: 1.45; }
+.workspace-overlay { max-width: 1360px; }
+.workspace-header { gap: 10px; }
+.tab-chip { border-color: var(--border); }
+.chat-input { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .villa-card:hover, .suggestion:hover { border-color: rgba(105, 216, 208, 0.44); background-color: #182434; }
+  .primary:hover { filter: brightness(1.06); }
+}
+@media (min-width: 700px) {
+  .view, .topbar { max-width: 1160px; }
+  .topbar { border-radius: 0 0 16px 16px; padding-left: 24px; padding-right: 24px; }
+  .view { padding: 24px 24px 0; }
+  .bottomnav { width: min(680px, calc(100% - 48px)); left: 50%; right: auto; transform: translateX(-50%); bottom: 14px; height: 68px; border: 1px solid var(--border); border-radius: 18px; box-shadow: 0 16px 44px rgba(0, 0, 0, 0.42); }
+  .spacer { height: 108px; }
+  #view-home.active { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-content: start; }
+  #view-home > .profile-card { grid-column: span 4; margin: 0; min-height: 124px; }
+  #view-home > .stats-row { grid-column: span 8; align-self: stretch; margin: 0; }
+  #view-home > .active-villa { grid-column: span 6; margin: 0; }
+  #view-home > .duo-grid { grid-column: span 6; grid-template-columns: 1fr; gap: 12px; }
+  #view-home > .activity-card { grid-column: span 5; margin: 0; }
+  #view-home > .superagent-card { grid-column: span 7; margin: 0; }
+  #view-home > .section-block, #view-home > .spacer { grid-column: 1 / -1; }
+  #view-home > .section-block { margin: 0; }
+  .villa-list, #view-chat .villa-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1050px) {
+  .workspace-overlay { left: 24px; right: 24px; border: 1px solid var(--border); border-radius: 20px; top: 16px; bottom: 16px; height: auto; }
+  .workspace-header { padding-left: 22px; padding-right: 22px; }
+  .tabpane { padding-left: 22px; padding-right: 22px; }
+  #view-home > .duo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 420px) {
+  .view { padding-left: 12px; padding-right: 12px; }
+  .stats-row { gap: 7px; }
+  .stat-tile { padding: 11px 5px; }
+  .stat-tile b { font-size: 18px; }
+  .master-nav { min-width: 44px; justify-content: center; padding: 0 10px; }
+  .topbar-status { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (prefers-reduced-motion: reduce) { .villa-card, .suggestion, .primary { transition: none; } }

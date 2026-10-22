@@ -24,27 +24,27 @@ import androidx.compose.ui.unit.sp
  * - Overline-Stil fuer Sektions-Labels mit Letter-Spacing.
  * - statusColor(): semantische Statusfarben als zentrale Wahrheit.
  */
-val Violet = Color(0xFFA396FF)
-val Aqua = Color(0xFF68DFCD)
-val Ink = Color(0xFF0C1018)
-val Surface1 = Color(0xFF151C28)
-val Surface2 = Color(0xFF1B2433)
-val Surface3 = Color(0xFF222E40)
+val Violet = Color(0xFFA39AE8)
+val Aqua = Color(0xFF70D5CB)
+val Ink = Color(0xFF0A1018)
+val Surface1 = Color(0xFF131C28)
+val Surface2 = Color(0xFF192433)
+val Surface3 = Color(0xFF223044)
 val TextMain = Color(0xFFF0F4FB)
-val TextMuted = Color(0xFFA8B5C9)
-val Warn = Color(0xFFFFB020)
-val Danger = Color(0xFFFF5F6D)
-val Success = Color(0xFF35D97B)
-val Border = Color(0xFF2B3649)
+val TextMuted = Color(0xFFADBACB)
+val Warn = Color(0xFFFFC36D)
+val Danger = Color(0xFFFF8290)
+val Success = Color(0xFF70D6A5)
+val Border = Color(0xFF344357)
 
 /** Marken-Verlauf fuer Header und Highlights. */
 val BrandGradient = Brush.linearGradient(listOf(Violet, Aqua))
 
 /* Cyber-Neon-Palette (v1.31.0, Control-Center-Design): leuchtende Akzente
  * auf tiefem Nachtblau, Glas-Karten mit duennem Neon-Rand. */
-val NeonCyan = Color(0xFF00FFD1)
-val NeonPink = Color(0xFFFF3DDB) // leuchtendes Magenta
-val ElectricBlue = Color(0xFF00A3FF)
+val NeonCyan = Color(0xFF70D5CB)
+val NeonPink = Color(0xFFD99DB9)
+val ElectricBlue = Color(0xFF83B9E3)
 val Glass = Color(0x1AFFFFFF)          // halbtransparentes Weiss fuer Glas-Flaechen
 val NeonGradient = Brush.linearGradient(listOf(NeonCyan, NeonPink))
 val CyanBlueGradient = Brush.linearGradient(listOf(NeonCyan, ElectricBlue))
@@ -55,10 +55,10 @@ val CyanBlueGradient = Brush.linearGradient(listOf(NeonCyan, ElectricBlue))
  * Cyber-Neon. Gold markiert Elite-/Unlimited-Status und verleiht Header,
  * Avatar-Ringen und Chips die exklusive Signatur.
  */
-val Gold = Color(0xFFE8C27A)
-val GoldBright = Color(0xFFF6E3B4)
-val GoldGradient = Brush.linearGradient(listOf(Color(0xFFF6E3B4), Color(0xFFE8C27A), Color(0xFFB98A45)))
-val PremiumInk = Color(0xFF060A17)
+val Gold = Color(0xFFD7BD86)
+val GoldBright = Color(0xFFF0E0B8)
+val GoldGradient = Brush.linearGradient(listOf(Color(0xFFF0E0B8), Color(0xFFD7BD86), Color(0xFFAA8755)))
+val PremiumInk = Color(0xFF0A1018)
 
 /** Semantische Statusfarbe: zentrale Abbildung Villen-/Aufgaben-/Agentenzustaende. */
 fun statusColor(status: String): Color = when {
