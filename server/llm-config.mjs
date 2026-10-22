@@ -21,7 +21,10 @@ export function cascadeDefaults() {
   ...(process.env.VF_XAI_MODEL ? [['xAI','xai','https://api.x.ai/v1',process.env.VF_XAI_MODEL,'XAI_API_KEY',21]]:[]),
   ['Hugging Face','huggingface','https://router.huggingface.co/v1',process.env.VF_HF_MODEL||'auto','HF_TOKEN',30],
   ['Ollama local','ollama',process.env.VF_LOCAL_LLM_URL||'http://127.0.0.1:11434/v1',process.env.VF_LOCAL_LLM_MODEL||'auto','',40],
-  ['Local reserve','lmstudio',process.env.VF_LOCAL_LLM_SECONDARY_URL||'http://127.0.0.1:1234/v1',process.env.VF_LOCAL_LLM_SECONDARY_MODEL||'auto','',41]
+  ['Local reserve','lmstudio',process.env.VF_LOCAL_LLM_SECONDARY_URL||'http://127.0.0.1:1234/v1',process.env.VF_LOCAL_LLM_SECONDARY_MODEL||'auto','',41],
+  // Opt-in self-hosted OpenAI-compatible endpoints. Configure URLs via server environment.
+  ...(process.env.VF_LLM_ORACLE_URL ? [['Oracle self-hosted','ollama',process.env.VF_LLM_ORACLE_URL,process.env.VF_LLM_ORACLE_MODEL||'auto',process.env.VF_LLM_ORACLE_API_KEY?'VF_LLM_ORACLE_API_KEY':'',42]]:[]),
+  ...(process.env.VF_LLM_HETZNER_URL ? [['Hetzner self-hosted','ollama',process.env.VF_LLM_HETZNER_URL,process.env.VF_LLM_HETZNER_MODEL||'auto',process.env.VF_LLM_HETZNER_API_KEY?'VF_LLM_HETZNER_API_KEY':'',43]]:[])
  ].map(([name,provider,base_url,model,key_env,priority])=>({name:`Cascade: ${name}`,provider,base_url,model,key_env,priority}));
 }
 export function syncCascadeRoutes() {
@@ -30,7 +33,7 @@ export function syncCascadeRoutes() {
   // Existing rows (including disabled rows) are an administrator decision.
   const existing=db.prepare('SELECT id,name,model FROM routes WHERE name=? OR (base_url=? AND model=?)').get(r.name,r.base_url,r.model);
   if(existing){
-   const names={'Cascade: Gemini':['VF_GEMINI_MODEL'],'Cascade: Cerebras':['VF_CEREBRAS_MODEL'],'Cascade: Groq':['VF_GROQ_MODEL'],'Cascade: Mistral':['VF_MISTRAL_MODEL'],'Cascade: Hugging Face':['VF_HF_MODEL'],'Cascade: xAI':['VF_XAI_MODEL'],'Cascade: Ollama local':['VF_LOCAL_LLM_URL','VF_LOCAL_LLM_MODEL'],'Cascade: Local reserve':['VF_LOCAL_LLM_SECONDARY_URL','VF_LOCAL_LLM_SECONDARY_MODEL']};
+   const names={'Cascade: Gemini':['VF_GEMINI_MODEL'],'Cascade: Cerebras':['VF_CEREBRAS_MODEL'],'Cascade: Groq':['VF_GROQ_MODEL'],'Cascade: Mistral':['VF_MISTRAL_MODEL'],'Cascade: Hugging Face':['VF_HF_MODEL'],'Cascade: xAI':['VF_XAI_MODEL'],'Cascade: Ollama local':['VF_LOCAL_LLM_URL','VF_LOCAL_LLM_MODEL'],'Cascade: Local reserve':['VF_LOCAL_LLM_SECONDARY_URL','VF_LOCAL_LLM_SECONDARY_MODEL'],'Cascade: Oracle self-hosted':['VF_LLM_ORACLE_URL','VF_LLM_ORACLE_MODEL'],'Cascade: Hetzner self-hosted':['VF_LLM_HETZNER_URL','VF_LLM_HETZNER_MODEL']};
    const staleDefault=(r.name==='Cascade: Gemini'&&['auto','gemini-2.0-flash'].includes(existing.model)&&!process.env.VF_GEMINI_MODEL)||(r.name==='Cascade: Cerebras'&&existing.model==='llama-3.3-70b'&&!process.env.VF_CEREBRAS_MODEL)||(r.name==='Cascade: Groq'&&existing.model==='llama-3.3-70b-versatile'&&(!process.env.VF_GROQ_MODEL||process.env.VF_GROQ_MODEL==='llama-3.3-70b-versatile'));
    if(existing.name===r.name&&((names[r.name]||[]).some(k=>process.env[k])||staleDefault))db.prepare('UPDATE routes SET base_url=?,model=? WHERE id=?').run(r.base_url,r.model,existing.id);
    continue;
