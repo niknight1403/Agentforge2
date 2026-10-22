@@ -3,6 +3,7 @@ import {resolve,join,extname} from 'node:path';
 import {createHash} from 'node:crypto';
 import {db,now} from './db.mjs';
 import {runCommand} from './fs-tools.mjs';
+import {calculateQualityGate,staticPerformanceScore,staticSecurityScore} from './quality-gate.mjs';
 export const PROJECT_WORKSPACE=resolve(process.env.VF_WORKSPACE||'server/data/workspace');
 export function ownProjectDir(id){return join(PROJECT_WORKSPACE,`villa-${id}`,'project');}
 export function projectDirectory(id){
@@ -17,7 +18,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS project_verifications(villa_id INTEGER PRIMA
 const ignored=new Set(['node_modules','.git','.gradle','.next','.venv','venv','__pycache__','dist','build','out','coverage','backups']);
 const textExtensions=/\.(?:[cm]?js|jsx|tsx?|py|kt|kts|java|dart|go|rs|html|css|json|md|ya?ml|toml|txt|lock|xml|properties|gradle)$/i;
 export function inspectProject(id){
- const root=projectDirectory(id),hash=createHash('sha256'),files=[];let bytes=0,sourceFiles=0;
+ const root=projectDirectory(id),hash=createHash('sha256'),files=[],securityFindings=[];let bytes=0,sourceFiles=0;
  try {
   const canonical=realpathSync(root);
   function walk(dir,depth=0){
@@ -29,12 +30,26 @@ export function inspectProject(id){
     if(st.isDirectory()){walk(file,depth+1);continue;}
     if(!st.isFile()||!(textExtensions.test(name)||name==='gradlew'))continue;
     if(files.length>=2000||bytes+st.size>32*1024*1024)throw Error('Projektumfang überschreitet die automatische Prüfbudget-Grenze');
-    const rel=file.slice(root.length+1);files.push(rel);bytes+=st.size;hash.update(rel+'\0').update(readFileSync(file));
-    if(/\.(?:[cm]?js|jsx|tsx?|py|kt|java|dart|go|rs|html)$/i.test(name)&&!/(^|\/)(tests?|__tests__)\/|\.(test|spec)\./.test(rel))sourceFiles++;
+    const rel=file.slice(root.length+1);files.push(rel);bytes+=st.size;const content=readFileSync(file);hash.update(rel+'\0').update(content);
+    const isSource=/\.(?:[cm]?js|jsx|tsx?|py|kt|java|dart|go|rs|html)$/i.test(name)&&!/(^|\/)(tests?|__tests__)\/|\.(test|spec)\./.test(rel);
+    if(isSource){
+     sourceFiles++;
+     const text=content.toString('utf8');
+     const hardSecret=/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b|\b(?:API_KEY|SECRET|TOKEN)\s*[:=]\s*['"][^'"]{12,}['"]/i;
+     if(hardSecret.test(text))securityFindings.push(rel);
+    }
    }
   }
-  walk(root);return {root:canonical,files,sourceFiles,fingerprint:hash.update(canonical).digest('hex')};
- }catch(e){return {root,files,sourceFiles:0,fingerprint:'',error:existsSync(root)?e.message:'Projektordner fehlt'};}
+  walk(root);return {root:canonical,files,bytes,sourceFiles,securityFindings,fingerprint:hash.update(canonical).digest('hex')};
+ }catch(e){return {root,files,bytes,sourceFiles:0,securityFindings,fingerprint:'',error:existsSync(root)?e.message:'Projektordner fehlt'};}
+}
+function qualityFor(project,checks){
+ return calculateQualityGate({
+  syntax:checks.build?.status==='passed'?100:0,
+  tests:checks.tests?.status==='passed'&&checks.smoke?.status==='passed'?100:checks.tests?.status==='passed'?50:0,
+  security:staticSecurityScore(project.securityFindings),
+  performance:staticPerformanceScore(project.bytes),
+ });
 }
 export function projectReadiness(id){
  const project=inspectProject(id),blockers=[];
@@ -45,8 +60,10 @@ export function projectReadiness(id){
  let checks={};if(fresh){try{checks=JSON.parse(row.checks);if(row.status!=='passed')blockers.push(...JSON.parse(row.blockers));}catch{blockers.push('Prüfnachweis ungültig');}}
  if(row&&!fresh)blockers.push('Prüfnachweis veraltet oder Quellstand geändert');
  for(const kind of ['build','tests','smoke'])if(checks[kind]?.status!=='passed')blockers.push(`${kind}: ${checks[kind]?.reason||'kein aktueller erfolgreicher Nachweis'}`);
- const verified=blockers.length===0;
- return {verified,status:verified?'verified':fresh?'blocked':'unverified',blockers,checks,verifiedAt:fresh?row.verified_at:null,fingerprint:project.fingerprint,sourceFiles:project.sourceFiles};
+ const quality=qualityFor(project,checks);
+ if(fresh&&!quality.passed)blockers.push(`Quality Gate: ${quality.score}/100 < ${quality.threshold}`);
+ const verified=blockers.length===0&&quality.passed;
+ return {verified,status:verified?'verified':fresh?'blocked':'unverified',blockers,checks,quality,verifiedAt:fresh?row.verified_at:null,fingerprint:project.fingerprint,sourceFiles:project.sourceFiles};
 }
 const noOp=/^\s*(?:echo\b|exit\s+0\b|(?:true|:)\s*$)/i;
 export function verificationPlan(root){
@@ -62,9 +79,11 @@ export function verificationPlan(root){
  }));
 }
 function saveVerification(id,project,checks,blockers){
+ const quality=qualityFor(project,checks);
+ if(!quality.passed)blockers.push(`Quality Gate: ${quality.score}/100 < ${quality.threshold}`);
  const passed=blockers.length===0;
  db.prepare('INSERT OR REPLACE INTO project_verifications VALUES (?,?,?,?,?,?)').run(id,project.fingerprint||'',passed?'passed':'blocked',JSON.stringify(checks),JSON.stringify(blockers),now());
- return {ok:passed,checks,blockers};
+ return {ok:passed,checks,blockers,quality};
 }
 const verifying=new Map();
 export async function verifyProjectRuntime(id,{runner=runCommand}={}){
