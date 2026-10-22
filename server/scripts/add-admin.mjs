@@ -3,7 +3,7 @@
  * Legt einen Administrator fuer den VillaForge-Hub an (oder aktualisiert ihn).
  *
  * Nutzung (aus dem Repo-Stammverzeichnis):
- *   node server/scripts/add-admin.mjs <email> <passwort> [--plan elite] [--role admin]
+ *   node server/scripts/add-admin.mjs <email> <passwort> [--plan elite] [--role admin]\n *   printf '%s' "$NEW_PASSWORD" | node server/scripts/add-admin.mjs <email> --password-stdin
  *
  * Beispiel:
  *   node server/scripts/add-admin.mjs niko.oeben@gmail.com 'MeinSicheresPasswort!'
@@ -11,6 +11,7 @@
  * Das Passwort wird NUR als scrypt-Hash in der lokalen Datenbank gespeichert.
  * Es erscheint nicht im Log und wird nicht ins Git uebernommen.
  */
+import { readFileSync } from 'node:fs';
 import { upsertUser, publicUser, usersExist } from '../auth.mjs';
 
 const args = process.argv.slice(2);
@@ -20,7 +21,8 @@ const flag = (name, fallback) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
 
-const [email, password] = positional;
+const [email, positionalPassword] = positional;
+const password = args.includes('--password-stdin') ? readFileSync(0, 'utf8') : positionalPassword;
 if (!email || !password) {
   console.error('Nutzung: node server/scripts/add-admin.mjs <email> <passwort> [--plan elite] [--role admin]');
   process.exit(1);
