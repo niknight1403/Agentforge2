@@ -8,7 +8,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = join(root, 'server/public');
 const output = join(root, 'dist/web');
 const html = readFileSync(join(source, 'index.html'), 'utf8');
-const assets = [...html.matchAll(/\\b(?:href|src)=["'](\\/(?!\\/)[^"'?#]*)["']/g)].map((match) => decodeURIComponent(match[1]));
+const assets = [...html.matchAll(/\b(?:href|src)=["'](\/(?!\/)[^"'?#]*)["']/g)].map((match) => decodeURIComponent(match[1]));
 const missing = assets.filter((path) => !statSafe(join(source, path.slice(1))));
 if (missing.length) throw new Error(`Web-Build: fehlende lokale Assets: ${missing.join(', ')}`);
 
@@ -28,7 +28,7 @@ function walk(directory) {
   }
 }
 walk(output);
-writeFileSync(join(output, 'BUILD-METADATA.json'), `${JSON.stringify({ name: 'VillaForge Web', version: VERSION, entry: 'index.html', files }, null, 2)}\\n`);
+writeFileSync(join(output, 'BUILD-METADATA.json'), `${JSON.stringify({ name: 'VillaForge Web', version: VERSION, entry: 'index.html', files }, null, 2)}\n`);
 console.log(`Web-Build ${VERSION}: ${files.length} Dateien nach dist/web; ${assets.length} lokale HTML-Assets geprueft.`);
 
 function statSafe(path) {
