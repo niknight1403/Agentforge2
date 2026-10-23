@@ -86,9 +86,9 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
 
     Column(Modifier.fillMaxSize()) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(top = 14.dp, bottom = 88.dp)
+            modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(top = 22.dp, bottom = 96.dp)
         ) {
             item { state.error?.let { ErrorBanner(it) { viewModel?.refreshAll() } } }
             item { ControlCenterHero() }
