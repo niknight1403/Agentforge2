@@ -95,6 +95,7 @@ jobs:
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then TAG="v$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)"; fi
           NOTES="docs/releases/${TAG}.md"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [ -f "$NOTES" ]; then gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$NOTES"; fi
             gh release upload "$TAG" VillaForge.apk VillaForge-Web.zip --repo "$GITHUB_REPOSITORY" --clobber
           elif [ -f "$NOTES" ]; then
             gh release create "$TAG" VillaForge.apk VillaForge-Web.zip --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
