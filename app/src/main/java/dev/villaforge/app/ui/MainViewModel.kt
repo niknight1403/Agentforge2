@@ -42,6 +42,8 @@ data class UiState(
     /** Unix-ms des letzten erfolgreichen Datenabrufs (fuer Stand-Stempel). */
     val lastRefresh: Long = 0L,
     val villas: List<Villa> = emptyList(),
+    /** Persistenter Einzelvilla-Fokus vom Scheduler (null = kein Fokus konfiguriert). */
+    val focusVillaId: Long? = null,
     val detail: VillaDetail? = null,
     val messages: List<ChatMessage> = emptyList(),
     /** Aktueller Chat-Partner (Agent-ID), null = Root/Deep Agent. */
@@ -422,6 +424,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshAll() = run {
         val health = client.health()
         val villas = client.villas()
+        val scheduler = try { client.schedulerStatus() } catch (e: Exception) { null }
         val routes = client.routes()
         val hubStats = try { client.stats() } catch (e: Exception) { null }
         _state.update {
@@ -432,6 +435,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 healthText = "Hub online · ${health.optInt("routes")} Routen · v${health.optString("version")}",
                 stats = hubStats,
                 villas = villas,
+                focusVillaId = scheduler?.optLong("focusVillaId")?.takeIf { it > 0L },
                 routes = routes,
                 lastRefresh = System.currentTimeMillis()
             )
