@@ -1,6 +1,6 @@
 import { db } from './db.mjs';
 import { orchestrate } from './agents.mjs';
-import { enqueueVillas, configureScheduler, villaRanking } from './scheduler.mjs';
+import { enqueueVillas, configureScheduler, villaRanking, villaFocusId } from './scheduler.mjs';
 
 /**
  * Setzt Laeufe fort, die durch einen Neustart abgebrochen wurden.
@@ -15,7 +15,9 @@ import { enqueueVillas, configureScheduler, villaRanking } from './scheduler.mjs
  * Ergebnisse geliefert statt vieler halbfertiger Villen.
  */
 export function resumePendingVillas({ concurrency = 0, maxRounds = 6 } = {}) {
-  const stuck = db.prepare('SELECT id, name FROM villas WHERE status = ? AND autonomy = 1').all('RUNNING');
+  const focusId = villaFocusId();
+  const stuck = db.prepare('SELECT id, name FROM villas WHERE status = ? AND autonomy = 1').all('RUNNING')
+    .filter((villa) => focusId === null || villa.id === focusId);
   if (!stuck.length) return { resumed: 0, villas: [] };
 
   configureScheduler({ start: (id) => orchestrate(id, { concurrency, maxRounds }) });
