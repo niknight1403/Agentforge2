@@ -256,7 +256,7 @@ function usageTokens(messages, out) {
 }
 
 /** Rollen, die die staerkste Route bekommen (FALLBACK statt Rotation). */
-export const QUALITY_ROLES = new Set(['ROOT', 'CODER', 'ARCHITECT', 'REVIEWER', 'INTEGRATOR']);
+export const QUALITY_ROLES = new Set(['ROOT', 'ULTRA', 'AUTOPILOT', 'PROGRAMMER', 'SYSTEM_HACKER', 'CODER', 'ARCHITECT', 'REVIEWER', 'INTEGRATOR']);
 
 /**
  * Chat-Aufruf mit Rotation und Failover ueber alle aktiven Routen.
