@@ -93,6 +93,20 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
             item { state.error?.let { ErrorBanner(it) { viewModel?.refreshAll() } } }
             item { ControlCenterHero() }
             item {
+                state.focusVillaId?.let { focusId ->
+                    val focusName = state.villas.firstOrNull { it.id == focusId }?.name ?: "Test Villa"
+                    Column(
+                        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
+                            .background(Aqua.copy(alpha = 0.09f)).padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text("ENTWICKLUNGSFOKUS", color = Aqua, style = MaterialTheme.typography.labelSmall)
+                        Text(focusName, color = TextMain, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                        Text("Nur dieses Projekt wird autonom gestartet. Weitere Villen bleiben pausiert.", color = TextMuted, style = muted())
+                    }
+                }
+            }
+            item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     MetricTile("Villen", state.villas.size.toString(), "⌂", Violet, Modifier.weight(1f))
                     MetricTile("Agenten im Pool", state.stats?.optInt("agents", 0)?.toString() ?: "0", "◆", Aqua, Modifier.weight(1f))
@@ -164,7 +178,10 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
                             Spacer(Modifier.weight(1f))
                             if (viewModel != null) {
                                 val vid = villa.id
-                                if (villa.executing) {
+                                val focusAllowed = state.focusVillaId == null || state.focusVillaId == vid
+                                if (!focusAllowed) {
+                                    Text("PAUSIERT", color = TextMuted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                } else if (villa.executing) {
                                     Text(
                                         "■  STOPP", color = Danger, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp,
                                         modifier = Modifier.clip(RoundedCornerShape(50))
