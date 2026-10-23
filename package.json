@@ -1,6 +1,6 @@
 {
   "name": "villaforge-hub",
-  "version": "1.50.0",
+  "version": "1.51.0",
   "private": true,
   "type": "module",
   "description": "VillaForge Hub – Deep-Agent-Villa mit 1000 Agenten, kostenlosem LLM-Routen-Rotator und Gedaechtnis",
@@ -14,6 +14,7 @@
     "test": "node --test server/tests/*.test.mjs",
     "test:live": "node scripts/live-e2e.mjs",
     "test:design": "node scripts/design-audit.mjs",
+    "build:web": "node scripts/build-web.mjs",
     "check:secrets": "node scripts/check-secrets.mjs"
   },
   "engines": {
