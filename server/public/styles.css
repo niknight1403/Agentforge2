@@ -654,3 +654,42 @@ button:disabled { cursor: wait; opacity: 0.62; }
   .master-nav { min-width: 76px; }
 }
 @media (prefers-reduced-motion: reduce) { .villa-card, .suggestion, .primary { transition: none; } }
+
+
+/* VillaForge v1.51: ruhigere, grosszuegigere Produktivoberflaeche. */
+:root {
+  --bg: #0B1118; --card: rgba(21, 31, 42, 0.94); --card-solid: #151F2A;
+  --border: rgba(153, 180, 198, 0.17); --cyan: #8CCFC6; --purple: #B4A6E8;
+  --pink: #DBA5B6; --green: #83D9AE; --blue: #92BDE0;
+  --text: #F1F5F8; --muted: #AAB8C4; --radius: 22px;
+}
+.aurora { background: radial-gradient(68% 45% at 52% -8%, rgba(140, 207, 198, .07), transparent 68%); }
+.aurora::after { display: none; }
+.view { max-width: 980px; padding: 24px 24px 0; }
+.topbar, .bottomnav { max-width: 980px; }
+.topbar { padding-left: 24px; padding-right: 24px; }
+.profile-card, .card, .stat-tile, .login-panel, .sheet-panel { box-shadow: 0 10px 30px rgba(0, 0, 0, .16); backdrop-filter: none; }
+.profile-card { padding: 24px; margin-bottom: 22px; }
+.stats-row { gap: 16px; margin-bottom: 22px; }
+.stat-tile { padding: 18px 14px; border-radius: 18px; }
+.card { padding: 22px; margin-bottom: 18px; }
+.card::before, .profile-card::after { display: none; }
+.section-block { margin: 18px 0 24px; }
+.section-head { margin-bottom: 14px; }
+.list, .villa-list { gap: 14px; }
+.villa-card { min-height: 76px; padding: 18px 20px; border-radius: 18px; background: var(--card-solid); }
+.villa-card::before { display: none; }
+.villa-card:active, .suggestion:active { transform: none; border-color: rgba(140, 207, 198, .46); }
+.chip, .badge, .section-pill { box-shadow: none !important; }
+.focus-banner { display: flex; align-items: center; gap: 16px; padding: 22px 24px; margin-bottom: 22px; border: 1px solid rgba(140, 207, 198, .28); border-radius: 22px; background: linear-gradient(110deg, rgba(140, 207, 198, .10), rgba(21, 31, 42, .96) 55%); }
+.focus-banner[hidden] { display: none; }
+.focus-mark { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 14px; background: rgba(140, 207, 198, .14); color: var(--cyan); font-weight: 800; }
+.focus-banner h2 { margin: 4px 0; font-size: 20px; }
+.focus-banner p:last-child { color: var(--muted); font-size: 14px; }
+@media (max-width: 699px) {
+  .view { padding: 20px 18px 0; }
+  .profile-card { padding: 20px; margin-bottom: 18px; }
+  .card { padding: 20px; }
+  .stats-row { gap: 10px; }
+  .stat-tile { padding: 14px 8px; }
+}
