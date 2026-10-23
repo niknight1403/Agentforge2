@@ -1,7 +1,7 @@
 import { db, now } from '../db.mjs';
 
 const villas = db.prepare("SELECT id,name,status FROM villas WHERE status != 'ARCHIVED'").all();
-const normalize = (name) => String(name || '').toLocaleLowerCase('de-DE').replace(/[\\s_-]+/g, '');
+const normalize = (name) => String(name || '').toLocaleLowerCase('de-DE').replace(/[\s_-]+/g, '');
 const matches = villas.filter((villa) => normalize(villa.name) === 'testvilla');
 if (matches.length !== 1) {
   console.error(JSON.stringify({ ok: false, error: matches.length ? 'Mehrere Villen namens Test Villa gefunden; Fokus wurde nicht geändert.' : 'Keine vorhandene Villa namens Test Villa gefunden; Fokus wurde nicht geändert.', matches: matches.map(({ id, name }) => ({ id, name })) }));
