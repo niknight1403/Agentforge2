@@ -175,7 +175,7 @@ function serveStatic(req, res, pathname) {
 /* --------------------------- API --------------------------- */
 syncCascadeRoutes();
 syncFreeRouteFlags();
-const masterControl = createMasterControl({ chat, createVilla, isRunning, stopVilla, cancelScheduledVilla, toolSpecs, packState, setPackEnabled, emit, startVilla(id) { scheduleVilla(id); return { queued: id }; } });
+const masterControl = createMasterControl({ chat, createVilla, isRunning, stopVilla, cancelScheduledVilla, toolSpecs, packState, setPackEnabled, emit, startVilla(id) { const scheduled = scheduleVilla(id); if (scheduled.blockedVillaId) throw new Error('Einzelfokus aktiv: Nur die Test Villa kann gestartet werden.'); return scheduled; } });
 if (process.argv.includes('--check')) {
   console.log(JSON.stringify({ ok: true, host: HOST, port: PORT, version: VERSION, routing: routingSummary() }, null, 2));
   process.exit(0);
