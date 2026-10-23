@@ -3,7 +3,7 @@ import { db, now } from './db.mjs';
 import { controlCatalog, SETTING_RULES, setSetting, toolEnabled, validEndpoint, readConnector, recordControl } from './control-store.mjs';
 import { archiveDuplicates, restoreVilla, villaKey, duplicateGroups } from './duplicates.mjs';
 import { suggestions } from './suggestions.mjs';
-import { createUltraAgent } from './ultra-agent.mjs';
+import { createUltraAgent, ULTRA_VERSION, CAPABILITIES } from './ultra-agent.mjs';
 
 const ID = /^[a-z][a-z0-9_-]{1,63}$/;
 const text = (v, name, max, optional = false) => {
@@ -68,6 +68,7 @@ export function createMasterControl(deps) {
       villas: db.prepare("SELECT id,name,status,autonomy FROM villas WHERE status != 'ARCHIVED' ORDER BY id LIMIT 200").all(),
       archived: db.prepare('SELECT a.villa_id AS id,v.name,a.canonical_id FROM control_archives a JOIN villas v ON v.id=a.villa_id ORDER BY a.archived_at DESC LIMIT 100').all(),
       routes: db.prepare('SELECT id,name,model,enabled FROM routes ORDER BY priority,id').all(),
+      ultra: { version:ULTRA_VERSION, capabilities:CAPABILITIES.length, enabledVillas:db.prepare('SELECT villa_id FROM ultra_state WHERE enabled=1 ORDER BY villa_id').all().map(r=>r.villa_id) },
       duplicates: duplicateGroups(isRunning), busy };
   }
   async function createUniqueVilla(input) {
