@@ -14,6 +14,10 @@ on:
       - 'docs/releases/**'
       - '.github/workflows/hub-deploy.yml'
 
+concurrency:
+  group: villaforge-production-deploy
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
