@@ -78,21 +78,23 @@ test('Doppeltes Einreihen startet nur einmal', async () => {
   assert.equal(calls, 1);
 });
 
-
 test('persistenter Villenfokus laesst nur Test Villa laufen', async () => {
   _resetScheduler();
   const other = villa('Andere Villa', 0, 2);
-  const target = villa('Test Villa', 0, 2);
   await import('../scripts/focus-test-villa.mjs');
+  const target = db.prepare("SELECT id FROM villas WHERE name='Test Villa'").get().id;
   assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(other).autonomy, 0);
   assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(other).status, 'PAUSED');
   assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(target).autonomy, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE villa_id=?').get(target).count, 8);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM agents WHERE villa_id=? AND is_root=1").get(target).count, 1);
   const started = [];
   configureScheduler({ start: async (id) => { started.push(id); return new Promise(() => {}); } });
   assert.equal(schedulerStatus().slots, 1);
   assert.equal(schedulerStatus().focusVillaId, target);
   assert.equal(enqueueVillas([other, target]).active[0], target);
-  assert.equal(scheduleVilla(other).reason, 'FOCUS_VILLA_ONLY');
+  const blocked = scheduleVilla(other);
+  assert.equal(blocked.reason, 'FOCUS_VILLA_ONLY');
   assert.deepEqual(started, [target]);
   db.prepare('DELETE FROM control_settings WHERE key=?').run('villaFocusId');
   _resetScheduler();
