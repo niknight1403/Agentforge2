@@ -21,8 +21,12 @@ import { orchestrate } from './agents.mjs';
 
 // Fokus laesst sich weiterhin explizit fuer laengere Projektlaeufe aktivieren,
 // begrenzt aber nicht mehr die Zahl manuell startbarer Villen.
-export const FOCUS_MODE = () => process.env.VF_FOCUS_MODE === '1';
-const SLOTS = () => Math.max(3, Math.min(4, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? 3)) || 3));
+export function villaFocusId() {
+  const id = Number(getSetting('villaFocusId', 0));
+  return Number.isSafeInteger(id) && id > 0 && db.prepare('SELECT id FROM villas WHERE id=?').get(id) ? id : null;
+}
+export const FOCUS_MODE = () => villaFocusId() !== null || process.env.VF_FOCUS_MODE === '1';
+const SLOTS = () => villaFocusId() !== null ? 1 : Math.max(1, Math.min(4, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? 3)) || 3));
 
 /** Fortschritt und Rang aller Villen in einer einzigen Abfrage. */
 export function villaRanking() {
@@ -58,6 +62,7 @@ export function configureScheduler({ start }) {
 export function schedulerStatus() {
   return {
     focusMode: FOCUS_MODE(),
+    focusVillaId: villaFocusId(),
     slots: SLOTS(),
     active: [...active],
     queued: queue.length,
@@ -101,8 +106,10 @@ function pump() {
  * Die Warteschlange wird nach aktuellem Fortschritt sortiert.
  */
 export function enqueueVillas(ids) {
+  const focusId = villaFocusId();
   const rank = new Map(villaRanking().map((r, i) => [r.id, i]));
   for (const id of ids) {
+    if (focusId !== null && Number(id) !== focusId) continue;
     if (!active.has(id) && !queue.includes(id)) queue.push(id);
   }
   // Faire Reihenfolge: wer am laengsten nicht mehr dran war, kommt zuerst.
@@ -117,6 +124,10 @@ export function enqueueVillas(ids) {
  *  ueber denselben Scheduler (Default 3 Slots). */
 export function scheduleVilla(id, { concurrency = 0, maxRounds = 6 } = {}) {
   configureScheduler({ start: (vid) => orchestrate(vid, { concurrency, maxRounds }) });
+  const focusId = villaFocusId();
+  if (focusId !== null && Number(id) !== focusId) {
+    return { ...schedulerStatus(), blockedVillaId: Number(id), reason: 'FOCUS_VILLA_ONLY' };
+  }
   const status = enqueueVillas([id]);
   return status;
 }
