@@ -263,6 +263,8 @@ async function api(req, res, url) {
       if (!name) return rpcErr(-32602, 'params.name fehlt.');
       const villaId = Number(a.villa_id ?? a.villaId ?? 0);
       if (!villaId) return rpcErr(-32602, 'params.arguments.villa_id fehlt — Werkzeuge laufen im Villa-Kontext.');
+      const focusId = villaFocusId();
+      if (focusId !== null && villaId !== focusId) return rpcErr(-32000, 'Einzelfokus aktiv: Werkzeuge sind auf die Test Villa begrenzt.');
       try {
         const toolArgs = a.args && typeof a.args === 'object' ? a.args : a;
         const out = await runTool({ villaId, agentId: 0 }, name, toolArgs);
@@ -713,11 +715,13 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'chat' && m === 'POST') {
     const id = Number(parts[2]);
+    const focusId = villaFocusId();
+    if (focusId !== null && id !== focusId) return json(res, 409, { error: 'Einzelfokus aktiv: Agentenaktionen sind auf die Test Villa begrenzt.', focusVillaId: focusId });
     const b = await readBody(req);
     const agent = b.agentId
       ? db.prepare('SELECT * FROM agents WHERE id = ?').get(Number(b.agentId))
       : db.prepare('SELECT * FROM agents WHERE villa_id = ? AND is_root = 1').get(id);
-    if (!agent) return json(res, 404, { error: 'Agent nicht gefunden' });
+    if (!agent || Number(agent.villa_id) !== id) return json(res, 404, { error: 'Agent nicht gefunden' });
     db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(id, agent.id, 'user', String(b.message || ''), now());
     const res2 = await runAgent(agent, String(b.message || ''), { maxSteps: 6, villaId: id });
     if(res2.code==='LLM_UNAVAILABLE')return json(res,503,{error:res2.error,code:res2.code,retryAfter:15});
@@ -730,6 +734,8 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'agents' && parts[2] && parts[3] === 'chat' && m === 'POST') {
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(Number(parts[2]));
     if (!agent) return json(res, 404, { error: 'Agent nicht gefunden' });
+    const focusId = villaFocusId();
+    if (focusId !== null && Number(agent.villa_id) !== focusId) return json(res, 409, { error: 'Einzelfokus aktiv: Agentenaktionen sind auf die Test Villa begrenzt.', focusVillaId: focusId });
     const b = await readBody(req);
     const r = await runAgent(agent, String(b.message || ''), { maxSteps: 6, villaId: agent.villa_id });
     if(r.code==='LLM_UNAVAILABLE')return json(res,503,{error:r.error,code:r.code,retryAfter:15});
