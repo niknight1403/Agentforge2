@@ -78,16 +78,26 @@ test('Doppeltes Einreihen startet nur einmal', async () => {
   assert.equal(calls, 1);
 });
 
-test('persistenter Villenfokus laesst nur Test Villa laufen', async () => {
+test('fokus wechselt zu testneu und loescht Test Villa samt Villa-Daten', async () => {
   _resetScheduler();
   const other = villa('Andere Villa', 0, 2);
+  const target = villa('testneu', 1, 2);
+  const retired = villa('Test Villa', 0, 1);
+  const rootId = Number(db.prepare('INSERT INTO agents (villa_id,name,role,is_root,created_at,last_active_at) VALUES (?,?,?,?,?,?)').run(target, 'DeepAgent', 'ROOT', 1, now(), now()).lastInsertRowid);
+  db.prepare('INSERT INTO messages (villa_id,agent_id,role,content,created_at) VALUES (?,?,?,?,?)').run(retired, 999, 'user', 'remove me', now());
+
   await import('../scripts/focus-test-villa.mjs');
-  const target = db.prepare("SELECT id FROM villas WHERE name='Test Villa'").get().id;
+
+  assert.equal(db.prepare('SELECT id FROM villas WHERE id=?').get(retired), undefined);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE villa_id=?').get(retired).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE villa_id=?').get(retired).count, 0);
   assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(other).autonomy, 0);
   assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(other).status, 'PAUSED');
   assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(target).autonomy, 1);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE villa_id=?').get(target).count, 8);
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM agents WHERE villa_id=? AND is_root=1").get(target).count, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE villa_id=?').get(target).count, 2);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM agents WHERE villa_id=? AND is_root=1').get(target).count, 1);
+  assert.equal(db.prepare('SELECT id FROM agents WHERE id=?').get(rootId).id, rootId);
+
   const started = [];
   configureScheduler({ start: async (id) => { started.push(id); return new Promise(() => {}); } });
   assert.equal(schedulerStatus().slots, 1);
