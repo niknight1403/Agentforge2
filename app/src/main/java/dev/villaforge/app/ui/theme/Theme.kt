@@ -122,7 +122,7 @@ fun VillaForgeTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = scheme,
         typography = typography,
-        shapes = Shapes(small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(20.dp)),
+        shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(20.dp), large = RoundedCornerShape(24.dp)),
         content = content
     )
 }
