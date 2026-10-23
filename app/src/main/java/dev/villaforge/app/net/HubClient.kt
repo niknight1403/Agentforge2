@@ -348,6 +348,9 @@ class HubClient(context: Context) {
     /** Hub-Statistik (GET /api/stats): Zaehler, Laufzeit, laufende Villen. */
     suspend fun stats(): JSONObject = JSONObject(execute("GET", "/api/stats").also { saveSnapshot("stats.json", it) })
 
+    /** Scheduler-Fokus, damit Villa-Liste und Startknöpfe den Hub-Zustand zeigen. */
+    suspend fun schedulerStatus(): JSONObject = JSONObject(execute("GET", "/api/scheduler"))
+
     suspend fun villas(): List<Villa> =
         parseVillas(execute("GET", "/api/villas").also { saveSnapshot("villas.json", it) })
 
