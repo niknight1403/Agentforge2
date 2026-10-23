@@ -96,9 +96,9 @@ jobs:
             echo "Keine Laufzeit-Abhaengigkeiten zu installieren."
           fi
           echo "== Vollstaendige Backend-Tests vor Freigabe =="
-          cd "$HUBDIR"
+          cd "$HUBROOT"
           TEST_LOG=$(mktemp)
-          if ! VF_TEST=1 timeout 300 node --test tests/*.test.mjs >"$TEST_LOG" 2>&1; then
+          if ! VF_TEST=1 timeout 300 node --test server/tests/*.test.mjs >"$TEST_LOG" 2>&1; then
             tail -n 80 "$TEST_LOG"
             rm -f "$TEST_LOG"
             echo "Backend-Tests fehlgeschlagen; Deploy wird abgebrochen."
@@ -111,7 +111,7 @@ jobs:
           echo "== Test Villa als einzige autonome Villa fokussieren =="
           LIVE_DB=$(systemctl show "$UNIT" -p Environment --value 2>/dev/null | grep -oE 'VF_DB=[^ ]+' | cut -d= -f2- || true)
           [ -n "$LIVE_DB" ] || LIVE_DB="$HUBDIR/data/villaforge.db"
-          VF_DB="$LIVE_DB" node scripts/focus-test-villa.mjs
+          VF_DB="$LIVE_DB" node server/scripts/focus-test-villa.mjs
           echo "== Neustart =="
           ROLLBACK_REQUIRED=1
           systemctl daemon-reload || true
