@@ -94,7 +94,7 @@ test('fokus wechselt zu testneu und loescht Test Villa samt Villa-Daten', async 
   assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(other).autonomy, 0);
   assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(other).status, 'PAUSED');
   assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(target).autonomy, 1);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE villa_id=?').get(target).count, 2);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE villa_id=?').get(target).count, 3);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM agents WHERE villa_id=? AND is_root=1').get(target).count, 1);
   assert.equal(db.prepare('SELECT id FROM agents WHERE id=?').get(rootId).id, rootId);
 
