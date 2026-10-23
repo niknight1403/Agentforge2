@@ -61,6 +61,19 @@ jobs:
       - name: Hub-Syntax pruefen (kein Start, keine Schluessel)
         run: node --check server/server.mjs
 
+      - name: Web-Produktionsbuild erstellen
+        run: |
+          npm run build:web
+          cd dist
+          zip -qr ../VillaForge-Web.zip web
+
+      - name: Web-Paket als Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: villaforge-web
+          path: VillaForge-Web.zip
+          if-no-files-found: error
+
       # LLM-Smoke-Test: laeuft nur, wenn Repository-Secrets hinterlegt sind
       # (Settings → Secrets and variables → Actions). Keys erscheinen nie
       # im Log und liegen nicht im Repo; der Hub liest sie aus der Umgebung.
@@ -82,11 +95,11 @@ jobs:
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then TAG="v$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)"; fi
           NOTES="docs/releases/${TAG}.md"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" VillaForge.apk --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" VillaForge.apk VillaForge-Web.zip --repo "$GITHUB_REPOSITORY" --clobber
           elif [ -f "$NOTES" ]; then
-            gh release create "$TAG" VillaForge.apk --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
+            gh release create "$TAG" VillaForge.apk VillaForge-Web.zip --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
               --title "VillaForge $TAG" --notes-file "$NOTES"
           else
-            gh release create "$TAG" VillaForge.apk --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
+            gh release create "$TAG" VillaForge.apk VillaForge-Web.zip --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
               --title "VillaForge $TAG" --generate-notes
           fi
