@@ -110,8 +110,8 @@ fun DashboardScreen(
 
     /* Quality-Layer v2: Premium-Aurora-Hintergrund hinter dem Dashboard. */
     Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
         state.error?.let { ErrorBanner(it) }
 
