@@ -6,6 +6,7 @@ let vfToken = localStorage.getItem('vf_token') || '';
 let currentVilla = null;
 let currentAgentId = null;
 let latestVillas = [];
+let latestFocusVillaId = null;
 let activityTicks = [];
 
 const api = async (path, opts = {}) => {
@@ -141,7 +142,10 @@ function renderVillaLists(villas = latestVillas) {
 }
 
 function renderOverview(villas) {
-  const active = villas.find(v => v.status === 'RUNNING') || villas.find(v => v.status === 'PLANNING') || villas[0] || null;
+  const focus = villas.find(v => Number(v.id) === Number(latestFocusVillaId));
+  const banner = $('#focusBanner');
+  if (banner) banner.hidden = !latestFocusVillaId;
+  const active = focus || villas.find(v => v.status === 'RUNNING') || villas.find(v => v.status === 'PLANNING') || villas[0] || null;
   const totalDone = villas.reduce((n, v) => n + (v.tasks_done || 0), 0);
   $('#metricAgents').textContent = active ? (villas.length ? villas.reduce((n, v) => n + (v.agents_count || v.max_agents && 0), 0) || (active.agents_count ?? '–') : '0') : '0';
   $('#villaCount').textContent = villas.length;
@@ -165,7 +169,7 @@ function renderOverview(villas) {
 
 /* Fortschrittsring + Produktpushes der aktiven Villa nachladen */
 async function loadActiveDetail() {
-  const active = latestVillas.find(v => v.status === 'RUNNING') || latestVillas[0];
+  const active = latestVillas.find(v => Number(v.id) === Number(latestFocusVillaId)) || latestVillas.find(v => v.status === 'RUNNING') || latestVillas[0];
   if (!active) return;
   try {
     const d = await api(`/api/villas/${active.id}`);
@@ -216,8 +220,9 @@ function updateActivity(totalDone) {
 
 /* ---------- Villen laden / erstellen ---------- */
 async function loadVillas() {
-  const villas = await api('/api/villas');
+  const [villas, scheduler] = await Promise.all([api('/api/villas'), api('/api/scheduler')]);
   latestVillas = Array.isArray(villas) ? villas : [];
+  latestFocusVillaId = Number(scheduler?.focusVillaId) || null;
   renderOverview(latestVillas);
   loadActiveDetail();
 }
