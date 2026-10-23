@@ -23,3 +23,5 @@ artifacts/
 
 # Uebertragungspaket fuer den manuellen Push
 *.bundle
+
+/dist/
