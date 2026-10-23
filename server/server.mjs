@@ -14,7 +14,7 @@ import { userStore, usersExist, userForRequest, userForToken, verifyPassword, cr
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, TOOL_SPECS, toolSpecs, memoryContext, setSource, analyzeProject, refreshAgentPrompts, PROMPT_VERSION, ROLES, runTool } from './agents.mjs';
 import { packState, packSummary, setPackEnabled } from './packs.mjs';
 import { resumePendingVillas } from './resume.mjs';
-import { schedulerStatus, villaRanking, enqueueVillas, configureScheduler, scheduleVilla, cancelScheduledVilla} from './scheduler.mjs';
+import { schedulerStatus, villaRanking, enqueueVillas, configureScheduler, scheduleVilla, cancelScheduledVilla, villaFocusId} from './scheduler.mjs';
 import { maintenanceTick, pruneOldData, dbSize } from './maintenance.mjs';
 import { cmdGateStatus } from './fs-tools.mjs';
 import { bus, emit } from './events.mjs';
@@ -687,6 +687,8 @@ async function api(req, res, url) {
     const villa = db.prepare('SELECT status FROM villas WHERE id=?').get(id);
     if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
     if (villa.status === 'ARCHIVED') return json(res, 409, { error: 'Archivierte Villa zuerst wiederherstellen.' });
+    const focusId = villaFocusId();
+    if (focusId !== null && id !== focusId) return json(res, 409, { error: 'Einzelfokus aktiv: Nur die fokussierte Test Villa kann gestartet werden.', focusVillaId: focusId });
     const b = await readBody(req).catch(() => ({}));
     db.prepare('UPDATE villas SET autonomy=1,updated_at=? WHERE id=?').run(now(), id);
     if (isRunning(id)) return json(res, 202, { ok: true, alreadyRunning: true, started: true });
@@ -965,6 +967,8 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'develop' && m === 'POST') {
     const id = Number(parts[2]);
     if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
+    const focusId = villaFocusId();
+    if (focusId !== null && id !== focusId) return json(res, 409, { error: 'Einzelfokus aktiv: Entwicklungszyklen sind auf die Test Villa begrenzt.', focusVillaId: focusId });
     const out = developCycle(id);
     if (out.added > 0 && !isRunning(id)) scheduleVilla(id, { concurrency: 0, maxRounds: 6 });
     return json(res, 200, { ok: true, added: out.added, maturity: out.maturity.score, stage: out.maturity.stage, phase: out.maturity.currentPhase });
