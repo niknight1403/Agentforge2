@@ -9,7 +9,7 @@ process.env.VF_DB = join(mkdtempSync(join(tmpdir(), 'vf-sched-')), 'test.db');
 // Drei manuell gestartete Villen muessen parallel laufen koennen.
 process.env.VF_VILLA_SLOTS = '3';
 const { db, now } = await import('../db.mjs');
-const { villaRanking, enqueueVillas, configureScheduler, schedulerStatus, cancelScheduledVilla, _resetScheduler } = await import('../scheduler.mjs');
+const { villaRanking, enqueueVillas, configureScheduler, schedulerStatus, cancelScheduledVilla, scheduleVilla, _resetScheduler } = await import('../scheduler.mjs');
 
 function villa(name, done, open, failed = 0) {
   const t = now();
@@ -76,4 +76,24 @@ test('Doppeltes Einreihen startet nur einmal', async () => {
   configureScheduler({ start: () => { calls += 1; return new Promise(() => {}); } });
   enqueueVillas([v]); enqueueVillas([v]);
   assert.equal(calls, 1);
+});
+
+
+test('persistenter Villenfokus laesst nur Test Villa laufen', async () => {
+  _resetScheduler();
+  const other = villa('Andere Villa', 0, 2);
+  const target = villa('Test Villa', 0, 2);
+  await import('../scripts/focus-test-villa.mjs');
+  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(other).autonomy, 0);
+  assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(other).status, 'PAUSED');
+  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(target).autonomy, 1);
+  const started = [];
+  configureScheduler({ start: async (id) => { started.push(id); return new Promise(() => {}); } });
+  assert.equal(schedulerStatus().slots, 1);
+  assert.equal(schedulerStatus().focusVillaId, target);
+  assert.equal(enqueueVillas([other, target]).active[0], target);
+  assert.equal(scheduleVilla(other).reason, 'FOCUS_VILLA_ONLY');
+  assert.deepEqual(started, [target]);
+  db.prepare('DELETE FROM control_settings WHERE key=?').run('villaFocusId');
+  _resetScheduler();
 });
