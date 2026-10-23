@@ -828,7 +828,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
         // Rollen-Qualitaetsrouting: Code-/Fuehrungsrollen bekommen die beste Route
         // (FALLBACK = hoechste Prioritaet zuerst) statt der Rotation.
         role: agent.role,
-        temperature: temperature ?? (agent.role === 'CODER' ? 0.3 : 0.4),
+        temperature: temperature ?? (['CODER', 'PROGRAMMER', 'SYSTEM_HACKER', 'ULTRA'].includes(agent.role) ? 0.3 : 0.4),
         maxTokens
       });
     } catch (err) {
