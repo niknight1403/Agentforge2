@@ -1,6 +1,18 @@
 name: Hub-Deploy
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'server/scheduler.mjs'
+      - 'server/server.mjs'
+      - 'server/resume.mjs'
+      - 'server/scripts/focus-test-villa.mjs'
+      - 'server/public/**'
+      - 'app/src/main/java/dev/villaforge/app/ui/**'
+      - 'app/build.gradle.kts'
+      - 'docs/releases/**'
+      - '.github/workflows/hub-deploy.yml'
 
 jobs:
   deploy:
@@ -40,17 +52,17 @@ jobs:
           git fetch -q origin main || RC=$?
           if [ "$RC" != "0" ]; then
             echo "Fetch mit bestehendem Remote fehlgeschlagen (rc=$RC) - setze PAT-Remote."
-            git remote set-url origin "https://x-access-token:${GTP}@github.com/niknight1403/AgentForge.git" 2>/dev/null || true
+            git remote set-url origin "https://x-access-token:${GTP}@github.com/niknight1403/Agentforge2.git" 2>/dev/null || true
             RC=0
             git fetch -q origin main || RC=$?
           fi
           if [ "$RC" != "0" ]; then
-            git remote set-url origin "https://github.com/niknight1403/AgentForge.git" 2>/dev/null || true
+            git remote set-url origin "https://github.com/niknight1403/Agentforge2.git" 2>/dev/null || true
             echo "FETCH-FEHLGESCHLAGEN rc=$RC (Remote-URL aus Sicherheitsgruenden nicht ausgegeben)"
             exit 3
           fi
           # PAT nicht dauerhaft in .git/config speichern oder in spaeteren Logs zeigen.
-          git remote set-url origin "https://github.com/niknight1403/AgentForge.git" 2>/dev/null || true
+          git remote set-url origin "https://github.com/niknight1403/Agentforge2.git" 2>/dev/null || true
           PREVIOUS_SHA=$(git rev-parse HEAD)
           SOURCE_UPDATED=0
           ROLLBACK_REQUIRED=0
@@ -92,6 +104,10 @@ jobs:
           fi
           tail -n 12 "$TEST_LOG"
           rm -f "$TEST_LOG"
+          echo "== Test Villa als einzige autonome Villa fokussieren =="
+          LIVE_DB=$(systemctl show "$UNIT" -p Environment --value 2>/dev/null | grep -oE 'VF_DB=[^ ]+' | cut -d= -f2- || true)
+          [ -n "$LIVE_DB" ] || LIVE_DB="$HUBDIR/data/villaforge.db"
+          VF_DB="$LIVE_DB" node scripts/focus-test-villa.mjs
           echo "== Neustart =="
           ROLLBACK_REQUIRED=1
           systemctl daemon-reload || true
