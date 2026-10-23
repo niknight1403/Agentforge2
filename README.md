@@ -650,3 +650,18 @@ Eigene Skills wirken in den Agenten-Anweisungen; Werkzeug- und Pack-Schalter wer
 Connectoren unterstützen öffentliche HTTPS-JSON-GET-Endpunkte mit optionaler vorhandener Secret-Referenz.
 OAuth- und MCP-Installationen benötigen ihre eigene Einrichtung. Schlüsselwerte gehören nicht in den Chat.
 Die appweite Verwaltung ist im Benutzer-Hub Administratoren vorbehalten.
+
+
+## APEX-Ω Ultra Agent
+
+Ab Version 1.53.0 enthaelt VillaForge einen Quality-Gate-Autopiloten ueber der bestehenden Agenten-, Council-, Heal- und Routing-Infrastruktur.
+
+- Capability Registry fuer Orchestrierung, Programmierung, defensive Security, Business, Design, Tool-/Agent-Factory, Routing, Kritik und Verifikation.
+- Persistenter Autopilot-Zustand pro Villa mit Zyklen, Lessons und Audit-Trail.
+- Entscheidungsfolge: Fehler heilen -> offene Aufgaben ausfuehren -> planen -> verbessern -> Release verifizieren.
+- Quality Gate 85/100 basiert auf realem Aufgabenfortschritt und gespeicherten Verifikationsartefakten, nicht auf Selbstaussagen.
+- Berechtigungen folgen Least Privilege. Security-Aktivitaeten sind defensiv und auf eigene bzw. ausdruecklich autorisierte Systeme begrenzt.
+- Aktivierung im Master-Agent: `Aktiviere Autopilot #<Villa-ID>`.
+- Status: `Autopilot Status #<Villa-ID>`; Fortsetzung: `Autopilot weiter #<Villa-ID>`; Stop: `Deaktiviere Autopilot #<Villa-ID>`.
+
+API fuer Administratoren: `GET /api/master/ultra/status?villaId=<id>`, `POST /api/master/ultra/enable` und `POST /api/master/ultra/tick`.
