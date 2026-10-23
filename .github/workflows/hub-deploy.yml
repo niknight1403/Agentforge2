@@ -114,7 +114,7 @@ jobs:
           ROLLBACK_REQUIRED=1
           systemctl stop "$UNIT"
           VF_DB="$LIVE_DB" node server/scripts/focus-test-villa.mjs
-          echo "== Neustart mit testneu als einziger autonomer Villa =="
+          echo "== Neustart mit testneu als einzigem Fokus =="
           systemctl daemon-reload || true
           systemctl start "$UNIT"
           sleep 6
