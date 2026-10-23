@@ -14,8 +14,9 @@ async function refreshMaster() {
   if (history.error) { setMsg('#masterMsg', `Master-Agent nicht verfügbar: ${history.error}. Der Hub benötigt die passende Aktualisierung.`,true); return; }
   renderMasterMessages(history);
   if (!status.error) {
-    $('#masterSummary').textContent = `${status.villas.length} Villen · ${status.archived.length} archiviert · ${status.skills.length} Skills · ${status.connectors.length} Connectoren`;
-    $('#masterCatalog').innerHTML = `<p class="hint">Packs: ${status.packs.features.map(p => `${esc(p.id)} ${p.enabled ? 'an' : 'aus'}`).join(' · ')}</p><p class="hint">Skills: ${status.skills.map(s => `${esc(s.title)} (${s.enabled ? 'an' : 'aus'})`).join(', ') || 'noch keine'}</p><p class="hint">Connectoren: ${status.connectors.map(c => `${esc(c.title)}: ${esc(c.last_status)}`).join(', ') || 'noch keine'}</p>`;
+    const ultra = status.ultra || {version:'-',capabilities:0,enabledVillas:[]};
+    $('#masterSummary').textContent = `${status.villas.length} Villen · APEX-Ω ${ultra.version} · ${ultra.enabledVillas.length} Autopilot aktiv · ${status.skills.length} Skills · ${status.connectors.length} Connectoren`;
+    $('#masterCatalog').innerHTML = `<p class="hint"><b>APEX-Ω Ultra Agent:</b> ${ultra.capabilities} Fähigkeiten · aktiv: ${ultra.enabledVillas.length ? ultra.enabledVillas.map(id=>'#'+id).join(', ') : 'keine Villa'} · Befehl: „Aktiviere Autopilot #ID“</p><p class="hint">Packs: ${status.packs.features.map(p => `${esc(p.id)} ${p.enabled ? 'an' : 'aus'}`).join(' · ')}</p><p class="hint">Skills: ${status.skills.map(s => `${esc(s.title)} (${s.enabled ? 'an' : 'aus'})`).join(', ') || 'noch keine'}</p><p class="hint">Connectoren: ${status.connectors.map(c => `${esc(c.title)}: ${esc(c.last_status)}`).join(', ') || 'noch keine'}</p>`;
   }
   const rows = Array.isArray(proposals) ? proposals : [];
   $('#masterSuggestions').innerHTML = rows.map(r => `<button type="button" class="ghost master-suggestion" data-prompt="${esc(r.prompt)}" title="${esc(r.reason)}">${esc(r.title)} ↗</button>`).join('');
