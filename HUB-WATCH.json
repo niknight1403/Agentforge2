@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-10-24T13:31:03.065967+00:00",
+  "checked_at": "2026-10-24T17:16:22.361164+00:00",
   "hub": {
     "state": "UP",
     "version": "1.53.0",
@@ -8,6 +8,6 @@
     "running": 0,
     "agents": 0
   },
-  "villa_activity_min": 1,
+  "villa_activity_min": 0,
   "state": "UP"
 }
