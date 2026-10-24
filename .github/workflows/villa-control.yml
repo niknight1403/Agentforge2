@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'pause | resume | pause_all | resume_all | status | set_idea | schema'
+        description: 'pause | resume | pause_all | resume_all | status | set_idea | schema | tasks'
         required: true
         default: 'status'
       ids:
@@ -58,6 +58,24 @@ jobs:
           if (mode === 'status') {
             console.log('== STATUS ALLER VILLEN ==');
             list([]);
+            process.exit(0);
+          }
+          if (mode === 'tasks') {
+            const vids = (idsArg || '').split(',').map((s) => s.trim()).filter(Boolean).map(Number).filter(Boolean);
+            const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map((r) => r.name);
+            console.log('== TABELLEN: ' + tables.join(', '));
+            for (const v of db.prepare(`SELECT id, name, status, autonomy, mode, auto_rounds, updated_at FROM villas ${vids.length ? 'WHERE id IN (' + vids.map(() => '?').join(',') + ')' : ''}`).all(...vids)) {
+              console.log(`VILLA [${v.id}] ${v.name} | status=${v.status} autonomy=${v.autonomy} mode=${v.mode} auto_rounds=${v.auto_rounds} updated=${new Date(v.updated_at).toISOString()}`);
+            }
+            for (const tb of tables.filter((n) => /task|todo|backlog/i.test(n))) {
+              const cols = db.prepare(`PRAGMA table_info(${tb})`).all().map((c) => c.name);
+              console.log(`-- TABELLE ${tb} (${cols.join(',')}) --`);
+              const vcol = cols.includes('villa_id') ? 'villa_id' : (cols.includes('villaId') ? 'villaId' : null);
+              const sql = vcol && vids.length
+                ? `SELECT * FROM ${tb} WHERE ${vcol} IN (${vids.map(() => '?').join(',')}) ORDER BY rowid DESC LIMIT 40`
+                : `SELECT * FROM ${tb} ORDER BY rowid DESC LIMIT 15`;
+              for (const r of db.prepare(sql).all(...vids)) console.log(JSON.stringify(r).slice(0, 400));
+            }
             process.exit(0);
           }
           if (mode === 'schema') {
