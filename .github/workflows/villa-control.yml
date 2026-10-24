@@ -76,6 +76,15 @@ jobs:
                 : `SELECT * FROM ${tb} ORDER BY rowid DESC LIMIT 15`;
               for (const r of db.prepare(sql).all(...vids)) console.log(JSON.stringify(r).slice(0, 400));
             }
+            if (tables.includes('messages')) {
+              const mcols = db.prepare('PRAGMA table_info(messages)').all().map((c) => c.name);
+              console.log(`-- TABELLE messages (${mcols.join(',')}) -- letzte 20 fuer Villa --`);
+              const vcol = mcols.includes('villa_id') ? 'villa_id' : null;
+              const sql = vcol && vids.length
+                ? `SELECT * FROM messages WHERE ${vcol} IN (${vids.map(() => '?').join(',')}) ORDER BY rowid DESC LIMIT 20`
+                : `SELECT * FROM messages ORDER BY rowid DESC LIMIT 10`;
+              for (const r of db.prepare(sql).all(...vids)) console.log(JSON.stringify(r).slice(0, 500));
+            }
             process.exit(0);
           }
           if (mode === 'schema') {
