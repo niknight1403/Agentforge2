@@ -81,6 +81,14 @@ jobs:
             const vids = (idsArg || '').split(',').map((s) => s.trim()).filter(Boolean).map(Number).filter(Boolean);
             const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map((r) => r.name);
             console.log('== TABELLEN: ' + tables.join(', '));
+            if (tables.includes('sources')) {
+              console.log('== SOURCES (villa_id -> pfad) ==');
+              for (const s of db.prepare('SELECT * FROM sources ORDER BY rowid').all()) console.log(JSON.stringify(s).slice(0, 300));
+            }
+            console.log('== TASK-STATUS je Villa ==');
+            for (const r of db.prepare(`SELECT villa_id, status, COUNT(*) c FROM tasks ${vids.length ? 'WHERE villa_id IN (' + vids.map(() => '?').join(',') + ')' : ''} GROUP BY villa_id, status ORDER BY villa_id, status`).all(...vids)) console.log(`V${r.villa_id} ${r.status}: ${r.c}`);
+            console.log('== OFFENE/FEHLGESCHLAGENE Aufgaben (letzte 15, kompakt) ==');
+            for (const r of db.prepare(`SELECT id, villa_id, status, retry_count, title FROM tasks WHERE ${vids.length ? 'villa_id IN (' + vids.map(() => '?').join(',') + ') AND ' : ''}status IN ('PENDING','RUNNING','FAILED') ORDER BY rowid DESC LIMIT 15`).all(...vids)) console.log(`Task ${r.id} V${r.villa_id} [${r.status}] retry=${r.retry_count}: ${String(r.title).slice(0, 120)}`);
             for (const v of db.prepare(`SELECT id, name, status, autonomy, mode, auto_rounds, updated_at FROM villas ${vids.length ? 'WHERE id IN (' + vids.map(() => '?').join(',') + ')' : ''}`).all(...vids)) {
               console.log(`VILLA [${v.id}] ${v.name} | status=${v.status} autonomy=${v.autonomy} mode=${v.mode} auto_rounds=${v.auto_rounds} updated=${new Date(v.updated_at).toISOString()}`);
             }
