@@ -55,7 +55,7 @@ if (targets.length !== FOCUS_NAMES.length) {
         const open = Number(db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE villa_id=? AND status IN ('PENDING','READY','RUNNING')").get(target.id).count);
         db.prepare("UPDATE villas SET autonomy=1,status=CASE WHEN ? > 0 AND status NOT IN ('ARCHIVED','COMPLETED') THEN 'RUNNING' ELSE status END,updated_at=? WHERE id=?").run(open, timestamp, target.id);
       }
-      db.prepare("DELETE FROM control_settings WHERE key='villaFocusId'");
+      db.prepare("DELETE FROM control_settings WHERE key='villaFocusId'").run();
 
       const remaining = Number(db.prepare(`SELECT COUNT(*) AS count FROM villas WHERE id IN (${ph})`).get(...targetIds).count);
       const focusRow = db.prepare("SELECT value FROM control_settings WHERE key='villaFocusId'").get()?.value;
