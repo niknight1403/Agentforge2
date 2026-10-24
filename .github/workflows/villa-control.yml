@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'pause | resume | pause_all | resume_all | status | set_idea | add_task | schema | tasks'
+        description: 'pause | resume | pause_all | resume_all | status | set_idea | add_task | delete | schema | tasks'
         required: true
         default: 'status'
       ids:
@@ -58,6 +58,31 @@ jobs:
           if (mode === 'status') {
             console.log('== STATUS ALLER VILLEN ==');
             list([]);
+            process.exit(0);
+          }
+          if (mode === 'delete') {
+            const dids = (idsArg || '').split(',').map((s) => s.trim()).filter(Boolean).map(Number).filter(Boolean);
+            if (!dids.length) { console.error('delete benötigt Villa-IDs.'); process.exit(1); }
+            const allTables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
+            for (const id of dids) {
+              const v = db.prepare('SELECT id, name, status FROM villas WHERE id = ?').get(id);
+              if (!v) { console.log(`DELETE: Villa ${id} nicht gefunden — uebersprungen.`); continue; }
+              db.exec('BEGIN TRANSACTION;');
+              try {
+                const removed = [];
+                for (const tb of allTables) {
+                  if (tb === 'villas') continue;
+                  let cols = []; try { cols = db.prepare(`PRAGMA table_info(${tb})`).all(); } catch {}
+                  if (cols.some((c) => c.name === 'villa_id')) {
+                    const c = db.prepare(`DELETE FROM ${tb} WHERE villa_id = ?`).run(id);
+                    if (c.changes) removed.push(`${tb}:${c.changes}`);
+                  }
+                }
+                db.prepare('DELETE FROM villas WHERE id = ?').run(id);
+                db.exec('COMMIT;');
+                console.log(`DELETE: Villa ${id} (${v.name}) entfernt — ` + (removed.join(', ') || 'keine abhaengigen Zeilen'));
+              } catch (e) { db.exec('ROLLBACK;'); console.error('DELETE-Fehler Villa ' + id + ': ' + e.message); process.exit(1); }
+            }
             process.exit(0);
           }
           if (mode === 'add_task') {
