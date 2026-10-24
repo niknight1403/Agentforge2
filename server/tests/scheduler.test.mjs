@@ -78,34 +78,36 @@ test('Doppeltes Einreihen startet nur einmal', async () => {
   assert.equal(calls, 1);
 });
 
-test('fokus wechselt zu testneu und loescht Test Villa samt Villa-Daten', async () => {
+test('produktionsfokus aktiviert CyberSarah und Revenue Engine, entfernt Legacy-Villen', async () => {
   _resetScheduler();
-  const other = villa('Andere Villa', 0, 2);
-  const target = villa('testneu', 1, 2);
-  const retired = villa('Test Villa', 0, 1);
-  const rootId = Number(db.prepare('INSERT INTO agents (villa_id,name,role,is_root,created_at,last_active_at) VALUES (?,?,?,?,?,?)').run(target, 'DeepAgent', 'ROOT', 1, now(), now()).lastInsertRowid);
-  db.prepare('INSERT INTO messages (villa_id,agent_id,role,content,created_at) VALUES (?,?,?,?,?)').run(retired, 999, 'user', 'remove me', now());
+  const other = villa('Andere Villa', 2, 2);
+  const a = villa('CyberSarah Villa', 2, 2);
+  const b = villa('Autonomous Revenue Engine - Target 7K EUR MRR', 1, 3);
+  const legacyNew = villa('testneu', 1, 2);
+  const legacyOld = villa('Test Villa', 0, 1);
+  const rootId = Number(db.prepare('INSERT INTO agents (villa_id,name,role,is_root,created_at,last_active_at) VALUES (?,?,?,?,?,?)').run(a, 'DeepAgent', 'ROOT', 1, now(), now()).lastInsertRowid);
+  db.prepare('INSERT INTO messages (villa_id,agent_id,role,content,created_at) VALUES (?,?,?,?,?)').run(legacyOld, 999, 'user', 'remove me', now());
 
   await import('../scripts/focus-test-villa.mjs');
 
-  assert.equal(db.prepare('SELECT id FROM villas WHERE id=?').get(retired), undefined);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE villa_id=?').get(retired).count, 0);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE villa_id=?').get(retired).count, 0);
+  assert.equal(db.prepare('SELECT id FROM villas WHERE id=?').get(legacyNew), undefined);
+  assert.equal(db.prepare('SELECT id FROM villas WHERE id=?').get(legacyOld), undefined);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE villa_id=?').get(legacyOld).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE villa_id=?').get(legacyOld).count, 0);
   assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(other).autonomy, 0);
   assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(other).status, 'PAUSED');
-  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(target).autonomy, 1);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE villa_id=?').get(target).count, 3);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM agents WHERE villa_id=? AND is_root=1').get(target).count, 1);
+  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(a).autonomy, 1);
+  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(b).autonomy, 1);
+  assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(a).status, 'RUNNING');
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM agents WHERE villa_id=? AND is_root=1').get(a).count, 1);
   assert.equal(db.prepare('SELECT id FROM agents WHERE id=?').get(rootId).id, rootId);
+  assert.equal(db.prepare("SELECT value FROM control_settings WHERE key='villaFocusId'").get(), undefined);
 
   const started = [];
   configureScheduler({ start: async (id) => { started.push(id); return new Promise(() => {}); } });
-  assert.equal(schedulerStatus().slots, 1);
-  assert.equal(schedulerStatus().focusVillaId, target);
-  assert.equal(enqueueVillas([other, target]).active[0], target);
-  const blocked = scheduleVilla(other);
-  assert.equal(blocked.reason, 'FOCUS_VILLA_ONLY');
-  assert.deepEqual(started, [target]);
-  db.prepare('DELETE FROM control_settings WHERE key=?').run('villaFocusId');
+  const enq = enqueueVillas([other, a, b]);
+  assert.ok(enq.active.includes(a) && enq.active.includes(b), 'beide Produktionsvillaen laufen');
+  assert.ok(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(other).autonomy === 0, 'geparkte Villa bleibt autonomy 0');
+  db.prepare('DELETE FROM control_settings');
   _resetScheduler();
 });

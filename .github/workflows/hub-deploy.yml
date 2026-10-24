@@ -108,13 +108,13 @@ jobs:
           fi
           tail -n 12 "$TEST_LOG"
           rm -f "$TEST_LOG"
-          echo "== Test Villa stoppen, löschen und auf testneu wechseln =="
+          echo "== Produktionsfokus setzen: CyberSarah Villa + Revenue Engine =="
           LIVE_DB=$(systemctl show "$UNIT" -p Environment --value 2>/dev/null | grep -oE 'VF_DB=[^ ]+' | cut -d= -f2- || true)
           [ -n "$LIVE_DB" ] || LIVE_DB="$HUBDIR/data/villaforge.db"
           ROLLBACK_REQUIRED=1
           systemctl stop "$UNIT"
           VF_DB="$LIVE_DB" node server/scripts/focus-test-villa.mjs
-          echo "== Neustart mit testneu als einzigem Fokus =="
+          echo "== Neustart mit Produktions-Doppel-Fokus =="
           systemctl daemon-reload || true
           systemctl start "$UNIT"
           sleep 6
