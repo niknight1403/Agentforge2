@@ -62,7 +62,7 @@ if (targets.length !== FOCUS_NAMES.length) {
       const otherAutonomous = Number(db.prepare(`SELECT COUNT(*) AS count FROM villas WHERE id NOT IN (${ph}) AND status != 'ARCHIVED' AND autonomy=1`).get(...targetIds).count);
       const retiredRemaining = Number(db.prepare(`SELECT COUNT(*) AS count FROM villas WHERE id IN (${retiring.map(() => '?').join(',') || "''"})`).get(...retiring.map((v) => v.id)).count);
       if (remaining !== targetIds.length || focusRow !== undefined || otherAutonomous !== 0 || retiredRemaining !== 0) {
-        throw new Error('Fokus-Wechsel konnte nicht vollstaendig verifiziert werden.');
+        throw new Error('Fokus-Wechsel konnte nicht vollstaendig verifiziert werden: ' + JSON.stringify({ remaining, erwartung: targetIds.length, focusRow, otherAutonomous, retiredRemaining }));
       }
 
       db.exec('COMMIT');
