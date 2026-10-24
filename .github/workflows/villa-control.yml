@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'pause | resume | pause_all | resume_all | status | set_idea | schema | tasks'
+        description: 'pause | resume | pause_all | resume_all | status | set_idea | add_task | schema | tasks'
         required: true
         default: 'status'
       ids:
@@ -12,7 +12,7 @@ on:
         required: false
         default: ''
       idea:
-        description: 'Neue Missions-ID (idea) für Modus set_idea (Base64-sicher übertragen)'
+        description: 'set_idea: Missions-ID | add_task: JSON-Array [{title,description,role,priority}]'
         required: false
         default: ''
 
@@ -58,6 +58,22 @@ jobs:
           if (mode === 'status') {
             console.log('== STATUS ALLER VILLEN ==');
             list([]);
+            process.exit(0);
+          }
+          if (mode === 'add_task') {
+            if (!idea || !ids.length) { console.error('add_task benötigt JSON-Aufgaben (idea) und Villa-IDs.'); process.exit(1); }
+            let items; try { items = JSON.parse(idea); } catch { console.error('idea ist kein gültiges JSON.'); process.exit(1); }
+            if (!Array.isArray(items) || !items.length) { console.error('idea muss ein JSON-Array sein.'); process.exit(1); }
+            let n = 0;
+            for (const it of items) {
+              const title = String(it.title || 'Aufgabe').slice(0, 200);
+              const desc = String(it.description || '').slice(0, 4000) + (it.role ? `\nRolle: ${String(it.role).slice(0,20)}.` : '');
+              const r = db.prepare('INSERT INTO tasks (villa_id, title, description, status, priority, created_at, updated_at) VALUES (?,?,?,?,?,?,?)').run(ids[0], title, desc, 'PENDING', Number(it.priority) || 5, Date.now(), Date.now());
+              if (r.changes) n++;
+            }
+            console.log('ADD_TASK: ' + n + ' Aufgabe(n) angelegt');
+            const rows = db.prepare(`SELECT id, title, status FROM tasks WHERE villa_id IN (${ids.map(() => '?').join(',')}) ORDER BY id DESC LIMIT 10`).all(...ids);
+            for (const r of rows) console.log(`  Task ${r.id} [${r.status}] ${r.title}`);
             process.exit(0);
           }
           if (mode === 'tasks') {
