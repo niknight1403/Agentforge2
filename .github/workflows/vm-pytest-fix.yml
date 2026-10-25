@@ -1,0 +1,42 @@
+name: VM PyTest-Fix (Q-Gate Heilung)
+# Idempotente Heilung: Villa-Qualitaetstor scheitert an 'sh: 1: pytest: not found'
+# (Exit 127) in verifyProjectRuntime/Qualitaetstor, wenn ein Villa-Projekt pytest
+# als Test-Runner nutzt. Stellt pytest systemweit auf der Hub-VM bereit.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  pytest-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+      - name: pytest pruefen/installieren
+        run: |
+          /tmp/sshcmd 'bash -s' <<'EOS'
+          set -uo pipefail
+          echo "== Vorab-Check =="
+          if python3 -m pytest --version >/dev/null 2>&1; then
+            echo "pytest bereits vorhanden:"; python3 -m pytest --version
+            exit 0
+          fi
+          echo "pytest fehlt — Installation via apt (idempotent) ..."
+          sudo apt-get update -qq
+          if sudo apt-get install -y python3-pytest >/tmp/pytest-install.log 2>&1; then
+            echo "apt-Installation ok"
+          else
+            echo "apt fehlgeschlagen, Fallback pip3 --break-system-packages:"
+            tail -n 5 /tmp/pytest-install.log
+            sudo pip3 install --break-system-packages pytest
+          fi
+          echo "== Verifikation =="
+          python3 -m pytest --version
+          EOS
