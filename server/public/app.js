@@ -1,4 +1,4 @@
-/* VillaForge · Mobile-First App-Logik (v1.55.0)
+/* VillaForge · Mobile-First App-Logik (v1.56.0)
    Übersicht / Chat / Agenten / Konto + Vollbild-Arbeitsraum.
    Alle Touch-Targets ≥44px, SSE-Live-Updates, Offline-freundlich. */
 const $ = (s) => document.querySelector(s);
@@ -401,18 +401,80 @@ async function stopDevelopment() {
 }
 
 /* ---------- Routen & Keys (Konto) ---------- */
+async function renderChain(targetId, chain) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  if (!Array.isArray(chain) || !chain.length) { el.innerHTML = '<p class="hint">Keine passende, konfigurierte Route verfügbar.</p>'; return; }
+  el.innerHTML = chain.map((r, i) => `<div class="chain-node"><span class="chain-position">${i + 1}</span><div><b>${esc(r.name)}</b><small>${esc(r.model || r.provider)} · ${r.local ? 'lokal' : r.free ? 'kostenlos' : 'Cloud'}</small></div>${i < chain.length - 1 ? '<span class="chain-arrow" aria-hidden="true">↓</span>' : ''}</div>`).join('');
+}
 async function loadRoutes() {
-  const routes = await api('/api/routes');
+  const [routes, status] = await Promise.all([api('/api/routes'), api('/api/llm/status')]);
   if (!Array.isArray(routes)) return;
   $('#routeCount').textContent = routes.length;
+  if (!status.error) {
+    renderChain('routeRoutineChain', status.routineChain);
+    renderChain('routeQualityChain', status.qualityChain);
+    $('#routeFreePolicy').textContent = `Free-only: ${status.freeOnly ? 'aktiv' : 'aus'}`;
+  }
+  const available = (status.routes || []).filter(r => r.eligible).length;
+  const verified = routes.filter(r => r.enabled && Number(r.ok) > 0).length;
+  $('#routeHealth').textContent = `${available} aktuell nutzbar · ${verified ? `${verified} Route(n) mit Erfolgsnachweis` : available ? 'noch nicht live geprüft' : 'keine nutzbare Route'}`;
   $('#routeList').innerHTML = routes.map(r => {
-    const st = r.ok > 0 ? 'OK' : (r.fail > 0 ? 'ERROR' : 'NEW');
+    const routeStatus = r.ok > 0 ? 'OK' : (r.fail > 0 ? 'ERROR' : 'NEW');
     const stL = r.ok > 0 ? 'aktiv' : (r.fail > 0 ? 'Fehler' : 'bereit');
-    const keyL = r.provider === 'offline' ? 'offline' : r.hasKey ? 'Key' : 'kein Key';
-    const keyC = (r.provider === 'offline' || r.hasKey) ? 'RUNNING' : 'PAUSED';
-    return `<div class="row route-row${r.enabled ? '' : ' off'}"><div class="head"><b><i class="rdot rdot-${st.toLowerCase()}"></i>${esc(r.name)}</b><span class="badge ${st}">${stL}</span></div><div class="sub">${esc(r.model)} · Prio ${esc(r.priority)} · <span class="okc">ok ${esc(r.ok)}</span> · <span class="failc">fail ${esc(r.fail)}</span></div><div class="row-actions"><span class="badge ${keyC}">${keyL}</span><button data-toggle="${r.id}" data-enabled="${r.enabled}" class="compact">${r.enabled ? 'Deaktivieren' : 'Aktivieren'}</button></div></div>`;
+    const keyL = r.provider === 'offline' ? 'lokal' : r.hasKey ? 'Zugang bereit' : 'Zugang fehlt';
+    const eligible = r.provider === 'offline' || (r.enabled && r.hasKey && (status.routes || []).some(x => x.id === r.id && x.eligible));
+    return `<div class="row route-row${r.enabled ? '' : ' off'}"><div class="head"><b><i class="rdot rdot-${routeStatus.toLowerCase()}"></i>${esc(r.name)}</b><span class="badge ${eligible ? 'RUNNING' : 'PAUSED'}">${eligible ? 'in Kette' : r.enabled ? keyL : 'deaktiviert'}</span></div><div class="sub">${esc(r.model)} · ${esc(r.provider)} · Prio ${esc(r.priority)} · <span class="okc">ok ${esc(r.ok)}</span> · <span class="failc">Fehler ${esc(r.fail)}</span> ${r.is_free ? '· kostenlos' : ''}</div><div class="row-actions"><span class="badge ${routeStatus}">${stL}</span><button data-toggle="${r.id}" data-enabled="${r.enabled}" class="compact">${r.enabled ? 'Deaktivieren' : 'Aktivieren'}</button></div></div>`;
   }).join('');
-  document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', async () => { await api(`/api/routes/${b.dataset.toggle}`, { method: 'PATCH', body: { enabled: b.dataset.enabled !== '1' } }); loadRoutes(); }));
+  document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', async () => { const result = await api(`/api/routes/${b.dataset.toggle}`, { method: 'PATCH', body: { enabled: b.dataset.enabled !== '1' } }); if (result.error) toast(result.error); loadRoutes(); }));
+}
+async function loadPacks() {
+  const state = await api('/api/packs');
+  if (!state || state.error) return;
+  const render = (items, target, tool) => {
+    const el = document.getElementById(target); if (!el) return;
+    el.innerHTML = items.map(p => `<article class="pack-card ${p.enabled ? 'pack-enabled' : 'pack-disabled'}"><div class="pack-card-top"><b>${esc(p.title)}</b><label class="switch-control"><input type="checkbox" data-pack="${esc(p.id)}" data-pack-enabled="${p.enabled}" ${p.enabled ? 'checked' : ''} aria-label="${esc(p.title)} aktivieren"><span></span></label></div><p>${esc(p.description || (tool ? 'Werkzeuge für spezialisierte Aufgaben.' : 'App-Funktion'))}</p><small>${tool ? `${esc(p.count)} Werkzeuge · ${p.effective && p.enabled ? 'freigeschaltet' : p.enabled ? 'abhängig von Master-Pack' : 'deaktiviert'}` : p.enabled ? 'Funktion aktiv' : 'Funktion pausiert'}</small></article>`).join('');
+  };
+  render(state.tools || [], 'toolPackList', true); render(state.features || [], 'featurePackList', false);
+  document.querySelectorAll('[data-pack]').forEach(input => input.addEventListener('change', async () => {
+    const result = await api('/api/packs', { method: 'PATCH', body: { id: input.dataset.pack, enabled: input.checked } });
+    if (result.error || result.ok === false) { toast(result.error || 'Pack konnte nicht geändert werden'); input.checked = !input.checked; return; }
+    toast(input.checked ? 'Pack aktiviert' : 'Pack pausiert'); loadPacks();
+  }));
+}
+async function loadControlCatalog() {
+  const catalog = await api('/api/control/catalog');
+  if (!catalog || catalog.error) return;
+  const connectors = catalog.connectors || [];
+  $('#connectorCount').textContent = connectors.length;
+  $('#connectorList').innerHTML = connectors.length ? connectors.map(c => `<div class="row connector-row"><div class="head"><b>${esc(c.title)}</b><span class="badge ${c.last_status === 'connected' ? 'OK' : c.last_status === 'error' ? 'ERROR' : 'NEW'}">${esc(c.last_status || 'configured')}</span></div><div class="sub">${esc(c.endpoint)} · Secret-Referenz: ${c.secret_env ? esc(c.secret_env) : 'keine'} · ${c.enabled ? 'aktiv' : 'pausiert'}</div><div class="row-actions"><button class="compact" data-connector-test="${esc(c.id)}">Verbindung prüfen</button><button class="compact" data-connector-toggle="${esc(c.id)}" data-enabled="${c.enabled}">${c.enabled ? 'Pausieren' : 'Aktivieren'}</button><button class="compact danger" data-connector-delete="${esc(c.id)}">Entfernen</button></div></div>`).join('') : '<p class="hint">Noch keine Connectoren eingerichtet.</p>';
+  const skills = catalog.skills || [];
+  $('#skillCount').textContent = skills.filter(s => s.enabled).length + ' aktiv';
+  $('#skillList').innerHTML = skills.length ? skills.map(s => `<article class="skill-row"><div class="skill-row-head"><div><b>${esc(s.title)}</b><small>${esc(s.id)} ${s.builtin ? '· integriert' : '· eigener Skill'}</small></div><label class="switch-control"><input type="checkbox" data-skill="${esc(s.id)}" ${s.enabled ? 'checked' : ''} aria-label="${esc(s.title)} aktivieren"><span></span></label></div><details><summary>Anweisung ansehen</summary><p>${esc(s.instructions)}</p></details></article>`).join('') : '<p class="hint">Keine Skills vorhanden.</p>';
+  document.querySelectorAll('[data-connector-test]').forEach(b => b.addEventListener('click', async () => { b.disabled = true; b.textContent = 'Prüft …'; const r = await api(`/api/connectors/${encodeURIComponent(b.dataset.connectorTest)}/test`, { method: 'POST', body: {} }); toast(r.ok ? 'Connector erreichbar' : (r.error || 'Prüfung fehlgeschlagen')); loadControlCatalog(); }));
+  document.querySelectorAll('[data-connector-toggle]').forEach(b => b.addEventListener('click', async () => { const r = await api(`/api/connectors/${encodeURIComponent(b.dataset.connectorToggle)}`, { method: 'PATCH', body: { enabled: b.dataset.enabled !== '1' } }); if (r.error) toast(r.error); loadControlCatalog(); }));
+  document.querySelectorAll('[data-connector-delete]').forEach(b => b.addEventListener('click', async () => { const r = await api(`/api/connectors/${encodeURIComponent(b.dataset.connectorDelete)}`, { method: 'DELETE' }); if (r.error) toast(r.error); else toast('Connector entfernt'); loadControlCatalog(); }));
+  document.querySelectorAll('[data-skill]').forEach(input => input.addEventListener('change', async () => { const r = await api(`/api/control/skills/${encodeURIComponent(input.dataset.skill)}`, { method: 'PATCH', body: { enabled: input.checked } }); if (r.error) { toast(r.error); input.checked = !input.checked; } else toast('Skill aktualisiert'); loadControlCatalog(); }));
+}
+async function addConnector() {
+  const body = { id: $('#cId').value.trim(), title: $('#cTitle').value.trim(), endpoint: $('#cEndpoint').value.trim(), secretEnv: $('#cSecretEnv').value.trim() };
+  const result = await api('/api/connectors', { method: 'POST', body });
+  if (result.error) { toast(result.error); return; }
+  ['cId','cTitle','cEndpoint','cSecretEnv'].forEach(id => { $('#'+id).value = ''; }); toast('Connector gespeichert'); loadControlCatalog();
+}
+async function addControlSkill() {
+  const body = { id: $('#skillId').value.trim(), title: $('#skillTitle').value.trim(), instructions: $('#skillInstructions').value.trim() };
+  const result = await api('/api/control/skills', { method: 'POST', body });
+  if (result.error) { toast(result.error); return; }
+  ['skillId','skillTitle','skillInstructions'].forEach(id => { $('#'+id).value = ''; }); toast('Skill gespeichert'); loadControlCatalog();
+}
+const themes = { aurora: { bg:'#07090E', card:'rgba(18,22,34,.72)', 'card-solid':'#121622', cyan:'#00E5FF', purple:'#8B5CF6', pink:'#EC4899', green:'#00FFA3', blue:'#2EA7FF' }, nebula: { bg:'#0C0916', card:'rgba(27,20,42,.82)', 'card-solid':'#1B142A', cyan:'#A78BFA', purple:'#C084FC', pink:'#F472B6', green:'#86EFAC', blue:'#60A5FA' }, slate: { bg:'#0B1114', card:'rgba(19,31,34,.84)', 'card-solid':'#131F22', cyan:'#5EEAD4', purple:'#2DD4BF', pink:'#A7F3D0', green:'#86EFAC', blue:'#67E8F9' } };
+function applyTheme(name) {
+  const key = themes[name] ? name : 'aurora'; const t = themes[key];
+  const root = document.documentElement; root.dataset.theme = key;
+  for (const [prop,value] of Object.entries(t)) root.style.setProperty('--'+prop,value);
+  localStorage.setItem('vf_design_theme', key);
+  document.querySelectorAll('[data-theme-choice]').forEach(b => { const active = b.dataset.themeChoice === key; b.classList.toggle('selected', active); b.querySelector('em').textContent = active ? 'Aktiv' : 'Anwenden'; });
 }
 async function addRoute() {
   const name = $('#rName').value.trim(); const url = $('#rUrl').value.trim();
@@ -459,6 +521,7 @@ document.querySelectorAll('.bottomnav .nav-item[data-view]').forEach(n => n.addE
   if (v === 'chat') { selectView('chat'); return; }
   if (v === 'agents') { selectView('agents'); loadFleet(); return; }
   selectView(v);
+  if (v === 'konto') { loadRoutes(); loadPacks(); loadControlCatalog(); loadSecrets(); }
 }));
 $('#newVillaBtn').addEventListener('click', openSheet);
 $('#villaSearch').addEventListener('input', () => renderVillaLists());
@@ -479,9 +542,13 @@ $('#sendBtn').addEventListener('click', sendChat);
 $('#chatMsg').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } });
 $('#chatMsg').addEventListener('input', () => { const t = $('#chatMsg'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 120) + 'px'; });
 $('#addRouteBtn').addEventListener('click', addRoute);
+$('#addConnectorBtn').addEventListener('click', addConnector);
+$('#addSkillBtn').addEventListener('click', addControlSkill);
+document.querySelectorAll('[data-theme-choice]').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.themeChoice)));
+applyTheme(localStorage.getItem('vf_design_theme') || 'aurora');
 $('#addSecretBtn').addEventListener('click', addSecret);
 document.querySelectorAll('.tab-chip').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#detailPanel').hidden) closeWorkspace(); });
 
-function boot() { checkSession(); checkHealth(); loadOpenHandsCanvas(); loadVillas(); loadRoutes(); loadSecrets(); connectEvents(); }
+function boot() { checkSession(); checkHealth(); loadOpenHandsCanvas(); loadVillas(); loadRoutes(); loadSecrets(); loadPacks(); loadControlCatalog(); connectEvents(); }
 boot(); setInterval(checkHealth, 20000);

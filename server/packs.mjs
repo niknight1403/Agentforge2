@@ -89,12 +89,13 @@ export const MASTER_PACK = 'werkzeuge';
 export const TOOL_PACKS = [
   { id: 'gedaechtnis', title: 'Gedaechtnis', description: 'Wissen sichern und wiederfinden.', tools: ['memory_write', 'memory_search'] },
   { id: 'planung', title: 'Planung & Aufgaben', description: 'Aufgaben anlegen, fortschreiben und Agenten nachziehen.', tools: ['task_create', 'task_update', 'agent_spawn'] },
-  { id: 'projekt', title: 'Projektanalyse', description: 'Quellprojekt lesen, durchsuchen und ueberblicken.', tools: ['project_tree', 'project_search', 'project_read', 'studio_status', 'studio_designs', 'remote_worker'] },
+  { id: 'projekt', title: 'Projektanalyse', description: 'Quellprojekt lesen, durchsuchen, strukturieren und Remote-Arbeit koordinieren.', tools: ['project_tree', 'project_search', 'project_read', 'remote_worker'] },
+  { id: 'design', title: 'Designstudio', description: 'Projektstatus, zwei begründete visuelle Richtungen und Designauswahl je Villa.', tools: ['studio_status', 'studio_designs'] },
   { id: 'ausfuehrung', title: 'Ausfuehrung', description: 'Builds und Tests im Projekt starten (nur erlaubte Programme).', tools: ['project_run'] },
   { id: 'artefakte', title: 'Artefakte', description: 'Dateien im Villa-Workspace schreiben und auflisten.', tools: ['artifact_write', 'artifact_list'] },
-  { id: 'recherche', title: 'Recherche', description: 'Websuche (DuckDuckGo, keyless), Seitenabruf mit Jina-Reader-Kaskade und konfigurierte JSON-Connectoren.', tools: ['web_search', 'web_fetch', 'connector_read'] },
+  { id: 'recherche', title: 'Recherche', description: 'Websuche und Seitenabruf mit Jina-Reader-Kaskade.', tools: ['web_search', 'web_fetch'] },
   { id: 'medien', title: 'Medienproduktion', description: 'Fähigkeiten prüfen, Bild-/Video-/Audio-Produktionspakete vorbereiten und Medien über konfigurierte Fal.ai-Routen rendern.', tools: ['media_capabilities', 'media_prepare', 'media_generate'] },
-  { id: 'extern', title: 'Externe Integrationen (Fireflies & Asana)', description: 'Meeting-Protokolle aus Fireflies und Aufgaben-Sync nach Asana — brauchen je einen Token im Secrets-Store (FIREFLIES_API_KEY, ASANA_PAT).', tools: ['fireflies_transcripts', 'asana_list_projects', 'asana_create_task'] },
+  { id: 'extern', title: 'Connectoren & externe Dienste', description: 'Konfigurierte HTTPS-JSON-Connectoren, Fireflies-Meetingprotokolle und Asana-Aufgaben. Benötigte Secret-Referenzen: FIREFLIES_API_KEY, ASANA_PAT.', tools: ['connector_read', 'fireflies_transcripts', 'asana_list_projects', 'asana_create_task'] },
   { id: 'open-data', title: 'Offene Daten (keylos)', description: 'Wikipedia, Hacker News, Wetter, Waehrungen und Paket-Infos — alles ohne API-Key.', tools: ['wikipedia_search', 'hackernews_search', 'weather_lookup', 'currency_convert', 'package_info'] },
   { id: 'berichte', title: 'Berichte', description: 'Analyse-, Umsatz- und Review-Berichte ablegen.', tools: ['report_write'] }
 ];

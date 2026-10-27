@@ -117,9 +117,36 @@
       <a id="openhandsLink" class="primary block" target="_blank" rel="noopener noreferrer" hidden>Canvas öffnen ↗</a>
       <p id="openhandsHelp" class="foot-note">Zum Aktivieren OPENHANDS_CANVAS_URL im Hub konfigurieren.</p>
     </section>
-    <section class="section-block"><div class="section-head"><h2>LLM-Routen</h2><span id="routeCount" class="section-pill">0</span></div>
+    <section class="section-block route-control"><div class="section-head"><div><p class="eyebrow">LLM ORCHESTRIERUNG</p><h2>KI-Routenkette</h2></div><span id="routeCount" class="section-pill">0</span></div>
+      <p class="hint">Routinearbeit bevorzugt lokal; komplexe Aufgaben folgen einer priorisierten Ausweichkette. Schlüssel bleiben im Secret-Speicher.</p>
+      <div id="routePolicy" class="route-policy"><span>Routine · lokal zuerst</span><span>Komplex · Qualitätskette</span><span id="routeFreePolicy">Free-only: –</span></div>
+      <div class="route-chain-grid"><article class="route-chain"><h3>Routine</h3><div id="routeRoutineChain" class="route-chain-list"></div></article><article class="route-chain"><h3>Komplexe Aufgaben</h3><div id="routeQualityChain" class="route-chain-list"></div></article></div>
+      <div class="section-head compact-head"><h3>Konfigurierte Routen</h3><span id="routeHealth" class="hint">Status lädt …</span></div>
       <div id="routeList" class="list"></div>
       <details class="advanced"><summary>Neue Route hinzufügen</summary><label>Name<input id="rName" placeholder="Mein Endpunkt" /></label><label>Base URL<input id="rUrl" type="url" placeholder="https://api.example.com/v1" /></label><label>Modell<input id="rModel" placeholder="model-name" /></label><label>Key-Variable<input id="rKeyEnv" placeholder="MY_API_KEY" /></label><button id="addRouteBtn" class="primary block">Route speichern</button></details>
+    </section>
+    <section class="section-block"><div class="section-head"><div><p class="eyebrow">FÄHIGKEITEN</p><h2>Werkzeug- & Integrations-Packs</h2></div><span class="section-pill">Live</span></div>
+      <p class="hint">Packs steuern echte Agentenwerkzeuge und freigeschaltete App-Funktionen.</p>
+      <h3 class="subsection-title">Werkzeug-Packs</h3><div id="toolPackList" class="pack-grid"><p class="hint">Packs werden geladen …</p></div>
+      <h3 class="subsection-title">Funktions-Packs</h3><div id="featurePackList" class="pack-grid"></div>
+    </section>
+    <section class="section-block"><div class="section-head"><div><p class="eyebrow">HTTP JSON</p><h2>Connectoren</h2></div><span id="connectorCount" class="section-pill">0</span></div>
+      <p class="hint">Öffentliche HTTPS-JSON-Endpunkte mit optionaler Bearer-Secret-Referenz. OAuth- und MCP-Verbindungen benötigen ihren eigenen Adapter.</p>
+      <div id="connectorList" class="list"></div>
+      <details class="advanced"><summary>Connector registrieren</summary><label>ID<input id="cId" placeholder="mein-dienst" maxlength="48" /></label><label>Anzeigename<input id="cTitle" placeholder="Mein Dienst" maxlength="120" /></label><label>HTTPS JSON URL<input id="cEndpoint" type="url" placeholder="https://api.example.com/v1/status" /></label><label>Secret-Variablenname (optional)<input id="cSecretEnv" placeholder="MY_SERVICE_TOKEN" /></label><button id="addConnectorBtn" class="primary block">Connector speichern</button></details>
+    </section>
+    <section class="section-block"><div class="section-head"><div><p class="eyebrow">WIEDERVERWENDBARES WISSEN</p><h2>Skills</h2></div><span id="skillCount" class="section-pill">0</span></div>
+      <p class="hint">Integrierte Skills prägen Prompts standardmäßig; zusätzliche Skills lassen sich projektübergreifend ergänzen.</p>
+      <div id="skillList" class="list"></div>
+      <details class="advanced"><summary>Eigenen Skill hinzufügen</summary><label>Skill-ID<input id="skillId" placeholder="release-review" maxlength="48" /></label><label>Titel<input id="skillTitle" placeholder="Release Review" maxlength="120" /></label><label>Anweisungen<textarea id="skillInstructions" rows="5" maxlength="8000" placeholder="Arbeitsregeln und Abnahmekriterien …"></textarea></label><button id="addSkillBtn" class="primary block">Skill speichern</button></details>
+    </section>
+    <section class="section-block design-section"><div class="section-head"><div><p class="eyebrow">GRAFIK & ERLEBNIS</p><h2>Studio-Design</h2></div><span class="section-pill">Lokal</span></div>
+      <p class="hint">Wähle eine Oberfläche mit klarer Kontrastführung. Die Auswahl wird auf diesem Gerät gespeichert.</p>
+      <div class="theme-grid" id="themePicker">
+        <button class="theme-card" type="button" data-theme-choice="aurora"><span class="theme-swatch aurora-swatch"><i></i><i></i><i></i></span><b>Aurora</b><small>Cyan · Violett</small><em>Aktuell</em></button>
+        <button class="theme-card" type="button" data-theme-choice="nebula"><span class="theme-swatch nebula-swatch"><i></i><i></i><i></i></span><b>Nebula</b><small>Indigo · Rose</small><em>Anwenden</em></button>
+        <button class="theme-card" type="button" data-theme-choice="slate"><span class="theme-swatch slate-swatch"><i></i><i></i><i></i></span><b>Slate</b><small>Graphit · Mint</small><em>Anwenden</em></button>
+      </div>
     </section>
     <section class="section-block"><div class="section-head"><h2>API-Keys</h2></div>
       <div id="secretList" class="list"></div>

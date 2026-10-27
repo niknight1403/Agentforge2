@@ -35,6 +35,7 @@ import {
 } from './webhooks.mjs';
 import { verifyGitHubSignature, buildCommitChangelog, sendTelegramChangelog } from './github-changelog.mjs';
 import { openHandsCanvasStatus } from './openhands.mjs';
+import { controlCatalog, saveConnector, updateConnector, deleteConnector, readConnector, saveControlSkill, setControlSkillEnabled, deleteControlSkill } from './control-store.mjs';
 import { createReadStream, existsSync as fsExists } from 'node:fs';
 
 const PORT = Number(process.env.PORT || 12000);
@@ -544,6 +545,48 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true });
   }
 
+
+  // ---- Skills, sichere Connectoren und integrierte Entwickler-Packs ----
+  if (p === '/api/control/catalog' && m === 'GET') {
+    const catalog=controlCatalog();
+    return json(res,200,{skills:catalog.skills.map(s=>({...s,builtin:['product-brief','professional-delivery','engineering-quality','visual-design','creative-production','source-grounded-research','safe-connectors-routing'].includes(s.id)})),connectors:catalog.connectors,packs:packState()});
+  }
+  if (p === '/api/control/skills' && m === 'POST') {
+    if(!openMode&&!isAdmin)return json(res,403,{error:'Skill-Verwaltung ist Admins vorbehalten.'});
+    try{return json(res,201,saveControlSkill(await readBody(req)));}catch(e){return json(res,400,{error:e.message||String(e)});}
+  }
+  if (parts[0]==='api'&&parts[1]==='control'&&parts[2]==='skills'&&parts[3]&&m==='PATCH') {
+    if(!openMode&&!isAdmin)return json(res,403,{error:'Skill-Verwaltung ist Admins vorbehalten.'});
+    const current=db.prepare('SELECT * FROM control_skills WHERE id=?').get(parts[3]);
+    if(!current)return json(res,404,{error:'Skill nicht gefunden.'});
+    const body=await readBody(req);
+    try{return json(res,200,saveControlSkill({id:current.id,title:body.title??current.title,instructions:body.instructions??current.instructions,enabled:body.enabled??!!current.enabled}));}catch(e){return json(res,400,{error:e.message||String(e)});}
+  }
+  if (parts[0]==='api'&&parts[1]==='control'&&parts[2]==='skills'&&parts[3]&&m==='DELETE') {
+    if(!openMode&&!isAdmin)return json(res,403,{error:'Skill-Verwaltung ist Admins vorbehalten.'});
+    try{return json(res,200,deleteControlSkill(parts[3]));}catch(e){return json(res,400,{error:e.message||String(e)});}
+  }
+  if (p === '/api/connectors' && m === 'GET') {
+    return json(res,200,db.prepare('SELECT id,title,endpoint,secret_env,enabled,last_status FROM control_connectors ORDER BY title,id').all());
+  }
+  if (p === '/api/connectors' && m === 'POST') {
+    if(!openMode&&!isAdmin)return json(res,403,{error:'Connector-Verwaltung ist Admins vorbehalten.'});
+    try{return json(res,201,saveConnector(await readBody(req)));}catch(e){return json(res,400,{error:e.message||String(e)});}
+  }
+  if(parts[0]==='api'&&parts[1]==='connectors'&&parts[2]&&parts[3]==='test'&&m==='POST') {
+    if(!openMode&&!isAdmin)return json(res,403,{error:'Connector-Test ist Admins vorbehalten.'});
+    try{await readConnector(parts[2]);return json(res,200,{ok:true,id:parts[2],status:'connected'});}
+    catch(e){return json(res,400,{ok:false,id:parts[2],error:e.message||String(e)});}
+  }
+  if(parts[0]==='api'&&parts[1]==='connectors'&&parts[2]&&m==='PATCH') {
+    if(!openMode&&!isAdmin)return json(res,403,{error:'Connector-Verwaltung ist Admins vorbehalten.'});
+    try{return json(res,200,updateConnector(parts[2],await readBody(req)));}catch(e){return json(res,400,{error:e.message||String(e)});}
+  }
+  if(parts[0]==='api'&&parts[1]==='connectors'&&parts[2]&&m==='DELETE') {
+    if(!openMode&&!isAdmin)return json(res,403,{error:'Connector-Verwaltung ist Admins vorbehalten.'});
+    try{return json(res,200,deleteConnector(parts[2]));}catch(e){return json(res,400,{error:e.message||String(e)});}
+  }
+
   // ---- Tools ----
   // ---- Wartung: Altdaten bereinigen (Trockenlauf mit ?dryRun=1) ----
   if (p === '/api/maintenance' && m === 'POST') {
@@ -564,6 +607,7 @@ async function api(req, res, url) {
   if (p === '/api/packs' && m === 'GET') return json(res, 200, packState());
   if (p === '/api/tool-packs' && m === 'GET') return json(res, 200, packState().tools);
   if (p === '/api/packs' && m === 'PATCH') {
+    if(!openMode&&!isAdmin)return json(res,403,{error:'Pack-Verwaltung ist Admins vorbehalten.'});
     const b = await readBody(req);
     const r = setPackEnabled(String(b.id || ''), !!b.enabled);
     return json(res, r.ok ? 200 : 400, r);

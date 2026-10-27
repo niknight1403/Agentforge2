@@ -114,3 +114,12 @@ test('Routing readiness marks blocked paid routes ineligible',()=>{
  assert.equal(routes.find(r=>r.name==='Local route').eligible,true);
  process.env.VF_LLM_FREE_ONLY='0';
 });
+
+test('Status und Kaskade zeigen dieselbe lokale Routine- und Qualitätsreihenfolge',async()=>{
+ const {orderCascadeRoutes}=await import('../llm-cascade.mjs');
+ const rows=[route(1,'ollama'),route(2,'groq'),route(3,'gemini')];
+ assert.equal(orderCascadeRoutes(rows,{strategy:'LOCAL_FIRST',freeOnlyMode:false})[0].provider,'ollama');
+ const quality=orderCascadeRoutes(rows,{role:'CODER',freeOnlyMode:false});
+ assert.notEqual(quality[0].provider,'ollama');
+ assert.equal(quality.at(-1).provider,'ollama');
+});

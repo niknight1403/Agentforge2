@@ -1,7 +1,7 @@
 import { forgeLog } from './keyforge.mjs';
 import { db, now } from './db.mjs';
 import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute } from './llm-config.mjs';
-import { createCascade } from './llm-cascade.mjs';
+import { createCascade, orderCascadeRoutes } from './llm-cascade.mjs';
 import { userStore, quotaLeft, chargeTokens } from './auth.mjs';
 
 /** Liefert einen Key aus Secrets-Store oder Umgebung. */
@@ -290,7 +290,11 @@ export async function chat(messages,opts={}) {
 }
 export function routingStatus() {
   const freeOnly=freeOnlyEnabled();
-  return {mode:'cascade',ruleBasedFallback:false,freeOnly,routes:enabledRoutes().filter(r=>r.provider!=='offline').map(r=>{const configured=!r.key_env||!!resolveKey(r.key_env),eligible=(!freeOnly||isFreeRoute(r))&&configured&&Number(r.cooldown_until||0)<=Date.now();return {id:r.id,name:r.name,model:r.model,configured,eligible,cooldownUntil:r.cooldown_until||0,status:r.status};})};
+  const enabled=enabledRoutes().filter(r=>r.provider!=='offline');
+  const routes=enabled.map(r=>{const configured=!r.key_env||!!resolveKey(r.key_env),eligible=(!freeOnly||isFreeRoute(r))&&configured&&Number(r.cooldown_until||0)<=Date.now();return {id:r.id,name:r.name,model:r.model,provider:r.provider,priority:r.priority,isFree:isFreeRoute(r),local:isLocalRoute(r),configured,eligible,cooldownUntil:r.cooldown_until||0,status:r.status};});
+  const candidates=enabled.filter(r=>(!r.key_env||!!resolveKey(r.key_env))&&Number(r.cooldown_until||0)<=Date.now());
+  const names=(ordered)=>ordered.map((r,index)=>({position:index+1,id:r.id,name:r.name,model:r.model,provider:r.provider,local:isLocalRoute(r),free:isFreeRoute(r)}));
+  return {mode:'cascade',ruleBasedFallback:false,freeOnly,policy:{routine:'LOCAL_FIRST',complex:'QUALITY_FALLBACK',offlinePlan:'disabled'},routes,routineChain:names(orderCascadeRoutes(candidates,{strategy:'LOCAL_FIRST',freeOnlyMode:freeOnly})),qualityChain:names(orderCascadeRoutes(candidates,{role:'CODER',freeOnlyMode:freeOnly}))};
 }
 
 export function routingSummary(){

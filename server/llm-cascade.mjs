@@ -4,6 +4,11 @@ export class LlmUnavailableError extends Error {
  constructor(attempts=[]) {super('Kein echtes Sprachmodell erreichbar. Cloud-Zugänge, Modellstatus und lokale LLM-Verbindung prüfen; die Anfrage wurde nicht durch einen regelbasierten Planer ersetzt.');this.name='LlmUnavailableError';this.code='LLM_UNAVAILABLE';this.statusCode=503;this.retryAfter=15;this.attempts=attempts;}
 }
 const QUALITY_ROLES=new Set(['ROOT','CODER','ARCHITECT','REVIEWER','INTEGRATOR']);
+export function orderCascadeRoutes(routes,{role='',strategy='',freeOnlyMode=freeOnlyEnabled()}={}) {
+ const localFirst=strategy==='LOCAL_FIRST'||(strategy!=='FALLBACK'&&!QUALITY_ROLES.has(String(role||'').toUpperCase()));
+ return routes.filter(r=>r.provider!=='offline'&&(!freeOnlyMode||isFreeRoute(r)))
+  .sort((a,b)=>(localFirst?Number(!isLocalRoute(a))-Number(!isLocalRoute(b)):0)||routeTier(a)-routeTier(b)||Number(a.priority)-Number(b.priority)||Number(b.weight||1)-Number(a.weight||1)||Number(a.last_used||0)-Number(b.last_used||0)||a.id-b.id);
+}
 /** Single pass, no cooldown sleeps and no duplicate endpoint/model attempts. */
 export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clock=Date.now,freeOnly=freeOnlyEnabled}) {
  const inFlight=new Map(),credentialBlocks=new Map(),permitWaiters=new Map();
@@ -30,11 +35,9 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
  }
  return async function cascade(messages,opts={}) {
   const attempted=[],seen=new Set();
-  const localFirst=opts.strategy==='LOCAL_FIRST'||(opts.strategy!=='FALLBACK'&&!QUALITY_ROLES.has(String(opts.role||'').toUpperCase()));
   const freeOnlyMode=typeof freeOnly==='function'?freeOnly():Boolean(freeOnly);
-  const ordered=routes().filter(r=>r.provider!=='offline' && (!freeOnlyMode||isFreeRoute(r)) && (!r.key_env||key(r.key_env)))
-   .filter(r=>Number(r.cooldown_until||0)<=clock())
-   .sort((a,b)=>(localFirst?Number(!isLocalRoute(a))-Number(!isLocalRoute(b)):0)||routeTier(a)-routeTier(b)||Number(a.priority)-Number(b.priority)||Number(b.weight||1)-Number(a.weight||1)||Number(a.last_used||0)-Number(b.last_used||0)||a.id-b.id);
+  const candidateRoutes=routes().filter(r=>(!r.key_env||key(r.key_env))&&Number(r.cooldown_until||0)<=clock());
+  const ordered=orderCascadeRoutes(candidateRoutes,{strategy:opts.strategy,role:opts.role,freeOnlyMode});
   const deadline=clock()+Math.max(1000,Math.min(Number(opts.totalTimeoutMs)||120000,600000));
   const cloudDeadline=Math.min(deadline,clock()+Math.max(1000,Math.min(Number(process.env.VF_LLM_CLOUD_BUDGET_MS)||24000,60000)));
   for(const r of ordered) {
