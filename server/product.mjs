@@ -1,4 +1,4 @@
-import { projectReadiness,ensureVerificationTasks } from './project-verification.mjs';
+import { ensureVerificationTasks } from './project-verification.mjs';
 /**
  * Produkt-Pipeline: von der Idee zum marktreifen Produkt, 24/7.
  *
@@ -17,6 +17,7 @@ import { projectReadiness,ensureVerificationTasks } from './project-verification
  * (max. 1 Wave je Villa pro Zyklus, Pause bei erschoepften Routen).
  */
 import { db, now } from './db.mjs';
+import { deliveryPhases, deliveryProfile, deliveryReadiness } from './delivery-quality.mjs';
 
 /** Lebenszyklus-Phasen mit Pflicht-Aufgaben (Titel-Stichworte pruefen die Abdeckung). */
 export const PHASES = [
@@ -86,9 +87,11 @@ function matches(task, must) {
  */
 export function maturity(villaId) {
   const tasks = db.prepare('SELECT title, status FROM tasks WHERE villa_id = ?').all(villaId);
+  const profile = deliveryProfile(villaId);
+  const phasePlan = deliveryPhases(villaId) || PHASES;
   let score = 0;
   let current = null;
-  const phases = PHASES.map((ph) => {
+  const phases = phasePlan.map((ph) => {
     const items = ph.musts.map((m) => {
       const hit = tasks.filter((t) => matches(t, m));
       const done = hit.some((t) => t.status === 'DONE');
@@ -102,16 +105,19 @@ export function maturity(villaId) {
     return { id: ph.id, title: ph.title, goal: ph.goal, ratio: Number(ratio.toFixed(2)), items };
   });
   const planScore = Math.round(score);
-  const readiness=projectReadiness(villaId);
+  const readiness=deliveryReadiness(villaId);
   const passed=Object.values(readiness.checks).filter(c=>c.status==='passed').length;
-  const ceiling=!readiness.sourceFiles?25:readiness.verified?100:passed===2?90:passed===1?75:60;
+  const ceiling=profile.id==='software'
+    ? (!readiness.sourceFiles?25:readiness.verified?100:passed===2?90:passed===1?75:60)
+    : (!readiness.artifacts?.length?25:readiness.verified?100:Math.min(75,45+passed*15));
   const unfinishedTasks=tasks.filter(t=>t.status!=='DONE' && t.status!=='CANCELLED').length;
   const s=Math.min(planScore,ceiling,unfinishedTasks?95:100);
   return {
     score: s,
     planScore, readiness, verified:readiness.verified && unfinishedTasks===0, unfinishedTasks, blockers:[...readiness.blockers,...(unfinishedTasks?[`${unfinishedTasks} Aufgaben noch nicht abgeschlossen`]:[])],
     stage: readiness.verified && s===100 ? 'Technisch verifiziert' : s >= 90 ? 'Abnahme offen' : s >= 65 ? 'Beta' : s >= 35 ? 'MVP in Arbeit' : 'Fruehphase',
-    currentPhase: current || 'GROWTH',
+    domain: profile.id, deliveryLabel: profile.label,
+    currentPhase: current || phasePlan.at(-1).id,
     phases
   };
 }
@@ -122,16 +128,17 @@ export function maturity(villaId) {
  */
 export function ensurePhaseTasks(villaId) {
   const m = maturity(villaId);
-  const idx = Math.max(0, PHASES.findIndex((p) => p.id === m.currentPhase));
+  const phasePlan = deliveryPhases(villaId) || PHASES;
+  const idx = Math.max(0, phasePlan.findIndex((p) => p.id === m.currentPhase));
   const tasks = db.prepare('SELECT title FROM tasks WHERE villa_id = ?').all(villaId);
   let added = 0;
-  for (const ph of PHASES.slice(idx, idx + 2)) {
+  for (const ph of phasePlan.slice(idx, idx + 2)) {
     const state = m.phases.find((p) => p.id === ph.id);
     for (const must of ph.musts) {
       const item = state.items.find((i) => i.key === must.key);
       if (item.state !== 'MISSING') continue;
       if (tasks.some((t) => matches(t, must))) continue;
-      const prio = 3 + PHASES.indexOf(ph);
+      const prio = 3 + phasePlan.indexOf(ph);
       db.prepare('INSERT INTO tasks (villa_id, title, description, status, priority, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
         .run(villaId, `[${ph.id}] ${must.title}`, `${must.desc}\nRolle: ${must.role}. Phase: ${ph.title}.`, 'PENDING', prio, now(), now());
       added++;
@@ -213,7 +220,7 @@ export function improvementWave(villaId) {
  * Rueckgabe: { added, maturity }.
  */
 export function developCycle(villaId) {
-  let added = ensureVerificationTasks(villaId);
+  let added = deliveryProfile(villaId).id === 'software' ? ensureVerificationTasks(villaId) : 0;
   added += ensurePhaseTasks(villaId);
   const open = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status IN ('PENDING','READY','RUNNING','REVIEW')").get(villaId).c;
   if (open + added === 0) added += improvementWave(villaId);

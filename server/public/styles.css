@@ -693,3 +693,14 @@ button:disabled { cursor: wait; opacity: 0.62; }
   .stats-row { gap: 10px; }
   .stat-tile { padding: 14px 8px; }
 }
+
+/* Vorschläge: Wirkung und Abnahme auf einen Blick */
+.suggestion { padding: 16px 18px; border-radius: 16px; margin: 0 0 12px; background: linear-gradient(145deg, rgba(14,24,35,.96), rgba(10,15,24,.98)); }
+.suggestion-title { display:flex!important; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px!important; font-size:14px!important; }
+.suggestion-title i { font-style:normal; opacity:.7; }
+.suggestion-reason { display:block; color:var(--text, #e8eef7); line-height:1.55; }
+.suggestion-meta { display:flex; flex-wrap:wrap; gap:7px; margin-top:12px; }
+.suggestion-meta > * { font-size:10px; line-height:1.4; padding:4px 8px; border:1px solid var(--border); border-radius:999px; color:var(--muted); }
+.suggestion-meta b { color:var(--cyan); border-color:rgba(0,229,255,.25); }
+.suggestion-acceptance { display:block; margin-top:11px; padding-top:10px; border-top:1px solid var(--border); color:var(--muted); font-size:11px; line-height:1.5; }
+.suggestion-acceptance b { color:var(--text, #e8eef7); }

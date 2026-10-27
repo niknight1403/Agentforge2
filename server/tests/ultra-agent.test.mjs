@@ -36,12 +36,13 @@ test('Fehler priorisieren Heilung und Lessons bleiben persistent',()=>{
   assert.equal(ultraStatus(id).lessons,1);
 });
 
-test('Quality Gate verlangt verifizierten Fortschritt statt Selbstaussage',()=>{
+test('Quality Gate lehnt DONE-Aufgabentitel ohne Build-, Test- und Smoke-Nachweis ab',()=>{
   const id=makeVilla();task(id,'DONE');
   const ultra=createUltraAgent();ultra.setEnabled(id,true);
   const s=ultraStatus(id);
-  assert.equal(s.qualityGate,QUALITY_GATE);assert.equal(s.gatePassed,true);
-  assert.equal(evaluateNextAction(id).action,'VERIFY_RELEASE');
+  assert.equal(s.qualityGate,QUALITY_GATE);assert.equal(s.gatePassed,false);
+  assert.ok(s.qualityScore<QUALITY_GATE);assert.ok(s.delivery.blockers.length>0);
+  assert.equal(evaluateNextAction(id).action,'IMPROVE');
 });
 
 test('Deaktivieren stoppt nur laufende eigene Villa und nimmt Autonomie weg',()=>{

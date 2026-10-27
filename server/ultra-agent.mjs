@@ -1,4 +1,5 @@
 import { db, now } from './db.mjs';
+import { deliveryReadiness } from './delivery-quality.mjs';
 
 export const ULTRA_VERSION = '1.0.0';
 export const QUALITY_GATE = 85;
@@ -60,8 +61,10 @@ function metrics(villaId) {
   const total=rows.reduce((s,r)=>s+Number(r.c),0);
   const done=m.DONE||0, failed=m.FAILED||0, open=(m.PENDING||0)+(m.READY||0)+(m.RUNNING||0)+(m.REVIEW||0);
   const verified=db.prepare("SELECT COUNT(*) c FROM memories WHERE villa_id=? AND kind IN ('LESSON','DECISION','ARTIFACT')").get(villaId).c;
-  const score=total ? clamp(Math.round((done/total)*75 + Math.min(15,verified*3) - failed*8 + (open===0&&done>0?10:0))) : 0;
-  return {total,done,failed,open,verified:Number(verified),score};
+  const rawScore=total ? clamp(Math.round((done/total)*75 + Math.min(15,verified*3) - failed*8 + (open===0&&done>0?10:0))) : 0;
+  const readiness=deliveryReadiness(Number(villaId));
+  const score=readiness.verified && open===0 && failed===0 ? Math.max(90,rawScore) : Math.min(84,rawScore);
+  return {total,done,failed,open,verified:Number(verified),score,readiness};
 }
 export function qualityScore(villaId) { villa(villaId); return metrics(Number(villaId)).score; }
 
@@ -72,7 +75,8 @@ export function ultraStatus(villaId) {
   const lessons=db.prepare('SELECT COUNT(*) c FROM ultra_lessons WHERE villa_id=?').get(v.id).c;
   return {
     version:ULTRA_VERSION,villa:v,enabled:!!state?.enabled,cycle:Number(state?.cycle||0),
-    qualityScore:m.score,qualityGate:QUALITY_GATE,gatePassed:m.score>=QUALITY_GATE,
+    qualityScore:m.score,qualityGate:QUALITY_GATE,gatePassed:m.score>=QUALITY_GATE && m.readiness.verified && m.open===0 && m.failed===0,
+    delivery:{domain:m.readiness.domain,label:m.readiness.label,verified:m.readiness.verified,blockers:m.readiness.blockers,artifacts:m.readiness.artifacts?.length||0},
     tasks:m,activeRoutes:Number(routes),lessons:Number(lessons),
     capabilities:CAPABILITIES,lastDecision:state?.last_decision||'',lastError:state?.last_error||''
   };
@@ -84,6 +88,7 @@ export function evaluateNextAction(villaId) {
   if (s.tasks.failed>0) return {action:'HEAL',reason:'Fehlgeschlagene Aufgaben zuerst reparieren.'};
   if (s.tasks.open>0) return {action:'EXECUTE',reason:'Offene Aufgaben weiter ausfuehren.'};
   if (s.tasks.done===0) return {action:'PLAN',reason:'Noch keine verifizierte Umsetzung vorhanden.'};
+  if (!s.gatePassed && s.tasks.open===0 && s.tasks.readiness.blockers?.length) return {action:'IMPROVE',reason:s.tasks.readiness.blockers[0]};
   if (!s.gatePassed) return {action:'IMPROVE',reason:`Quality Gate ${QUALITY_GATE} noch nicht erreicht.`};
   return {action:'VERIFY_RELEASE',reason:'Quality Gate erreicht; Release-Verifikation ausfuehren.'};
 }

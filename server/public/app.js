@@ -278,7 +278,7 @@ async function renderSuggestions(d) {
   const rows = await api(`/api/master/suggestions?villaId=${id}`);
   if (currentVilla?.villa.id !== id) return;
   if (!Array.isArray(rows)) { $('#suggestionList').textContent = 'Vorschläge gerade nicht verfügbar.'; return; }
-  $('#suggestionList').innerHTML = rows.length ? rows.map(r => `<button type="button" class="suggestion" data-prompt="${esc(r.prompt)}"><span>${esc(r.title)} ↗</span>${esc(r.reason)}</button>`).join('') : '<p class="hint">Keine neuen passenden Vorschläge.</p>';
+  $('#suggestionList').innerHTML = rows.length ? rows.map(r => `<button type="button" class="suggestion" data-prompt="${esc(r.prompt)}"><span class="suggestion-title">${esc(r.title)} <i aria-hidden="true">↗</i></span><span class="suggestion-reason">${esc(r.reason)}</span><span class="suggestion-meta"><b>${esc(r.priority || 'normal')} Priorität</b><span>${esc(r.impact || 'Projektfortschritt')}</span><span>Aufwand: ${esc(r.effort || 'mittel')}</span></span><span class="suggestion-acceptance"><b>Abnahme:</b> ${esc(r.acceptance || 'Ergebnis mit überprüfbarem Kriterium')}</span></button>`).join('') : '<p class="hint">Keine neuen passenden Vorschläge.</p>';
   document.querySelectorAll('#suggestionList .suggestion').forEach(b => b.addEventListener('click', () => { selectTab('chat'); $('#chatMsg').value = b.dataset.prompt; $('#chatMsg').focus(); }));
 }
 
