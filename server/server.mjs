@@ -575,14 +575,20 @@ async function api(req, res, url) {
     // 'queued' = autonomy an, aber kein Slot (Warteschlange). Sonst zeigen alle
     // aktiven Villen pauschal 'RUNNING' und niemand sieht, wer wirklich arbeitet.
     const rows = db.prepare("SELECT * FROM villas WHERE status != 'ARCHIVED' ORDER BY created_at DESC").all();
-    return json(res, 200, rows.map((v) => ({
-      ...v,
-      executing: isRunning(v.id) ? 1 : 0,
-      queued: (v.status === 'RUNNING' && v.autonomy === 1 && !isRunning(v.id)) ? 1 : 0,
-      runningTasks: runningTaskTitles(v.id),
-      openCount: openCount(v.id),
-      etaMin: etaMinutes(v.id)
-    })));
+    return json(res, 200, rows.map((v) => {
+      const counts = db.prepare("SELECT COUNT(*) AS tasks_total, SUM(CASE WHEN status='DONE' THEN 1 ELSE 0 END) AS tasks_done, SUM(CASE WHEN status IN ('FAILED','BLOCKED') THEN 1 ELSE 0 END) AS tasks_failed FROM tasks WHERE villa_id=?").get(v.id);
+      const agents = db.prepare('SELECT COUNT(*) AS agents_count FROM agents WHERE villa_id=?').get(v.id);
+      return {
+        ...v, ...counts, ...agents,
+        tasks_total: Number(counts.tasks_total || 0), tasks_done: Number(counts.tasks_done || 0),
+        tasks_failed: Number(counts.tasks_failed || 0), agents_count: Number(agents.agents_count || 0),
+        executing: isRunning(v.id) ? 1 : 0,
+        queued: (v.status === 'RUNNING' && v.autonomy === 1 && !isRunning(v.id)) ? 1 : 0,
+        runningTasks: runningTaskTitles(v.id),
+        openCount: openCount(v.id),
+        etaMin: etaMinutes(v.id)
+      };
+    }));
 
   }
   if (p === '/api/villas' && m === 'POST') {

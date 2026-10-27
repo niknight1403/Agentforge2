@@ -1,4 +1,4 @@
-/* CyberSarah Control Center · Mobile-First App-Logik (v1.41.0)
+/* VillaForge · Mobile-First App-Logik (v1.55.0)
    Übersicht / Chat / Agenten / Konto + Vollbild-Arbeitsraum.
    Alle Touch-Targets ≥44px, SSE-Live-Updates, Offline-freundlich. */
 const $ = (s) => document.querySelector(s);
@@ -8,6 +8,9 @@ let currentAgentId = null;
 let latestVillas = [];
 let latestFocusVillaId = null;
 let activityTicks = [];
+let dashboardActionsLoadedAt = 0;
+let activeDetailLoadedAt = 0;
+let activeDetailVillaId = null;
 
 const api = async (path, opts = {}) => {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json', ...(vfToken ? { Authorization: 'Bearer ' + vfToken } : {}) }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
@@ -72,8 +75,7 @@ async function checkHealth() {
     const llm = h.llm || {};
     $('#systemDetail').textContent = `${llm.eligibleRoutes ?? 0} nutzbare KI-Routen · ${llm.freeOnly ? 'kostenfreie Routen bevorzugt' : 'Routenmodus aktiv'}`;
     $('#metricRoutes').textContent = h.routes ?? '–';
-    const up = h.uptime || {}; const sys = Math.round(up.systemSec / 3600);
-    $('#metricUptime').textContent = up.systemSec ? (sys >= 24 ? Math.floor(sys / 24) + 'd' : sys + 'h') : '–';
+    const up = h.uptime || {};
     $('#superagentStatus').className = 'chip ok'; $('#superagentStatus').textContent = 'LIVE · AKTIV';
     $('#healthDetails').innerHTML = [
       ['Version', 'v' + (h.version || '–')], ['Routen', h.routes ?? '–'],
@@ -122,8 +124,11 @@ async function loadOpenHandsCanvas() {
 /* ---------- Villen ---------- */
 const statusLabel = (status) => ({ RUNNING: 'läuft', COMPLETED: 'fertig', PLANNING: 'plant', PAUSED: 'pausiert', STOPPING: 'stoppt', FAILED: 'Fehler' })[status] || status || 'bereit';
 
-function villaCardHtml(v) {
-  return `<button class="villa-card" data-id="${v.id}"><div><b>${esc(v.name)}</b><small>${esc((v.idea || '').slice(0, 105))}</small></div><div style="display:flex;align-items:center;gap:8px"><span class="badge status ${esc(v.status)}">${esc(statusLabel(v.status))}</span><span class="chev">›</span></div></button>`;
+function villaCardHtml(v, controls = false) {
+  const active = v.status === 'RUNNING' || v.executing || v.queued;
+  const control = controls ? `<button type="button" class="villa-control ${active ? 'stop' : 'start'}" data-villa-control="${Number(v.id)}" data-active="${active ? '1' : '0'}" aria-label="${active ? 'Villa stoppen' : 'Villa starten'}">${active ? '■ Stoppen' : '▶ Starten'}</button>` : '';
+  const state = v.executing ? 'arbeitet' : v.queued ? 'wartet' : statusLabel(v.status);
+  return `<div class="villa-entry${controls ? ' with-controls' : ''}"><button type="button" class="villa-card" data-id="${Number(v.id)}"><span class="villa-card-copy"><b>${esc(v.name)}</b><small>${esc((v.idea || '').slice(0, 105))}</small></span><span class="villa-card-state"><span class="badge status ${esc(v.status)}">${esc(state)}</span><span class="chev">›</span></span></button>${control}</div>`;
 }
 
 function renderVillaLists(villas = latestVillas) {
@@ -133,12 +138,40 @@ function renderVillaLists(villas = latestVillas) {
   const homeMatches = matches(homeQuery);
   const chatMatches = matches(chatQuery);
   $('#villaList').innerHTML = homeMatches.length
-    ? homeMatches.slice(0, homeQuery ? homeMatches.length : 12).map(villaCardHtml).join('')
-    : `<p class="empty-state">${villas.length ? 'Keine Villa passt zu deiner Suche.' : 'Noch keine Villa. Tippe unten auf ＋.'}</p>`;
+    ? homeMatches.slice(0, homeQuery ? homeMatches.length : 12).map(v => villaCardHtml(v, true)).join('')
+    : `<p class="empty-state">${villas.length ? 'Keine Villa passt zu deiner Suche.' : 'Noch keine Villa. Tippe oben auf ＋ Neue Villa.'}</p>`;
   $('#chatPickList').innerHTML = chatMatches.length
-    ? chatMatches.map(villaCardHtml).join('')
+    ? chatMatches.map(v => villaCardHtml(v,false)).join('')
     : `<p class="empty-state">${villas.length ? 'Kein Projekt passt zu deiner Suche.' : 'Erstelle zuerst eine Villa, um mit ihrem Deep Agent zu arbeiten.'}</p>`;
   document.querySelectorAll('.villa-card').forEach(el => el.addEventListener('click', () => openVilla(Number(el.dataset.id))));
+  document.querySelectorAll('[data-villa-control]').forEach(el => el.addEventListener('click', async event => {
+    event.preventDefault(); event.stopPropagation();
+    const id=Number(el.dataset.villaControl), active=el.dataset.active==='1'; el.disabled=true;
+    try {
+      const out=await api(active?`/api/villas/${id}/stop`:`/api/villas/${id}/orchestrate`,{method:'POST',body:active?{}:{concurrency:4,maxTasks:500,adaptive:true}});
+      if(out.error)throw new Error(out.error);
+      toast(active?(out.cancelled?'Villa aus der Warteschlange entfernt':'Villa wird angehalten'):(out.queued?'Villa vorgemerkt':'Entwicklung gestartet'));
+      await loadVillas();
+    } catch(e){toast('Steuerung fehlgeschlagen: '+String(e.message||e));el.disabled=false;}
+  }));
+}
+
+async function loadDashboardActions(force = false) {
+  const list=$('#dashboardActionList');
+  if(!list || (!force && Date.now()-dashboardActionsLoadedAt<20000))return;
+  dashboardActionsLoadedAt=Date.now();
+  try {
+    const rows=await api('/api/master/suggestions');
+    const items=Array.isArray(rows)?rows.filter(row=>row.kind!=='status').slice(0,3):[];
+    list.innerHTML=items.length?items.map(row=>'<button type="button" class="dashboard-action" data-dashboard-prompt="'+esc(row.prompt)+'"><span class="dashboard-action-top"><b>'+esc(row.title)+'</b><i class="priority-tag '+esc(row.priority||'normal')+'">'+esc(row.priority||'normal')+'</i></span><span class="dashboard-action-reason">'+esc(row.reason)+'</span><span class="dashboard-action-footer">'+esc(row.impact||'Projektfortschritt')+' · '+esc(row.acceptance||'Ergebnis mit prüfbarer Abnahme')+'</span></button>').join(''):'<div class="dashboard-clear"><span>✓</span><div><b>Keine akuten Blocker</b><small>Deine Villen laufen ohne gemeldete Fehler.</small></div></div>';
+    list.querySelectorAll('[data-dashboard-prompt]').forEach(button=>button.addEventListener('click',()=>{
+      if(typeof window.openVillaForgeMaster!=='function'){toast('Master-Agent ist gerade nicht verfügbar');return;}
+      window.openVillaForgeMaster();
+      setTimeout(()=>{const input=$('#masterInput');if(input){input.value=button.dataset.dashboardPrompt;input.focus();}},120);
+    }));
+  } catch {
+    list.innerHTML='<p class="hint">Prioritäten können gerade nicht geladen werden.</p>';
+  }
 }
 
 function renderOverview(villas) {
@@ -146,8 +179,10 @@ function renderOverview(villas) {
   const banner = $('#focusBanner');
   if (banner) banner.hidden = !latestFocusVillaId;
   const active = focus || villas.find(v => v.status === 'RUNNING') || villas.find(v => v.status === 'PLANNING') || villas[0] || null;
-  const totalDone = villas.reduce((n, v) => n + (v.tasks_done || 0), 0);
-  $('#metricAgents').textContent = active ? (villas.length ? villas.reduce((n, v) => n + (v.agents_count || v.max_agents && 0), 0) || (active.agents_count ?? '–') : '0') : '0';
+  const totalDone = villas.reduce((n, v) => n + Number(v.tasks_done || 0), 0);
+  $('#metricAgents').textContent = villas.reduce((n,v)=>n+Number(v.agents_count||0),0);
+  $('#metricRunning').textContent = villas.filter(v=>v.status==='RUNNING'||v.executing||v.queued).length;
+  $('#metricDone').textContent = totalDone;
   $('#villaCount').textContent = villas.length;
   if (active) {
     $('#activeName').textContent = active.name;
@@ -155,31 +190,41 @@ function renderOverview(villas) {
     $('#activeChip').textContent = statusLabel(active.status).toUpperCase();
     $('#activeChip').className = 'chip ' + (active.status === 'RUNNING' ? 'ok' : '');
     $('#activeVillaCard').dataset.id = active.id;
+    $('#activeQualityChip').textContent = 'Prüfung lädt';
+    $('#activeQualityChip').className = 'chip';
+    $('#activeQualityHint').textContent = 'Lade den belegten Reifegrad und aktuelle Abnahmehindernisse …';
   } else {
     $('#activeName').textContent = 'Keine Villa aktiv';
     $('#activeIdea').textContent = 'Tippe auf ＋ und starte deine erste Villa.';
     $('#activeChip').textContent = 'LEER';
+    $('#activeQualityChip').textContent = 'Nicht gestartet';
+    $('#activeQualityHint').textContent = 'Nach dem Start erscheinen hier Reifegrad und nächste Qualitätskriterien.';
     $('#ringPct').textContent = '0%';
     $('#ringFg').style.strokeDashoffset = 213.6;
     $('#activeVillaCard').removeAttribute('data-id');
   }
   renderVillaLists(villas);
   updateActivity(totalDone);
+  loadDashboardActions();
 }
 
 /* Fortschrittsring + Produktpushes der aktiven Villa nachladen */
-async function loadActiveDetail() {
+async function loadActiveDetail(force = false) {
   const active = latestVillas.find(v => Number(v.id) === Number(latestFocusVillaId)) || latestVillas.find(v => v.status === 'RUNNING') || latestVillas[0];
-  if (!active) return;
+  if (!active || (!force && Number(activeDetailVillaId)===Number(active.id) && Date.now()-activeDetailLoadedAt<15000)) return;
+  activeDetailVillaId=Number(active.id);
+  activeDetailLoadedAt=Date.now();
   try {
-    const d = await api(`/api/villas/${active.id}`);
+    const [d, product] = await Promise.all([api(`/api/villas/${active.id}`), api(`/api/villas/${active.id}/product`)]);
     if (d.error) return;
-    const tasks = d.tasks || [];
-    const done = tasks.filter(t => t.status === 'DONE').length;
-    const pct = tasks.length ? Math.round(done / tasks.length * 100) : 0;
+    const pct = Number.isFinite(Number(product.score)) ? Math.max(0,Math.min(100,Math.round(Number(product.score)))) : 0;
     $('#ringPct').textContent = pct + '%';
     $('#ringFg').style.strokeDashoffset = 213.6 * (1 - pct / 100);
-    $('#metricAgents').textContent = (d.agents || []).length;
+    const verified=!!product.verified;
+    $('#activeQualityChip').textContent=verified?'VERIFIZIERT':product.stage||'ABNAHME OFFEN';
+    $('#activeQualityChip').className='chip '+(verified?'ok':'');
+    const blockers=Array.isArray(product.blockers)?product.blockers:[];
+    $('#activeQualityHint').textContent=verified?`${product.deliveryLabel||'Produkt'} · unabhängige Qualitätsprüfung bestanden`: `${product.deliveryLabel||'Produkt'} · ${blockers[0]||'Nachweise fehlen noch'}`;
     const pushes = (d.memories || []).filter(m => String(m.title || '').startsWith('Produkt-Push:')).slice(0, 3);
     $('#pushChip').textContent = pushes.length;
     $('#productList').innerHTML = pushes.length
@@ -421,6 +466,10 @@ $('#chatVillaSearch').addEventListener('input', () => renderVillaLists());
 $('#createBackdrop').addEventListener('click', closeSheet);
 $('#createBtn').addEventListener('click', createVilla);
 $('#activeVillaCard').addEventListener('click', () => { const id = $('#activeVillaCard').dataset.id; if (id) openVilla(Number(id)); else openSheet(); });
+$('#activeVillaCard').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#activeVillaCard').click(); } });
+$('#dashboardNewBtn').addEventListener('click',openSheet);
+$('#dashboardMasterBtn').addEventListener('click',()=>window.openVillaForgeMaster?.());
+$('#dashboardActionsRefresh').addEventListener('click',()=>loadDashboardActions(true));
 $('#superagentOpen').addEventListener('click', () => window.openVillaForgeMaster());
 
 $('#closeDetail').addEventListener('click', closeWorkspace);

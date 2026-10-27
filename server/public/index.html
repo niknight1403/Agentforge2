@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#07090E" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>CyberSarah · Control Center</title>
+  <title>VillaForge · Entwicklungsstudio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" />
@@ -25,11 +25,10 @@
   <!-- ============ ANSICHT: ÜBERSICHT ============ -->
   <main id="view-home" class="view active" aria-label="Übersicht">
     <section class="profile-card">
-      <div class="avatar" aria-hidden="true">S</div>
+      <div class="avatar" aria-hidden="true">V</div>
       <div class="profile-text">
-        <h1>Dein<br /><span>Arbeitsbereich</span></h1>
-        <div class="profile-badges"><span class="badge role">Deep Agent Studio</span><span id="systemBadge" class="badge">Verbinde …</span></div>
-      </div>
+        <h1>Dein<br /><span>Projekt-Cockpit</span></h1><p class="dashboard-intro">Alle Villen, Qualitätsstände und nächsten Schritte an einem Ort.</p>
+        <div class="profile-badges"><span class="badge role">Deep Agent Studio</span><span id="systemBadge" class="badge">Verbinde …</span></div></div><div class="dashboard-hero-actions"><button id="dashboardNewBtn" class="primary" type="button">＋ Neue Villa</button><button id="dashboardMasterBtn" class="ghost" type="button">✦ Master fragen</button></div>
     </section>
 
     <section id="focusBanner" class="focus-banner" hidden aria-live="polite">
@@ -39,9 +38,12 @@
 
     <section class="stats-row" aria-label="Systemübersicht">
       <article class="stat-tile"><b id="metricAgents">0</b><small>Agenten</small></article>
-      <article class="stat-tile"><b id="metricRoutes">0</b><small>LLM-Routen</small></article>
-      <article class="stat-tile"><b id="metricUptime">–</b><small>Uptime</small></article>
+      <article class="stat-tile"><b id="metricRunning">0</b><small>Aktive Villen</small></article>
+      <article class="stat-tile"><b id="metricDone">0</b><small>Aufgaben erledigt</small></article>
+      <article class="stat-tile"><b id="metricRoutes">0</b><small>KI-Routen</small></article>
     </section>
+
+    <section class="dashboard-actions" aria-label="Empfohlene nächste Schritte"><div class="section-head"><div><p class="eyebrow">ENTWICKLUNGSLEITUNG</p><h2>Jetzt wichtig</h2><p class="hint">Prioritäten aus Fehlern und offenem Projektbedarf.</p></div><button id="dashboardActionsRefresh" class="icon-button" type="button" aria-label="Vorschläge aktualisieren">↻</button></div><div id="dashboardActionList" class="dashboard-action-list"><p class="hint">Vorschläge werden geladen …</p></div></section>
 
     <section class="card active-villa" id="activeVillaCard" role="button" tabindex="0" aria-label="Aktive Villa öffnen">
       <div class="card-head">
@@ -50,7 +52,7 @@
       </div>
       <div class="villa-progress">
         <div class="ring-wrap"><svg viewBox="0 0 80 80" class="ring" aria-hidden="true"><defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00E5FF"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs><circle class="ring-bg" cx="40" cy="40" r="34" /><circle id="ringFg" class="ring-fg" cx="40" cy="40" r="34" /></svg><b id="ringPct">0%</b></div>
-        <div class="villa-info"><h2 id="activeName">Keine Villa aktiv</h2><p id="activeIdea">Starte deine erste Villa – deine Agenten warten.</p><span class="tap-hint">Antippen zum Öffnen →</span></div>
+        <div class="villa-info"><div class="active-title-row"><h2 id="activeName">Keine Villa aktiv</h2><span id="activeQualityChip" class="chip">–</span></div><p id="activeIdea">Starte deine erste Villa – deine Agenten warten.</p><p id="activeQualityHint" class="active-quality-hint">Qualitätsnachweis wird geladen …</p><span class="tap-hint">Antippen zum Öffnen →</span></div>
       </div>
     </section>
 
