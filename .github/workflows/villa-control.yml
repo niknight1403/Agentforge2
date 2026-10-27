@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'pause | resume | pause_all | resume_all | status | set_idea | add_task | delete | schema | tasks'
+        description: 'pause | resume | pause_all | resume_all | status | set_idea | add_task | delete | task_cleanup | schema | tasks'
         required: true
         default: 'status'
       ids:
@@ -58,6 +58,19 @@ jobs:
           if (mode === 'status') {
             console.log('== STATUS ALLER VILLEN ==');
             list([]);
+            process.exit(0);
+          }
+          if (mode === 'task_cleanup') {
+            const cids = (idsArg || '').split(',').map((s) => s.trim()).filter(Boolean).map(Number).filter(Boolean);
+            if (!cids.length) { console.error('task_cleanup benötigt Villa-IDs.'); process.exit(1); }
+            for (const id of cids) {
+              const f = db.prepare("DELETE FROM tasks WHERE villa_id = ? AND status = 'FAILED'").run(id);
+              const v = db.prepare("DELETE FROM tasks WHERE villa_id = ? AND status = 'PENDING' AND title LIKE '[VERIFICATION]%'").run(id);
+              const d = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND title LIKE '[VERIFICATION]%'").get(id).c;
+              console.log(`CLEANUP V${id}: ${f.changes} FAILED entfernt, ${v.changes} wartende VERIFICATION-Spam entfernt, ${d} verbleiben`);
+              const rows = db.prepare("SELECT id, status, title FROM tasks WHERE villa_id = ? ORDER BY id DESC LIMIT 8").all(id);
+              for (const r of rows) console.log(`  Task ${r.id} [${r.status}] ${String(r.title).slice(0, 100)}`);
+            }
             process.exit(0);
           }
           if (mode === 'delete') {
