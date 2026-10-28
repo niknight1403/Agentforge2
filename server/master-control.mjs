@@ -204,7 +204,11 @@ export function createMasterControl(deps) {
       }
       const failed = steps.find(s => !s.ok);
       response = { requestId,answer:steps.length ? steps.map(s => s.ok ? describe(s) : `Nicht ausgeführt: ${s.error}`).join('\n\n') : `Keine Einstellungen geändert.\n${answer}`,steps,ok:!failed };
-    } catch (error) { response = {requestId,ok:false,answer:`Nicht abgeschlossen: ${error.message}`,steps}; }
+    } catch (error) {
+      const code=String(error?.code||'').slice(0,80);
+      const routeAttempts=Array.isArray(error?.attempts)?error.attempts.slice(0,30).map(attempt=>({route:String(attempt?.route||'unknown').slice(0,120),code:String(attempt?.code||'ERROR').slice(0,80)})):[];
+      response = {requestId,ok:false,answer:`Nicht abgeschlossen: ${error.message}`,steps,...(code?{code}:{}),...(routeAttempts.length?{routeAttempts}:{})};
+    }
     finally { busy = false; }
     recordControl('assistant',response.answer);
     db.prepare("UPDATE control_turns SET status=?,response=? WHERE request_id=?").run(response.ok ? 'completed':'failed',JSON.stringify(response),requestId);
@@ -234,7 +238,7 @@ export function createMasterControl(deps) {
         else if (p === '/api/master/chat' && req.method === 'POST') {
           const body = await readBody(req);
           const out = await turn({...body,requestId:body.requestId || randomUUID()});
-          const unavailable = !out.ok && out.steps.some(step => /LLM_UNAVAILABLE|Kein echtes Modell erreichbar|Kein echtes Sprachmodell erreichbar/i.test(step.error || ''));
+          const unavailable = out.code === 'LLM_UNAVAILABLE' || (!out.ok && out.steps.some(step => /LLM_UNAVAILABLE|Kein echtes Modell erreichbar|Kein echtes Sprachmodell erreichbar/i.test(step.error || '')));
           json(res,out.pending ? 202 : unavailable ? 503 : 200,{...out,...(unavailable ? {code:'LLM_UNAVAILABLE',retryAfter:15} : {}),reply:out.answer});
         }
         else if (p === '/api/master/actions' && req.method === 'POST') {

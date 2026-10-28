@@ -1,4 +1,8 @@
 name: LLM Cascade Safe Deploy
+
+concurrency:
+  group: villaforge-production-hub
+  cancel-in-progress: false
 on:
   workflow_dispatch:
   push:

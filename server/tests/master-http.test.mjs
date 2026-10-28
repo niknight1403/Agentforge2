@@ -29,6 +29,7 @@ test('Master API: status, honest LLM outage, stable retry, history, suggestions 
  assert.equal((await call('/api/master/turn/http-master-create-123')).body.answer,first.body.answer);
  assert.ok(Array.isArray((await call('/api/master/suggestions')).body));
  assert.ok(Array.isArray((await call('/api/master/duplicates/archive',{})).body.archived));
+ const unavailable=await call('/api/master/chat',{message:'Erkläre mir in zwei Sätzen, wie eine bestehende Villa gestartet wird.',requestId:'http-master-unavailable-123'});assert.equal(unavailable.status,503);assert.equal(unavailable.body.code,'LLM_UNAVAILABLE');assert.ok(Array.isArray(unavailable.body.routeAttempts));
  const malformed=await call('/api/master/chat',{message:'Status',requestId:'x'});assert.equal(malformed.status,400);
 });
 
