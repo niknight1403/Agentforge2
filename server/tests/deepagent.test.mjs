@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { TMP } from './_env.mjs';
 
 process.env.DEEP_DIR = join(TMP, 'deep-files');
-const { createDeepProject, deepChat, addDeepFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla } = await import('../deepagent.mjs');
+const { createDeepProject, deepChat, addDeepFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping } = await import('../deepagent.mjs');
 const reply = async () => ({ content: 'Bauplan: MVP, Tests und Startanleitung.' });
 
 test('Deep Agent übergibt lesbare Textanhänge mit klarer Datenabgrenzung', async () => {
@@ -71,4 +71,25 @@ test('Deep-Projekt merkt die zugehörige ausführbare Villa und liefert sie in L
   assert.equal(linkDeepProjectVilla(project.id, 43), 43);
   assert.equal(deepProjectDetail(project.id).project.villa_id, 43);
   assert.equal(listDeepProjects().find((item) => item.id === project.id).villa_id, 43);
+});
+
+test('Parallele Deep-Projekt-Übergaben teilen denselben Entwicklungsauftrag', async () => {
+  let count = 0;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const first = runDeepProjectDevelopmentOnce(7001, async () => {
+    count += 1;
+    await gate;
+    return { villaId: 99 };
+  });
+  const second = runDeepProjectDevelopmentOnce(7001, async () => {
+    count += 1;
+    return { villaId: 100 };
+  });
+  assert.equal(isDeepProjectDeveloping(7001), true);
+  release();
+  assert.deepEqual(await first, { villaId: 99 });
+  assert.deepEqual(await second, { villaId: 99 });
+  assert.equal(count, 1);
+  assert.equal(isDeepProjectDeveloping(7001), false);
 });
