@@ -2,6 +2,10 @@ name: Master-Chat-Probe
 
 on:
   workflow_dispatch: {}
+  push:
+    paths:
+      - server/master-control.mjs
+      - server/llm.mjs
 
 concurrency:
   group: master-chat-probe

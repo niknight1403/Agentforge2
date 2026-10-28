@@ -240,7 +240,7 @@ export function createMasterControl(deps) {
         else if (p === '/api/master/actions' && req.method === 'POST') {
           const body=await readBody(req);
           const action=validateAction(body.action,'');
-          if (['start_villa','pause_villa','restore_villa','archive_duplicates','ultra_tick'].includes(action.type) && body.confirmation !== 'BESTÄTIGEN') { json(res,409,{error:'Für diese Aktion ist confirmation=BESTÄTIGEN erforderlich.'}); }
+          if (['pause_villa','restore_villa','archive_duplicates','ultra_tick'].includes(action.type) && body.confirmation !== 'BESTÄTIGEN') { json(res,409,{error:'Für diese Aktion ist confirmation=BESTÄTIGEN erforderlich.'}); }
           else json(res,200,await execute(action));
         }
         else if (p === '/api/master/duplicates' && req.method === 'GET') json(res,200,duplicateGroups(isRunning));
