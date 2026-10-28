@@ -47,11 +47,12 @@ test('eliteRanking sortiert absteigend und begrenzt Provider-Slots', () => {
   const elite = eliteRanking({ limit: 5 });
   assert.ok(elite.length <= 5);
   const p1 = elite.filter((r) => r.provider === 'p1');
-  assert.ok(p1.length <= 3, 'hoechstens 3 Slots je Provider');
+  assert.equal(p1.length, 3, 'genau 3 Slots je Provider (4 vorhanden)');
   for (let i = 1; i < elite.length; i += 1) {
     assert.ok(elite[i - 1].score >= elite[i].score, 'absteigend nach Score');
   }
-  assert.ok(elite.every((r) => ids.includes(r.id) || r.provider !== 'p1'));
+  assert.equal(elite.filter((r) => r.provider === 'p2').length, 1, 'zweiter Provider kommt als Fallback mit');
+  assert.ok(ids.length === 5);
 });
 
 test('simulateChain rechnet Ausfallwahrscheinlichkeiten und Latenz', () => {
