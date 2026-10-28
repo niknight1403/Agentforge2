@@ -14,11 +14,11 @@ import { enqueueVillas, configureScheduler, villaRanking, villaRunToCompletion }
  * automatisch nach, sobald ein Lauf endet - so werden frueher vollstaendige
  * Ergebnisse geliefert statt vieler halbfertiger Villen.
  */
-export function resumePendingVillas({ concurrency = 0, maxRounds = 6 } = {}) {
-  const stuck = db.prepare('SELECT id, name FROM villas WHERE status = ? AND autonomy = 1').all('RUNNING');
+export function resumePendingVillas({ concurrency = 0, maxRounds = 6, start = orchestrate } = {}) {
+  const stuck = db.prepare('SELECT id, name FROM villas WHERE status IN (?, ?) AND autonomy = 1').all('RUNNING', 'WAITING_FOR_MODEL');
   if (!stuck.length) return { resumed: 0, villas: [] };
 
-  configureResumeScheduler({ concurrency, maxRounds });
+  configureResumeScheduler({ concurrency, maxRounds, start });
   const ids = stuck.map((v) => v.id);
   const status = enqueueVillas(ids);
 

@@ -157,3 +157,17 @@ test('Modellausfall wartet mit Backoff und kann per Stopp abgebrochen werden', a
   assert.deepEqual(schedulerStatus().retrying, []);
   _resetScheduler();
 });
+
+test('Modell-wartende Villen werden nach einem Hub-Neustart direkt wieder eingereiht', async () => {
+  _resetScheduler();
+  db.prepare("UPDATE villas SET autonomy=0 WHERE status IN ('RUNNING','WAITING_FOR_MODEL')").run();
+  const id = villa('Route nach Neustart', 0, 1);
+  db.prepare("UPDATE villas SET status='WAITING_FOR_MODEL', autonomy=1 WHERE id=?").run(id);
+  const { resumePendingVillas } = await import('../resume.mjs');
+  const started = [];
+  const result = resumePendingVillas({ start: async (villaId, options) => { started.push({ villaId, options }); } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(result.villas, [id]);
+  assert.equal(started[0].villaId, id);
+  _resetScheduler();
+});
