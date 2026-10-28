@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
 import { redisTryAck, redisTryClaimStale, redisTryCreateConsumerGroup, redisTryReadConsumerGroup, redisTryStreamAdd } from './redis.mjs';
 
 export const AGENT_EVENT_STREAM = process.env.VF_AGENT_EVENT_STREAM || 'vf:agent-events';
@@ -30,7 +31,9 @@ export async function publishMeshEvent(type, payload) {
   const event=buildMeshEvent(type,payload);
   if (!event) return null;
   const result=await redisTryStreamAdd(AGENT_EVENT_STREAM,{type:event.type,json:JSON.stringify(event),eventId:event.id,at:event.at});
-  void deliverExternalEvent(event);
+  // Redis is the durable handoff. Use direct delivery only when Redis is
+  // unavailable, so normal operation never couples agent work to HTTP.
+  if(result==null) void deliverExternalEvent(event).catch(()=>{});
   return result;
 }
 
@@ -49,9 +52,8 @@ async function deliverExternalEvent(event) {
   const base=String(process.env.CYBERSARAH_TELEMETRY_URL||'').trim().replace(/\/+$/,'');
   const token=String(process.env.CYBERSARAH_TELEMETRY_TOKEN||'').trim();
   if(!base||!token) return;
-  try {
-    await fetch(`${base}/api/agentforge/events`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${token}`},body:JSON.stringify(event),signal:AbortSignal.timeout(1500)});
-  } catch { /* remote dashboard is optional; local work and Redis stream continue */ }
+  const response=await fetch(`${base}/api/agentforge/events`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${token}`},body:JSON.stringify(event),signal:AbortSignal.timeout(5000)});
+  if(!response.ok) throw Object.assign(new Error(`Control Center telemetry HTTP ${response.status}`),{code:`HTTP_${response.status}`});
 }
 
 /** One worker per agent/group. Polling is non-blocking so the existing shared RESP connection stays usable. */
@@ -80,4 +82,18 @@ export async function startAgentConsumer({ group, consumer, handler, signal, pol
     }
   })();
   return { ok:true, stop, done:run };
+}
+
+/** Durable Redis-to-Control-Center bridge. XACK occurs only after HTTP success;
+ * pending events are reclaimed after a worker crash and the receiver is idempotent. */
+export async function startTelemetryConsumer({ onError = () => {} } = {}) {
+  const base=String(process.env.CYBERSARAH_TELEMETRY_URL||'').trim();
+  const token=String(process.env.CYBERSARAH_TELEMETRY_TOKEN||'').trim();
+  if(!base||!token) return { ok:false, reason:'telemetry_not_configured', stop:()=>{} };
+  return startAgentConsumer({
+    group:'cybersarah-telemetry-v1',
+    consumer:`${hostname().replace(/[^a-zA-Z0-9:_-]/g,'-')}:${process.pid}`,
+    handler:deliverExternalEvent,
+    onError
+  });
 }
