@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { db } from './db.mjs';
-import { publishRemoteCheckpoint } from './event-mesh.mjs';
+import { publishRemoteCheckpoint, publishRuntimeCheckpoint } from './event-mesh.mjs';
 
 db.exec(`CREATE TABLE IF NOT EXISTS agent_checkpoints (
   checkpoint_id TEXT PRIMARY KEY, task_id INTEGER NOT NULL, agent_id INTEGER NOT NULL,
@@ -44,8 +44,10 @@ export function saveCheckpoint({ taskId, agentId, state, createdAt = Date.now() 
     db.prepare('INSERT INTO agent_checkpoints(checkpoint_id,task_id,agent_id,sequence,parent_id,state_json,created_at) VALUES (?,?,?,?,?,?,?)')
       .run(checkpointId, taskId, agentId, sequence, parentId, stateJson, createdAt);
     db.exec('COMMIT');
-    const checkpoint={ checkpointId, taskId, agentId, sequence, parentId, state: JSON.parse(stateJson), createdAt };
+    const villaId=Number(db.prepare('SELECT villa_id FROM tasks WHERE id=?').get(taskId)?.villa_id||0);
+    const checkpoint={ checkpointId, taskId, agentId, villaId, sequence, parentId, state: JSON.parse(stateJson), createdAt };
     void publishRemoteCheckpoint(checkpoint);
+    void publishRuntimeCheckpoint(checkpoint).catch(()=>{});
     return checkpoint;
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
