@@ -84,6 +84,7 @@ model AgentTelemetry {
 
   @@index([taskId, occurredAt])
   @@index([eventType, occurredAt])
+  @@index([occurredAt])
 }
 
 model AgentOutbox {
