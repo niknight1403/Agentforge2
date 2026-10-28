@@ -8,6 +8,10 @@ on:
     paths:
       - 'app/build.gradle.kts'
       - 'docs/releases/**'
+      - '.github/workflows/build-apk.yml'
+      - 'server/**'
+      - 'scripts/**'
+      - 'package.json'
 
 permissions:
   contents: write
@@ -61,8 +65,14 @@ jobs:
         with:
           node-version: "23"
 
-      - name: Hub-Syntax pruefen (kein Start, keine Schluessel)
-        run: node --check server/server.mjs
+      - name: Gesamte Hub-Qualitaetstore
+        run: npm run check
+
+      - name: Browser-Design-Audit
+        run: npm run test:design
+
+      - name: Browser-Live-E2E
+        run: npm run test:live
 
       - name: Web-Produktionsbuild erstellen
         run: |
