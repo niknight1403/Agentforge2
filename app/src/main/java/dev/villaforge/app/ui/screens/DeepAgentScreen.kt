@@ -29,11 +29,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -83,6 +85,7 @@ fun DeepAgentScreen(state: UiState, viewModel: MainViewModel, onOpenProject: (Lo
     LaunchedEffect(Unit) { viewModel.loadDeepProjects() }
     var idea by remember { mutableStateOf("") }
     var showNew by remember { mutableStateOf(false) }
+    var deleteProject by remember { mutableStateOf<dev.villaforge.app.net.DeepProject?>(null) }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -139,25 +142,39 @@ fun DeepAgentScreen(state: UiState, viewModel: MainViewModel, onOpenProject: (Lo
 
         LazyColumn(state = rememberLazyListState(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(state.deepProjects) { prj ->
-                GlassCard(accent = ElectricBlue, modifier = Modifier.fillMaxWidth().clickable { onOpenProject(prj.id) }) {
+                GlassCard(accent = ElectricBlue, modifier = Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                        Column(Modifier.weight(1f)) {
+                        Column(Modifier.weight(1f).clickable { onOpenProject(prj.id) }) {
                             Text(prj.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = TextMain, maxLines = 1)
                             Text(
-                                "${prj.messages} Nachrichten · ${fmt.format(Date(prj.updatedAt))}",
+                                "${prj.messages} Nachrichten · ${if (prj.villaId > 0) "Villa #${prj.villaId}" else fmt.format(Date(prj.updatedAt))}",
                                 style = MaterialTheme.typography.labelSmall, color = TextMuted
                             )
                         }
                         NeonChip(prj.status, NeonCyan)
+                        IconButton(onClick = { deleteProject = prj }) {
+                            Icon(Icons.Filled.Delete, "Projekt löschen", tint = TextMuted)
+                        }
                     }
                 }
             }
+        }
+        deleteProject?.let { target ->
+            AlertDialog(
+                onDismissRequest = { deleteProject = null },
+                title = { Text("Deep-Projekt löschen?") },
+                text = { Text("\"${target.title}\" samt Chatverlauf und hochgeladenen Dateien endgültig löschen. Eine bereits übergebene Villa bleibt als separates Entwicklungsprojekt erhalten.") },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.deleteDeepProject(target.id); deleteProject = null }) { Text("Endgültig löschen") }
+                },
+                dismissButton = { TextButton(onClick = { deleteProject = null }) { Text("Abbrechen") } }
+            )
         }
     }
 }
 
 @Composable
-fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit) {
+fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit, onOpenVilla: (Long) -> Unit) {
     val project = state.deepActiveProject ?: run { onBack(); return }
     var input by remember { mutableStateOf("") }
     var showAttachMenu by remember { mutableStateOf(false) }
@@ -185,6 +202,12 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit)
             Column(Modifier.weight(1f)) {
                 Text(project.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextMain, maxLines = 1)
                 Text("Deep Agent · ${project.status}", style = MaterialTheme.typography.labelSmall, color = TextMuted)
+            }
+            TextButton(
+                onClick = { viewModel.developDeepProject(projectId, onOpenVilla) },
+                enabled = !state.busy
+            ) {
+                Text(if (project.villaId > 0) "Villa öffnen" else "Autonom umsetzen", color = NeonCyan, fontSize = 11.sp)
             }
             if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), color = NeonCyan)
         }
