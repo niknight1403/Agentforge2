@@ -196,6 +196,7 @@ h1 span { background: linear-gradient(90deg, var(--cyan), var(--purple)); -webki
 .row .badge, .badge.status { font-size: 10px; padding: 2px 8px; border-radius: 999px; font-weight: 700; flex: none; }
 .badge.RUNNING, .badge.DONE, .badge.OK, .badge.IDLE, .badge.bereit { background: rgba(0, 255, 163, 0.1); color: var(--green); border: 1px solid rgba(0, 255, 163, 0.3); }
 .badge.PENDING, .badge.READY, .badge.NEW, .badge.PAUSED, .badge.WARTEN { background: rgba(139, 92, 246, 0.14); color: #C4B5FD; border: 1px solid rgba(139, 92, 246, 0.35); }
+.badge.WAITING_FOR_MODEL { background: rgba(250, 204, 21, 0.12); color: #FDE68A; border: 1px solid rgba(250, 204, 21, 0.35); }
 .badge.FAILED, .badge.ERROR { background: rgba(236, 72, 153, 0.12); color: #F9A8D4; border: 1px solid rgba(236, 72, 153, 0.35); }
 .badge.THINKING { background: rgba(46, 167, 255, 0.12); color: var(--blue); border: 1px solid rgba(46, 167, 255, 0.35); }
 .empty-state { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; border: 1px dashed var(--border); border-radius: 14px; }

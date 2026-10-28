@@ -63,6 +63,8 @@ export function villaRanking() {
 const queue = [];          // wartende Villa-IDs in der Reihenfolge der Startanforderung
 const active = new Set();  // Villen, die gerade einen Slot halten
 const lastStart = new Map(); // villaId -> Zeitpunkt des letzten Starts (Anti-Streben)
+const retryTimers = new Map(); // Villa mit temporaer nicht erreichbarem Modell
+const retryCounts = new Map();
 let starter = null;        // Funktion (villaId) => Promise, die den Lauf startet
 
 /** Setzt die Startfunktion (orchestrate) - vermeidet zyklische Importe. */
@@ -78,14 +80,37 @@ export function schedulerStatus() {
     active: [...active],
     queued: queue.length,
     queue: queue.slice(),
+    retrying: [...retryTimers.keys()],
     lastStart: Object.fromEntries(lastStart)
   };
 }
 
+function retryVilla(id, requestedDelayMs = 15_000) {
+  const villaId = Number(id);
+  if (retryTimers.has(villaId)) return;
+  const attempt = (retryCounts.get(villaId) || 0) + 1;
+  retryCounts.set(villaId, attempt);
+  const delayMs = Math.min(5 * 60_000, Math.max(15_000, requestedDelayMs, 15_000 * (2 ** Math.min(attempt - 1, 5))));
+  const timer = setTimeout(() => {
+    retryTimers.delete(villaId);
+    const villa = db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(villaId);
+    if (!villa || villa.autonomy !== 1 || villa.status === 'ARCHIVED') return;
+    enqueueVillas([villaId]);
+  }, delayMs);
+  timer.unref?.();
+  retryTimers.set(villaId, timer);
+  db.prepare("UPDATE villas SET status='WAITING_FOR_MODEL', updated_at=? WHERE id=? AND autonomy=1").run(Date.now(), villaId);
+}
+
 /** Entfernt einen wartenden Lauf ohne andere Villen oder Slots anzuhalten. */
 export function cancelScheduledVilla(id) {
-  const index = queue.indexOf(Number(id));
-  if (index < 0) return false;
+  const villaId = Number(id);
+  const timer = retryTimers.get(villaId);
+  if (timer) clearTimeout(timer);
+  retryTimers.delete(villaId);
+  retryCounts.delete(villaId);
+  const index = queue.indexOf(villaId);
+  if (index < 0) return !!timer;
   queue.splice(index, 1);
   return true;
 }
@@ -100,6 +125,10 @@ function pump() {
     try {
       const result = starter(id);
       Promise.resolve(result)
+        .then((out) => {
+          if (out?.retryAfterMs) retryVilla(id, out.retryAfterMs);
+          else retryCounts.delete(id);
+        })
         .catch((err) => console.error(`[villaforge] Scheduler: Villa ${id} fehlgeschlagen:`, err?.message || err))
         .finally(() => {
           active.delete(id);
@@ -127,7 +156,14 @@ export function enqueueVillas(ids) {
 
 /** Einheitlicher Einstieg: alle automatischen und manuellen Starts laufen
  *  ueber denselben Scheduler (Default 3 Slots). */
-export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, runToCompletion = true } = {}) {
+export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, runToCompletion = true, force = false } = {}) {
+  if (force) {
+    const timer = retryTimers.get(Number(id));
+    if (timer) clearTimeout(timer);
+    retryTimers.delete(Number(id));
+    retryCounts.delete(Number(id));
+  }
+  if (retryTimers.has(Number(id))) return schedulerStatus();
   if (runToCompletion) setVillaRunToCompletion(id, true);
   configureScheduler({ start: (vid) => orchestrate(vid, { concurrency, maxRounds, runToCompletion: villaRunToCompletion(vid) }) });
   const status = enqueueVillas([id]);
@@ -138,5 +174,8 @@ export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, runToComplet
 export function _resetScheduler() {
   queue.length = 0;
   active.clear();
+  for (const timer of retryTimers.values()) clearTimeout(timer);
+  retryTimers.clear();
+  retryCounts.clear();
   starter = null;
 }

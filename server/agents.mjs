@@ -4,10 +4,10 @@ import { PROJECT_WORKSPACE,ownProjectDir,verifyProjectRuntime,ensureVerification
 import { db, now } from './db.mjs';
 import { maybeDeliverApk } from './builds.mjs';
 import { skillInstructions, readConnector } from './control-store.mjs';
-import { pruneHistory } from './maintenance.mjs';
-import { chat, enabledRoutes, resolveKey, derivePlan } from './llm.mjs';
 import { resourceStatus, recommendedConcurrency } from './resource-agent.mjs';
 import { freeRouteCycleStatus } from './free-route-cycle.mjs';
+import { pruneHistory } from './maintenance.mjs';
+import { chat, enabledRoutes, resolveKey, derivePlan } from './llm.mjs';
 import { emit } from './events.mjs';
 import { mkdirSync, writeFileSync, readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
 import { execSync,execFileSync } from 'node:child_process';
@@ -1188,6 +1188,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
   emit('villa', { villaId, status: 'RUNNING', concurrency: job.concurrency });
 
   let productCompleted = false;
+  let retryAfterMs = 0;
   try {
     while (true) { // Ende: Stopp, Autonomie-Aus, Fehler/Budget oder echtes Produkt-Abnahmegate
       if (job.stop) break;
@@ -1265,6 +1266,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
         // Aufgabe wird FAILED markiert (Befund im Ergebnis) und automatisch
         // ueber requeueFailed bis zu 3x neu aufgenommen.
         if(e.code==='LLM_UNAVAILABLE') {
+          retryAfterMs = Math.max(retryAfterMs, Number(e.retryAfter) * 1000 || 15_000);
           job.stop=true;
           db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run('LLM_UNAVAILABLE: Warte auf echte Modellverbindung.',now(),task.id);
           emit('task',{villaId,taskId:task.id,status:'PENDING',code:e.code});
@@ -1338,7 +1340,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
     // Der Lauf endet nur durch Stopp, Autonomie-Aus oder Fehler. Ein
     // 'COMPLETED' gibt es im 24/7-Betrieb nicht - die Projektpruefung
     // laeuft regelmaessig in den adaptiven Runden innerhalb der Schleife.
-    const status = productCompleted ? 'COMPLETED' : 'PAUSED';
+    const status = productCompleted ? 'COMPLETED' : retryAfterMs ? 'WAITING_FOR_MODEL' : 'PAUSED';
 
     // History-Rotation am Lauf-Ende: audit/memories je Villa auf Fenster
     // kuerzen (wichtige Erinnerungen ueberleben). Haelt die DB dauerhaft
@@ -1346,18 +1348,21 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
     const pruned = pruneHistory(villaId);
 
     db.prepare('UPDATE villas SET status = ?, autonomy = CASE WHEN ? = 1 THEN 0 ELSE autonomy END, updated_at = ? WHERE id = ?').run(status, productCompleted ? 1 : 0, now(), villaId);
-    emit('villa', { villaId, status, processed: job.processed, pruned });
+    emit('villa', { villaId, status, processed: job.processed, pruned, ...(retryAfterMs ? { retryAfterMs } : {}) });
     // v1.42.0 — APK-Bereitstellung (Nutzerdirektive 2026-10-18): Hat die Villa
     // alle Aufgaben erledigt, stoesst der Hub die APK-Baustrasse einmalig an -
     // die fertige APK landet als GitHub-Release und ist abrufbar.
     maybeDeliverApk(villaId).catch((e) => console.error('[villaforge] APK-Delivery Villa ' + villaId + ' fehlgeschlagen:', String(e?.message || e)));
   } catch (err) {
     console.error('[villaforge] Villa ' + villaId + ' Lauf abgestuerzt:', err);
-    db.prepare('UPDATE villas SET status = ?, updated_at = ? WHERE id = ?').run(err.code==='LLM_UNAVAILABLE'?'PAUSED':'FAILED', now(), villaId);
-    emit('villa', { villaId, status: err.code==='LLM_UNAVAILABLE'?'PAUSED':'FAILED', code:err.code,error: String(err.message || err) });
+    if (err.code === 'LLM_UNAVAILABLE') retryAfterMs = Math.max(retryAfterMs, Number(err.retryAfter) * 1000 || 15_000);
+    const status = err.code === 'LLM_UNAVAILABLE' ? 'WAITING_FOR_MODEL' : 'FAILED';
+    db.prepare('UPDATE villas SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), villaId);
+    emit('villa', { villaId, status, code:err.code,error: String(err.message || err), ...(retryAfterMs ? { retryAfterMs } : {}) });
   } finally {
     running.delete(villaId);
   }
+  return retryAfterMs ? { retryAfterMs } : { status: productCompleted ? 'COMPLETED' : 'PAUSED' };
 }
 
 /**

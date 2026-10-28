@@ -127,3 +127,33 @@ test('Finish-before-rotation mode persists per villa for restarts', async () => 
   setVillaRunToCompletion(a, false);
   assert.equal(villaRunToCompletion(a), false);
 });
+
+test('Neustart setzt den gespeicherten Abschlussmodus fuer jede Villa fort', async () => {
+  _resetScheduler();
+  const { setVillaRunToCompletion } = await import('../scheduler.mjs');
+  const { configureResumeScheduler } = await import('../resume.mjs');
+  const id = villa('Wiederaufnahme Abschluss', 1, 2);
+  setVillaRunToCompletion(id, true);
+  let received;
+  configureResumeScheduler({ start: async (villaId, options) => { received = { villaId, options }; } });
+  enqueueVillas([id]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(received.villaId, id);
+  assert.equal(received.options.runToCompletion, true);
+  assert.equal(received.options.concurrency, 0);
+  _resetScheduler();
+});
+
+test('Modellausfall wartet mit Backoff und kann per Stopp abgebrochen werden', async () => {
+  _resetScheduler();
+  const id = villa('Route wartet', 0, 1);
+  db.prepare('UPDATE villas SET autonomy=1 WHERE id=?').run(id);
+  configureScheduler({ start: async () => ({ retryAfterMs: 15_000 }) });
+  enqueueVillas([id]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(schedulerStatus().retrying, [id]);
+  assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status, 'WAITING_FOR_MODEL');
+  assert.equal(cancelScheduledVilla(id), true);
+  assert.deepEqual(schedulerStatus().retrying, []);
+  _resetScheduler();
+});

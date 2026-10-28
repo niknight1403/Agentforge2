@@ -142,10 +142,10 @@ async function loadOpenHandsCanvas() {
 }
 
 /* ---------- Villen ---------- */
-const statusLabel = (status) => ({ RUNNING: 'läuft', COMPLETED: 'fertig', PLANNING: 'plant', PAUSED: 'pausiert', STOPPING: 'stoppt', FAILED: 'Fehler' })[status] || status || 'bereit';
+const statusLabel = (status) => ({ RUNNING: 'läuft', WAITING_FOR_MODEL: 'wartet auf Modell', COMPLETED: 'fertig', PLANNING: 'plant', PAUSED: 'pausiert', STOPPING: 'stoppt', FAILED: 'Fehler' })[status] || status || 'bereit';
 
 function villaCardHtml(v, controls = false) {
-  const active = v.status === 'RUNNING' || v.executing || v.queued;
+  const active = v.status === 'RUNNING' || v.status === 'WAITING_FOR_MODEL' || v.executing || v.queued;
   const control = controls ? `<button type="button" class="villa-control ${active ? 'stop' : 'start'}" data-villa-control="${Number(v.id)}" data-active="${active ? '1' : '0'}" aria-label="${active ? 'Villa stoppen' : 'Villa starten'}">${active ? '■ Stoppen' : '▶ Starten'}</button>` : '';
   const state = v.executing ? 'arbeitet' : v.queued ? 'wartet' : statusLabel(v.status);
   return `<div class="villa-entry${controls ? ' with-controls' : ''}"><button type="button" class="villa-card" data-id="${Number(v.id)}"><span class="villa-card-copy"><b>${esc(v.name)}</b><small>${esc((v.idea || '').slice(0, 105))}</small></span><span class="villa-card-state"><span class="badge status ${esc(v.status)}">${esc(state)}</span><span class="chev">›</span></span></button>${control}</div>`;
@@ -201,7 +201,7 @@ function renderOverview(villas) {
   const active = focus || villas.find(v => v.status === 'RUNNING') || villas.find(v => v.status === 'PLANNING') || villas[0] || null;
   const totalDone = villas.reduce((n, v) => n + Number(v.tasks_done || 0), 0);
   $('#metricAgents').textContent = villas.reduce((n,v)=>n+Number(v.agents_count||0),0);
-  $('#metricRunning').textContent = villas.filter(v=>v.status==='RUNNING'||v.executing||v.queued).length;
+  $('#metricRunning').textContent = villas.filter(v=>v.status==='RUNNING'||v.status==='WAITING_FOR_MODEL'||v.executing||v.queued).length;
   $('#metricDone').textContent = totalDone;
   $('#villaCount').textContent = villas.length;
   if (active) {
@@ -211,7 +211,7 @@ function renderOverview(villas) {
     $('#activeChip').className = 'chip ' + (active.status === 'RUNNING' ? 'ok' : '');
     $('#activeVillaCard').dataset.id = active.id;
     $('#activeProjectOpen').innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>Projekt öffnen<span class="material-symbols-rounded action-arrow" aria-hidden="true">arrow_forward</span>';
-    const running = active.status === 'RUNNING' || active.executing || active.queued;
+    const running = active.status === 'RUNNING' || active.status === 'WAITING_FOR_MODEL' || active.executing || active.queued;
     $('#activeControlBtn').hidden = false;
     $('#activeControlBtn').dataset.id = active.id;
     $('#activeControlBtn').dataset.active = running ? '1' : '0';

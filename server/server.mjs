@@ -625,7 +625,7 @@ async function api(req, res, url) {
         tasks_total: Number(counts.tasks_total || 0), tasks_done: Number(counts.tasks_done || 0),
         tasks_failed: Number(counts.tasks_failed || 0), agents_count: Number(agents.agents_count || 0),
         executing: isRunning(v.id) ? 1 : 0,
-        queued: (v.status === 'RUNNING' && v.autonomy === 1 && !isRunning(v.id)) ? 1 : 0,
+        queued: ((v.status === 'RUNNING' && v.autonomy === 1 && !isRunning(v.id)) || schedulerStatus().retrying.includes(v.id)) ? 1 : 0,
         runningTasks: runningTaskTitles(v.id),
         openCount: openCount(v.id),
         ...etaMinutes(v.id)
@@ -673,7 +673,7 @@ async function api(req, res, url) {
       memories: db.prepare('SELECT * FROM memories WHERE villa_id = ? ORDER BY importance DESC, id DESC LIMIT 200').all(id),
       reports: db.prepare('SELECT id, villa_id, kind, title, content, created_at FROM reports WHERE villa_id = ? ORDER BY id DESC LIMIT 50').all(id),
       audit: db.prepare('SELECT * FROM audit WHERE villa_id = ? ORDER BY id DESC LIMIT 200').all(id),
-      running: isRunning(id), queued: schedulerStatus().queue.includes(id)
+      running: isRunning(id), queued: schedulerStatus().queue.includes(id) || schedulerStatus().retrying.includes(id)
     });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'DELETE') {
@@ -740,7 +740,7 @@ async function api(req, res, url) {
     const b = await readBody(req).catch(() => ({}));
     db.prepare('UPDATE villas SET autonomy=1,updated_at=? WHERE id=?').run(now(), id);
     const runToCompletion = b.runToCompletion !== false;
-    const scheduled = scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6, runToCompletion });
+    const scheduled = scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6, runToCompletion, force: true });
     if (isRunning(id)) {
       if (runToCompletion) extendVillaRunToCompletion(id);
       return json(res, 202, { ok: true, alreadyRunning: true, started: true, runToCompletion });
@@ -1146,9 +1146,21 @@ server.listen(PORT, HOST, () => {
   log(`Hub laeuft auf http://${HOST}:${PORT}`);
   log(`UI:      http://localhost:${PORT}/`);
   log(`Health:  http://localhost:${PORT}/api/health`);
-  startResourceAgent({ onSample: (snapshot) => emit('resources', { snapshot }), onError: (error) => logError('Resource-Agent:', error?.message || error) });
-  setTimeout(() => { scanFreeRoutes().then((result) => { if (result.discovered) log(`Gratis-Routen: ${result.discovered} neue explizit kostenlose Modelle entdeckt`); }).catch((error) => logError('Gratis-Routen-Scan:', error?.message || error)); }, 45_000).unref?.();
-  const freeRouteLoop = setInterval(() => { scanFreeRoutes().then((result) => { if (result.discovered) log(`Gratis-Routen: ${result.discovered} neue explizit kostenlose Modelle entdeckt`); }).catch((error) => logError('Gratis-Routen-Scan:', error?.message || error)); }, 6 * 60 * 60 * 1000);
+  startResourceAgent({
+    onSample: (snapshot) => emit('resources', { snapshot }),
+    onError: (error) => logError('Resource-Agent:', error?.message || error)
+  });
+  // Discover only explicitly $0 OpenRouter catalog entries; no keys/accounts are created.
+  setTimeout(() => {
+    scanFreeRoutes().then((result) => {
+      if (result.discovered) log(`Gratis-Routen: ${result.discovered} neue explizit kostenlose Modelle entdeckt`);
+    }).catch((error) => logError('Gratis-Routen-Scan:', error?.message || error));
+  }, 45_000).unref?.();
+  const freeRouteLoop = setInterval(() => {
+    scanFreeRoutes().then((result) => {
+      if (result.discovered) log(`Gratis-Routen: ${result.discovered} neue explizit kostenlose Modelle entdeckt`);
+    }).catch((error) => logError('Gratis-Routen-Scan:', error?.message || error));
+  }, 6 * 60 * 60 * 1000);
   freeRouteLoop.unref();
   // Superintelligenz-Loop: alle 30 Min wird jede Villa mit faelliger Rat-Runde (>2 h) einberufen.
   const councilLoop = setInterval(() => {
