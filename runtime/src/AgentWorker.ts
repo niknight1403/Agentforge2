@@ -80,7 +80,7 @@ export class AgentWorker {
   }
   stop() { this.stopped = true; }
 
-  private async recoverStaleTasks() {
+  async recoverStaleTasks() {
     const cutoff=new Date(Date.now()-Math.max(60_000,Number(process.env.AGENT_TASK_STALE_MS)||1_800_000));
     const stale=await this.prisma.agentTask.findMany({where:{status:TaskStatus.RUNNING,updatedAt:{lt:cutoff}},select:{id:true,attempt:true}});
     for(const task of stale){
