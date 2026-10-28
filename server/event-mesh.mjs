@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { redisTryAck, redisTryClaimStale, redisTryCreateConsumerGroup, redisTryReadConsumerGroup, redisTryStreamAdd } from './redis.mjs';
 
 export const AGENT_EVENT_STREAM = process.env.VF_AGENT_EVENT_STREAM || 'vf:agent-events';
-const SAFE_FIELDS = ['villaId','taskId','agentId','status','tool','blocked','code','durationMs','tokensUsed','provider','model','route','checkpointId','step','processed','open','verification'];
+const SAFE_FIELDS = ['villaId','taskId','agentId','status','tool','blocked','code','durationMs','latencyMs','tokensUsed','costUsd','provider','model','route','checkpointId','step','processed','open','verification'];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /** Build metadata-only events; prompts, tool arguments, responses and thoughts are never persisted. */
@@ -12,8 +12,9 @@ export function buildMeshEvent(type, payload = {}, { now = Date.now, id = random
     : type === 'task' && payload.status === 'FAILED' ? 'agent.failed'
     : type === 'task' ? 'task.updated'
     : type === 'tool' ? 'tool.executed'
+    : type === 'llm' ? 'llm.completed'
     : type === 'checkpoint' ? 'checkpoint.saved'
-    : ['agent.step.started','agent.failed','checkpoint.saved','task.created','tool.executed'].includes(type) ? type : null;
+    : ['agent.step.started','agent.failed','checkpoint.saved','task.created','tool.executed','llm.failed'].includes(type) ? type : null;
   if (!mapped) return null;
   const metadata = {};
   for (const key of SAFE_FIELDS) {
@@ -31,6 +32,17 @@ export async function publishMeshEvent(type, payload) {
   const result=await redisTryStreamAdd(AGENT_EVENT_STREAM,{type:event.type,json:JSON.stringify(event),eventId:event.id,at:event.at});
   void deliverExternalEvent(event);
   return result;
+}
+
+/** Forward the same hash-linked, secret-filtered checkpoint to PostgreSQL when configured. */
+export async function publishRemoteCheckpoint(checkpoint) {
+  const base=String(process.env.CYBERSARAH_TELEMETRY_URL||'').trim().replace(/\/+$/,'');
+  const token=String(process.env.CYBERSARAH_TELEMETRY_TOKEN||'').trim();
+  if(!base||!token) return false;
+  try {
+    const response=await fetch(`${base}/api/agentforge/checkpoints`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${token}`},body:JSON.stringify(checkpoint),signal:AbortSignal.timeout(1500)});
+    return response.ok;
+  } catch { return false; }
 }
 
 async function deliverExternalEvent(event) {

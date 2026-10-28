@@ -4,6 +4,7 @@ import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute } from './llm-conf
 import { createCascade, orderCascadeRoutes } from './llm-cascade.mjs';
 import { createCircuitBreaker } from './circuit-breaker.mjs';
 import { userStore, quotaLeft, chargeTokens } from './auth.mjs';
+import { emit } from './events.mjs';
 
 /** Liefert einen Key aus Secrets-Store oder Umgebung. */
 export function resolveKey(keyEnv) {
@@ -291,9 +292,17 @@ const cascade=createCascade({
 export async function chat(messages,opts={}) {
  const user=userStore.getStore();
  if(user && quotaLeft(user)<=0) throw new Error('QUOTA_EXCEEDED: Tageskontingent aufgebraucht.');
- const out=await cascade(messages,opts);
- if(user)chargeTokens(user.id,usageTokens(messages,out));
- return out;
+ const started=Date.now();
+ try {
+  const out=await cascade(messages,opts);
+  const route=enabledRoutes().find(item=>item.name===out.route);
+  emit('llm',{durationMs:Date.now()-started,tokensUsed:usageTokens(messages,out),provider:route?.provider||'unknown',model:String(out.model||route?.model||'unknown').slice(0,120),route:String(out.route||'unknown').slice(0,120)});
+  if(user)chargeTokens(user.id,usageTokens(messages,out));
+  return out;
+ } catch(error) {
+  emit('llm.failed',{durationMs:Date.now()-started,code:String(error?.code||error?.status||'LLM_ERROR').slice(0,80)});
+  throw error;
+ }
 }
 export function routingStatus() {
   const freeOnly=freeOnlyEnabled();
