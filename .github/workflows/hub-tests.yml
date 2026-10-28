@@ -8,6 +8,12 @@ on:
     paths:
       - "server/**"
       - "scripts/**"
+      - "runtime/**"
+      - "docker-compose.agent-mesh.yml"
+      - "Dockerfile.agentforge"
+      - "otel-collector-config.yaml"
+      - "docs/agent-mesh.md"
+      - ".env.example"
       - "package.json"
       - ".github/workflows/hub-deploy.yml"
       - ".github/workflows/hub-tests.yml"
@@ -25,13 +31,59 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://agentforge:agentforge-test@localhost:5432/agentforge
+      REDIS_URL: redis://localhost:6379/0
+      RUN_MESH_INTEGRATION: "1"
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: agentforge
+          POSTGRES_PASSWORD: agentforge-test
+          POSTGRES_DB: agentforge
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U agentforge -d agentforge"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
 
-      - name: Node 23 einrichten
+      - name: Node 24 einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: "23"
+          node-version: "24"
+
+      - name: TypeScript Runtime-Abhaengigkeiten installieren
+        run: npm ci --prefix runtime --no-audit --no-fund
+
+      - name: Prisma PostgreSQL-Migrationen ausfuehren
+        run: npm --prefix runtime run migrate
+
+      - name: Runtime-Build und Unit-/Redis-/PostgreSQL-Integrationstests
+        run: npm --prefix runtime test
 
       - name: Syntax, Secrets, Tests und Web-Produktionsbuild
         run: npm run check
+
+      - name: Runtime Docker-Targets bauen
+        run: |
+          docker build --target runtime -t agentforge2-runtime:ci runtime
+          docker build --target migrate -t agentforge2-runtime-migrate:ci runtime
+
+      - name: Mesh Compose-Konfiguration validieren
+        env:
+          MESH_POSTGRES_PASSWORD: compose-validation-only
+          AGENTFORGE_TELEMETRY_TOKEN: 0123456789abcdef0123456789abcdef
+          AGENTFORGE_MESH_TOKEN: fedcba9876543210fedcba9876543210
+        run: docker compose -f docker-compose.agent-mesh.yml config --quiet
