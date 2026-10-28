@@ -6,6 +6,7 @@ on:
     paths:
       - server/master-control.mjs
       - server/llm.mjs
+      - .github/workflows/master-chat-probe.yml
 
 concurrency:
   group: master-chat-probe
