@@ -96,3 +96,18 @@ test('Defektes Reflexions-JSON faellt sanft auf die Original-Antwort zurueck', a
     assert.ok(out.trace.some((e) => e.reflection === 'skipped' || e.final === true));
   } finally { globalThis.fetch = orig; }
 });
+
+test('identische Tool-Aufrufe loesen Prompt-Selbstheilung aus bevor der Lauf abgebrochen wird', async () => {
+  const orig = globalThis.fetch; let i = 0; const sent = [];
+  globalThis.fetch = async (_url, init) => {
+    const request = JSON.parse(String(init.body)); sent.push(request.messages);
+    const content = i++ < 3 ? JSON.stringify({ tool: 'project_read', args: { path: 'missing.txt' } }) : JSON.stringify({ final: 'Mit einer anderen Strategie abgeschlossen.' });
+    return new Response(JSON.stringify({ choices: [{ message: { content } }], model: 'mock-model' }), { status: 200 });
+  };
+  try {
+    const out = await runAgent(agent, 'Pruefe eine Datei.', { villaId, reflect: false });
+    assert.match(out.answer, /anderen Strategie/);
+    assert.equal(i, 4);
+    assert.ok(sent[3].some(message => String(message.content).includes('[SELF-HEALING]')));
+  } finally { globalThis.fetch = orig; }
+});
