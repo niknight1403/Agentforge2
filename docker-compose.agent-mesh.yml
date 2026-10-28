@@ -46,6 +46,8 @@ services:
       CYBERSARAH_TELEMETRY_TOKEN: ${AGENTFORGE_TELEMETRY_TOKEN:?Set AGENTFORGE_TELEMETRY_TOKEN in an untracked .env file}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: agentforge2
+      VF_AGENT_RUNTIME_URL: http://agent-runtime:12001
+      VF_AGENT_RUNTIME_TOKEN: ${AGENTFORGE_MESH_TOKEN:?Set AGENTFORGE_MESH_TOKEN in an untracked .env file}
     ports:
       - "127.0.0.1:12000:12000"
     volumes:
@@ -103,6 +105,49 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  agent-runtime-migrate:
+    build:
+      context: ./runtime
+      dockerfile: Dockerfile
+      target: migrate
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://cybersarah:${MESH_POSTGRES_PASSWORD}@postgres:5432/cybersarah
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  agent-runtime:
+    build:
+      context: ./runtime
+      dockerfile: Dockerfile
+      target: runtime
+    restart: unless-stopped
+    environment:
+      PORT: 12001
+      DATABASE_URL: postgresql://cybersarah:${MESH_POSTGRES_PASSWORD}@postgres:5432/cybersarah
+      REDIS_URL: redis://redis:6379/0
+      AGENTFORGE_EXECUTOR_URL: http://agentforge:12000
+      MESH_INTERNAL_TOKEN: ${AGENTFORGE_MESH_TOKEN:?Set AGENTFORGE_MESH_TOKEN in an untracked .env file}
+      AGENT_WORKER_CONCURRENCY: ${VF_MAX_CONCURRENCY:-3}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      OTEL_SERVICE_NAME: agentforge2-runtime
+    depends_on:
+      agent-runtime-migrate:
+        condition: service_completed_successfully
+      agentforge:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:12001/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.121.0
