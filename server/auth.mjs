@@ -69,13 +69,15 @@ export function upsertUser({ email, password, role, plan, isUnlimited }) {
   if (!row) return createUser({ email, password, role, plan, isUnlimited: Boolean(isUnlimited) });
   const sets = [];
   const args = [];
-  if (password) { sets.push('password_hash = ?'); args.push(hashPassword(password)); }
+  const passwordChanged = Boolean(password) && !verifyPassword(password, row.password_hash);
+  if (passwordChanged) { sets.push('password_hash = ?'); args.push(hashPassword(password)); }
   if (role) { sets.push('role = ?'); args.push(role); }
   if (plan) { sets.push('plan = ?'); args.push(plan); }
   // v1.44.0 — Unlimited-Tier ist dauerhaft: einmal gesetzt, bleibt es beim
   // erneuten Upsert erhalten (kein Wegoptimieren des Administrators).
   if (isUnlimited !== undefined) { sets.push('is_unlimited = ?'); args.push(isUnlimited ? 1 : 0); }
   if (isUnlimited) { sets.push('token_budget = ?'); args.push('UNLIMITED'); }
+  if (passwordChanged) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.id);
   if (sets.length) db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...args, row.id);
   return db.prepare('SELECT * FROM users WHERE id = ?').get(row.id);
 }
