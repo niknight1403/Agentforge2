@@ -31,8 +31,18 @@ jobs:
           df -i / | tail -1
           echo "== Groesste Verzeichnisse (root) =="
           sudo du -sh /* 2>/dev/null | sort -rh | head -8
+          echo "== Unterverzeichnisse /tmp (groesste 12) =="
+          sudo du -xhd1 /tmp 2>/dev/null | sort -rh | head -12
+          echo "== Unterverzeichnisse /usr (groesste 12) =="
+          sudo du -xhd1 /usr 2>/dev/null | sort -rh | head -12
+          echo "== /tmp-Dateialter (Pfade bewusst nicht ausgeben) =="
+          for DAYS in 1 7 30; do
+            MINUTES=$((DAYS * 1440))
+            sudo find /tmp -xdev -type f -mmin "+$MINUTES" -printf '%s\\n' 2>/dev/null \\
+              | awk -v d="$DAYS" '{bytes += $1; files++} END {printf ">%s Tage: %d Dateien, %.2f GiB\\n", d, files, bytes/1073741824}'
+          done
           echo "== Ollama-Modelle =="
-          du -sh /usr/share/ollama/.ollama/models 2>/dev/null || echo "kein Modellverzeichnis"
+          sudo du -sh /usr/share/ollama/.ollama/models 2>/dev/null || echo "kein Modellverzeichnis"
           ollama list 2>/dev/null || sudo -u ollama ollama list 2>/dev/null || echo "ollama list nicht verfuegbar"
           echo "== Docker =="
           (docker system df 2>/dev/null || sudo docker system df 2>/dev/null || echo "kein Docker")
