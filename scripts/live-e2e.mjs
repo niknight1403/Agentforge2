@@ -302,12 +302,13 @@ async function run() {
       const workspace = document.querySelector('.workspace-main').getBoundingClientRect();
       return {
         panelH: Math.round(panel.height), workspaceH: Math.round(workspace.height),
+        viewportH: window.innerHeight,
         overflowX: document.documentElement.scrollWidth - window.innerWidth,
         tabs: document.querySelectorAll('#detailPanel .tab-chip').length
       };`);
     await safeShot('06-mobile-arbeitsbereich');
     if (snap.overflowX > 2) throw new Error(`Horizontales Ueberlaufen: ${snap.overflowX}px`);
-    if (snap.panelH < Math.round(window.innerHeight * 0.9) || snap.workspaceH < 180) throw new Error('Arbeitsbereich nutzt die Hoehe nicht');
+    if (snap.panelH < Math.round(snap.viewportH * 0.9) || snap.workspaceH < 180) throw new Error('Arbeitsbereich nutzt die Hoehe nicht');
     if (snap.tabs < 6) throw new Error(`Nur ${snap.tabs} Tabs sichtbar`);
     return `${snap.panelH}px hoch, ${snap.tabs} Tabs, kein Ueberlauf`;
   });
