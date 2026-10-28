@@ -546,11 +546,19 @@ async function api(req, res, url) {
   // Alles weitere braucht einen Login, sobald Nutzer existieren.
   // Ausnahme: der SSE-Eventstrom (/api/events) laesst sich aus dem Browser
   // nicht mit Headern verbinden; er uebertraegt nur Fortschrittsereignisse.
-  if (needAuth && p !== '/api/events') return json(res, 401, { error: 'Login erforderlich.' });
+  if (needAuth && p !== '/api/events' && p !== '/api/dlq/dashboard') return json(res, 401, { error: 'Login erforderlich.' });
   if (p === '/api/billing/summary' && m === 'GET') return user ? json(res,200,billingSummary(user.id)) : json(res,401,{error:'Login erforderlich.'});
   if (p === '/api/billing/checkout' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createCheckoutSession(user)); }
   if (p === '/api/billing/portal' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createBillingPortalSession(user.id)); }
   if (p === '/api/admin/metrics' && m === 'GET') { if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'}); return json(res,200,await collectAdminMetrics()); }
+  // Live-Dashboard (Stufe 1): statisches Geruest ohne Daten, Daten nur mit Token.
+  if (p === '/api/dlq/dashboard' && m === 'GET') {
+    try {
+      const html = readFileSync(new URL('./public/dlq.html', import.meta.url), 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      return res.end(html);
+    } catch (error) { return json(res, 500, { error: 'Dashboard nicht verfuegbar.' }); }
+  }
   // Dead-Letter-Queue: gescheiterte Agenten-Workflows einsehen, neu einreihen, Alerting-Takt manuell auslösen.
   if (p === '/api/dlq' && m === 'GET') {
     if (!isAdmin) return json(res, needAuth ? 401 : 403, { error: 'Administrator role required.' });
