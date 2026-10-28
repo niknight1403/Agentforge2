@@ -3,6 +3,7 @@ import { hostname } from 'node:os';
 import { redisTryAck, redisTryClaimStale, redisTryCreateConsumerGroup, redisTryReadConsumerGroup, redisTryStreamAdd } from './redis.mjs';
 
 export const AGENT_EVENT_STREAM = process.env.VF_AGENT_EVENT_STREAM || 'vf:agent-events';
+const runtimeCheckpointQueues = new Map();
 const SAFE_FIELDS = ['villaId','taskId','agentId','status','tool','blocked','code','durationMs','latencyMs','tokensUsed','costUsd','provider','model','route','checkpointId','step','processed','open','verification'];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -46,6 +47,31 @@ export async function publishRemoteCheckpoint(checkpoint) {
     const response=await fetch(`${base}/api/agentforge/checkpoints`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${token}`},body:JSON.stringify(checkpoint),signal:AbortSignal.timeout(1500)});
     return response.ok;
   } catch { return false; }
+}
+
+/** Mirror each safe Hub step checkpoint into the runtime's serializable
+ * PostgreSQL step/checkpoint transaction. Per-agent chaining preserves order. */
+export function publishRuntimeCheckpoint(checkpoint){
+  const base=String(process.env.VF_AGENT_RUNTIME_URL||'').trim().replace(/\/+$/,'');
+  const token=String(process.env.VF_AGENT_RUNTIME_TOKEN||'').trim();
+  if(!base||!token||!Number.isSafeInteger(Number(checkpoint?.taskId))||!Number.isSafeInteger(Number(checkpoint?.agentId))||!checkpoint?.checkpointId)return Promise.resolve(false);
+  const key=`${checkpoint.taskId}:${checkpoint.agentId}`;
+  const previous=runtimeCheckpointQueues.get(key)||Promise.resolve();
+  const current=previous.catch(()=>{}).then(async()=>{
+    for(let attempt=0;attempt<3;attempt++){
+      try{
+        const response=await fetch(`${base}/internal/checkpoints`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${token}`},
+          body:JSON.stringify({hubTaskId:Number(checkpoint.taskId),hubVillaId:Number(checkpoint.villaId||0),agentId:String(checkpoint.agentId),sourceCheckpointId:String(checkpoint.checkpointId),state:checkpoint.state}),signal:AbortSignal.timeout(3000)});
+        if(response.ok)return true;
+        if(response.status===404)return false;
+      }catch{/* bounded retries; the local checkpoint remains authoritative */}
+      await new Promise(resolve=>setTimeout(resolve,100*(attempt+1)));
+    }
+    return false;
+  });
+  runtimeCheckpointQueues.set(key,current);
+  void current.finally(()=>{if(runtimeCheckpointQueues.get(key)===current)runtimeCheckpointQueues.delete(key);}).catch(()=>{});
+  return current;
 }
 
 async function deliverExternalEvent(event) {
