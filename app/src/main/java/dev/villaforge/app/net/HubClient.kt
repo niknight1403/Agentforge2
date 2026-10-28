@@ -68,8 +68,8 @@ data class DeepProject(
     val createdAt: Long = 0,
     val updatedAt: Long = 0,
     val messages: Int = 0,
-    val idea: String = ""
-)
+    val idea: String = "",
+    val villaId: Long = 0)
 
 /** Deep-Agent: Nachricht im Projekt-Chat. */
 data class DeepMessage(
@@ -463,7 +463,8 @@ class HubClient(context: Context) {
                 status = o.optString("status", "ACTIVE"),
                 createdAt = o.optLong("created_at"),
                 updatedAt = o.optLong("updated_at"),
-                messages = o.optInt("messages", 0)
+                messages = o.optInt("messages", 0),
+                villaId = o.optLong("villa_id", 0)
             )
         }
     }
@@ -471,6 +472,14 @@ class HubClient(context: Context) {
     /** Neues Projekt anlegen - der Deep Agent liefert den initialen Bauplan. */
     suspend fun deepCreateProject(idea: String): JSONObject =
         JSONObject(execute("POST", "/api/deep/projects", JSONObject().put("idea", idea)))
+
+    /** Übergibt das Projekt idempotent an die autonome Villa-/Build-Kette. */
+    suspend fun deepDevelopProject(id: Long): JSONObject =
+        JSONObject(execute("POST", "/api/deep/projects/$id/develop", JSONObject()))
+
+    /** Löscht genau dieses Deep-Projekt samt Chat und Anhängen. */
+    suspend fun deepDeleteProject(id: Long): JSONObject =
+        JSONObject(execute("DELETE", "/api/deep/projects/$id"))
 
     /** Projekt-Detail: Projekt + Nachrichten. */
     suspend fun deepProjectDetail(id: Long): Pair<DeepProject, List<DeepMessage>> = withContext(Dispatchers.IO) {
@@ -482,7 +491,8 @@ class HubClient(context: Context) {
             status = po.optString("status", "ACTIVE"),
             createdAt = po.optLong("created_at"),
             updatedAt = po.optLong("updated_at"),
-            idea = po.optString("idea")
+            idea = po.optString("idea"),
+            villaId = po.optLong("villa_id", 0)
         )
         val arr = d.optJSONArray("messages") ?: JSONArray()
         val messages = (0 until arr.length()).map { i ->
