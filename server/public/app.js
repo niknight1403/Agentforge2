@@ -1,4 +1,4 @@
-/* VillaForge · Mobile-First App-Logik (v1.57.1)
+/* VillaForge · Mobile-First App-Logik (v1.57.2)
    Übersicht / Chat / Agenten / Konto + Vollbild-Arbeitsraum.
    Alle Touch-Targets ≥44px, SSE-Live-Updates, Offline-freundlich. */
 const $ = (s) => document.querySelector(s);
