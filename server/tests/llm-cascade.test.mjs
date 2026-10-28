@@ -23,6 +23,12 @@ test('Routine-Rollen nutzen lokale Modelle zuerst; FALLBACK erzwingt Cloud-Eskal
  await run([],{role:'DOCUMENTER'});assert.deepEqual(seen,['ollama']);
  seen=[];await run([],{role:'DOCUMENTER',strategy:'FALLBACK'});assert.deepEqual(seen,['gemini']);
 });
+test('Supervisor-Modell wird innerhalb der kostenlosen, verfuegbaren Route bevorzugt',async()=>{
+ const rows=[{...route(1,'groq'),model:'best-free'},{...route(2,'ollama'),model:'local'},{...route(3,'groq'),model:'deepseek/deepseek-chat'}];
+ const seen=[];const run=makeCascade({routes:()=>rows,key:()=>'',call:async r=>{seen.push(r.model);if(r.model==='deepseek/deepseek-chat')throw Error('preferred route unavailable');return answer;}});
+ await run([],{role:'CODER',preferredModel:'deepseek/deepseek-chat'});
+ assert.deepEqual(seen,['deepseek/deepseek-chat','best-free']);
+});
 test('Fehlende Keys, Cooldowns und Offline-Einträge werden ohne Netzwerkaufruf übersprungen',async()=>{
  const seen=[];const run=makeCascade({routes:()=>[route(1,'gemini','MISSING'),route(2,'groq','',{cooldown_until:Date.now()+60000}),route(3,'offline'),route(4,'ollama')],key:()=>'',call:async r=>{seen.push(r.provider);return answer;}});
  assert.equal((await run([])).content,answer.content);assert.deepEqual(seen,['ollama']);
