@@ -118,6 +118,9 @@ CREATE INDEX "AgentTelemetry_taskId_occurredAt_idx" ON "AgentTelemetry"("taskId"
 CREATE INDEX "AgentTelemetry_eventType_occurredAt_idx" ON "AgentTelemetry"("eventType", "occurredAt");
 
 -- CreateIndex
+CREATE INDEX "AgentTelemetry_occurredAt_idx" ON "AgentTelemetry"("occurredAt");
+
+-- CreateIndex
 CREATE INDEX "AgentOutbox_publishedAt_createdAt_idx" ON "AgentOutbox"("publishedAt", "createdAt");
 
 -- AddForeignKey
