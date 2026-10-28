@@ -1,0 +1,36 @@
+name: Core-CI (TypeScript)
+
+on:
+  push:
+    branches: [main]
+    paths: ['core/**', '.github/workflows/core-ci.yml']
+  pull_request:
+    paths: ['core/**']
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: core/package-lock.json
+      - name: Abhaengigkeiten installieren
+        run: npm ci
+      - name: Bauen (TypeScript)
+        run: npm run build
+      - name: Tests (Vitest)
+        run: npm test
+      - name: Artefakte hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-dist
+          path: core/dist
+          retention-days: 7

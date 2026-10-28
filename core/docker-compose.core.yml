@@ -1,0 +1,42 @@
+# Agentforge2 Core-Infrastruktur: PostgreSQL, Redis (Streams), OpenTelemetry-Collector.
+# Start: docker compose -f core/docker-compose.core.yml up -d
+version: "3.8"
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agentforge
+      POSTGRES_PASSWORD: secure_password_123
+      POSTGRES_DB: agentforge2_db
+    ports: ["5432:5432"]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentforge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports: ["4317:4317", "4318:4318"]
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

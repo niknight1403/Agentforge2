@@ -1,0 +1,56 @@
+// Agentforge2 Core — Persistenz-Schema (PostgreSQL via Prisma)
+// Aufgaben- und Checkpoint-Verwaltung des Multi-Agenten-Systems.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum TaskStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  PAUSED
+}
+
+model AgentTask {
+  id          String            @id @default(uuid())
+  title       String
+  status      TaskStatus        @default(PENDING)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  steps       AgentStep[]
+  checkpoints AgentCheckpoint[]
+}
+
+model AgentStep {
+  id         String    @id @default(uuid())
+  taskId     String
+  task       AgentTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  agentId    String
+  stepNumber Int
+  toolName   String
+  arguments  Json
+  result     Json?
+  error      String?
+  createdAt  DateTime  @default(now())
+
+  @@index([taskId, stepNumber])
+}
+
+model AgentCheckpoint {
+  id            String    @id @default(uuid())
+  taskId        String
+  task          AgentTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  agentId       String
+  stepNumber    Int
+  stateSnapshot Json
+  createdAt     DateTime  @default(now())
+
+  @@index([taskId, stepNumber])
+}

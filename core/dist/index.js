@@ -1,0 +1,27 @@
+/**
+ * Agentforge2 Core — Hochverfuegbare, selbstheilende Multi-Agenten-Basis.
+ * Module: Redis-Event-Bus, Hierarchischer Supervisor, LLM-Circuit-Breaker,
+ * OpenTelemetry-Telemetry. Alle Komponenten sind optional aktivierbar und
+ * degradieren fehlertolerant (ohne Redis/Collector lauffaehig).
+ */
+export * from './infrastructure/RedisEventBus.js';
+export * from './supervisor/HierarchicalSupervisor.js';
+export * from './llm/LLMCircuitBreaker.js';
+export * from './telemetry/AgentTelemetry.js';
+import { RedisEventBus } from './infrastructure/RedisEventBus.js';
+import { AgentTelemetry } from './telemetry/AgentTelemetry.js';
+/** Sicherer Einstieg fuer den Produktions-Hub: keine Abhaengigkeit wirft. */
+export async function bootstrapCore(options = {}) {
+    let eventBus = null;
+    if (options.redisUrl) {
+        try {
+            eventBus = new RedisEventBus(options.redisUrl, { maxLen: 100_000 });
+        }
+        catch (err) {
+            console.error('[Core] Event-Bus-Init fehlgeschlagen (weiter ohne Bus):', err?.message || err);
+        }
+    }
+    const telemetryReady = await AgentTelemetry.init(options.otelEndpoint ?? 'none');
+    return { eventBus, telemetryReady };
+}
+//# sourceMappingURL=index.js.map
