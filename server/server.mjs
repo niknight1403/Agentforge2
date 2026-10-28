@@ -921,8 +921,8 @@ async function api(req, res, url) {
           .filter((message) => message.role === 'user' || message.role === 'assistant')
           .slice(-8)
           .map((message) => `${message.role === 'user' ? 'Nutzer' : 'Projekt-Experte'}: ${String(message.content).slice(0, 900)}`)
-          .join('\\n');
-        const buildIdea = `${detail.project.idea}\\n\\nProjektanforderungen und DeepAgent-Plan:\\n${context}`.slice(0, 9000);
+          .join('\n');
+        const buildIdea = `${detail.project.idea}\n\nProjektanforderungen und DeepAgent-Plan:\n${context}`.slice(0, 9000);
         const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD' });
         villaId = linkDeepProjectVilla(projectId, built.villaId);
       }
