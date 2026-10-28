@@ -57,6 +57,10 @@ jobs:
           st, h = call('GET', '/api/health')
           print('HTTP', st, '| llm:', json.dumps(h.get('llm', {}))[:300])
 
+          st, route_status = call('GET', '/api/llm/status', tok)
+          routes = route_status.get('routes', []) if isinstance(route_status, dict) else []
+          print('HTTP', st, '| eligible/configured:', sum(1 for x in routes if x.get('eligible')), '/', len(routes))
+          print('Route state:', json.dumps([{k: x.get(k) for k in ('name','provider','model','eligible','status','cooldownUntil')} for x in routes if x.get('eligible')][:20])[:3000])
           print('== 3) Master-Chat ==')
           import time
           started = time.monotonic()
