@@ -11,6 +11,9 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   apk:
@@ -29,8 +32,8 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Unit-Tests
-        run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Lint und Unit-Tests
+        run: gradle :app:lintDebug :app:testDebugUnitTest --no-daemon --stacktrace
 
       - name: Release-APK bauen (R8-minimiert)
         run: gradle :app:assembleRelease --no-daemon --stacktrace
@@ -66,6 +69,13 @@ jobs:
           npm run build:web
           cd dist
           zip -qr ../VillaForge-Web.zip web
+
+      - name: Release-Artefakte mit Build-Provenienz attestieren
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            VillaForge.apk
+            VillaForge-Web.zip
 
       - name: Web-Paket als Artefakt hochladen
         uses: actions/upload-artifact@v4

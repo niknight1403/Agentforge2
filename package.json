@@ -1,10 +1,11 @@
 {
   "name": "villaforge-hub",
-  "version": "1.56.0",
+  "version": "1.57.0",
   "private": true,
   "type": "module",
   "description": "VillaForge Hub – Deep-Agent-Villa mit 1000 Agenten, kostenlosem LLM-Routen-Rotator und Gedaechtnis",
   "scripts": {
+    "check": "node scripts/check.mjs",
     "start": "node server/server.mjs",
     "dev": "node --watch server/server.mjs",
     "daemon": "bash scripts/daemon.sh start",

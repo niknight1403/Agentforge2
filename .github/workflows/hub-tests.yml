@@ -7,14 +7,24 @@ on:
     branches: [main]
     paths:
       - "server/**"
+      - "scripts/**"
       - "package.json"
       - ".github/workflows/hub-deploy.yml"
       - ".github/workflows/hub-tests.yml"
+      - ".github/workflows/codeql.yml"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hub-tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -23,15 +33,5 @@ jobs:
         with:
           node-version: "23"
 
-      - name: Syntax pruefen
-        run: |
-          node --check server/server.mjs
-          node --check server/agents.mjs
-          node --check server/llm.mjs
-          node --check server/db.mjs
-
-      - name: Secret-Scan
-        run: node scripts/check-secrets.mjs
-
-      - name: Unit- und Integrationstests
-        run: node --test server/tests/*.test.mjs
+      - name: Syntax, Secrets, Tests und Web-Produktionsbuild
+        run: npm run check

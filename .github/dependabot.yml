@@ -1,0 +1,40 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: '04:00'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 4
+    groups:
+      actions:
+        patterns:
+          - '*'
+
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: '04:15'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    groups:
+      gradle-plugins:
+        patterns:
+          - '*'
+
+  - package-ecosystem: gradle
+    directory: /app
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: '04:30'
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 3
+    groups:
+      android-dependencies:
+        patterns:
+          - '*'

@@ -25,8 +25,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Unit tests and debug build
-        run: gradle :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
+      - name: Android lint, unit tests and debug build
+        run: gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: villaforge-debug-apk

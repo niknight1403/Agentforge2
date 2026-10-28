@@ -5,7 +5,32 @@ name: Live-Test & Design-Audit
 # (WCAG-Kontrast, Ueberlauf, Touch-Ziele, Fokus, reduzierte Bewegung).
 # Die statischen Tests in hub-tests.yml bleiben davon unberuehrt.
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'scripts/design-audit.mjs'
+      - 'scripts/live-e2e.mjs'
+      - 'scripts/lib/**'
+      - 'package.json'
+      - '.github/workflows/live-e2e.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'scripts/design-audit.mjs'
+      - 'scripts/live-e2e.mjs'
+      - 'scripts/lib/**'
+      - 'package.json'
+      - '.github/workflows/live-e2e.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-quality-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   browser:

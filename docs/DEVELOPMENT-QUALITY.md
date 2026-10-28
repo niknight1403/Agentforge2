@@ -1,47 +1,42 @@
-# UI und Entwicklungsqualität
+# Entwicklungsqualität und Integrationen
 
-Der Studio-Umbau verbessert das Web-Control-Center und die gemeinsame Android-Oberfläche. Die bestehenden Hub-APIs und Entwicklungsabläufe bleiben kompatibel.
+VillaForge hält die Laufzeit frei von npm-Abhängigkeiten. Prüfungen und Release-Automation verwenden reproduzierbare, getrennte Gates, damit neue Integrationen nicht unbemerkt Kosten, Schlüssel oder Nutzerinhalte nach außen geben.
 
-## Änderungen
-
-- Desktop-Navigation, responsive Projektkarten, Suche, Statusfilter und natürliche Sortierung.
-- Globale Kennzahlen aus `/api/stats`; `tasks.done` zählt tatsächlich erledigte Aufgaben. Ein geöffnetes Projekt überschreibt die globalen Werte nicht mehr.
-- Tastaturbedienbare Reiter, isolierter Dialoghintergrund, Fokus-Rückgabe, Sprunglink und echte SSE-Verbindungsanzeige.
-- Fehler- und Leerzustände mit Wiederholung bzw. Filter-Reset; veraltete Listenantworten überschreiben keine neuen Daten.
-- Gemeinsame Android-Palette und Karten, NavigationRail ab 840 dp, System-Zurück, gespeicherte Formulare und Filter, Zahleneingabe mit Validierung.
-- Listenaktualisierung nur im Vordergrund und mit dem aktuellen Verbindungszustand; leere Offline-Listen zeigen eine Erklärung statt eines dauerhaften Ladeskeletts.
-
-## Lokale Prüfung
+## Lokale Qualitätsprüfung
 
 ```sh
 npm run check
 ```
 
-Prüft die Syntax sämtlicher JavaScript-Dateien, den bestehenden Secret-Scan und alle Unit-/Integrationstests. Die neue reine Listenfunktion wird mit unveränderlichen API-Snapshots geprüft.
+Der Sammelcheck führt Syntaxprüfungen aller JavaScript-Dateien in `server/` und `scripts/`, Secret-Scan, sämtliche Node-Unit-/Integrationstests und den Web-Produktionsbuild nacheinander aus. Der erste fehlgeschlagene Schritt beendet den Check mit Fehlerstatus.
+
+Für gerenderte Oberflächen und echte Interaktionen:
 
 ```sh
 npm run test:design
 npm run test:live
 ```
 
-Diese Prüfungen benötigen Chrome (`VF_CHROME` kann den Pfad angeben). Der Design-Audit prüft Dashboard und alle Arbeitsbereich-Reiter bei 320, 390, 768 und 1440 px. Die E2E-Prüfung umfasst Suche, Reset, Tastaturreiter und Fokus-Rückgabe.
+Die browserbasierten Prüfungen brauchen Chrome oder Chromium (`VF_CHROME` kann den Programmpfad vorgeben). Sie prüfen vier Viewportgrößen, Kontrast, Fokus, Überläufe und wichtige Arbeitsabläufe; CI bewahrt Berichte und Screenshots als Workflow-Artefakte auf.
+
+Android:
 
 ```sh
-gradle :app:lintDebug :app:testDebugUnitTest :app:assembleRelease
+gradle :app:lintDebug :app:testDebugUnitTest :app:assembleRelease --no-daemon
 ```
 
-Benötigt JDK 17, Gradle 8.7 und das Android-SDK. Die APK verwendet weiterhin die vorhandene Debug-Signatur und ist kein Play-Store-Release.
+Benötigt JDK 17, Gradle 8.7 und das Android-SDK. Die veröffentlichte APK bleibt debug-signiert und ist nicht für den Play Store signiert.
 
-## Pull Requests
+## Automatische GitHub-Gates
 
-Hub-, Browser- und Android-Workflows laufen auch bei Pull Requests. Sie haben Zeitlimits, minimale Leserechte und brechen überholte Läufe ab. Android-Prüfberichte und Browser-Screenshots werden als Actions-Artefakte gesichert. Der APK-Workflow ruft keine echten LLM-Provider mehr auf.
+- `Hub-Tests`: vollständiger Sammelcheck bei Pull Requests und relevanten `main`-Änderungen.
+- `Live-Test & Design-Audit`: echter Browserlauf bei Änderungen an Hub, Web-UI und Prüfskripten; Berichte und Screenshots werden aufbewahrt.
+- `Android PR checks`: Android-Lint, Unit-Tests und Debug-Build für App-Änderungen.
+- `CodeQL Security Analysis`: JavaScript/TypeScript, Kotlin/Java und GitHub-Actions-Workflows bei Änderungen sowie wöchentlich.
+- `Dependabot`: gruppierte wöchentliche Updates für Android/Gradle und GitHub-Actions; jede Änderung durchläuft die passenden Gates.
+- `Build Android APK`: Lint, Android-Unit-Tests, optimierter APK-Build, Web-Produktionsbuild und signierte Build-Provenienz für beide Release-Dateien.
+- `Hub-Deploy`: produktives Update und anschließende externe Erreichbarkeits-/Health-Prüfung.
 
-Lokal bestehen 187 Tests; Syntax und Secret-Scan sind grün. Der erste Actions-Lauf bestätigt zusätzlich Hub-Tests, Android Lint und Android-Unit-Tests sowie 18 Browser-Funktionsprüfungen und einen Design-Audit ohne Befunde bei vier Bildschirmbreiten. Die abschließenden Actions-Läufe prüfen den finalen Stand; die maßgeblichen Ergebnisse stehen direkt im Pull Request.
+## Integrationsentscheidungen
 
-## Fortsetzung: Abgleich mit aktuellem Hauptstand
-
-Die nachträglich hinzugekommenen Scheduler-, Diagnose-, Dashboard- und Neon-Komponenten aus `main` wurden mit den Studio- und Qualitätsänderungen zusammengeführt.
-
-Android speichert die ausgewählte Villa-ID über `SavedStateHandle`. Nach einer Prozesswiederherstellung wird das Projekt neu geladen, bevor Chat, Detail oder Entwicklung bedient werden können. Ladefehler bieten Wiederholung und Rückkehr zur Villenliste; ohne gültige Projekt-ID wird die Villenliste geöffnet. Ein später eintreffendes Ergebnis eines bereits geschlossenen oder gewechselten Projekts überschreibt die aktuelle Auswahl nicht.
-
-Drei Android-Regressionstests prüfen gespeicherte Auswahl, Projektwechsel, Schließen und ungültige ältere IDs. Die zusammengeführte Node-Suite umfasst 198 Tests. CI-Ergebnisse des aktuellen Commits stehen im Pull Request.
+Die wichtigsten Integrationsmöglichkeiten und ihre Grenzen sind in [QUALITY-INTEGRATIONS.md](QUALITY-INTEGRATIONS.md) dokumentiert. Für neue Provider oder Dienste gelten dieselben Grundsätze: optionale Konfiguration, keine Zugangsdaten im Quelltext, keine externen Modellaufrufe im Standard-CI und Tests für Ausfallverhalten.
