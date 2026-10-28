@@ -6,7 +6,10 @@ export function createHubTaskExecutor({ hubUrl, token, fetcher = fetch }: {
   fetcher?: typeof fetch;
 }): TaskExecutor {
   const base = new URL(hubUrl);
-  if (!['http:', 'https:'].includes(base.protocol) || !token || token.length < 32) throw new Error('Invalid Hub executor configuration.');
+  const host = base.hostname.toLowerCase();
+  const privateHost = ['localhost', '127.0.0.1', '::1', 'agentforge', 'host.docker.internal'].includes(host) ||
+    host.endsWith('.local') || host.endsWith('.internal') || /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  if (!['http:', 'https:'].includes(base.protocol) || (base.protocol === 'http:' && !privateHost) || base.username || base.password || base.search || base.hash || !token || token.length < 32) throw new Error('Invalid Hub executor configuration.');
   const endpoint = `${base.toString().replace(/\/+$/, '')}/internal/mesh/execute`;
   return {
     async execute(input, context) {
