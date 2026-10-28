@@ -44,6 +44,9 @@ jobs:
         with:
           node-version: "23"
 
+      - name: Hub-Laufzeitabhaengigkeiten installieren
+        run: npm ci --no-audit --no-fund
+
       - name: Browser nachweisen
         run: |
           google-chrome --version || chromium --version || true
