@@ -135,3 +135,17 @@ test('hunterTick protokolliert den Zyklus, hunterStatus und weeklyReport lesen i
   assert.match(markdown, /Neue Routen in 7 Tagen/);
   assert.equal(typeof stats.addedWeek, 'number');
 });
+
+test('integrate ueberspringt unvollstaendige Kandidaten ohne die Runde abzubrechen', () => {
+  const before = db.prepare('SELECT COUNT(*) n FROM routes').get().n;
+  const res = integrate([
+    { name: 'Ohne Modell', provider: 'test', baseUrl: 'https://y.invalid/v1' },
+    { name: '', provider: 'test', baseUrl: 'https://z.invalid/v1', model: 'mz' },
+    { name: 'Gueltig danach', provider: 'test', baseUrl: 'https://ok.invalid/v1', model: 'm-ok' }
+  ]);
+  assert.equal(res.added.length, 1, 'gueltiger Kandidat nach defekten wird noch angelegt');
+  assert.equal(res.skipped.length, 2);
+  assert.equal(res.skipped.every((s) => s.reason === 'unvollstaendig'), true);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM routes').get().n, before + 1);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM routes WHERE name = '' OR model = ''").get().n, 0, 'keine kaputten Zeilen');
+});
