@@ -38,6 +38,12 @@
   .dot.on{background:var(--ok);animation:pulse 2s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   .empty{padding:26px;text-align:center;color:var(--muted)}
+  .feed{max-height:300px;overflow:auto;padding:4px}
+  .ev{display:flex;gap:10px;padding:7px 12px;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;align-items:baseline}
+  .ev .t{color:var(--muted);font-variant-numeric:tabular-nums;min-width:66px}
+  .ev .ty{color:var(--cyan);min-width:104px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ev .d{color:var(--text);opacity:.82;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .ev.hit{background:rgba(255,84,112,.06)}
   h2{font-size:13px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin:0 0 10px}
 </style>
 </head>
@@ -62,6 +68,8 @@
   <div class="panel"><table><thead><tr>
     <th>ID</th><th>Villa</th><th>Task</th><th>Code</th><th>Status</th><th>Versuche</th><th>Meldung</th><th></th>
   </tr></thead><tbody id="rows"><tr><td colspan="8" class="empty">Token eingeben, um Daten zu laden.</td></tr></tbody></table></div>
+  <h2>Live-Ereignisse (SSE)</h2>
+  <div class="panel"><div class="feed" id="feed"><div class="empty">Warte auf Ereignisse aus dem Hub …</div></div></div>
   <h2>Alarme</h2>
   <div class="panel"><table><thead><tr><th>ID</th><th>Villa</th><th>Schwere</th><th>Meldung</th><th>Zeit</th></tr></thead>
   <tbody id="alerts"><tr><td colspan="5" class="empty">Keine Alarme geladen.</td></tr></tbody></table></div>
@@ -140,12 +148,50 @@ async function load() {
 }
 
 // Live-Anbindung an den bestehenden SSE-Strom des Hubs.
+const feed = $('feed');
+const FEED_KEYS = ['villaId','taskId','agentId','status','tool','provider','model','route','code','step','processed'];
+let refreshTimer = null;
+let feedEmpty = true;
+
+// Inhalte ausschliesslich per textContent setzen - Event-Daten sind fremde Daten (kein HTML).
+function renderEvent(ev) {
+  if (feedEmpty) { feed.innerHTML = ''; feedEmpty = false; }
+  const row = document.createElement('div');
+  row.className = 'ev' + (/failed|error|escalat/i.test(String(ev.type)) ? ' hit' : '');
+  const t = document.createElement('span');
+  t.className = 't';
+  t.textContent = new Date(ev.ts || Date.now()).toLocaleTimeString('de-DE');
+  const ty = document.createElement('span');
+  ty.className = 'ty';
+  ty.textContent = String(ev.type || 'event').slice(0, 18);
+  const d = document.createElement('span');
+  d.className = 'd';
+  const parts = [];
+  for (const k of FEED_KEYS) if (ev[k] !== undefined && ev[k] !== null) parts.push(k + '=' + ev[k]);
+  d.textContent = parts.join(' · ') || '–';
+  row.append(t, ty, d);
+  feed.prepend(row);
+  while (feed.children.length > 60) feed.lastChild.remove();
+}
+
+function scheduleReload() {
+  if (refreshTimer) return;
+  refreshTimer = setTimeout(() => { refreshTimer = null; load(); }, 1500);
+}
+
 function connect() {
   try {
     const es = new EventSource('/api/events');
     es.onopen = () => { $('dot').classList.add('on'); $('livetext').textContent = 'SSE live'; };
-    es.onmessage = () => { events += 1; $('counter').textContent = events + ' Events'; };
-    es.onerror = () => { $('dot').classList.remove('on'); $('livetext').textContent = 'SSE getrennt'; };
+    es.onmessage = (msg) => {
+      events += 1;
+      $('counter').textContent = events + ' Events';
+      let ev = null;
+      try { ev = JSON.parse(msg.data); } catch { ev = null; }
+      if (ev) renderEvent(ev);
+      if (ev && /agent\.failed|task|checkpoint|dlq|heal/i.test(String(ev.type))) scheduleReload();
+    };
+    es.onerror = () => { $('dot').classList.remove('on'); $('livetext').textContent = 'SSE getrennt – Neuverbindung läuft'; };
   } catch { $('livetext').textContent = 'SSE nicht verfügbar'; }
 }
 connect();
