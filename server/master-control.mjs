@@ -200,7 +200,7 @@ export function createMasterControl(deps) {
       }
       for (const a of validated) {
         try { steps.push(await execute(a)); }
-        catch (error) { steps.push({type:a.type,ok:false,error:error.message}); break; }
+        catch (error) { const routeAttempts=Array.isArray(error?.attempts)?error.attempts.slice(0,30).map(attempt=>({route:String(attempt?.route||'unknown').slice(0,120),code:String(attempt?.code||'ERROR').slice(0,80)})):[]; steps.push({type:a.type,ok:false,error:error.message,...(error?.code?{code:String(error.code).slice(0,80)}:{}),...(routeAttempts.length?{routeAttempts}:{})}); break; }
       }
       const failed = steps.find(s => !s.ok);
       response = { requestId,answer:steps.length ? steps.map(s => s.ok ? describe(s) : `Nicht ausgeführt: ${s.error}`).join('\n\n') : `Keine Einstellungen geändert.\n${answer}`,steps,ok:!failed };
@@ -239,7 +239,8 @@ export function createMasterControl(deps) {
           const body = await readBody(req);
           const out = await turn({...body,requestId:body.requestId || randomUUID()});
           const unavailable = out.code === 'LLM_UNAVAILABLE' || (!out.ok && out.steps.some(step => /LLM_UNAVAILABLE|Kein echtes Modell erreichbar|Kein echtes Sprachmodell erreichbar/i.test(step.error || '')));
-          json(res,out.pending ? 202 : unavailable ? 503 : 200,{...out,...(unavailable ? {code:'LLM_UNAVAILABLE',retryAfter:15} : {}),reply:out.answer});
+          const routeAttempts=out.routeAttempts||out.steps.flatMap(step=>Array.isArray(step.routeAttempts)?step.routeAttempts:[]);
+          json(res,out.pending ? 202 : unavailable ? 503 : 200,{...out,...(unavailable ? {code:'LLM_UNAVAILABLE',retryAfter:15,...(routeAttempts.length?{routeAttempts}:{})} : {}),reply:out.answer});
         }
         else if (p === '/api/master/actions' && req.method === 'POST') {
           const body=await readBody(req);
