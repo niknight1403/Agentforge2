@@ -18,8 +18,16 @@ import { db, now } from './db.mjs';
 import { forgeLog } from './keyforge.mjs';
 import { scanFreeRoutes } from './free-route-cycle.mjs';
 
-// `dead` ist in manchen Installationen nicht vorhanden - leise nachruesten.
-try { db.exec('ALTER TABLE routes ADD COLUMN dead INTEGER NOT NULL DEFAULT 0'); } catch { /* vorhanden */ }
+// Optional-Spalten leise nachruesten: in frischen Installationen und in der
+// Test-DB fehlen lat_ms/cooldown_until/dead, weil llm.mjs sie erst beim Import
+// anlegt. Das Hunter-Modul muss unabhaengig davon funktionieren.
+for (const ddl of [
+  'ALTER TABLE routes ADD COLUMN dead INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE routes ADD COLUMN lat_ms INTEGER',
+  'ALTER TABLE routes ADD COLUMN cooldown_until INTEGER NOT NULL DEFAULT 0'
+]) {
+  try { db.exec(ddl); } catch { /* Spalte existiert bereits */ }
+}
 db.exec(`CREATE TABLE IF NOT EXISTS hunter_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL,
