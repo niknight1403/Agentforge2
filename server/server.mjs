@@ -2,6 +2,7 @@ import { VERSION } from './version.mjs';
 import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStudioPreview } from './studio.mjs';
 import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config.mjs';
 import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { createMasterControl } from './master-control.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
@@ -11,7 +12,7 @@ import { chat, routingStatus, routingSummary, enabledRoutes, resolveKey, keyStat
 import { masterChat, masterHistory } from './master.mjs';
 import { reapZombies } from './agents.mjs';
 import { userStore, usersExist, userForRequest, userForToken, verifyPassword, createSession, destroyToken, upsertUser, publicUser, quotaLeft, FREE_DAILY_TOKENS } from './auth.mjs';
-import { createVilla, runAgent, orchestrate, stopVilla, isRunning, TOOL_SPECS, toolSpecs, memoryContext, setSource, analyzeProject, refreshAgentPrompts, PROMPT_VERSION, ROLES, runTool } from './agents.mjs';
+import { createVilla, runAgent, orchestrate, stopVilla, isRunning, executeTaskOnce, TOOL_SPECS, toolSpecs, memoryContext, setSource, analyzeProject, refreshAgentPrompts, PROMPT_VERSION, ROLES, runTool } from './agents.mjs';
 import { packState, packSummary, setPackEnabled } from './packs.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { schedulerStatus, villaRanking, enqueueVillas, configureScheduler, scheduleVilla, cancelScheduledVilla, villaFocusId} from './scheduler.mjs';
@@ -1047,10 +1048,39 @@ async function api(req, res, url) {
   return json(res, 404, { error: 'Unbekannter Endpunkt', path: p });
 }
 
+async function internalMesh(req,res,url){
+  if(url.pathname!=='/internal/mesh/execute'||req.method!=='POST')return json(res,404,{error:'Not found'});
+  const expected=String(process.env.VF_AGENT_RUNTIME_TOKEN||'');
+  const supplied=String(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
+  const a=Buffer.from(supplied),b=Buffer.from(expected);
+  if(expected.length<32||a.length!==b.length||!timingSafeEqual(a,b))return json(res,401,{error:'Unauthorized'});
+  const body=await readBody(req);
+  const taskId=Number(body.taskId),villaId=Number(body.villaId);
+  if(!Number.isSafeInteger(taskId)||taskId<1||!Number.isSafeInteger(villaId)||villaId<1)return json(res,400,{error:'Valid taskId and villaId are required.'});
+  const task=db.prepare('SELECT * FROM tasks WHERE id=? AND villa_id=?').get(taskId,villaId);
+  if(!task)return json(res,404,{error:'Task not found.'});
+  if(['DONE','FAILED'].includes(task.status))return json(res,200,{status:task.status,result:task.result||null});
+  if(task.status!=='RUNNING')return json(res,409,{error:'Task is not reserved for mesh execution.',status:task.status});
+  try{
+    await executeTaskOnce(villaId,task);
+    const updated=db.prepare('SELECT status,result FROM tasks WHERE id=? AND villa_id=?').get(taskId,villaId);
+    if(updated?.status==='PENDING')return json(res,503,{error:'Task is waiting for an available model.',code:'LLM_UNAVAILABLE'});
+    return json(res,200,{status:updated?.status||'FAILED',result:updated?.result||null});
+  }catch(error){
+    if(error?.code==='LLM_UNAVAILABLE')stopVilla(villaId);
+    const status=error?.code==='LLM_UNAVAILABLE'?503:500;
+    return json(res,status,{error:status===503?'Model provider unavailable.':'Agent task execution failed.',code:error?.code||'AGENT_EXECUTION_FAILED'});
+  }
+}
+
 /* --------------------------- Server --------------------------- */
 export const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   if(serveStudioPreview(req,res,url))return;
+  if(url.pathname.startsWith('/internal/')){
+    internalMesh(req,res,url).catch(error=>json(res,error.statusCode||500,{error:'Internal worker request failed.',code:error.code||'INTERNAL_ERROR'}));
+    return;
+  }
   if (url.pathname.startsWith('/api/')) {
     // Nutzer-Kontext fuer alle LLM-Aufrufe dieses Requests (inkl. Hintergrund-Lauefe)
     userStore.run(userForRequest(req), () => {
