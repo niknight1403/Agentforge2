@@ -35,6 +35,8 @@ const executor: TaskExecutor = {
 };
 const worker = new AgentWorker(prisma, bus, executor);
 const controller = new AbortController();
+let outboxTimer: NodeJS.Timeout | undefined;
+let recoveryTimer: NodeJS.Timeout | undefined;
 const auth = (req: IncomingMessage) => {
   const supplied = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   const a = Buffer.from(supplied); const b = Buffer.from(token);
@@ -87,8 +89,12 @@ async function start() {
   await AgentTelemetry.init();
   await prisma.$connect();
   server.listen(port, '0.0.0.0');
-  const pump = setInterval(() => { void worker.flushOutbox().catch(error => console.error('[Outbox]', (error as Error).message)); }, 500);
-  pump.unref();
+  outboxTimer = setInterval(() => { void worker.flushOutbox().catch(error => console.error('[Outbox]', (error as Error).message)); }, 500);
+  outboxTimer.unref();
+  // Recover abandoned RUNNING rows periodically so a process restart or worker OOM
+  // cannot leave a task stuck until another deployment.
+  recoveryTimer = setInterval(() => { void worker.recoverStaleTasks().catch(error => console.error('[Recovery]', (error as Error).message)); }, 60_000);
+  recoveryTimer.unref();
   const concurrency=Math.max(1,Math.min(16,Number(process.env.AGENT_WORKER_CONCURRENCY)||3));
   void Promise.all(Array.from({length:concurrency},()=>worker.run(controller.signal)))
     .catch(error => console.error('[AgentWorker]', (error as Error).message));
@@ -96,6 +102,8 @@ async function start() {
 }
 async function shutdown() {
   controller.abort(); worker.stop();
+  if (outboxTimer) clearInterval(outboxTimer);
+  if (recoveryTimer) clearInterval(recoveryTimer);
   await new Promise<void>(resolve => server.close(() => resolve()));
   await Promise.allSettled([bus.disconnect(), prisma.$disconnect(), AgentTelemetry.shutdown()]);
   process.exit(0);
