@@ -38,7 +38,7 @@ jobs:
           import json,sys
           for r in json.load(sys.stdin): print(r['id'], r['name'][:34], '| prio', r['priority'], '| key', r.get('hasKey'), '| enabled', r.get('enabled'))"
           echo "== Hub-Chat-Test (Ollama/Route, 90s Limit) =="
-          CVID=$(curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/villas | python3 -c "import json,sys; vs=json.load(sys.stdin); vs=vs.get('villas',vs) if isinstance(vs,dict) else vs; print(vs[0]['id'] if vs else '')" 2>/dev/null || true)
+          CVID=$(curl -s -m 30 -H "Authorization: Bearer $TOK" $H/api/villas | python3 -c "import json,sys; vs=json.load(sys.stdin); vs=vs.get('villas',vs) if isinstance(vs,dict) else vs; print(next((v['id'] for v in vs if int(v.get('agents_count') or 0) > 0), ''))" 2>/dev/null || true)
           if [ -n "$CVID" ]; then
             # Kurz-Check auf Antwortfaehigkeit. 503 LLM_UNAVAILABLE bedeutet
             # nur, dass alle Free-Tier-Routen gerade im Cooldown sind — der
@@ -100,7 +100,7 @@ jobs:
           if not tok:
               print("LLM-PROBE: LOGIN FEHLGESCHLAGEN"); raise SystemExit(0)
           villas = get("/api/villas", tok)
-          v = villas[0] if isinstance(villas, list) and villas else None
+          v = next((x for x in villas if int(x.get('agents_count') or 0) > 0), None) if isinstance(villas, list) else None
           print("LLM-PROBE Villa:", v.get("name") if v else "keine", "| Status:", v.get("status") if v else "-")
           if v:
               # Vorschlaege mit Alter (Standardplan?) - ist der Fehler alt oder aktuell?
@@ -125,6 +125,8 @@ jobs:
                       v_.get("executing"), v_.get("queued"), idea))
               mres, mdt = post("/api/master/chat", {"message": "Kurztest: antworte in einem Satz mit dem Status der Villen, gruende KEINE Villa."}, tok, 180)
               print("MASTER-PROBE:", json.dumps(mres)[:300], "| Dauer:", mdt, "s")
+          if not mres.get("ok"):
+              raise SystemExit("Q-GATE ROT: DeepAgent/Master-LLM hat keine erfolgreiche echte Modellantwort geliefert.")
           PROBE
 
       - name: Villa-Aufgaben-Status via DB
