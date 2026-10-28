@@ -47,6 +47,7 @@ import { createReadStream, existsSync as fsExists } from 'node:fs';
 import { initBillingStore, createCheckoutSession, createBillingPortalSession, billingSummary, adminBillingMetrics, flushStripeUsage } from './billing.mjs';
 import { issueGatewayToken, gatewayPrincipal, hasGatewayScope, canAccessVilla, gatewayRoleScopes, initGatewayStore, createGatewayApiKey, listGatewayApiKeys, revokeGatewayApiKey } from './api-gateway.mjs';
 import { dlqTick, dlqStatus, restartFailedWorkflow, initDlq } from './event-dlq.mjs';
+import { sanitizeForStream } from './event-contracts.mjs';
 import { initObservabilityStore, tokenBudgetStatus, httpMetrics, recordHttpRequest } from './observability.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
@@ -1243,7 +1244,11 @@ async function api(req, res, url) {
       Connection: 'keep-alive'
     });
     res.write('retry: 3000\n\n');
-    const onEvent = (e) => res.write(`data: ${JSON.stringify(e)}\n\n`);
+    // Ohne Anmeldung nur Metadaten (kein Prompt, keine Tool-Argumente, kein Code).
+    const onEvent = (e) => {
+      const payload = user ? e : sanitizeForStream(e);
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
     bus.on('event', onEvent);
     const ping = setInterval(() => res.write(': ping\n\n'), 15000);
     req.on('close', () => { clearInterval(ping); bus.off('event', onEvent); });
