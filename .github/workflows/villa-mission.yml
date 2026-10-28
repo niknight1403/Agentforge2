@@ -92,20 +92,31 @@ jobs:
               retry_failed "$ID"
             done || true
 
-            # 2) Wenn kein Lauf aktiv: ranghoechste Villa mit offenen Aufgaben starten
-            if [ "$ACTIVE" = "0" ]; then
-              NEXT=$(echo "$SCHED" | jq -r 'first(.ranking[]? | select((.open // 0) > 0) | .id) // empty')
-              if [ -n "$NEXT" ]; then
-                echo "Keine Villa aktiv — naechstes Projekt automatisch starten: Villa $NEXT"
-                start_villa "$NEXT"
-              else
-                echo "Keine offenen Aufgaben — nichts zu starten."
+            # 2) Freie Slots bis zur konfigurierten Scheduler-Grenze auffuellen.
+            #    Aktive und bereits eingereihte Villen werden nie doppelt gestartet.
+            SCHED=$(curl -fsS -m 30 -H "$AUTH" "$H/api/scheduler")
+            SLOTS=$(echo "$SCHED" | jq -r '.slots // 1')
+            ACTIVE=$(echo "$SCHED" | jq -r '.active | length')
+            AVAILABLE=$((SLOTS - ACTIVE))
+            if [ "$AVAILABLE" -lt 0 ]; then AVAILABLE=0; fi
+            ACTIVE_IDS=$(echo "$SCHED" | jq -r '.active[]?')
+            QUEUED_IDS=$(echo "$SCHED" | jq -r '.queue[]?')
+            STARTED=0
+            while IFS= read -r NEXT; do
+              [ "$STARTED" -ge "$AVAILABLE" ] && break
+              [ -z "$NEXT" ] && continue
+              if printf '%s\n%s\n' "$ACTIVE_IDS" "$QUEUED_IDS" | grep -Fxq "$NEXT"; then
+                continue
               fi
-            else
-              echo "Villa/Villen laufen bereits — kein zusaetzlicher Start (Slot-Schutz)."
+              echo "Freier Slot — starte naechstes Projekt: Villa $NEXT"
+              start_villa "$NEXT"
+              STARTED=$((STARTED + 1))
+            done < <(echo "$SCHED" | jq -r '.ranking[]? | select((.open // 0) > 0) | .id')
+            if [ "$STARTED" -eq 0 ]; then
+              echo "Keine freien Slots oder keine ungestarteten Villen mit offenen Aufgaben."
             fi
           fi
 
           echo "== Abschluss-Status =="
-          curl -s -m 30 -H "$AUTH" "$H/api/scheduler" | jq -c '{slots, active, queued, queue}'
-          curl -s -m 30 -H "$AUTH" "$H/api/health" | jq -c '{ok, version}'
+          curl -fsS -m 30 -H "$AUTH" "$H/api/scheduler" | jq -c '{slots, active, queued, queue}'
+          curl -fsS -m 30 -H "$AUTH" "$H/api/health" | jq -ce 'select(.ok == true) | {ok, version}'
