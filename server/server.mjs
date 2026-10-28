@@ -35,6 +35,7 @@ import {
 } from './webhooks.mjs';
 import { verifyGitHubSignature, buildCommitChangelog, sendTelegramChangelog } from './github-changelog.mjs';
 import { openHandsCanvasStatus } from './openhands.mjs';
+import { startTelemetryConsumer } from './event-mesh.mjs';
 import { controlCatalog, saveConnector, updateConnector, deleteConnector, readConnector, saveControlSkill, setControlSkillEnabled, deleteControlSkill } from './control-store.mjs';
 import { createReadStream, existsSync as fsExists } from 'node:fs';
 
@@ -1182,11 +1183,22 @@ process.on('unhandledRejection', (err) => logError('Unbehandelte Ablehnung:', er
 process.on('uncaughtException', (err) => logError('Unbehandelte Ausnahme:', err?.message || err));
 
 let shuttingDown = false;
+let telemetryConsumer = null;
+if (String(process.env.CYBERSARAH_TELEMETRY_URL || '').trim() && String(process.env.CYBERSARAH_TELEMETRY_TOKEN || '').trim()) {
+  startTelemetryConsumer({ onError: ({ code }) => logError('Telemetry-Consumer:', code) })
+    .then((worker) => {
+      telemetryConsumer = worker;
+      if (worker.ok) log('Redis-Stream Telemetrie-Consumer aktiv.');
+      else logError('Redis-Stream Telemetrie-Consumer nicht aktiv:', worker.reason);
+    })
+    .catch((err) => logError('Redis-Stream Telemetrie-Consumer:', err?.message || err));
+}
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     if (shuttingDown) return;
     shuttingDown = true;
     log(`${sig} empfangen, fahre herunter ...`);
+    telemetryConsumer?.stop?.();
     server.close(() => {
       log('Server geschlossen.');
       process.exit(0);
