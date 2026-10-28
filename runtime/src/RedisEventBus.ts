@@ -36,7 +36,7 @@ export class RedisEventBus {
   }
   async ping(): Promise<string> { return this.redis.ping(); }
   async *consumeStream(stream: string, group: string, consumer: string,
-    { blockMs = 5000, claimIdleMs = 30_000, signal }: { blockMs?: number; claimIdleMs?: number; signal?: AbortSignal } = {}): AsyncGenerator<StreamMessage> {
+    { blockMs = 5000, claimIdleMs = Math.max(60_000, Math.min(7_200_000, Number(process.env.REDIS_CLAIM_IDLE_MS) || 1_800_000)), signal }: { blockMs?: number; claimIdleMs?: number; signal?: AbortSignal } = {}): AsyncGenerator<StreamMessage> {
     await this.ensureConsumerGroup(stream, group);
     const reader = this.redis.duplicate();
     const abortReader = () => reader.disconnect();
