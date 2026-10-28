@@ -26,6 +26,7 @@ test('PostgreSQL outbox -> Redis consumer -> atomic step/checkpoint pipeline', {
     }
     assert.equal(current?.status, 'COMPLETED');
     assert.equal(await prisma.agentStep.count({ where: { taskId: task.id } }), 1);
+    assert.equal(await prisma.agentTelemetry.count({ where: { taskId: task.id, eventType: 'task.completed' } }), 1);
     const checkpoint = await prisma.agentCheckpoint.findFirst({ where: { taskId: task.id } });
     assert.ok(checkpoint?.id);
   } finally {
@@ -33,6 +34,7 @@ test('PostgreSQL outbox -> Redis consumer -> atomic step/checkpoint pipeline', {
     await loop?.catch(() => {});
     if (taskId) {
       await prisma.agentEventReceipt.deleteMany({ where: { taskId } });
+      await prisma.agentTelemetry.deleteMany({ where: { taskId } });
       await prisma.agentTask.deleteMany({ where: { id: taskId } });
     }
     await Promise.allSettled([bus.disconnect(), prisma.$disconnect()]);
