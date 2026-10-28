@@ -25,3 +25,7 @@ artifacts/
 *.bundle
 
 /dist/
+
+# Python
+__pycache__/
+*.pyc
