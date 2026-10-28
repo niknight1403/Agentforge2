@@ -6,6 +6,7 @@ on:
     paths:
       - server/master-control.mjs
       - server/llm.mjs
+      - server/llm-cascade.mjs
       - .github/workflows/master-chat-probe.yml
 
 concurrency:
