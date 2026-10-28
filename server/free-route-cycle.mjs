@@ -65,8 +65,8 @@ export async function scanFreeRoutes({ fetchFn = fetch, clock = now } = {}) {
     });
     if (!response.ok) throw new Error(`OpenRouter models HTTP ${response.status}`);
     const body = await response.json();
-    const models = Array.isArray(body?.data) ? body.data.slice(0, MAX_MODELS_PER_SCAN) : [];
-    const freeModels = models.filter(freeOpenRouterModel);
+    const models = Array.isArray(body?.data) ? body.data : [];
+    const freeModels = models.filter(freeOpenRouterModel).slice(0, MAX_MODELS_PER_SCAN);
     const before = new Set(db.prepare("SELECT model_id FROM free_route_discoveries WHERE provider='openrouter'").all().map((row) => row.model_id));
     const addable = freeModels.slice(0, 100);
     for (const model of addable) addRoute(model, timestamp);
