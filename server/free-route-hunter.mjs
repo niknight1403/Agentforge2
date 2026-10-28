@@ -125,6 +125,11 @@ export function integrate(candidates = []) {
     if (existing.has(keyOf(c)) || names.has(norm(c.name))) { skipped.push({ name: c.name, reason: 'vorhanden' }); continue; }
     const prio = Number(c.priority) || 30;
     insert.run(c.name, c.provider || 'openai-compatible', c.baseUrl, c.model, c.keyEnv || '', prio);
+    // Dublettenschutz gilt auch INNERHALB eines Laufs: den eben eingefuegten
+    // Kandidaten sofort in die Pruefsets aufnehmen, sonst legt ein doppelter
+    // Kandidat aus derselben Discovery-Liste zwei Routen an.
+    existing.set(keyOf(c), { id: 0 });
+    names.add(norm(c.name));
     added.push({ name: c.name, provider: c.provider, model: c.model, priority: prio });
     try { forgeLog('hunter:route', `Neue Gratis-Route [${c.name}] P${prio}`); } catch { /* Log ist optional */ }
   }
