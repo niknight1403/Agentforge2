@@ -5,7 +5,6 @@ on:
     paths:
       - server/llm-cascade.mjs
       - server/tests/llm-cascade.test.mjs
-      - .github/workflows/llm-cascade-deploy.yml
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -61,12 +60,16 @@ jobs:
           done
           systemctl is-active "$UNIT"
           PORT=
-          for p in $(ss -ltnpH 2>/dev/null | awk '/node/ {split($4,a,":"); p=a[length(a)]; if(p ~ /^[0-9]+$/) print p}' | sort -u); do
-            if curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${p}/api/health" -o /tmp/vf-health.json 2>/dev/null &&
-               node --input-type=module -e 'const fs=await import("node:fs/promises");const d=JSON.parse(await fs.readFile("/tmp/vf-health.json","utf8"));if(d.ok!==true||d.masterControl!==1)process.exit(1)' 2>/dev/null; then PORT=$p; break; fi
+          for attempt in $(seq 1 15); do
+            for p in $(ss -ltnpH 2>/dev/null | awk 'tolower($0) ~ /node|mainthread/ {split($4,a,":"); p=a[length(a)]; if(p ~ /^[0-9]+$/) print p}' | sort -u); do
+              if curl --fail --silent --show-error --max-time 3 "http://127.0.0.1:${p}/api/health" -o /tmp/vf-health.json 2>/dev/null &&
+                 node --input-type=module -e 'const fs=await import("node:fs/promises");const d=JSON.parse(await fs.readFile("/tmp/vf-health.json","utf8"));if(d.ok!==true||d.masterControl!==1)process.exit(1)' 2>/dev/null; then PORT=$p; break; fi
+            done
+            [ -n "$PORT" ] && break
+            sleep 2
           done
-          [ -n "$PORT" ] || { echo 'No healthy local Node hub listener found'; ss -ltnpH | awk '/node/ {print $4}'; exit 1; }
-          node --input-type=module -e 'const fs=await import("node:fs/promises");const d=JSON.parse(await fs.readFile("/tmp/vf-health.json","utf8"));console.log("Hub health OK on port",process.env.PORT||"detected","; version",d.version,"routes",d.routes)'
+          [ -n "$PORT" ] || { echo 'No healthy local hub listener found'; ss -ltnpH | awk 'tolower($0) ~ /node|mainthread/ {print $4}'; exit 1; }
+          node --input-type=module -e 'const fs=await import("node:fs/promises");const d=JSON.parse(await fs.readFile("/tmp/vf-health.json","utf8"));console.log("Hub health OK on port",process.argv[1],"; version",d.version,"routes",d.routes)' "$PORT"
           trap - ERR
           rm -rf "$BACKUP"
           echo 'SAFE_LLM_CASCADE_DEPLOY_OK'
