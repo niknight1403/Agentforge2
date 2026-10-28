@@ -848,3 +848,19 @@ small { font-size: 12px; }
 .danger { color:#ff8491!important; }
 @media (max-width:640px) { .route-chain-grid { grid-template-columns:1fr; } .pack-grid { grid-template-columns:1fr; } .theme-grid { gap:7px; }.theme-card { padding:8px; } }
 @media (prefers-reduced-motion:reduce) { .theme-card,.switch-control span,.switch-control span:after { transition:none; } }
+
+/* v1.57.1 final audit overrides: keep later component rules readable too. */
+small { font-size: 12px; }
+.brand small { font-size: 11px; }
+.badge, .chip, .row .badge, .badge.status, .active-title-row .chip { font-size: 11px; }
+.suggestion-meta > * { font-size: 11px; }
+.priority-tag { font-size: 11px; }
+.villa-control { min-height: 44px; font-size: 12px; }
+.nav-item { font-size: 12px; }
+.primary.slim, .danger, .tab-chip, button.compact { min-height: 44px; }
+.tab-chip { padding-top: 10px; padding-bottom: 10px; }
+.primary, .tab-chip.active {
+  color: #10201F;
+  background-color: #A1E3DB;
+  background-image: none;
+}
