@@ -854,6 +854,7 @@ small { font-size: 12px; }
 .brand small { font-size: 11px; }
 .badge, .chip, .row .badge, .badge.status, .active-title-row .chip { font-size: 11px; }
 .suggestion-meta > * { font-size: 11px; }
+.bubble .meta { font-size: 11px; }
 .priority-tag { font-size: 11px; }
 .villa-control { min-height: 44px; font-size: 12px; }
 .nav-item { font-size: 12px; }
