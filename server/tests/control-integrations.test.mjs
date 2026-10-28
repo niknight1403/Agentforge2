@@ -9,6 +9,8 @@ const {db}=await import('../db.mjs');
 test('integrierte professionelle Skills werden beim Start angelegt und injizierbar',()=>{
  const catalog=store.controlCatalog();
  assert.ok(catalog.skills.some(s=>s.id==='professional-delivery'&&s.enabled===1));
+ assert.ok(catalog.skills.some(s=>s.id==='compute-routing-orchestrator'&&s.enabled===1));
+ assert.match(store.skillInstructions(),/Quoten.*nicht garantiert/i);
  assert.match(store.skillInstructions(),/tatsächliches Artefakt|echte Exportdateien/i);
  assert.throws(()=>store.deleteControlSkill('professional-delivery'),/deaktivieren/);
 });

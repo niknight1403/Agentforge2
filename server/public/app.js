@@ -73,6 +73,7 @@ async function checkHealth() {
     $('#gateChip').className = 'chip ok'; $('#gateChip').textContent = 'VERBUNDEN';
     $('#systemHeadline').textContent = 'Hub erreichbar';
     const llm = h.llm || {};
+    const resources = h.resources || {};
     $('#systemDetail').textContent = `${llm.eligibleRoutes ?? 0} nutzbare KI-Routen · ${llm.freeOnly ? 'kostenfreie Routen bevorzugt' : 'Routenmodus aktiv'}`;
     $('#metricRoutes').textContent = h.routes ?? '–';
     const up = h.uptime || {};
@@ -80,7 +81,12 @@ async function checkHealth() {
     $('#healthDetails').innerHTML = [
       ['Version', 'v' + (h.version || '–')], ['Routen', h.routes ?? '–'],
       ['System-Uptime', up.systemSec ? Math.round(up.systemSec / 3600) + ' h' : '–'],
-      ['CPU-Kerne', h.cpu?.cores ?? '–']
+      ['CPU-Kerne', resources.cpu?.cores ?? h.cpu?.cores ?? '–'],
+      ['CPU-Auslastung', Number.isFinite(resources.cpu?.usagePct) ? resources.cpu.usagePct + '%' : '–'],
+      ['RAM-Auslastung', Number.isFinite(resources.memory?.usedPct) ? resources.memory.usedPct + '%' : '–'],
+      ['GPU', resources.gpu?.available ? `${resources.gpu.devices?.length || 0} erkannt · ${resources.gpu.usedPct ?? '–'}% VRAM` : 'Keine GPU erkannt'],
+      ['Empfohlene Parallelität', resources.recommendation?.maxConcurrentTasks ?? '–'],
+      ['Gratis-Routen', llm.freeOnly ? 'Free-only aktiv · Quoten anbieterabhängig' : 'Free-only aus']
     ].map(([k, v]) => `<div class="row" style="display:flex;justify-content:space-between"><span style="color:var(--muted)">${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
     $('#verNum').textContent = h.version || '–';
   } catch {

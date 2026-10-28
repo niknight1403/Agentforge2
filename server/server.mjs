@@ -29,6 +29,8 @@ import { startBuild, buildStatus, buildArtifact, previewInfo, previewFile, maybe
 import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
+import { resourceStatus, resourceHistory, startResourceAgent } from './resource-agent.mjs';
+import { scanFreeRoutes, freeRouteCycleStatus, freeRouteScanHistory } from './free-route-cycle.mjs';
 import {
   initWebhookStore, claimEventId, releaseEventId, markWebhookProcessed, logWebhookEvent,
   verifyStripeSignature, handleStripeEvent,
@@ -293,7 +295,7 @@ async function api(req, res, url) {
     const total = os.totalmem(), free = os.freemem();
     const la = os.loadavg();
     return json(res, 200, {
-      ok: true, capabilities:['llm-cascade-v1','verified-readiness-v1','studio-v1','master-control-v1'],masterControl:1,llm:routingSummary(), ts: now(), version: VERSION, routes: enabledRoutes().length,
+      ok: true, capabilities:['llm-cascade-v1','verified-readiness-v1','studio-v1','master-control-v1','resource-agent-v1','free-route-cycle-v1'],masterControl:1,llm:routingSummary(), ts: now(), version: VERSION, routes: enabledRoutes().length,
       uptime: { processSec: Math.round(process.uptime()), systemSec: Math.round(os.uptime()) },
       cpu: { cores: os.cpus().length, load1: Number(la[0].toFixed(2)), load5: Number(la[1].toFixed(2)), load15: Number(la[2].toFixed(2)) },
       mem: {
@@ -309,6 +311,7 @@ async function api(req, res, url) {
         watchdog: svcStatus('cron')
       },
       scheduler: schedulerStatus(),
+      resources: resourceStatus(),
       cmd: cmdGateStatus(),
       db: dbSize()
     });
@@ -514,6 +517,13 @@ async function api(req, res, url) {
     const r = routeforgeTick();
     return json(res, 200, r);
   }
+  if (p === '/api/resources' && m === 'GET') return json(res, 200, resourceStatus());
+  if (p === '/api/resources/history' && m === 'GET') return json(res, 200, resourceHistory(url.searchParams.get('limit')));
+  if (p === '/api/free-routes' && m === 'GET') return json(res, 200, { ...freeRouteCycleStatus(), scans: freeRouteScanHistory(12) });
+  if (p === '/api/free-routes/scan' && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Gratis-Routen-Scan ist Admins vorbehalten.' });
+    return json(res, 200, await scanFreeRoutes());
+  }
   // ---- Secrets (nur Namen, niemals Werte; Admin-only, ausser offener Modus) ----
   if ((parts[0] === 'api' && parts[1] === 'secrets') && !openMode && !isAdmin) {
     return json(res, 403, { error: 'Schluessel-Verwaltung ist Admins vorbehalten.' });
@@ -537,7 +547,7 @@ async function api(req, res, url) {
   // ---- Skills, sichere Connectoren und integrierte Entwickler-Packs ----
   if (p === '/api/control/catalog' && m === 'GET') {
     const catalog=controlCatalog();
-    return json(res,200,{skills:catalog.skills.map(s=>({...s,builtin:['product-brief','professional-delivery','engineering-quality','visual-design','creative-production','source-grounded-research','safe-connectors-routing'].includes(s.id)})),connectors:catalog.connectors,packs:packState()});
+    return json(res,200,{skills:catalog.skills.map(s=>({...s,builtin:['product-brief','professional-delivery','engineering-quality','visual-design','creative-production','source-grounded-research','safe-connectors-routing','compute-routing-orchestrator'].includes(s.id)})),connectors:catalog.connectors,packs:packState()});
   }
   if (p === '/api/control/skills' && m === 'POST') {
     if(!openMode&&!isAdmin)return json(res,403,{error:'Skill-Verwaltung ist Admins vorbehalten.'});
@@ -1136,6 +1146,10 @@ server.listen(PORT, HOST, () => {
   log(`Hub laeuft auf http://${HOST}:${PORT}`);
   log(`UI:      http://localhost:${PORT}/`);
   log(`Health:  http://localhost:${PORT}/api/health`);
+  startResourceAgent({ onSample: (snapshot) => emit('resources', { snapshot }), onError: (error) => logError('Resource-Agent:', error?.message || error) });
+  setTimeout(() => { scanFreeRoutes().then((result) => { if (result.discovered) log(`Gratis-Routen: ${result.discovered} neue explizit kostenlose Modelle entdeckt`); }).catch((error) => logError('Gratis-Routen-Scan:', error?.message || error)); }, 45_000).unref?.();
+  const freeRouteLoop = setInterval(() => { scanFreeRoutes().then((result) => { if (result.discovered) log(`Gratis-Routen: ${result.discovered} neue explizit kostenlose Modelle entdeckt`); }).catch((error) => logError('Gratis-Routen-Scan:', error?.message || error)); }, 6 * 60 * 60 * 1000);
+  freeRouteLoop.unref();
   // Superintelligenz-Loop: alle 30 Min wird jede Villa mit faelliger Rat-Runde (>2 h) einberufen.
   const councilLoop = setInterval(() => {
     try { autoCouncil({ isRunning }); } catch { /* Rat stoert den Hub-Takt nie */ }

@@ -6,6 +6,8 @@ import { maybeDeliverApk } from './builds.mjs';
 import { skillInstructions, readConnector } from './control-store.mjs';
 import { pruneHistory } from './maintenance.mjs';
 import { chat, enabledRoutes, resolveKey, derivePlan } from './llm.mjs';
+import { resourceStatus, recommendedConcurrency } from './resource-agent.mjs';
+import { freeRouteCycleStatus } from './free-route-cycle.mjs';
 import { emit } from './events.mjs';
 import { mkdirSync, writeFileSync, readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
 import { execSync,execFileSync } from 'node:child_process';
@@ -35,6 +37,8 @@ export { ROLES } from './agent-roles.mjs';
 /* ------------------------------------------------------------------ */
 
 const TOOLS = {
+  resource_status: { description:'Liefert gemessene CPU-, GPU- und RAM-Auslastung samt einer sicheren Parallelitaetsempfehlung.', schema:{}, run:() => JSON.stringify(resourceStatus()) },
+  free_route_status: { description:'Zeigt ausschließlich lokale oder explizit kostenlose KI-Routen und den letzten offiziellen Discovery-Scan.', schema:{}, run:() => JSON.stringify(freeRouteCycleStatus()) },
   remote_worker:{description:'Einen begrenzten Rechenauftrag an den vom Administrator konfigurierten Remote-Worker senden. Erst nach Konfiguration nutzbar; keine GPU-Buchung.',schema:{task:'string',input:'object|array'},run:async(ctx,a)=>JSON.stringify(await executeRemoteWorker(a.task,a.input))},
   studio_status:{description:'Echte Abnahmeblocker, nächste Schritte und Live-Vorschau dieses Projekts.',schema:{},run:ctx=>JSON.stringify(studioStatus(ctx.villaId))},
   studio_designs:{description:'Zwei ideenspezifische UI-Designrichtungen mit Farben, Layout, Nutzerfluss und Abnahmekriterien vorschlagen. Noch keine Umsetzung.',schema:{},run:async ctx=>JSON.stringify(await proposeDesigns(ctx.villaId))},
@@ -779,11 +783,11 @@ const ROLE_TOOLS = {
   WORKER: 'artifact_write, artifact_patch, memory_write',
   BUSINESS: 'report_write, memory_write, web_search',
   GROWTH: 'report_write, memory_write, web_search, web_fetch',
-  ROOT: 'maturity_check, council_convene, backlog_review, memory_write, memory_search, task_create, swarm_dispatch, agent_spawn, report_write, media_capabilities, media_prepare, media_generate',
+  ROOT: 'maturity_check, council_convene, backlog_review, memory_write, memory_search, task_create, swarm_dispatch, agent_spawn, report_write, media_capabilities, media_prepare, media_generate, resource_status, free_route_status',
   STRATEGIST: 'maturity_check, backlog_review, memory_write, report_write, project_tree',
   REASONER: 'memory_search, memory_write, project_read, project_search, report_write',
   SYNTHESIZER: 'memory_search, memory_write, artifact_write, report_write, backlog_review',
-  OPTIMIZER: 'project_read, project_search, project_patch, project_run, memory_write, report_write',
+  OPTIMIZER: 'project_read, project_search, project_patch, project_run, memory_write, report_write, resource_status, free_route_status',
   VERIFIER: 'project_read, project_search, project_run, web_search, memory_write, report_write'
 };
 
@@ -1106,8 +1110,9 @@ export function pickConcurrency() {
   // laufen in lokale Drosseln. Wirksamer Durchsatz entsteht durch MAESSIGE
   // Parallelitaet (VF_MAX_CONCURRENCY, Default 3), nicht durch Sturzbett.
   const cap = Math.max(1, Number(process.env.VF_MAX_CONCURRENCY) || 3);
-  if (!usable.length) return Math.min(8, cap);
-  if (fast) return Math.min(cap, fast * 2);
+  const safeCap = Math.max(1, Math.min(cap, recommendedConcurrency()));
+  if (!usable.length) return Math.min(8, safeCap);
+  if (fast) return Math.min(safeCap, fast * 2);
   return 1; // Nur Ollama: CPU-Instanz mit 1 paralleler Anfrage
 }
 

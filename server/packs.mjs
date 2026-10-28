@@ -17,8 +17,8 @@ export const FEATURE_PACKS = [
   {
     id: 'monitoring',
     title: 'Monitoring Pack',
-    description: 'Hub-Gesundheit, Routen-Status und Live-Kennzahlen im Dashboard.',
-    caps: ['/api/health', '/api/stats']
+    description: 'Hub-Gesundheit, Routen-Status, CPU/GPU/RAM-Messwerte, Parallelitätsempfehlung und Live-Kennzahlen im Dashboard.',
+    caps: ['/api/health', '/api/stats', '/api/resources', '/api/resources/history', '/api/free-routes']
   },
   {
     id: 'analytics',
@@ -97,6 +97,7 @@ export const TOOL_PACKS = [
   { id: 'medien', title: 'Medienproduktion', description: 'Fähigkeiten prüfen, Bild-/Video-/Audio-Produktionspakete vorbereiten und Medien über konfigurierte Fal.ai-Routen rendern.', tools: ['media_capabilities', 'media_prepare', 'media_generate'] },
   { id: 'extern', title: 'Connectoren & externe Dienste', description: 'Konfigurierte HTTPS-JSON-Connectoren, Fireflies-Meetingprotokolle und Asana-Aufgaben. Benötigte Secret-Referenzen: FIREFLIES_API_KEY, ASANA_PAT.', tools: ['connector_read', 'fireflies_transcripts', 'asana_list_projects', 'asana_create_task'] },
   { id: 'github', title: 'GitHub Produkt-Pack', description: 'Veröffentlicht ein fertiges Villa-Projekt in einem eigenen GitHub-Repository. Benötigt GITHUB_TOKEN im Secret-Speicher.', tools: ['github_publish'] },
+  { id: 'compute-routing', title: 'Compute- & Gratis-Routen-Agent', description: 'Misst CPU, GPU und RAM, begrenzt Parallelität unter Ressourcenlast und entdeckt offizielle OpenRouter-Modelle nur bei ausgewiesenem Nullpreis.', tools: ['resource_status', 'free_route_status'] },
   { id: 'open-data', title: 'Offene Daten (keylos)', description: 'Wikipedia, Hacker News, Wetter, Waehrungen und Paket-Infos — alles ohne API-Key.', tools: ['wikipedia_search', 'hackernews_search', 'weather_lookup', 'currency_convert', 'package_info'] },
   { id: 'berichte', title: 'Berichte', description: 'Analyse-, Umsatz- und Review-Berichte ablegen.', tools: ['report_write'] }
 ];
