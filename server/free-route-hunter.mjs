@@ -121,16 +121,32 @@ export function integrate(candidates = []) {
   const added = [];
   const skipped = [];
   for (const c of candidates) {
-    if (c.isFree === false) { skipped.push({ name: c.name, reason: 'nicht kostenlos' }); continue; }
+    if (c.isFree === false) { skipped.push({ name: String(c.name || '').trim() || '(ohne Namen)', reason: 'nicht kostenlos' }); continue; }
     if (existing.has(keyOf(c)) || names.has(norm(c.name))) { skipped.push({ name: c.name, reason: 'vorhanden' }); continue; }
+    const name = String(c.name || '').trim();
+    const baseUrl = String(c.baseUrl || '').trim();
+    const model = String(c.model || '').trim();
+    // Unvollstaendige Kandidaten ueberspringen, statt die Runde zu verlieren:
+    // ein fehlendes model/baseUrl liess insert.run() vorher werfen (SQLite
+    // "cannot be bound"), wodurch alle nachfolgenden Kandidaten verloren gingen.
+    if (!name || !baseUrl || !model) {
+      skipped.push({ name: name || '(ohne Namen)', reason: 'unvollstaendig' });
+      continue;
+    }
     const prio = Number(c.priority) || 30;
-    insert.run(c.name, c.provider || 'openai-compatible', c.baseUrl, c.model, c.keyEnv || '', prio);
+    try {
+      insert.run(name, c.provider || 'openai-compatible', baseUrl, model, c.keyEnv || '', prio);
+    } catch (e) {
+      // Eine einzelne defekte Route darf die Discovery-Runde nie abbrechen.
+      skipped.push({ name, reason: 'insert-fehler' });
+      continue;
+    }
     // Dublettenschutz gilt auch INNERHALB eines Laufs: den eben eingefuegten
     // Kandidaten sofort in die Pruefsets aufnehmen, sonst legt ein doppelter
     // Kandidat aus derselben Discovery-Liste zwei Routen an.
-    existing.set(keyOf(c), { id: 0 });
-    names.add(norm(c.name));
-    added.push({ name: c.name, provider: c.provider, model: c.model, priority: prio });
+    existing.set(keyOf({ baseUrl, model }), { id: 0 });
+    names.add(norm(name));
+    added.push({ name, provider: c.provider, model, priority: prio });
     try { forgeLog('hunter:route', `Neue Gratis-Route [${c.name}] P${prio}`); } catch { /* Log ist optional */ }
   }
   return { added, skipped };
