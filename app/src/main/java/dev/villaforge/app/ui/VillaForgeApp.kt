@@ -194,7 +194,12 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     Screen.CHAT -> ChatScreen(state, viewModel)
                     Screen.DEV -> DevScreen(state, viewModel, onOpenVilla = { id -> viewModel.openVilla(id); screen = Screen.DEV })
                     Screen.DEEP -> DeepAgentScreen(state, viewModel, onOpenProject = { id -> viewModel.openDeepProject(id); screen = Screen.DEEP_CHAT }, onBack = { screen = Screen.DASHBOARD })
-                    Screen.DEEP_CHAT -> DeepChatScreen(state, viewModel, onBack = { screen = Screen.DEEP })
+                    Screen.DEEP_CHAT -> DeepChatScreen(
+                        state,
+                        viewModel,
+                        onBack = { screen = Screen.DEEP },
+                        onOpenVilla = { id -> viewModel.openVilla(id); screen = Screen.DEV }
+                    )
                     Screen.SETTINGS -> SettingsScreen(state, viewModel) { screen = Screen.CAPABILITIES }
                     Screen.CAPABILITIES -> CapabilitiesScreen(state, viewModel) { prompt -> masterPrompt = prompt; screen = Screen.MASTER }
                     Screen.DIAGNOSTICS -> DiagnosticsScreen(state, viewModel)
