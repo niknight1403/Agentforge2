@@ -1,0 +1,28 @@
+{
+  "name": "@agentforge2/runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "generate": "prisma generate",
+    "build": "npm run generate && tsc -p tsconfig.json",
+    "check": "npm run build",
+    "test": "npm run build && node --test dist/tests/*.test.js",
+    "migrate": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.10.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.300.0",
+    "@opentelemetry/resources": "3.0.0",
+    "@opentelemetry/sdk-node": "0.300.0",
+    "@opentelemetry/semantic-conventions": "1.43.0",
+    "@prisma/client": "6.19.3",
+    "ioredis": "5.11.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.0",
+    "prisma": "6.19.3",
+    "typescript": "5.9.3"
+  }
+}
