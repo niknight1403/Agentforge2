@@ -1088,13 +1088,20 @@ export function stopVilla(villaId) {
   return true;
 }
 
+export function extendVillaRunToCompletion(villaId) {
+  const job = running.get(Number(villaId));
+  if (!job) return false;
+  job.runToCompletion = true;
+  return true;
+}
+
 export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, adaptive = true, maxRounds = 6, runToCompletion = false } = {}) {
   if (db.prepare('SELECT status FROM villas WHERE id=?').get(villaId)?.status === 'ARCHIVED') return;
   if (running.get(villaId)) return;
   // concurrency 0 = automatisch je nach Routen (schnelle Cloud-Routen -> mehr parallel)
   const auto = Number(concurrency) > 0 ? Number(concurrency) : pickConcurrency();
   const hardCap = Math.max(1, Number(process.env.VF_MAX_CONCURRENCY) || 3);
-  const job = { stop: false, processed: 0, concurrency: Math.max(1, Math.min(auto, hardCap)) };
+  const job = { stop: false, processed: 0, concurrency: Math.max(1, Math.min(auto, hardCap)), runToCompletion: runToCompletion === true };
   running.set(villaId, job);
   // Lauf-Budget: Im 24/7-Dauerbetrieb endet die Schleife nie von selbst - ohne
   // Budget belegt eine Villa ihren Slot STUNDENLANG und die restlichen Villen
@@ -1130,7 +1137,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
   try {
     while (true) { // Ende: Stopp, Autonomie-Aus, Fehler/Budget oder echtes Produkt-Abnahmegate
       if (job.stop) break;
-      if (now() - runStart > budgetMs) break; // Slot fair rotieren lassen
+      if (!job.runToCompletion && now() - runStart > budgetMs) break; // Nur normale Läufe rotieren zeitbasiert
 
       const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(villaId);
       if (!villa || villa.autonomy === 0) break;
@@ -1148,7 +1155,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
           continue;
         }
         const rounds = Number(villa.auto_rounds || 0);
-        if (runToCompletion) {
+        if (job.runToCompletion) {
           if (sourceRoot(villaId)) {
             const verification = await verifyProject(villaId);
             emit('progress', { villaId, processed: job.processed, finalVerification: verification?.skipped ? 'skipped' : (verification?.ok ? 'passed' : 'failed') });

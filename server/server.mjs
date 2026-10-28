@@ -12,7 +12,7 @@ import { chat, routingStatus, routingSummary, enabledRoutes, resolveKey, keyStat
 import { masterChat, masterHistory } from './master.mjs';
 import { reapZombies } from './agents.mjs';
 import { userStore, usersExist, userForRequest, userForToken, verifyPassword, createSession, destroyToken, upsertUser, publicUser, quotaLeft, FREE_DAILY_TOKENS } from './auth.mjs';
-import { createVilla, runAgent, orchestrate, stopVilla, isRunning, executeTaskOnce, TOOL_SPECS, toolSpecs, memoryContext, setSource, analyzeProject, refreshAgentPrompts, PROMPT_VERSION, ROLES, runTool } from './agents.mjs';
+import { createVilla, runAgent, orchestrate, stopVilla, isRunning, extendVillaRunToCompletion, executeTaskOnce, TOOL_SPECS, toolSpecs, memoryContext, setSource, analyzeProject, refreshAgentPrompts, PROMPT_VERSION, ROLES, runTool } from './agents.mjs';
 import { packState, packSummary, setPackEnabled } from './packs.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { schedulerStatus, villaRanking, enqueueVillas, configureScheduler, scheduleVilla, cancelScheduledVilla, villaFocusId} from './scheduler.mjs';
@@ -745,8 +745,11 @@ async function api(req, res, url) {
     if (focusId !== null && id !== focusId) return json(res, 409, { error: 'Einzelfokus aktiv: Nur die fokussierte Test Villa kann gestartet werden.', focusVillaId: focusId });
     const b = await readBody(req).catch(() => ({}));
     db.prepare('UPDATE villas SET autonomy=1,updated_at=? WHERE id=?').run(now(), id);
-    if (isRunning(id)) return json(res, 202, { ok: true, alreadyRunning: true, started: true });
     const scheduled = scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6, runToCompletion: b.runToCompletion === true });
+    if (isRunning(id)) {
+      if (b.runToCompletion === true) extendVillaRunToCompletion(id);
+      return json(res, 202, { ok: true, alreadyRunning: true, started: true, runToCompletion: b.runToCompletion === true });
+    }
     return json(res, 202, { ok: true, started: scheduled.active.includes(id), queued: scheduled.queue.includes(id), scheduler: scheduled });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'stop' && m === 'POST') {
