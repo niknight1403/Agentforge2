@@ -144,7 +144,7 @@ export function createMasterControl(deps) {
     if (/^(?:zeige |wie ist |was ist )?(?:den )?(?:status|gesamtüberblick|konfiguration)(?: von villaforge)?[?.!]*$/i.test(message.trim())) return [{ type:'status' }];
     if (/(?:doppelt|dubletten|duplikat)/i.test(message) && /archivier|bereinig|aufräum|aufraeum|entfern/i.test(message)) return [{ type:'archive_duplicates' }];
     if (/doppelt|dubletten|duplikat/i.test(message)) return [{ type:'status' }];
-    const autopilot = /^(aktiviere|deaktiviere)\\s+(?:den\\s+)?autopilot\\s+#?(\\d+)[.!]?$/i.exec(message.trim());
+    const autopilot = /^(aktiviere|deaktiviere)\s+(?:den\s+)?autopilot\s+#?(\d+)[.!]?$/i.exec(message.trim());
     if (autopilot) { const villaId=Number(autopilot[2]); return /^aktiviere/i.test(autopilot[1]) ? [{type:'ultra_enable',args:{villaId}},{type:'ultra_tick',args:{villaId}}] : [{type:'ultra_disable',args:{villaId}}]; }
     if (/vorschläg|vorschlaeg|nächste schritte/i.test(message)) {
       const id = /#(\d+)/.exec(message); return [{ type:'list_suggestions',args:id ? { villaId:Number(id[1]) } : {} }];
