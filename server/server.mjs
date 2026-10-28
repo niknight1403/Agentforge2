@@ -31,6 +31,7 @@ import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
 import { resourceStatus, resourceHistory, startResourceAgent } from './resource-agent.mjs';
 import { scanFreeRoutes, freeRouteCycleStatus, freeRouteScanHistory } from './free-route-cycle.mjs';
+import { hunterTick, hunterStatus, weeklyReport, probeRoute, reportPath, monitor } from './free-route-hunter.mjs';
 import {
   initWebhookStore, claimEventId, releaseEventId, markWebhookProcessed, logWebhookEvent,
   verifyStripeSignature, handleStripeEvent,
@@ -593,6 +594,19 @@ async function api(req, res, url) {
   if (p === '/api/free-routes/scan' && m === 'POST') {
     if (!openMode && !isAdmin) return json(res, 403, { error: 'Gratis-Routen-Scan ist Admins vorbehalten.' });
     return json(res, 200, await scanFreeRoutes());
+  }
+  /* ---- Free Route Hunter: Health-Probes, lokale/keyfreie Quellen, Wochenbericht ---- */
+  if (p === '/api/free-routes/hunter' && m === 'GET') return json(res, 200, hunterStatus());
+  if (p === '/api/free-routes/monitor' && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Routen-Probe ist Admins vorbehalten.' });
+    return json(res, 200, { ok: true, probes: await monitor({ limit: Number(url.searchParams.get('limit') || 6) }) });
+  }
+  if (p === '/api/free-routes/report' && m === 'GET') return json(res, 200, { ok: true, ...weeklyReport({ writeTo: reportPath() }) });
+  if (parts[0] === 'api' && parts[1] === 'free-routes' && parts[2] === 'probe' && parts[3] && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Probe ist Admins vorbehalten.' });
+    const row = db.prepare('SELECT id, name, base_url, model, key_env FROM routes WHERE id = ?').get(Number(parts[3]));
+    if (!row) return json(res, 404, { error: 'Route nicht gefunden' });
+    return json(res, 200, { ok: true, ...(await probeRoute(row)) });
   }
   // ---- Secrets (nur Namen, niemals Werte; Admin-only, ausser offener Modus) ----
   if ((parts[0] === 'api' && parts[1] === 'secrets') && !openMode && !isAdmin) {
@@ -1235,6 +1249,23 @@ server.listen(PORT, HOST, () => {
     }).catch((error) => logError('Gratis-Routen-Scan:', error?.message || error));
   }, 6 * 60 * 60 * 1000);
   freeRouteLoop.unref();
+  // FREE ROUTE HUNTER: Health alle 30 Min; alle 6h (jeder 12. Tick) zusaetzlich
+  // lokale Ollama-Modelle + keyfreie Quellen integrieren und den Wochenbericht
+  // in den Villa-Workspace schreiben.
+  let hunterTicks = 0;
+  const hunterLoop = setInterval(() => {
+    hunterTicks += 1;
+    const full = hunterTicks % 12 === 1;
+    const work = full
+      ? hunterTick({ monitorLimit: 8, includeLocal: true }).then((r) => {
+          if (r.local.added.length) log(`Hunter: ${r.local.added.length} neue Gratis-Route(n) integriert`);
+          try { weeklyReport({ writeTo: reportPath() }); } catch { /* Bericht optional */ }
+          return r.probes.length;
+        })
+      : monitor({ limit: 4 }).then((p) => p.length);
+    work.catch((e) => logError('Hunter:', e?.message || e));
+  }, 30 * 60 * 1000);
+  hunterLoop.unref();
   // Superintelligenz-Loop: alle 30 Min wird jede Villa mit faelliger Rat-Runde (>2 h) einberufen.
   const councilLoop = setInterval(() => {
     try { autoCouncil({ isRunning }); } catch { /* Rat stoert den Hub-Takt nie */ }
