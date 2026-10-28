@@ -48,3 +48,11 @@ test('Noch offene Produktaufgaben sperren 100 trotz technisch erfolgreicher Prü
  db.prepare("INSERT INTO tasks(villa_id,title,status,created_at,updated_at) VALUES (?,'Fehlendes Kernfeature','PENDING',?,?)").run(id,now(),now());
  assert.ok(maturity(id).score<100);assert.equal(maturity(id).verified,false);
 });
+
+test('Eigenständige Web-Artefakte passieren den produktiven 90-Punkte-Q-Gate erst mit sicheren, kleinen Inline-Apps',async()=>{
+ const id=villa(),root=project(id);writeFileSync(join(root,'index.html'),'<!doctype html><script>const ready=true;</script>');
+ const safe=await verifyProjectRuntime(id,{runner:async()=>({ok:true})});assert.equal(safe.checks.quality.status,'passed');assert.equal(safe.checks.quality.score,100);
+ writeFileSync(join(root,'index.html'),'<!doctype html><script>eval("1");document.write("x");</script>');
+ const unsafe=await verifyProjectRuntime(id,{runner:async()=>({ok:true})});assert.equal(unsafe.checks.quality.status,'failed');assert.ok(unsafe.checks.quality.score<90);assert.equal(projectReadiness(id).verified,false);
+});
+

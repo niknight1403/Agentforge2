@@ -1,6 +1,7 @@
 import {existsSync,readdirSync,readFileSync,lstatSync,realpathSync} from 'node:fs';
 import {resolve,join,extname} from 'node:path';
 import {createHash} from 'node:crypto';
+import {calculateQualityGate,scoreStandaloneHtmlPerformance,scoreStandaloneHtmlSecurity} from './quality-gate.mjs';
 import {db,now} from './db.mjs';
 import {runCommand} from './fs-tools.mjs';
 export const PROJECT_WORKSPACE=resolve(process.env.VF_WORKSPACE||'server/data/workspace');
@@ -79,6 +80,20 @@ export async function verifyProjectRuntime(id,{runner=runCommand}={}){
    try{result=await runner(project.root,binary,args,180000);}catch{result={ok:false,error:'Prüfprozess nicht ausführbar'};}
    checks[kind]={status:result.ok?'passed':'failed',command:[binary,...args],output:String(result.output||result.error||'').slice(-2000)};
    if(!result.ok)blockers.push(`${kind}: fehlgeschlagen`);
+  }
+  const htmlPath=join(project.root,'index.html');
+  if(existsSync(htmlPath)){
+   let html='';try{html=readFileSync(htmlPath,'utf8');}catch{}
+   if(/<script\b(?![^>]*\bsrc\s*=)[^>]*>[\s\S]*?<\/script>/i.test(html)){
+    const quality=calculateQualityGate({
+     syntax:checks.build?.status==='passed'?100:0,
+     tests:checks.tests?.status==='passed'?100:0,
+     security:scoreStandaloneHtmlSecurity(html),
+     performance:scoreStandaloneHtmlPerformance(Buffer.byteLength(html,'utf8'))
+    },90);
+    checks.quality={status:quality.passed?'passed':'failed',...quality};
+    if(!quality.passed)blockers.push(`quality: standalone HTML score ${quality.score}/100 is below ${quality.threshold}; syntax ${quality.syntax}, tests ${quality.tests}, security ${quality.security}, performance ${quality.performance}`);
+   }
   }
   const after=inspectProject(id);
   if(after.fingerprint!==project.fingerprint)blockers.push('Quellstand während der Prüfung verändert; erneut prüfen');

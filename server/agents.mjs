@@ -15,6 +15,10 @@ import { canUseTool, toolPackOf, packEnabled } from './packs.mjs';
 import { generateMedia, mediaCapabilities } from './media.mjs';
 import { saveCheckpoint, recoverCheckpoint } from './checkpoints.mjs';
 import { withOtelSpan } from './otel.mjs';
+import { ROLES } from './agent-roles.mjs';
+import { normalizeSwarmBlueprint } from './swarm.mjs';
+export { normalizeSwarmBlueprint } from './swarm.mjs';
+
 
 export const WORKSPACE = PROJECT_WORKSPACE;
 mkdirSync(WORKSPACE, { recursive: true });
@@ -24,7 +28,7 @@ export function villaProjectDir(villaId) {
   return ownProjectDir(villaId);
 }
 
-export const ROLES = ['PLANNER', 'RESEARCHER', 'ARCHITECT', 'CODER', 'REVIEWER', 'TESTER', 'DOCUMENTER', 'CRITIC', 'INTEGRATOR', 'WORKER', 'BUSINESS', 'GROWTH', 'STRATEGIST', 'REASONER', 'SYNTHESIZER', 'OPTIMIZER', 'VERIFIER'];
+export { ROLES } from './agent-roles.mjs';
 
 /* ------------------------------------------------------------------ */
 /* Werkzeuge                                                           */
@@ -164,6 +168,53 @@ const TOOLS = {
         'INSERT INTO tasks (villa_id, title, description, status, priority, created_at, updated_at) VALUES (?,?,?,?,?,?,?)'
       ).run(ctx.villaId, String(a.title || 'Aufgabe'), String(a.description || ''), 'PENDING', Number(a.priority) || 5, now(), now()).lastInsertRowid;
       return `Aufgabe #${id} angelegt: ${a.title}`;
+    }
+  },
+  swarm_dispatch: {
+    description: 'Plant einen begrenzten Agenten-Swarm mit konkreten Zielen, Fachrollen, Abnahmekriterien und sicheren Rahmenbedingungen. Erstellt pro Aufgabe einen gebundenen Spezialisten und eine ausführbare Villenaufgabe. Maximal 8 Aufgaben je Plan.',
+    schema: { tasks: 'Array<{title, goal, role, acceptance, constraints?, priority?}> (1-8)' },
+    run: (ctx, a) => {
+      let plan;
+      try { plan = normalizeSwarmBlueprint(a.tasks); }
+      catch (error) { return `Swarm-Plan abgelehnt: ${error.message}`; }
+      const transaction = () => {
+        db.exec('BEGIN IMMEDIATE');
+        try {
+        const ids = [];
+        for (const item of plan) {
+          let agent = db.prepare(
+            "SELECT a.id FROM agents a WHERE a.villa_id=? AND a.role=? AND a.is_root=0 AND a.status IN ('IDLE','THINKING') AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.agent_id=a.id AND t.status IN ('PENDING','READY','RUNNING','REVIEW')) ORDER BY a.status='IDLE' DESC,a.id LIMIT 1"
+          ).get(ctx.villaId, item.role);
+          if (!agent && agentCount(ctx.villaId) < maxAgents(ctx.villaId)) {
+            const agentId = insertAgent(ctx.villaId, `${item.role}-Swarm-${Date.now()}-${ids.length + 1}`, item.role, ctx.agentId);
+            agent = { id: agentId };
+          }
+          if (!agent) throw new Error(`Kapazitätsgrenze erreicht; kein freier ${item.role}-Agent für „${item.title}“.`);
+          const description = [
+            `Ziel: ${item.goal}`,
+            `Rolle: ${item.role}`,
+            `Akzeptanz: ${item.acceptance}`,
+            item.constraints ? `Rahmenbedingungen: ${item.constraints}` : '',
+            'Liefervertrag: Erzeuge das konkrete Artefakt, führe passende Prüfungen aus und dokumentiere Ergebnis, Prüfnachweis und offene Risiken. Bei Blockade liefere Fehlermeldung und kleinsten sicheren nächsten Schritt.'
+          ].filter(Boolean).join('\n');
+          const taskId = db.prepare(
+            'INSERT INTO tasks (villa_id, agent_id, title, description, status, priority, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)'
+          ).run(ctx.villaId, agent.id, item.title, description, 'PENDING', item.priority, now(), now()).lastInsertRowid;
+          ids.push({ taskId, agentId: agent.id, role: item.role, title: item.title });
+        }
+        db.exec('COMMIT');
+        return ids;
+        } catch (error) {
+          try { db.exec('ROLLBACK'); } catch { /* transaction may already be closed */ }
+          throw error;
+        }
+      };
+      try {
+        const assignments = transaction();
+        return JSON.stringify({ ok: true, dispatched: assignments.length, assignments });
+      } catch (error) {
+        return `Swarm nicht gestartet; Änderungen zurückgerollt: ${error.message}`;
+      }
     }
   },
   task_update: {
@@ -728,7 +779,7 @@ const ROLE_TOOLS = {
   WORKER: 'artifact_write, artifact_patch, memory_write',
   BUSINESS: 'report_write, memory_write, web_search',
   GROWTH: 'report_write, memory_write, web_search, web_fetch',
-  ROOT: 'maturity_check, council_convene, backlog_review, memory_write, memory_search, task_create, agent_spawn, report_write, media_capabilities, media_prepare, media_generate',
+  ROOT: 'maturity_check, council_convene, backlog_review, memory_write, memory_search, task_create, swarm_dispatch, agent_spawn, report_write, media_capabilities, media_prepare, media_generate',
   STRATEGIST: 'maturity_check, backlog_review, memory_write, report_write, project_tree',
   REASONER: 'memory_search, memory_write, project_read, project_search, report_write',
   SYNTHESIZER: 'memory_search, memory_write, artifact_write, report_write, backlog_review',
