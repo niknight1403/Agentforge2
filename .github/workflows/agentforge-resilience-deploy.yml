@@ -9,6 +9,14 @@ on:
     paths:
       - server/.env.example
       - server/agents.mjs
+      - server/agent-roles.mjs
+      - server/swarm.mjs
+      - server/quality-gate.mjs
+      - server/project-verification.mjs
+      - server/tests/agi-roles.test.mjs
+      - server/tests/swarm.test.mjs
+      - server/tests/quality-gate.test.mjs
+      - server/tests/project-verification.test.mjs
       - server/circuit-breaker.mjs
       - server/checkpoints.mjs
       - server/event-mesh.mjs
@@ -37,7 +45,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          tar -czf /tmp/agentforge-patch.tgz server/.env.example server/agents.mjs server/circuit-breaker.mjs server/checkpoints.mjs server/event-mesh.mjs server/events.mjs server/llm-cascade.mjs server/llm.mjs server/master-control.mjs server/otel.mjs server/redis.mjs server/supervisor.mjs server/tests/event-mesh.test.mjs server/tests/llm-cascade.test.mjs server/tests/master-control.test.mjs server/tests/resilience-core.test.mjs
+          tar -czf /tmp/agentforge-patch.tgz server/.env.example server/agents.mjs server/agent-roles.mjs server/swarm.mjs server/quality-gate.mjs server/project-verification.mjs server/tests/agi-roles.test.mjs server/tests/swarm.test.mjs server/tests/quality-gate.test.mjs server/tests/project-verification.test.mjs server/circuit-breaker.mjs server/checkpoints.mjs server/event-mesh.mjs server/events.mjs server/llm-cascade.mjs server/llm.mjs server/master-control.mjs server/otel.mjs server/redis.mjs server/supervisor.mjs server/tests/event-mesh.test.mjs server/tests/llm-cascade.test.mjs server/tests/master-control.test.mjs server/tests/resilience-core.test.mjs
           scp -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key /tmp/agentforge-patch.tgz ubuntu@92.5.177.159:/tmp/
           cat > /tmp/deploy-agentforge-patch.sh <<'DEPLOY'
           set -Eeuo pipefail
@@ -54,7 +62,7 @@ jobs:
           STAGE=$(mktemp -d /tmp/vf-agentforge-stage.XXXXXX)
           BACKUP=$(mktemp -d /tmp/vf-agentforge-backup.XXXXXX)
           tar -xzf /tmp/agentforge-patch.tgz -C "$STAGE"
-          FILES=("server/.env.example" "server/agents.mjs" "server/circuit-breaker.mjs" "server/checkpoints.mjs" "server/event-mesh.mjs" "server/events.mjs" "server/llm-cascade.mjs" "server/llm.mjs" "server/master-control.mjs" "server/otel.mjs" "server/redis.mjs" "server/supervisor.mjs" "server/tests/event-mesh.test.mjs" "server/tests/llm-cascade.test.mjs" "server/tests/master-control.test.mjs" "server/tests/resilience-core.test.mjs")
+          FILES=("server/.env.example" "server/agents.mjs" "server/agent-roles.mjs" "server/swarm.mjs" "server/quality-gate.mjs" "server/project-verification.mjs" "server/tests/agi-roles.test.mjs" "server/tests/swarm.test.mjs" "server/tests/quality-gate.test.mjs" "server/tests/project-verification.test.mjs" "server/circuit-breaker.mjs" "server/checkpoints.mjs" "server/event-mesh.mjs" "server/events.mjs" "server/llm-cascade.mjs" "server/llm.mjs" "server/master-control.mjs" "server/otel.mjs" "server/redis.mjs" "server/supervisor.mjs" "server/tests/event-mesh.test.mjs" "server/tests/llm-cascade.test.mjs" "server/tests/master-control.test.mjs" "server/tests/resilience-core.test.mjs")
           for f in "${FILES[@]}"; do
             test -f "$STAGE/$f"
             target="$HUBDIR/${f#server/}"
@@ -83,6 +91,14 @@ jobs:
             install -o root -g root -m 0644 "$STAGE/$f" "$target"
           done
           node --check "$STAGE/server/agents.mjs"
+          node --check "$STAGE/server/agent-roles.mjs"
+          node --check "$STAGE/server/swarm.mjs"
+          node --check "$STAGE/server/quality-gate.mjs"
+          node --check "$STAGE/server/project-verification.mjs"
+          node --check "$STAGE/server/tests/agi-roles.test.mjs"
+          node --check "$STAGE/server/tests/swarm.test.mjs"
+          node --check "$STAGE/server/tests/quality-gate.test.mjs"
+          node --check "$STAGE/server/tests/project-verification.test.mjs"
           node --check "$STAGE/server/circuit-breaker.mjs"
           node --check "$STAGE/server/checkpoints.mjs"
           node --check "$STAGE/server/event-mesh.mjs"
@@ -98,7 +114,7 @@ jobs:
           node --check "$STAGE/server/tests/master-control.test.mjs"
           node --check "$STAGE/server/tests/resilience-core.test.mjs"
           cd "$HUBDIR"
-          VF_TEST=1 timeout 240 node --test "$HUBDIR/tests/event-mesh.test.mjs" "$HUBDIR/tests/llm-cascade.test.mjs" "$HUBDIR/tests/master-control.test.mjs" "$HUBDIR/tests/resilience-core.test.mjs"
+          VF_TEST=1 timeout 240 node --test "$HUBDIR/tests/event-mesh.test.mjs" "$HUBDIR/tests/llm-cascade.test.mjs" "$HUBDIR/tests/master-control.test.mjs" "$HUBDIR/tests/resilience-core.test.mjs" "$HUBDIR/tests/agi-roles.test.mjs" "$HUBDIR/tests/swarm.test.mjs" "$HUBDIR/tests/quality-gate.test.mjs" "$HUBDIR/tests/project-verification.test.mjs"
           systemctl restart "$UNIT"
           for attempt in $(seq 1 20); do
             if systemctl is-active --quiet "$UNIT"; then break; fi
