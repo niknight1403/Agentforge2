@@ -2,9 +2,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { timingSafeEqual } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { RedisEventBus } from './RedisEventBus.js';
-import { AgentWorker, type TaskExecutor } from './AgentWorker.js';
+import { AgentWorker } from './AgentWorker.js';
 import { AgentTelemetry } from './AgentTelemetry.js';
 import { CheckpointStore } from './CheckpointStore.js';
+import { createHubTaskExecutor } from './HubTaskExecutor.js';
 
 const port = Number(process.env.PORT || 12001);
 const token = String(process.env.MESH_INTERNAL_TOKEN || '');
@@ -16,23 +17,7 @@ if (!hubUrl) throw new Error('AGENTFORGE_EXECUTOR_URL is required.');
 const prisma = new PrismaClient();
 const bus = new RedisEventBus();
 const checkpointStore = new CheckpointStore(prisma);
-const executor: TaskExecutor = {
-  async execute(input, context) {
-    const payload = input as { hubTaskId?: number; villaId?: number };
-    if (!Number.isSafeInteger(payload.hubTaskId) || !Number.isSafeInteger(payload.villaId)) throw new Error('Invalid Agentforge task reference.');
-    const response = await fetch(`${hubUrl}/internal/mesh/execute`, {
-      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ taskId: payload.hubTaskId, villaId: payload.villaId }),
-      signal: AbortSignal.timeout(Math.max(15_000, Math.min(Number(process.env.AGENTFORGE_TASK_TIMEOUT_MS) || 1_200_000, 1_500_000)))
-    });
-    const body = await response.json().catch(() => ({})) as { status?: string; result?: unknown; error?: string };
-    if (!response.ok) throw Object.assign(new Error(body.error || `Agentforge returned HTTP ${response.status}`), { status: response.status, code: response.status === 503 ? 'LLM_UNAVAILABLE' : 'AGENTFORGE_ERROR' });
-    return { result: body.result ?? { status: body.status || 'completed' }, steps: [{
-      toolName: 'agentforge.execute_task', arguments: { hubTaskId: payload.hubTaskId, villaId: payload.villaId },
-      result: body.result ?? null, state: { status: body.status || 'completed', attempt: context.attempt }
-    }] };
-  }
-};
+const executor = createHubTaskExecutor({hubUrl,token});
 const worker = new AgentWorker(prisma, bus, executor);
 const controller = new AbortController();
 let outboxTimer: NodeJS.Timeout | undefined;
@@ -46,7 +31,8 @@ const send = (res: ServerResponse, status: number, data: unknown) => { res.write
 async function body(req: IncomingMessage) {
   const chunks: Buffer[] = []; let size = 0;
   for await (const chunk of req) { const item = Buffer.from(chunk); size += item.length; if (size > 64 * 1024) throw Object.assign(new Error('Request body too large.'), { status: 413 }); chunks.push(item); }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>; }
+  catch { throw Object.assign(new Error('Request body must contain valid JSON.'), { status: 400 }); }
 }
 
 const server = createServer(async (req, res) => {
@@ -60,19 +46,24 @@ const server = createServer(async (req, res) => {
     if (!auth(req)) return send(res, 401, { error: 'Unauthorized' });
     if (req.method === 'POST' && url.pathname === '/tasks') {
       const input = await body(req);
-      if (typeof input.title !== 'string' || !input.title.trim() || !input.input || typeof input.input !== 'object') return send(res, 400, { error: 'title and object input are required.' });
-      const task = await worker.enqueue(input.title, input.input as never, String(req.headers['idempotency-key'] || '') || undefined);
+      const requestKey = req.headers['idempotency-key'];
+      if (requestKey !== undefined && (typeof requestKey !== 'string' || requestKey.length > 180 || !/^[a-z0-9:._/-]+$/i.test(requestKey))) return send(res, 400, { error: 'idempotency-key must be 1–180 safe ASCII characters.' });
+      if (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 500 ||
+          !input.input || typeof input.input !== 'object' || Array.isArray(input.input) || Object.getPrototypeOf(input.input) !== Object.prototype) return send(res, 400, { error: 'title (1–500 characters) and a plain object input are required.' });
+      const task = await worker.enqueue(input.title, input.input as never, requestKey || undefined);
       return send(res, 202, { id: task.id, status: task.status });
     }
     if(req.method==='POST'&&url.pathname==='/internal/checkpoints'){
       const input=await body(req);
       const hubTaskId=Number(input.hubTaskId),hubVillaId=Number(input.hubVillaId);
       const agentId=String(input.agentId||'');const sourceId=String(input.sourceCheckpointId||'');
-      if(!Number.isSafeInteger(hubTaskId)||hubTaskId<1||!Number.isSafeInteger(hubVillaId)||hubVillaId<1||!agentId||agentId.length>160||!/^[a-f0-9]{64}$/i.test(sourceId)||!input.state||typeof input.state!=='object')return send(res,400,{error:'Invalid checkpoint mirror payload.'});
+      if(!Number.isSafeInteger(hubTaskId)||hubTaskId<1||!Number.isSafeInteger(hubVillaId)||hubVillaId<1||!agentId||agentId.length>160||!/^[a-f0-9]{64}$/i.test(sourceId)||!input.state||typeof input.state!=='object'||Array.isArray(input.state)||Object.getPrototypeOf(input.state)!==Object.prototype)return send(res,400,{error:'Invalid checkpoint mirror payload.'});
       const task=await prisma.agentTask.findFirst({where:{hubTaskId,hubVillaId},orderBy:{createdAt:'desc'},select:{id:true}});
       if(!task)return send(res,404,{error:'Mesh task is not registered.'});
       const state=input.state as Record<string,unknown>;
-      const saved=await checkpointStore.persistStep({taskId:task.id,agentId,stepNumber:Number(state.step)||1,
+      const stepNumber=state.step===undefined?1:Number(state.step);
+      if(!Number.isSafeInteger(stepNumber)||stepNumber<1)return send(res,400,{error:'Checkpoint step must be a positive integer.'});
+      const saved=await checkpointStore.persistStep({taskId:task.id,agentId,stepNumber,
         toolName:String(state.lastTool||'agent.step').slice(0,160),arguments:{},result:{checkpointSourceId:sourceId},state,sourceId});
       return send(res,201,{checkpointId:saved.checkpointId,sequence:saved.sequence});
     }
