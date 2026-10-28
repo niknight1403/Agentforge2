@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TaskStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  PAUSED
+}
+
+model AgentTask {
+  id          String            @id @default(uuid()) @db.Uuid
+  requestKey  String?           @unique @db.VarChar(180)
+  hubTaskId   Int?
+  hubVillaId  Int?
+  title       String            @db.VarChar(500)
+  input       Json
+  result      Json?
+  status      TaskStatus        @default(PENDING)
+  attempt     Int               @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  steps       AgentStep[]
+  checkpoints AgentCheckpoint[]
+
+  @@index([status, createdAt])
+  @@index([hubTaskId, hubVillaId, createdAt(sort: Desc)])
+}
+
+model AgentStep {
+  id         String   @id @default(uuid()) @db.Uuid
+  taskId     String   @db.Uuid
+  task       AgentTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  agentId    String   @db.VarChar(160)
+  stepNumber Int
+  toolName   String   @db.VarChar(160)
+  arguments  Json
+  result     Json?
+  error      String?  @db.VarChar(4000)
+  createdAt  DateTime @default(now())
+
+  @@unique([taskId, agentId, stepNumber])
+  @@index([taskId, stepNumber])
+}
+
+model AgentCheckpoint {
+  id            String   @id @db.Char(64)
+  taskId        String   @db.Uuid
+  task          AgentTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  agentId       String   @db.VarChar(160)
+  stepNumber    Int
+  parentId      String?  @db.Char(64)
+  sourceId      String?  @unique @db.VarChar(180)
+  stateSnapshot Json
+  createdAt     DateTime @default(now())
+
+  @@unique([taskId, agentId, stepNumber])
+  @@index([taskId, agentId, stepNumber(sort: Desc)])
+}
+
+model AgentEventReceipt {
+  id        String   @id @db.VarChar(180)
+  eventType String   @db.VarChar(100)
+  taskId    String?  @db.Uuid
+  createdAt DateTime @default(now())
+
+  @@index([taskId, createdAt])
+}
+
+model AgentTelemetry {
+  id          String   @id @db.VarChar(180)
+  eventType   String   @db.VarChar(100)
+  taskId      String?  @db.Uuid
+  agentId     String?  @db.VarChar(160)
+  occurredAt  DateTime @default(now())
+  metadata    Json
+
+  @@index([taskId, occurredAt])
+  @@index([eventType, occurredAt])
+}
+
+model AgentOutbox {
+  id          String   @id @default(uuid()) @db.VarChar(180)
+  stream      String   @db.VarChar(180)
+  event       Json
+  availableAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  publishedAt DateTime?
+
+  @@index([publishedAt, createdAt])
+}
