@@ -32,6 +32,10 @@ test('scanner registers only official-catalog models with explicit zero input an
   assert.equal(freeRouteCycleStatus().summary.discoveredModels, 1);
   await scanFreeRoutes({ fetchFn: async () => new Response(JSON.stringify({ data: [] }), { status: 200 }) });
   assert.equal(db.prepare("SELECT enabled FROM routes WHERE model='vendor/free-coder:free'").get().enabled, 0);
+  await scanFreeRoutes({ fetchFn: async () => new Response(JSON.stringify({ data: [
+    { id: 'vendor/free-coder:free', pricing: { prompt: '0', completion: '0' } }
+  ] }), { status: 200 }) });
+  assert.equal(db.prepare("SELECT enabled FROM routes WHERE model='vendor/free-coder:free'").get().enabled, 1);
 });
 
 test('scan errors are recorded and do not create routes', async () => {

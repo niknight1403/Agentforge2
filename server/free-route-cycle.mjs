@@ -38,7 +38,10 @@ function routeExists(modelId) {
 function addRoute(model, timestamp) {
   const id = String(model.id).trim();
   const title = `OpenRouter ${id} (free)`;
-  if (!routeExists(id)) {
+  if (routeExists(id)) {
+    db.prepare(`UPDATE routes SET enabled=1,status='DISCOVERED'
+      WHERE provider='openrouter' AND base_url='https://openrouter.ai/api/v1' AND model=? AND status='STALE_FREE_CATALOG'`).run(id);
+  } else {
     db.prepare(`INSERT INTO routes(name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used)
       VALUES(?,?,?,?,?,1,1,24,1,'DISCOVERED',0,0,0)`)
       .run(title.slice(0, 160), 'openrouter', 'https://openrouter.ai/api/v1', id, 'OPENROUTER_API_KEY');
