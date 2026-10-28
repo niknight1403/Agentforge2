@@ -34,9 +34,7 @@ if (syntaxFailures.length) process.exit(1);
 
 function run(label, args) {
   console.log(`\n[check] ${label}`);
-  const result = spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
-  if (result.stdout) process.stdout.write(result.stdout);
-  if (result.stderr) process.stderr.write(result.stderr);
+  const result = spawnSync(process.execPath, args, { cwd: root, stdio: 'inherit' });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status || 1);
 }
