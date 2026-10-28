@@ -26,7 +26,7 @@ jobs:
 
           base = 'https://hub.cybersarah-ki.com'
 
-          def call(method, path, token=None, body=None, timeout=90):
+          def call(method, path, token=None, body=None, timeout=240):
               headers = {'Content-Type': 'application/json'}
               if token: headers['Authorization'] = 'Bearer ' + token
               req = urllib.request.Request(base + path, method=method, headers=headers,
@@ -48,8 +48,11 @@ jobs:
           print('HTTP', st, '| llm:', json.dumps(h.get('llm', {}))[:300])
 
           print('== 3) Master-Chat ==')
-          st, resp = call('POST', '/api/master/chat', tok, {'message': 'Diagnose: Antworte bitte kurz mit dem Satz "Rauchtest-Pong" und lege KEINE Villa an.'})
-          print('HTTP', st, '| Response:', json.dumps(resp)[:500])
+          import time
+          started = time.monotonic()
+          st, resp = call('POST', '/api/master/chat', tok, {'message': 'Diagnose: Antworte bitte kurz mit dem Satz "Rauchtest-Pong" und lege KEINE Villa an.'}, timeout=240)
+          print('HTTP', st, '| Dauer:', round(time.monotonic()-started, 1), 's | Response:', json.dumps(resp)[:500])
+          assert st == 200 and resp.get('ok') is True, 'Master-Chat liefert keine erfolgreiche Antwort'
 
           print('== 4) History (letzte 2) ==')
           st, hist = call('GET', '/api/master/history', tok)
