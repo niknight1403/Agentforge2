@@ -1088,7 +1088,7 @@ export function stopVilla(villaId) {
   return true;
 }
 
-export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, adaptive = true, maxRounds = 6 } = {}) {
+export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, adaptive = true, maxRounds = 6, runToCompletion = false } = {}) {
   if (db.prepare('SELECT status FROM villas WHERE id=?').get(villaId)?.status === 'ARCHIVED') return;
   if (running.get(villaId)) return;
   // concurrency 0 = automatisch je nach Routen (schnelle Cloud-Routen -> mehr parallel)
@@ -1104,7 +1104,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
   // Lange fokussierte Laufzeit ist jetzt opt-in; standardmaessig rotiert jede
   // Villa fair nach dem normalen Laufbudget, waehrend drei Villen parallel laufen.
   const focusRun = process.env.VF_FOCUS_MODE === '1';
-  const budgetMs = focusRun
+  const budgetMs = runToCompletion ? Number.POSITIVE_INFINITY : focusRun
     ? Math.max(120 * 60_000, Number(process.env.VF_RUN_BUDGET_MIN || 20) * 60_000)
     : Math.max(5 * 60_000, Number(process.env.VF_RUN_BUDGET_MIN || 20) * 60_000);
   // Verwaiste Aufgaben aus einem abgebrochenen Lauf zurueck auf PENDING setzen.
@@ -1126,8 +1126,9 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
   if (staleRows.length) emit('progress', { villaId, note: staleRows.length + ' haengende Aufgabe(n) zurueckgestellt' });
   emit('villa', { villaId, status: 'RUNNING', concurrency: job.concurrency });
 
+  let productCompleted = false;
   try {
-    while (true) { // 24/7-Dauerbetrieb: endet durch Stopp, Autonomie-Aus, Fehler oder Budget
+    while (true) { // Ende: Stopp, Autonomie-Aus, Fehler/Budget oder echtes Produkt-Abnahmegate
       if (job.stop) break;
       if (now() - runStart > budgetMs) break; // Slot fair rotieren lassen
 
@@ -1147,6 +1148,22 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
           continue;
         }
         const rounds = Number(villa.auto_rounds || 0);
+        if (runToCompletion) {
+          if (sourceRoot(villaId)) {
+            const verification = await verifyProject(villaId);
+            emit('progress', { villaId, processed: job.processed, finalVerification: verification?.skipped ? 'skipped' : (verification?.ok ? 'passed' : 'failed') });
+            if (verification && verification.ok === false) continue;
+          }
+          const { maturity } = await import('./product.mjs');
+          const finalProduct = maturity(villaId);
+          if (finalProduct.verified && finalProduct.score >= 100) {
+            productCompleted = true;
+            db.prepare("UPDATE villas SET autonomy=0,status='COMPLETED',updated_at=? WHERE id=?").run(now(), villaId);
+            db.prepare('DELETE FROM control_settings WHERE key=?').run(`villaFinishBeforeRotation:${villaId}`);
+            emit('villa', { villaId, status: 'COMPLETED', qualityScore: finalProduct.score, delivery: finalProduct.readiness?.status || 'verified' });
+            break;
+          }
+        }
         if (adaptive && rounds < maxRounds) {
           db.prepare('UPDATE villas SET auto_rounds = auto_rounds + 1, updated_at = ? WHERE id = ?').run(now(), villaId);
           // Rueckmeldung aus dem echten Projekt: Build-/Testlauf pro Runde,
@@ -1257,14 +1274,14 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
     // Der Lauf endet nur durch Stopp, Autonomie-Aus oder Fehler. Ein
     // 'COMPLETED' gibt es im 24/7-Betrieb nicht - die Projektpruefung
     // laeuft regelmaessig in den adaptiven Runden innerhalb der Schleife.
-    const status = 'PAUSED';
+    const status = productCompleted ? 'COMPLETED' : 'PAUSED';
 
     // History-Rotation am Lauf-Ende: audit/memories je Villa auf Fenster
     // kuerzen (wichtige Erinnerungen ueberleben). Haelt die DB dauerhaft
     // schnell, statt mit jedem Lauf zu wachsen.
     const pruned = pruneHistory(villaId);
 
-    db.prepare('UPDATE villas SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), villaId);
+    db.prepare('UPDATE villas SET status = ?, autonomy = CASE WHEN ? = 1 THEN 0 ELSE autonomy END, updated_at = ? WHERE id = ?').run(status, productCompleted ? 1 : 0, now(), villaId);
     emit('villa', { villaId, status, processed: job.processed, pruned });
     // v1.42.0 — APK-Bereitstellung (Nutzerdirektive 2026-10-18): Hat die Villa
     // alle Aufgaben erledigt, stoesst der Hub die APK-Baustrasse einmalig an -

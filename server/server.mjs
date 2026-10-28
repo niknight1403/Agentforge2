@@ -746,7 +746,7 @@ async function api(req, res, url) {
     const b = await readBody(req).catch(() => ({}));
     db.prepare('UPDATE villas SET autonomy=1,updated_at=? WHERE id=?').run(now(), id);
     if (isRunning(id)) return json(res, 202, { ok: true, alreadyRunning: true, started: true });
-    const scheduled = scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6 });
+    const scheduled = scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6, runToCompletion: b.runToCompletion === true });
     return json(res, 202, { ok: true, started: scheduled.active.includes(id), queued: scheduled.queue.includes(id), scheduler: scheduled });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'stop' && m === 'POST') {

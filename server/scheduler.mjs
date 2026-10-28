@@ -26,6 +26,17 @@ export function villaFocusId() {
   return Number.isSafeInteger(id) && id > 0 && db.prepare('SELECT id FROM villas WHERE id=?').get(id) ? id : null;
 }
 export const FOCUS_MODE = () => villaFocusId() !== null || process.env.VF_FOCUS_MODE === '1';
+const finishModeKey = (id) => `villaFinishBeforeRotation:${Number(id)}`;
+export function villaRunToCompletion(id) {
+  const raw = db.prepare('SELECT value FROM control_settings WHERE key=?').get(finishModeKey(id))?.value;
+  try { return JSON.parse(raw) === true; } catch { return raw === 'true' || raw === '1'; }
+}
+export function setVillaRunToCompletion(id, enabled) {
+  const key = finishModeKey(id);
+  if (enabled) db.prepare('INSERT OR REPLACE INTO control_settings(key,value) VALUES (?,?)').run(key, 'true');
+  else db.prepare('DELETE FROM control_settings WHERE key=?').run(key);
+  return villaRunToCompletion(id);
+}
 const SLOTS = () => villaFocusId() !== null ? 1 : Math.max(1, Math.min(4, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? 3)) || 3));
 
 /** Fortschritt und Rang aller Villen in einer einzigen Abfrage. */
@@ -122,8 +133,9 @@ export function enqueueVillas(ids) {
 
 /** Einheitlicher Einstieg: alle automatischen und manuellen Starts laufen
  *  ueber denselben Scheduler (Default 3 Slots). */
-export function scheduleVilla(id, { concurrency = 0, maxRounds = 6 } = {}) {
-  configureScheduler({ start: (vid) => orchestrate(vid, { concurrency, maxRounds }) });
+export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, runToCompletion = false } = {}) {
+  if (runToCompletion) setVillaRunToCompletion(id, true);
+  configureScheduler({ start: (vid) => orchestrate(vid, { concurrency, maxRounds, runToCompletion: villaRunToCompletion(vid) }) });
   const focusId = villaFocusId();
   if (focusId !== null && Number(id) !== focusId) {
     return { ...schedulerStatus(), blockedVillaId: Number(id), reason: 'FOCUS_VILLA_ONLY' };

@@ -53,7 +53,7 @@ jobs:
             ID="$1"
             echo "== Starte Villa $ID =="
             curl -fsS -m 60 -X POST -H "$AUTH" -H "Content-Type: application/json" \
-              -d '{"concurrency":4,"maxTasks":200,"adaptive":true}' \
+              -d '{"concurrency":4,"maxTasks":200,"adaptive":true,"runToCompletion":true}' \
               "$H/api/villas/$ID/orchestrate" | head -c 300; echo
           }
 

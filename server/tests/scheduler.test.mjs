@@ -111,3 +111,17 @@ test('produktionsfokus aktiviert CyberSarah und Revenue Engine, entfernt Legacy-
   db.prepare('DELETE FROM control_settings');
   _resetScheduler();
 });
+
+
+test('Finish-before-rotation mode persists per villa for restarts', async () => {
+  _resetScheduler();
+  const { villaRunToCompletion, setVillaRunToCompletion } = await import('../scheduler.mjs');
+  const a = villa('Abschluss A', 0, 2);
+  const b = villa('Abschluss B', 0, 2);
+  assert.equal(villaRunToCompletion(a), false);
+  assert.equal(setVillaRunToCompletion(a, true), true);
+  assert.equal(villaRunToCompletion(a), true);
+  assert.equal(villaRunToCompletion(b), false, 'finish mode must be isolated per villa');
+  setVillaRunToCompletion(a, false);
+  assert.equal(villaRunToCompletion(a), false);
+});
