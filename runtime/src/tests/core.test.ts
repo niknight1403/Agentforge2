@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { HierarchicalSupervisor } from '../HierarchicalSupervisor.js';
 import { LLMCircuitBreaker, ProviderError, executeCascade } from '../LLMCircuitBreaker.js';
 import { validateShell, validateSql } from '../Guardrails.js';
+import { createHubTaskExecutor } from '../HubTaskExecutor.js';
 
 test('supervisor stops identical no-delta calls and intervenes with a new strategy', () => {
   const supervisor = new HierarchicalSupervisor();
@@ -65,4 +66,23 @@ test('provider rejects insecure remote endpoints and never forwards timeout meta
 test('provider errors have a stable type for fallback telemetry', () => {
   const error = new ProviderError('rate limited', 429, 'RATE_LIMITED');
   assert.equal(error.status, 429); assert.equal(error.code, 'RATE_LIMITED');
+});
+
+test('Hub executor forwards supervisor recovery and preserves terminal task failures', async () => {
+  let request: RequestInit | undefined;
+  const executor = createHubTaskExecutor({ hubUrl: 'http://agentforge:12000/', token: 'x'.repeat(40), fetcher: async (_url, init) => {
+    request = init; return Response.json({ status: 'DONE', result: { ok: true } });
+  } });
+  const output = await executor.execute({ hubTaskId: 12, villaId: 3 }, {
+    taskId: 'runtime-task', attempt: 2, signal: new AbortController().signal,
+    promptHint: 'Use another verified tool.', fallbackModel: 'deepseek/deepseek-chat'
+  });
+  assert.deepEqual(JSON.parse(String(request?.body)), {
+    taskId: 12, villaId: 3, promptHint: 'Use another verified tool.', fallbackModel: 'deepseek/deepseek-chat'
+  });
+  assert.equal((output.result as { ok: boolean }).ok, true);
+  const failed = createHubTaskExecutor({ hubUrl: 'http://agentforge:12000', token: 'x'.repeat(40), fetcher: async () => Response.json({ status: 'FAILED' }) });
+  await assert.rejects(() => failed.execute({ hubTaskId: 12, villaId: 3 }, {
+    taskId: 'runtime-task', attempt: 2, signal: new AbortController().signal
+  }), error => (error as { retryable?: boolean }).retryable === false);
 });
