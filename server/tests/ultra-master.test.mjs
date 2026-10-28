@@ -3,6 +3,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { db } from '../db.mjs';
 import { createMasterControl, validateAction } from '../master-control.mjs';
+import '../ultra-agent.mjs';
 import { packState, setPackEnabled } from '../packs.mjs';
 
 beforeEach(()=>{for(const t of ['ultra_lessons','ultra_state','control_messages','control_turns','tasks','agents','memories','villas']) db.prepare(`DELETE FROM ${t}`).run();});
