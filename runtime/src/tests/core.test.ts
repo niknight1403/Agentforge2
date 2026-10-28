@@ -35,7 +35,7 @@ test('guardrails block shell chaining, shells, destructive SQL, and unparameteri
 });
 
 test('circuit breaker cascades to a healthy provider and enforces a single half-open probe', async () => {
-  const failed = new LLMCircuitBreaker({ name: 'first', endpoint: 'https://llm.example/v1/chat', model: 'm' }, 1, 5,
+  const failed = new LLMCircuitBreaker({ name: 'first', endpoint: 'https://llm.example/v1/chat', model: 'm' }, 1, 60_000,
     async () => new Response('', { status: 503 }));
   const healthy = new LLMCircuitBreaker({ name: 'second', endpoint: 'https://llm.example/v1/chat', model: 'm' }, 1, 5,
     async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ready' } }] }), { status: 200 }));
