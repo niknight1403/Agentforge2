@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agentforge2 · Dead-Letter-Queue</title>
+<style>
+  :root{--bg:#05060a;--panel:rgba(18,22,32,.72);--line:rgba(90,225,255,.18);--cyan:#3ee8ff;--pink:#ff3ea5;--text:#e8f4f8;--muted:#7c8b9a;--ok:#31e08a;--warn:#ffc857;--crit:#ff5470}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:radial-gradient(1100px 600px at 15% -10%,rgba(62,232,255,.13),transparent 60%),radial-gradient(900px 500px at 100% 0%,rgba(255,62,165,.12),transparent 55%),var(--bg);color:var(--text);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:28px}
+  h1{margin:0 0 4px;font-size:22px;letter-spacing:.02em}
+  h1 span{color:var(--cyan)}
+  .sub{color:var(--muted);font-size:12px;margin-bottom:22px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:22px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;backdrop-filter:blur(14px);position:relative;overflow:hidden}
+  .tile:before{content:"";position:absolute;inset:0 auto 0 0;width:2px;background:linear-gradient(180deg,var(--cyan),transparent)}
+  .tile .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.12em}
+  .tile .v{font-size:30px;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums}
+  .tile.crit .v{color:var(--crit)}.tile.warn .v{color:var(--warn)}.tile.ok .v{color:var(--ok)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px;backdrop-filter:blur(14px);margin-bottom:20px;overflow:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+  th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.1em;padding:10px 12px;border-bottom:1px solid var(--line)}
+  td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
+  tr:hover td{background:rgba(62,232,255,.04)}
+  .badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.04em}
+  .b-OPEN{background:rgba(255,200,87,.14);color:var(--warn)}
+  .b-ESCALATED{background:rgba(255,84,112,.16);color:var(--crit)}
+  .b-REQUEUED{background:rgba(49,224,138,.14);color:var(--ok)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--cyan)}
+  .msg{color:var(--muted);font-size:12px;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  button{cursor:pointer;border:1px solid var(--line);background:rgba(62,232,255,.08);color:var(--cyan);border-radius:9px;padding:7px 12px;font-size:12px;font-weight:600;transition:.15s}
+  button:hover{background:rgba(62,232,255,.18);border-color:var(--cyan)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+  input{background:rgba(0,0,0,.45);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:8px 11px;font-size:12px;min-width:280px}
+  .live{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--crit);box-shadow:0 0 10px currentColor}
+  .dot.on{background:var(--ok);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .empty{padding:26px;text-align:center;color:var(--muted)}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin:0 0 10px}
+</style>
+</head>
+<body>
+  <h1>Dead-Letter-Queue <span>· Agentforge2</span></h1>
+  <div class="sub">Gescheiterte Agenten-Workflows: isoliert, begrenzt neu eingereiht, ab 3 Versuchen eskaliert.</div>
+  <div class="bar">
+    <input id="token" type="password" placeholder="Admin-Token (Bearer) für Daten und Neustart" autocomplete="off">
+    <button id="save">Token merken</button>
+    <button id="reload">Aktualisieren</button>
+    <button id="tick">Alerting-Takt auslösen</button>
+    <span class="live"><span class="dot" id="dot"></span><span id="livetext">SSE getrennt</span></span>
+    <span class="live" id="counter">0 Events</span>
+  </div>
+  <div class="grid">
+    <div class="tile warn"><div class="k">Offen</div><div class="v" id="kOpen">–</div></div>
+    <div class="tile crit"><div class="k">Eskaliert</div><div class="v" id="kEsc">–</div></div>
+    <div class="tile ok"><div class="k">Neu eingereiht</div><div class="v" id="kReq">–</div></div>
+    <div class="tile"><div class="k">Retry-Limit</div><div class="v" id="kMax">–</div></div>
+  </div>
+  <h2>Einträge</h2>
+  <div class="panel"><table><thead><tr>
+    <th>ID</th><th>Villa</th><th>Task</th><th>Code</th><th>Status</th><th>Versuche</th><th>Meldung</th><th></th>
+  </tr></thead><tbody id="rows"><tr><td colspan="8" class="empty">Token eingeben, um Daten zu laden.</td></tr></tbody></table></div>
+  <h2>Alarme</h2>
+  <div class="panel"><table><thead><tr><th>ID</th><th>Villa</th><th>Schwere</th><th>Meldung</th><th>Zeit</th></tr></thead>
+  <tbody id="alerts"><tr><td colspan="5" class="empty">Keine Alarme geladen.</td></tr></tbody></table></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const tokenInput = $('token');
+const stored = localStorage.getItem('vf_token') || '';
+if (stored) tokenInput.value = stored;
+let events = 0;
+
+$('save').onclick = () => {
+  localStorage.setItem('vf_token', tokenInput.value.trim());
+  $('save').textContent = 'gespeichert';
+  setTimeout(() => { $('save').textContent = 'Token merken'; }, 1500);
+  load();
+};
+$('reload').onclick = load;
+$('tick').onclick = async () => {
+  const out = await api('/api/dlq/tick', 'POST', { limit: 20 });
+  alert(out ? `Takt: ${out.restarted ?? 0} neu eingereiht, ${out.escalated ?? 0} eskaliert, ${out.isolated ?? 0} isoliert` : 'Fehlgeschlagen (Token/Rolle prüfen)');
+  load();
+};
+
+function headers() {
+  const t = tokenInput.value.trim();
+  return t ? { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+}
+async function api(path, method = 'GET', body) {
+  try {
+    const res = await fetch(path, { method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+const fmt = ts => ts ? new Date(ts).toLocaleString('de-DE') : '–';
+
+async function load() {
+  const d = await api('/api/dlq?limit=40');
+  if (!d) {
+    $('rows').innerHTML = '<tr><td colspan="8" class="empty">Keine Daten. Gültigen Admin-Token eintragen.</td></tr>';
+    return;
+  }
+  $('kOpen').textContent = d.open ?? 0;
+  $('kEsc').textContent = d.escalated ?? 0;
+  $('kReq').textContent = d.requeued ?? 0;
+  $('kMax').textContent = d.maxAttempts ?? '–';
+  const rows = (d.entries || []).map(e => {
+    const canRestart = e.status === 'OPEN' || e.status === 'ESCALATED';
+    return `<tr>
+      <td><code>#${e.id}</code></td>
+      <td>${e.villa_id ?? '–'}</td>
+      <td>${e.task_id ?? '–'}</td>
+      <td><code>${e.code || '–'}</code></td>
+      <td><span class="badge b-${e.status}">${e.status}</span></td>
+      <td>${e.attempts ?? 0}</td>
+      <td class="msg" title="${(e.message || '').replace(/"/g, '&quot;')}">${e.message || '–'}</td>
+      <td>${canRestart ? `<button data-restart="${e.id}">Neustart</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+  $('rows').innerHTML = rows || '<tr><td colspan="8" class="empty">Keine Einträge – keine gescheiterten Workflows. </td></tr>';
+  $('rows').querySelectorAll('[data-restart]').forEach(btn => {
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = '…';
+      const out = await api('/api/dlq/' + btn.dataset.restart + '/restart', 'POST', {});
+      btn.textContent = out && out.ok ? 'eingereiht' : 'Fehler';
+      load();
+    };
+  });
+  const alerts = (d.alerts || []).map(a => `<tr>
+    <td><code>#${a.id}</code></td><td>${a.villa_id ?? '–'}</td>
+    <td><span class="badge b-${a.severity === 'critical' ? 'ESCALATED' : 'OPEN'}">${a.severity}</span></td>
+    <td class="msg" title="${(a.message || '').replace(/"/g, '&quot;')}">${a.message}</td>
+    <td>${fmt(a.created_at)}</td></tr>`).join('');
+  $('alerts').innerHTML = alerts || '<tr><td colspan="5" class="empty">Keine Alarme.</td></tr>';
+}
+
+// Live-Anbindung an den bestehenden SSE-Strom des Hubs.
+function connect() {
+  try {
+    const es = new EventSource('/api/events');
+    es.onopen = () => { $('dot').classList.add('on'); $('livetext').textContent = 'SSE live'; };
+    es.onmessage = () => { events += 1; $('counter').textContent = events + ' Events'; };
+    es.onerror = () => { $('dot').classList.remove('on'); $('livetext').textContent = 'SSE getrennt'; };
+  } catch { $('livetext').textContent = 'SSE nicht verfügbar'; }
+}
+connect();
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
