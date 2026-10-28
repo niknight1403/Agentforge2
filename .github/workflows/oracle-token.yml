@@ -170,6 +170,8 @@ jobs:
           bash /tmp/sshcmd "bash /tmp/seed.sh"
       - name: Beliebiger SSH-Befehl (cmd)
         if: ${{ github.event.inputs.mode == 'cmd' }}
+        env:
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
         run: |
           CMD="\${{ github.event.inputs.command }}"
           if [ -z "$CMD" ]; then echo "Kein command-Input gegeben."; exit 1; fi
