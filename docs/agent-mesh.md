@@ -24,4 +24,6 @@ The optional `otel-collector` accepts OTLP/HTTP traces on the internal Docker ne
 
 The runtime also stores allowlisted task lifecycle telemetry (start, completion, retry, failure) in PostgreSQL. Prompt text, chain-of-thought, tool arguments, and user content are excluded. Records older than 30 days are pruned daily; operational spans are exported over OTLP.
 
+The runtime pins `deepmerge-ts` 8.0.2 under Prisma's config dependency to resolve the upstream recursive-merge advisory without a Prisma major-version migration. The exact Prisma schema validation, client generation, runtime tests, and dependency audit run in CI.
+
 `AGENTFORGE_MESH_TOKEN` is shared only between the Hub and runtime worker and must be different from the Control Center telemetry token. The compose stack is an optional self-hosted profile. Existing production services keep their own deployment lifecycle; configuring the shared tokens and applying migrations are required before cross-repository telemetry and task dispatch are live.
