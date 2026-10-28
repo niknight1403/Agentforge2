@@ -1057,12 +1057,14 @@ async function internalMesh(req,res,url){
   const body=await readBody(req);
   const taskId=Number(body.taskId),villaId=Number(body.villaId);
   if(!Number.isSafeInteger(taskId)||taskId<1||!Number.isSafeInteger(villaId)||villaId<1)return json(res,400,{error:'Valid taskId and villaId are required.'});
+  if(body.promptHint!==undefined&&(typeof body.promptHint!=='string'||body.promptHint.length>2000))return json(res,400,{error:'promptHint must be a string up to 2000 characters.'});
+  if(body.fallbackModel!==undefined&&(typeof body.fallbackModel!=='string'||body.fallbackModel.length>120||!/^[a-z0-9._:/-]+$/i.test(body.fallbackModel)))return json(res,400,{error:'fallbackModel has an invalid format.'});
   const task=db.prepare('SELECT * FROM tasks WHERE id=? AND villa_id=?').get(taskId,villaId);
   if(!task)return json(res,404,{error:'Task not found.'});
   if(['DONE','FAILED'].includes(task.status))return json(res,200,{status:task.status,result:task.result||null});
   if(task.status!=='RUNNING')return json(res,409,{error:'Task is not reserved for mesh execution.',status:task.status});
   try{
-    await executeTaskOnce(villaId,task);
+    await executeTaskOnce(villaId,task,{promptHint:body.promptHint,fallbackModel:body.fallbackModel});
     const updated=db.prepare('SELECT status,result FROM tasks WHERE id=? AND villa_id=?').get(taskId,villaId);
     if(updated?.status==='PENDING')return json(res,503,{error:'Task is waiting for an available model.',code:'LLM_UNAVAILABLE'});
     return json(res,200,{status:updated?.status||'FAILED',result:updated?.result||null});
