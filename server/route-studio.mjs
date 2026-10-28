@@ -62,17 +62,19 @@ export function eliteRanking({ limit = 8, onlyFree = true, excludeDead = true } 
     .filter((r) => (onlyFree ? Number(r.is_free) === 1 : true))
     .filter((r) => (excludeDead ? !Number(r.dead) : true))
     .map((r) => ({ ...r, score: scoreRoute(r) }))
-    .sort((a, b) => b.score - a.score || Number(a.priority) - Number(b.priority));
+    .sort((a, b) => b.score - a.score || Number(a.priority) - Number(b.priority) || a.id - b.id);
 
+  const perProvider = new Map();
   const picked = [];
-  const providerCount = new Map();
   for (const r of rows) {
-    const key = `${r.provider}`;
-    if ((providerCount.get(key) || 0) >= 3) continue; // max 3 Slots je Provider
+    const prov = String(r.provider || 'unknown');
+    const used = perProvider.get(prov) || 0;
+    if (used >= 3) continue;          // hoechstens 3 Slots je Provider
+    perProvider.set(prov, used + 1);
     picked.push(r);
-    providerCount.set(key, providerCount.get(key) + 1);
     if (picked.length >= limit) break;
   }
+
   return picked.map((r, i) => ({
     rank: i + 1,
     id: r.id,
