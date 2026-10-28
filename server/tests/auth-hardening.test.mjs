@@ -16,7 +16,8 @@ test('Login-Bremse: fuenfter Fehlversuch sperrt 15 Minuten', () => {
   clearLoginFailures(KEY);
   for (let i = 0; i < 5; i += 1) recordLoginFailure(KEY, T0 + i);
   const blocked = loginBlockedFor(KEY, T0 + 10);
-  assert.equal(blocked, 15 * 60 * 1000 - 10);
+  // Sperre startet beim 5. Fehlversuch (T0+4): Restzeit = 15 Min - 6s
+  assert.equal(blocked, 15 * 60 * 1000 - 6);
   assert.equal(loginBlockedFor(KEY, T0 + 16 * 60 * 1000), 0);
 });
 
