@@ -16,6 +16,7 @@ on:
       - server/llm-cascade.mjs
       - server/llm.mjs
       - server/master-control.mjs
+      - server/otel.mjs
       - server/redis.mjs
       - server/supervisor.mjs
       - server/tests/event-mesh.test.mjs
@@ -36,7 +37,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          tar -czf /tmp/agentforge-patch.tgz server/.env.example server/agents.mjs server/circuit-breaker.mjs server/checkpoints.mjs server/event-mesh.mjs server/events.mjs server/llm-cascade.mjs server/llm.mjs server/master-control.mjs server/redis.mjs server/supervisor.mjs server/tests/event-mesh.test.mjs server/tests/llm-cascade.test.mjs server/tests/master-control.test.mjs server/tests/resilience-core.test.mjs
+          tar -czf /tmp/agentforge-patch.tgz server/.env.example server/agents.mjs server/circuit-breaker.mjs server/checkpoints.mjs server/event-mesh.mjs server/events.mjs server/llm-cascade.mjs server/llm.mjs server/master-control.mjs server/otel.mjs server/redis.mjs server/supervisor.mjs server/tests/event-mesh.test.mjs server/tests/llm-cascade.test.mjs server/tests/master-control.test.mjs server/tests/resilience-core.test.mjs
           scp -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key /tmp/agentforge-patch.tgz ubuntu@92.5.177.159:/tmp/
           cat > /tmp/deploy-agentforge-patch.sh <<'DEPLOY'
           set -Eeuo pipefail
@@ -53,7 +54,7 @@ jobs:
           STAGE=$(mktemp -d /tmp/vf-agentforge-stage.XXXXXX)
           BACKUP=$(mktemp -d /tmp/vf-agentforge-backup.XXXXXX)
           tar -xzf /tmp/agentforge-patch.tgz -C "$STAGE"
-          FILES=("server/.env.example" "server/agents.mjs" "server/circuit-breaker.mjs" "server/checkpoints.mjs" "server/event-mesh.mjs" "server/events.mjs" "server/llm-cascade.mjs" "server/llm.mjs" "server/master-control.mjs" "server/redis.mjs" "server/supervisor.mjs" "server/tests/event-mesh.test.mjs" "server/tests/llm-cascade.test.mjs" "server/tests/master-control.test.mjs" "server/tests/resilience-core.test.mjs")
+          FILES=("server/.env.example" "server/agents.mjs" "server/circuit-breaker.mjs" "server/checkpoints.mjs" "server/event-mesh.mjs" "server/events.mjs" "server/llm-cascade.mjs" "server/llm.mjs" "server/master-control.mjs" "server/otel.mjs" "server/redis.mjs" "server/supervisor.mjs" "server/tests/event-mesh.test.mjs" "server/tests/llm-cascade.test.mjs" "server/tests/master-control.test.mjs" "server/tests/resilience-core.test.mjs")
           for f in "${FILES[@]}"; do
             test -f "$STAGE/$f"
             target="$HUBDIR/${f#server/}"
@@ -89,6 +90,7 @@ jobs:
           node --check "$STAGE/server/llm-cascade.mjs"
           node --check "$STAGE/server/llm.mjs"
           node --check "$STAGE/server/master-control.mjs"
+          node --check "$STAGE/server/otel.mjs"
           node --check "$STAGE/server/redis.mjs"
           node --check "$STAGE/server/supervisor.mjs"
           node --check "$STAGE/server/tests/event-mesh.test.mjs"
