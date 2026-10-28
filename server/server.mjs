@@ -29,6 +29,7 @@ import { startBuild, buildStatus, buildArtifact, previewInfo, previewFile, maybe
 import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
+import { studioStatus as routeStudioStatus, eliteRanking as routeEliteRanking, simulateChain as routeSimulateChain, saveChain as routeSaveChain, listChains as routeListChains, buildChainFromGoal as routeChainFromGoal, recordSimulation as routeRecordSim } from './route-studio.mjs';
 import { resourceStatus, resourceHistory, startResourceAgent } from './resource-agent.mjs';
 import { scanFreeRoutes, freeRouteCycleStatus, freeRouteScanHistory } from './free-route-cycle.mjs';
 import { hunterTick, hunterStatus, weeklyReport, probeRoute, reportPath, monitor } from './free-route-hunter.mjs';
@@ -587,6 +588,43 @@ async function api(req, res, url) {
     if (!openMode && !isAdmin) return json(res, 403, { error: 'RouteForge-Tick ist Admins vorbehalten.' });
     const r = routeforgeTick();
     return json(res, 200, r);
+  }
+  /* ---- Routen-Studio: Elite-Paket, Ketten-Simulation, Agenten-Auftrag ---- */
+  if (p === '/api/route-studio' && m === 'GET') {
+    return json(res, 200, routeStudioStatus());
+  }
+  if (p === '/api/route-studio/elite' && m === 'GET') {
+    const lim = Math.max(1, Math.min(20, Number(url.searchParams.get('limit') || 8)));
+    return json(res, 200, { ok: true, elite: routeEliteRanking({ limit: lim }) });
+  }
+  if (p === '/api/route-studio/simulate' && m === 'POST') {
+    const b = await readBody(req);
+    let steps = Array.isArray(b.steps) ? b.steps : [];
+    if (!steps.length && b.chainId) {
+      const c = routeListChains().find((x) => x.id === Number(b.chainId));
+      steps = c ? c.steps : [];
+    }
+    const sim = routeSimulateChain(steps);
+    routeRecordSim(b.chainId ? Number(b.chainId) : null, sim);
+    return json(res, 200, { ok: true, ...sim });
+  }
+  if (p === '/api/route-studio/chains' && m === 'GET') {
+    return json(res, 200, { ok: true, chains: routeListChains() });
+  }
+  if (p === '/api/route-studio/chains' && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Ketten aendern ist Admins vorbehalten.' });
+    const b = await readBody(req);
+    return json(res, 200, { ok: true, ...routeSaveChain({ name: b.name, preset: b.preset, steps: b.steps || [], note: b.note, active: b.active === true }) });
+  }
+  if (p === '/api/route-studio/agent' && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Agenten-Auftrag ist Admins vorbehalten.' });
+    const b = await readBody(req);
+    const proposal = routeChainFromGoal(String(b.goal || b.prompt || ''));
+    let saved = null;
+    if (b.save === true) {
+      saved = routeSaveChain({ name: String(b.name || ('Studio ' + new Date().toISOString().slice(0, 16))), preset: proposal.preset, steps: proposal.steps, note: proposal.goal, active: false });
+    }
+    return json(res, 200, { ok: true, proposal, saved });
   }
   if (p === '/api/resources' && m === 'GET') return json(res, 200, resourceStatus());
   if (p === '/api/resources/history' && m === 'GET') return json(res, 200, resourceHistory(url.searchParams.get('limit')));
