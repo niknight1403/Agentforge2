@@ -53,8 +53,9 @@ jobs:
           for f in "${FILES[@]}"; do
             test -f "$STAGE/$f"
             target="$HUBDIR/${f#server/}"
-            mkdir -p "$(dirname "$target")"
-            if [ -f "$target" ]; then mkdir -p "$BACKUP/$(dirname "${f#server/}")"; cp -a "$target" "$BACKUP/${f#server/}"; else : > "$BACKUP/${f#server/}.absent"; fi
+            backup_path="$BACKUP/${f#server/}"
+            mkdir -p "$(dirname "$target")" "$(dirname "$backup_path")"
+            if [ -f "$target" ]; then cp -a "$target" "$backup_path"; else : > "$backup_path.absent"; fi
           done
           rollback() {
             rc=$?
