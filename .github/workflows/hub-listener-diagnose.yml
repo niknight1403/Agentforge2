@@ -1,0 +1,31 @@
+name: Hub Listener Diagnostics
+on:
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Inspect hub service and local listeners (read only)
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'INSPECT'
+          set -eu
+          echo '== matching service units ==' 
+          systemctl list-units --type=service --all --no-legend | awk 'tolower($1) ~ /hub|villaforge|pm2/ {print $1, $3, $4}'
+          echo '== candidate unit metadata ==' 
+          for unit in hub.service villaforge-hub.service; do
+            if systemctl cat "$unit" >/dev/null 2>&1; then
+              echo "UNIT $unit"
+              systemctl show "$unit" -p ActiveState -p SubState -p MainPID -p WorkingDirectory -p FragmentPath
+            fi
+          done
+          echo '== tcp listeners ==' 
+          ss -ltnpH 2>/dev/null | sed -E 's/pid=[0-9]+/pid=PID/g' | head -30
+          echo '== node process names only ==' 
+          ps -eo pid,comm --sort=pid | awk 'tolower($2) ~ /node|pm2/ {print}' | tail -20
+          INSPECT
