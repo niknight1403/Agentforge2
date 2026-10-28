@@ -53,7 +53,8 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    if(clock()>=deadline){release(r.base_url);break;}
    const started=clock();
    try {
-    const defaultMs=isLocalRoute(r)?90000:Math.max(500,Math.min(Number(process.env.VF_LLM_CLOUD_TIMEOUT_MS)||8000,30000));
+    const localTimeoutMs=Math.max(5000,Math.min(Number(process.env.VF_LLM_LOCAL_TIMEOUT_MS)||30000,90000));
+    const defaultMs=isLocalRoute(r)?localTimeoutMs:Math.max(500,Math.min(Number(process.env.VF_LLM_CLOUD_TIMEOUT_MS)||8000,30000));
     const timeoutMs=Math.max(1,Math.min(Number(opts.timeoutMs)||defaultMs,defaultMs,(isLocalRoute(r)?deadline:cloudDeadline)-clock()));
     const out=await call(r,messages,{...opts,timeoutMs});
     if(out?.offline||!String(out?.content||'').trim())throw Object.assign(new Error('Keine echte Modellantwort'),{code:'INVALID_RESPONSE'});

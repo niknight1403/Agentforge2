@@ -34,6 +34,20 @@ test('Kein Schlaf vor Failover; Timeout, 429, 5xx und leere Antworten fallen dur
  }
  const run=makeCascade({routes:()=>[route(1,'gemini'),route(2,'ollama')],key:()=>'',call:async r=>r.id===1?{content:''}:answer});assert.equal((await run([],{strategy:'FALLBACK'})).offline,false);
 });
+test('Lokale Versuche haben ein schnelles, konfigurierbares Timeout',async()=>{
+ const previous=process.env.VF_LLM_LOCAL_TIMEOUT_MS;
+ try {
+  delete process.env.VF_LLM_LOCAL_TIMEOUT_MS;
+  let timeout;
+  const run=makeCascade({routes:()=>[route(1,'ollama')],key:()=>'',call:async(_,__,opts)=>{timeout=opts.timeoutMs;return answer;}});
+  await run([]);assert.equal(timeout,30000);
+  process.env.VF_LLM_LOCAL_TIMEOUT_MS='45000';
+  await run([]);assert.equal(timeout,45000);
+ } finally {
+  if(previous===undefined)delete process.env.VF_LLM_LOCAL_TIMEOUT_MS;
+  else process.env.VF_LLM_LOCAL_TIMEOUT_MS=previous;
+ }
+});
 test('Vollausfall erzeugt 503 statt erfundener Planer-Antwort oder Token-Abrechnung',async()=>{
  const run=makeCascade({routes:()=>[route(1,'ollama')],key:()=>'',call:async()=>{throw new Error('private-key-must-not-leak');}});
  await assert.rejects(run([]),e=>e instanceof LlmUnavailableError&&e.statusCode===503&&!JSON.stringify(e).includes('private-key'));
