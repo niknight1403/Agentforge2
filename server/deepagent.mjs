@@ -58,6 +58,22 @@ db.exec(`
 const DEEP_DIR = process.env.DEEP_DIR || '/opt/villaforge/deep';
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12 MB pro Anhang
 
+const deepDevelopmentJobs = new Map();
+
+export function isDeepProjectDeveloping(projectId) {
+  return deepDevelopmentJobs.has(Number(projectId));
+}
+
+/** Parallele Taps/HTTP-Retries erzeugen höchstens eine Villa pro Deep-Projekt. */
+export function runDeepProjectDevelopmentOnce(projectId, start) {
+  const id = Number(projectId);
+  const existing = deepDevelopmentJobs.get(id);
+  if (existing) return existing;
+  const job = Promise.resolve().then(start).finally(() => deepDevelopmentJobs.delete(id));
+  deepDevelopmentJobs.set(id, job);
+  return job;
+}
+
 const SYSTEM_PROMPT = [
   'Du bist der DeepAgent Projekt-Experte von VillaForge: Principal Engineer, Produktarchitekt, UX-Designer und technischer Projektleiter in einem.',
   'Dein Auftrag: Nutzerideen in professionelle, testbare und auslieferbare Produkte überführen. Du optimierst Entwicklungsqualität und Liefergeschwindigkeit, lieferst zuerst das kleinste belastbare Inkrement und vermeidest unnötige Rückfragen.',
