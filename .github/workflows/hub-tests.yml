@@ -31,10 +31,6 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      DATABASE_URL: postgresql://agentforge:agentforge-test@localhost:5432/agentforge
-      REDIS_URL: redis://localhost:6379/0
-      RUN_MESH_INTEGRATION: "1"
     services:
       postgres:
         image: postgres:16-alpine
@@ -71,9 +67,15 @@ jobs:
         run: npm audit --prefix runtime --audit-level=high
 
       - name: Prisma PostgreSQL-Migrationen ausfuehren
+        env:
+          DATABASE_URL: postgresql://agentforge:agentforge-test@localhost:5432/agentforge
         run: npm --prefix runtime run migrate
 
       - name: Runtime-Build und Unit-/Redis-/PostgreSQL-Integrationstests
+        env:
+          DATABASE_URL: postgresql://agentforge:agentforge-test@localhost:5432/agentforge
+          REDIS_URL: redis://localhost:6379/0
+          RUN_MESH_INTEGRATION: "1"
         run: npm --prefix runtime test
 
       - name: Syntax, Secrets, Tests und Web-Produktionsbuild
