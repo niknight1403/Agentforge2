@@ -18,6 +18,7 @@
  * offener Vorschlag je Art vor, damit nichts aufgestaut wird.
  */
 import { db, now } from './db.mjs';
+import { estimateTaskEta, MAX_TASK_SAMPLE_MS } from './task-eta.mjs';
 import { chat as realChat } from './llm.mjs';
 import { maturity } from './product.mjs';
 import { villaDir, detectProject } from './builds.mjs';
@@ -91,11 +92,10 @@ export function evolutionState(villaId) {
   let stage = 'DEVELOPING';
   if (open === 0 && done > 0) stage = developmentComplete ? 'PERFECTING' : 'PLANNING_NEXT';
   // ETA + aktuelle Arbeit: der Nutzer sieht, was laeuft und wie lange es dauert.
-  const avgRow = db.prepare("SELECT AVG(updated_at - created_at) d FROM (SELECT updated_at, created_at FROM tasks WHERE villa_id = ? AND status = 'DONE' ORDER BY id DESC LIMIT 20)").get(villaId);
-  const avgMs = avgRow?.d && avgRow.d > 1000 ? avgRow.d : 120_000;
-  const etaMin = open > 0 ? Math.max(1, Math.round((avgMs * open) / 2 / 60_000)) : 0;
+  const durations = open ? db.prepare("SELECT duration_ms FROM tasks WHERE villa_id=? AND status='DONE' AND duration_ms>0 AND duration_ms<=? ORDER BY updated_at DESC LIMIT 20").all(villaId, MAX_TASK_SAMPLE_MS).map(row => row.duration_ms) : [];
+  const eta = estimateTaskEta(open, durations, process.env.VF_MAX_CONCURRENCY);
   const current = db.prepare("SELECT title FROM tasks WHERE villa_id = ? AND status = 'RUNNING' ORDER BY updated_at ASC LIMIT 2").all(villaId).map((r) => String(r.title).slice(0, 70));
-  return { villa, open, done, failed, rounds, pendingKinds, maturity: mt, phasesComplete, developmentComplete, workspaceEmpty, webBuild, stage, etaMin, currentTasks: current };
+  return { villa, open, done, failed, rounds, pendingKinds, maturity: mt, phasesComplete, developmentComplete, workspaceEmpty, webBuild, stage, ...eta, currentTasks: current };
 }
 
 function villaBrief(st) {

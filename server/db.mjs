@@ -167,6 +167,9 @@ ensureColumn('villas', 'vision', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('routes', 'cooldown_until', 'INTEGER NOT NULL DEFAULT 0');
 // Automatische Wiederholung fehlgeschlagener Aufgaben (max. 3 Versuche).
 ensureColumn('tasks', 'retry_count', 'INTEGER NOT NULL DEFAULT 0');
+// ETA uses measured execution time, not the time tasks waited in the queue.
+ensureColumn('tasks', 'started_at', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
 
 // Indizes: ohne sie scannt jede "WHERE villa_id = ?"-Abfrage die komplette
 // Tabelle - bei ~38.000 Zeilen synchron im Event-Loop. Das liess den Hub

@@ -1,5 +1,7 @@
 package dev.villaforge.app.ui.screens
 
+import dev.villaforge.app.ui.formatEta
+
 import android.annotation.SuppressLint
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -280,15 +282,16 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
             }
             Text(stageText, style = muted(), color = TextMuted)
             val etaMin = evo.optInt("etaMin", 0)
+            val etaCapped = evo.optBoolean("etaCapped", false)
             val cur = evo.optJSONArray("currentTasks")
             if (cur != null && cur.length() > 0) {
                 Text(
                     "Jetzt: " + (0 until cur.length()).joinToString(" · ") { cur.optString(it) } +
-                        (if (etaMin > 0) "  —  Restdauer ≈ ${etaMin} Min" else ""),
+                        (if (etaMin > 0) "  —  Restdauer ${formatEta(etaMin, etaCapped)}" else ""),
                     style = muted(), color = Aqua, fontSize = 12.sp
                 )
             } else if (open > 0 && etaMin > 0) {
-                Text("$open offen — Restdauer ≈ ${etaMin} Min", style = muted(), color = TextMuted, fontSize = 12.sp)
+                Text("$open offen — Restdauer ${formatEta(etaMin, etaCapped)}", style = muted(), color = TextMuted, fontSize = 12.sp)
             }
             if (evo.optBoolean("workspaceEmpty", false)) {
                 Text(

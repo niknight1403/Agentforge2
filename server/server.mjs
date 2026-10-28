@@ -7,6 +7,7 @@ import { createMasterControl } from './master-control.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
+import { estimateTaskEta, MAX_TASK_SAMPLE_MS } from './task-eta.mjs';
 import { FREE_ROUTE_CATALOG } from './routes.mjs';
 import { chat, routingStatus, routingSummary, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { masterChat, masterHistory } from './master.mjs';
@@ -64,24 +65,11 @@ function openCount(villaId) {
   return db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status IN ('PENDING','READY','RUNNING')").get(villaId).c;
 }
 
-/**
- * ETA in Minuten: durchschnittliche Dauer der letzten 20 erledigten Aufgaben
- * dieser Villa (inkl. Wartezeit - ehrlich) mal offene Aufgaben, geteilt durch
- * die Villa-Parallelitaet. Ohne eigene History: Hausdurchschnitt.
- */
+/** ETA is based on measured execution time; queue wait is excluded. */
 function etaMinutes(villaId) {
   const open = openCount(villaId);
-  if (open === 0) return 0;
-  let avg = db.prepare(
-    "SELECT AVG(updated_at - created_at) d FROM (SELECT updated_at, created_at FROM tasks WHERE villa_id = ? AND status = 'DONE' ORDER BY id DESC LIMIT 20)"
-  ).get(villaId).d;
-  if (!avg || avg < 1000) {
-    avg = db.prepare(
-      "SELECT AVG(updated_at - created_at) d FROM (SELECT updated_at, created_at FROM tasks WHERE status = 'DONE' ORDER BY id DESC LIMIT 200)"
-    ).get().d || 120_000;
-  }
-  const concurrency = Math.max(1, Math.min(2, Number(process.env.VF_MAX_CONCURRENCY) || 2));
-  return Math.max(1, Math.round((avg * open) / concurrency / 60_000));
+  const durations = open ? db.prepare("SELECT duration_ms FROM tasks WHERE villa_id=? AND status='DONE' AND duration_ms>0 AND duration_ms<=? ORDER BY updated_at DESC LIMIT 20").all(villaId, MAX_TASK_SAMPLE_MS).map(row => row.duration_ms) : [];
+  return estimateTaskEta(open, durations, process.env.VF_MAX_CONCURRENCY);
 }
 
 /* --------------------------- Protokoll --------------------------- */
@@ -632,7 +620,7 @@ async function api(req, res, url) {
         queued: (v.status === 'RUNNING' && v.autonomy === 1 && !isRunning(v.id)) ? 1 : 0,
         runningTasks: runningTaskTitles(v.id),
         openCount: openCount(v.id),
-        etaMin: etaMinutes(v.id)
+        ...etaMinutes(v.id)
       };
     }));
 
@@ -657,7 +645,7 @@ async function api(req, res, url) {
     villa.queued = (villa.status === 'RUNNING' && villa.autonomy === 1 && !isRunning(id)) ? 1 : 0;
     villa.runningTasks = runningTaskTitles(id);
     villa.openCount = openCount(id);
-    villa.etaMin = etaMinutes(id);
+    Object.assign(villa, etaMinutes(id));
     // Aufgaben begrenzen: eine reife Villa sammelt zehntausend Tasks - als
     // JSON mit vollem Result-Text sprengte das den 256-MB-Heap der Android-App
     // (OutOfMemoryError im org.json-Parsen). Offene zuerst, dann die neuesten

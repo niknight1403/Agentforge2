@@ -32,6 +32,8 @@ data class Villa(
     val openCount: Int = 0,
     /** Live: geschaetzte Restdauer in Minuten (0 = nichts offen). */
     val etaMin: Int = 0,
+    /** Estimate exceeds 24h, so the UI shows a bounded range. */
+    val etaCapped: Boolean = false,
     /** WAS genau am Ende verkauft wird (aus dem Umsatz-Plan der Agenten). */
     val vision: String = ""
 )
@@ -376,6 +378,7 @@ class HubClient(context: Context) {
                 },
                 openCount = o.optInt("openCount", 0),
                 etaMin = o.optInt("etaMin", 0),
+                etaCapped = o.optBoolean("etaCapped", false),
                 vision = o.optString("vision")
             )
         }

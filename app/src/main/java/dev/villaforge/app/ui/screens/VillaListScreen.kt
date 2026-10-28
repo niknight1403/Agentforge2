@@ -1,5 +1,7 @@
 package dev.villaforge.app.ui.screens
 
+import dev.villaforge.app.ui.formatEta
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import dev.villaforge.app.ui.theme.NeonCyan
@@ -159,16 +161,16 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
                     Card(villa.name, villa.idea.take(110), villa.displayStatus(), onClick = { onOpen(villa.id) }) {
                         if (villa.executing) {
                             Text(
-                                (villa.runningTasks.firstOrNull() ?: "arbeitet an Aufgaben") + "  ·  ≈ ${villa.etaMin} Min",
+                                (villa.runningTasks.firstOrNull() ?: "arbeitet an Aufgaben") + "  ·  " + formatEta(villa.etaMin, villa.etaCapped),
                                 style = muted(), color = Aqua, fontSize = 12.sp
                             )
                         } else if (villa.queued) {
                             Text(
-                                "wartet auf freien Rechen-Slot  ·  ${villa.openCount} offen · ≈ ${villa.etaMin} Min",
+                                "wartet auf freien Rechen-Slot  ·  ${villa.openCount} offen · ${formatEta(villa.etaMin, villa.etaCapped)}",
                                 style = muted(), color = androidx.compose.ui.graphics.Color(0xFFFFB020), fontSize = 12.sp
                             )
                         } else if (villa.openCount > 0) {
-                            Text("${villa.openCount} offen · ≈ ${villa.etaMin} Min", style = muted(), color = TextMuted, fontSize = 12.sp)
+                            Text("${villa.openCount} offen · ${formatEta(villa.etaMin, villa.etaCapped)}", style = muted(), color = TextMuted, fontSize = 12.sp)
                         }
                         if (villa.vision.isNotBlank()) {
                             Text("Ziel: " + villa.vision, style = muted(), color = androidx.compose.ui.graphics.Color(0xFF00A3FF), fontSize = 12.sp, maxLines = 2)

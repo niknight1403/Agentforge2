@@ -1251,7 +1251,8 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
 
       const batch = tasks.slice(0, job.concurrency);
       for (const task of batch) {
-        db.prepare("UPDATE tasks SET status = 'RUNNING', updated_at = ? WHERE id = ?").run(now(), task.id);
+        const startedAt = now();
+        db.prepare("UPDATE tasks SET status = 'RUNNING', started_at = ?, duration_ms = 0, updated_at = ? WHERE id = ?").run(startedAt, startedAt, task.id);
       }
 
       const executeLocally = (task) => executeTaskOnce(villaId, task).catch((e) => {
@@ -1597,7 +1598,9 @@ export async function executeTask(villaId, task, executionOptions = {}) {
     }
   }
 
-  db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?').run(res.error ? 'FAILED' : 'DONE', answer.slice(0, 4000), now(), task.id);
+  const completedAt = now();
+  db.prepare('UPDATE tasks SET status = ?, result = ?, duration_ms = CASE WHEN started_at > 0 THEN MAX(0, ? - started_at) ELSE duration_ms END, updated_at = ? WHERE id = ?')
+    .run(res.error ? 'FAILED' : 'DONE', answer.slice(0, 4000), completedAt, completedAt, task.id);
   saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:res.error?'failed':'completed',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,answerBytes:Buffer.byteLength(answer),...(res.error?{errorCode:'AGENT_ERROR'}:{})}});
   if (res.error) {
     recordLesson(villaId, agent.id, `Lehre: ${task.title}`, `Aufgabe schlug fehl. Ursache analysieren und beim naechsten Versuch zuerst beheben:\n${String(res.error).slice(0, 600)}`);
