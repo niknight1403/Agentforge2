@@ -94,7 +94,7 @@ function retryVilla(id, requestedDelayMs = 15_000) {
   const timer = setTimeout(() => {
     retryTimers.delete(villaId);
     const villa = db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(villaId);
-    if (!villa || villa.autonomy !== 1 || villa.status === 'ARCHIVED') return;
+    if (!villa || villa.autonomy !== 1 || villa.status !== 'WAITING_FOR_MODEL') return;
     enqueueVillas([villaId]);
   }, delayMs);
   timer.unref?.();
@@ -118,7 +118,8 @@ export function cancelScheduledVilla(id) {
 function pump() {
   while (starter && active.size < SLOTS() && queue.length) {
     const id = queue.shift();
-    if (active.has(id) || db.prepare('SELECT status FROM villas WHERE id=?').get(id)?.status === 'ARCHIVED') continue;
+    const villa = db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(id);
+    if (!villa || villa.autonomy !== 1 || !['RUNNING', 'WAITING_FOR_MODEL'].includes(villa.status) || active.has(id)) continue;
     active.add(id);
     lastStart.set(id, Date.now());
     // Synchron starten: Aufrufer (Tests, Auto-Resume) sehen den Start sofort.

@@ -13,7 +13,7 @@ const { villaRanking, enqueueVillas, configureScheduler, schedulerStatus, cancel
 
 function villa(name, done, open, failed = 0) {
   const t = now();
-  const id = Number(db.prepare('INSERT INTO villas (name, idea, status, created_at, updated_at) VALUES (?,?,?,?,?)').run(name, 'i', 'RUNNING', t, t).lastInsertRowid);
+  const id = Number(db.prepare('INSERT INTO villas (name, idea, status, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?)').run(name, 'i', 'RUNNING', 1, t, t).lastInsertRowid);
   const add = (status, n) => { for (let i = 0; i < n; i++) db.prepare('INSERT INTO tasks (villa_id, title, description, status, priority, created_at, updated_at) VALUES (?,?,?,?,?,?,?)').run(id, 't', 'd', status, 5, t, t); };
   add('DONE', done); add('PENDING', open); add('FAILED', failed);
   return id;
@@ -169,5 +169,20 @@ test('Modell-wartende Villen werden nach einem Hub-Neustart direkt wieder einger
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(result.villas, [id]);
   assert.equal(started[0].villaId, id);
+  _resetScheduler();
+});
+
+
+test('Stopped and disabled villas are not dispatched from queue', () => {
+  _resetScheduler();
+  const stopped = villa('Stopped scheduler regression', 0, 1);
+  const disabled = villa('Disabled scheduler regression', 0, 1);
+  const running = villa('Running scheduler regression', 0, 1);
+  db.prepare("UPDATE villas SET status='PAUSED' WHERE id=?").run(stopped);
+  db.prepare("UPDATE villas SET autonomy=0 WHERE id=?").run(disabled);
+  const started = [];
+  configureScheduler({ start: (id) => { started.push(id); return new Promise(() => {}); } });
+  enqueueVillas([stopped, disabled, running]);
+  assert.deepEqual(started, [running]);
   _resetScheduler();
 });
