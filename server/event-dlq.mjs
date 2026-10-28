@@ -195,7 +195,9 @@ export function dlqTick({ limit = 20, autoRestart = true, failedRetryThreshold =
 export function dlqStatus({ limit = 20 } = {}) {
   ensure();
   const counts = db.prepare("SELECT status, COUNT(*) n FROM event_dlq GROUP BY status").all();
-  const byStatus = Object.fromEntries(counts.map(r => [r.status, Number(r.n)]));
+  // Alle bekannten Zustaende immer als Zahl liefern (0 statt undefined) - stabile API fuer Dashboard und Clients.
+  const byStatus = { OPEN: 0, ESCALATED: 0, REQUEUED: 0 };
+  for (const r of counts) byStatus[r.status] = Number(r.n);
   const oldest = db.prepare("SELECT MIN(created_at) t FROM event_dlq WHERE status IN ('OPEN','ESCALATED')").get();
   return {
     stream: DLQ_STREAM,
