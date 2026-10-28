@@ -1,0 +1,83 @@
+name: OpenHands-Executor
+
+# Superintelligenz-Bruecke: VillaForge delegiert offene Coding-Aufgaben
+# autonom an die OpenHands-Instanz (Hetzner) und sammelt die Ergebnisse ein.
+# Status-Handling lebt im Task-Datensatz: Marker " [OH:<conversation-id>]".
+on:
+  workflow_dispatch:
+    inputs:
+      villa_id:
+        description: 'Villa-ID (Standard 2)'
+        required: false
+        default: '2'
+  schedule:
+    - cron: '23 * * * *'
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+
+      - name: Aufgabe an OpenHands delegieren oder Ergebnis einsammeln
+        env:
+          VID: ${{ github.event.inputs.villa_id || '2' }}
+        run: |
+          /tmp/sshcmd "sudo bash -s '$VID'" << 'EOS'
+          set -e
+          VID="$1"
+          set -a; source /opt/villaforge/hub.env 2>/dev/null || true; set +a
+          F=/tmp/oh-bridge-$$.mjs; tee $F >/dev/null << 'NODEJS'
+          import { DatabaseSync } from 'node:sqlite';
+          const OH = 'http://167.233.196.20:3001';
+          const vid = Number(process.argv[2] || 2);
+          const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
+          const now = () => Date.now();
+          const marker = (desc) => { const m = String(desc || '').match(/\[OH:([0-9a-f-]+)\]/); return m ? m[1] : null; };
+          const getJson = async (url, opts) => fetch(url, opts).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+
+          // 1) Laufende Delegation einsammeln
+          const delegated = db.prepare("SELECT id, title, description FROM tasks WHERE villa_id = ? AND status IN ('PENDING','RUNNING') AND description LIKE '%[OH:%' ORDER BY id ASC LIMIT 1").get(vid);
+          if (delegated) {
+            const cid = marker(delegated.description);
+            console.log('Sammle OH-Conversation ' + cid + ' fuer Task ' + delegated.id);
+            const info = await getJson(`${OH}/api/conversations/${cid}`, { signal: AbortSignal.timeout(30000) });
+            console.log('Status: ' + (info.status || info.error || JSON.stringify(info).slice(0, 150)));
+            if (['running', 'awaiting_input', 'p_PAUSED'].includes(info.status)) { console.log('Noch laufend — naechster Lauf sammelt.'); process.exit(0); }
+            const msgs = await getJson(`${OH}/api/conversations/${cid}/messages`, { signal: AbortSignal.timeout(30000) });
+            let text = '';
+            const list = Array.isArray(msgs?.messages) ? msgs.messages : (Array.isArray(msgs) ? msgs : []);
+            if (list.length) {
+              text = list.map((m) => String(m.message || m.content || '')).filter(Boolean).join('\n').slice(0, 4000);
+            } else {
+              text = JSON.stringify(info).slice(0, 2000);
+            }
+            db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?').run('DONE', '[OpenHands] ' + text, now(), delegated.id);
+            db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(vid, null, 'user', `[OpenHands] Task ${delegated.id} (${delegated.title}) abgeschlossen. Ergebnis: ${text.slice(0, 1000)}`, now());
+            console.log('Task ' + delegated.id + ' mit OpenHands-Ergebnis abgeschlossen.');
+            process.exit(0);
+          }
+
+          // 2) Neue Aufgabe delegieren
+          const task = db.prepare("SELECT id, title, description FROM tasks WHERE villa_id = ? AND status = 'PENDING' AND description NOT LIKE '%[OH:%' AND title NOT LIKE '[VERIFICATION]%' ORDER BY priority ASC, id ASC LIMIT 1").get(vid);
+          if (!task) { console.log('Keine offene Aufgabe fuer OpenHands.'); process.exit(0); }
+          const gt = process.env.GTOKEN || process.env.GITHUB_TOKEN || '';
+          const prompt = 'Du bist ein professioneller Software-Engineer und arbeitst selbststaendig. Arbeitsauftrag (VillaForge Task #' + task.id + '):\n\nTitel: ' + task.title + '\n\n' + String(task.description || '').slice(0, 2500) + '\n\nVorgehen:\n1) Klone das Projekt: git clone --depth 1 https://x-access-token:' + gt + '@github.com/niknight1403/CyberSarah-Control-Center.git cc && cd cc\n2) Installiere Abhaengigkeiten: npm install --no-audit --no-fund\n3) Setze den Arbeitsauftrag konkret um (Code + Tests).\n4) Commite deine Aenderungen (git config user.email oh@villaforge; git config user.name OpenHands) und pushe Branch feature/oh-task-' + task.id + '.\n5) Oeffne einen Pull-Request via curl: curl -X POST -H "Authorization: Bearer ' + gt + '" https://api.github.com/repos/niknight1403/CyberSarah-Control-Center/pulls -d \'{"title":"OpenHands: ' + task.title.replace(/'/g, '') + '","head":"feature/oh-task-' + task.id + '","base":"main"}\'\n6) Fasse dein Ergebnis in 5 Saetzen zusammen (Was wurde geaendert? PR-Nummer?).';
+          const res = await getJson(`${OH}/api/conversations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initial_user_msg: prompt, selected_class: 'agent' }), signal: AbortSignal.timeout(120000) });
+          if (!res.conversation_id) { console.log('OH-Conversation fehlgeschlagen: ' + JSON.stringify(res).slice(0, 300)); process.exit(1); }
+          db.prepare("UPDATE tasks SET description = description || ' [OH:' || ? || ']', updated_at = ? WHERE id = ?").run(res.conversation_id, now(), task.id);
+          db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(vid, null, 'user', `[OpenHands] Task ${task.id} (${task.title}) wurde an OpenHands delegiert (Conversation ${res.conversation_id}). Der Executor sammelt das Ergebnis ein.`, now());
+          console.log(`Task ${task.id} an OpenHands delegiert: ${res.conversation_id}`);
+          NODEJS
+          sudo node $F "$VID"
+          rm -f $F
+          EOS
