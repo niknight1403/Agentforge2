@@ -5,6 +5,7 @@ import { createCascade, orderCascadeRoutes } from './llm-cascade.mjs';
 import { createCircuitBreaker } from './circuit-breaker.mjs';
 import { userStore, quotaLeft, chargeTokens } from './auth.mjs';
 import { emit } from './events.mjs';
+import { tokenBudgetStatus, recordLlmUsage } from './observability.mjs';
 
 /** Liefert einen Key aus Secrets-Store oder Umgebung. */
 export function resolveKey(keyEnv) {
@@ -284,20 +285,24 @@ function logRouteSwitch(failedName, successName, reason) {
   try { forgeLog('routeforge:switch', `Route SWITCHED: ${failedName} -> ${successName} [Reason: ${String(reason).slice(0, 120)}]`); } catch { /* Log darf den Takt nie brechen */ }
 }
 
+const routesWithinBudget=()=>{const all=enabledRoutes(),budget=tokenBudgetStatus();return !budget.tokenAllowed?[]:budget.paidRoutesAllowed?all:all.filter(isFreeRoute);};
 const cascade=createCascade({
- routes:enabledRoutes,key:resolveKey,call:callOpenAiCompatible,
+ routes:routesWithinBudget,key:resolveKey,call:callOpenAiCompatible,
  success(route,out,latency){recordRoute(route.id,true,latency,usageTokens([],out));},
  failure(route,error){if(!error.busy){recordRoute(route.id,false);coolDown(route,error);}}
 });
 export async function chat(messages,opts={}) {
  const user=userStore.getStore();
  if(user && quotaLeft(user)<=0) throw new Error('QUOTA_EXCEEDED: Tageskontingent aufgebraucht.');
+ if(!tokenBudgetStatus().tokenAllowed) throw Object.assign(new Error('QUOTA_EXCEEDED: Globales Tages-Tokenbudget erreicht; Kill-Switch aktiv.'),{code:'GLOBAL_TOKEN_BUDGET'});
  const started=Date.now();
  try {
   const out=await cascade(messages,opts);
   const route=enabledRoutes().find(item=>item.name===out.route);
-  emit('llm',{durationMs:Date.now()-started,tokensUsed:usageTokens(messages,out),provider:route?.provider||'unknown',model:String(out.model||route?.model||'unknown').slice(0,120),route:String(out.route||'unknown').slice(0,120)});
-  if(user)chargeTokens(user.id,usageTokens(messages,out));
+  const tokens=usageTokens(messages,out), durationMs=Date.now()-started;
+  const budget=recordLlmUsage({tokens,provider:route?.provider||'unknown',model:String(out.model||route?.model||'unknown'),latencyMs:durationMs,isFree:!!route&&isFreeRoute(route)});
+  emit('llm',{durationMs,tokensUsed:tokens,provider:route?.provider||'unknown',model:String(out.model||route?.model||'unknown').slice(0,120),route:String(out.route||'unknown').slice(0,120),budget});
+  if(user)chargeTokens(user.id,tokens);
   return out;
  } catch(error) {
   emit('llm.failed',{durationMs:Date.now()-started,code:String(error?.code||error?.status||'LLM_ERROR').slice(0,80)});

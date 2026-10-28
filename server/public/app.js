@@ -11,6 +11,7 @@ let activityTicks = [];
 let dashboardActionsLoadedAt = 0;
 let activeDetailLoadedAt = 0;
 let activeDetailVillaId = null;
+let adminMetricsEnabled = false;
 
 const api = async (path, opts = {}) => {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json', ...(vfToken ? { Authorization: 'Bearer ' + vfToken } : {}) }, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined });
@@ -42,6 +43,8 @@ async function checkSession() {
   try {
     const me = await api('/api/auth/me');
     if (me.user) {
+      adminMetricsEnabled = ['admin','superadmin'].includes(me.user.role);
+      $('#adminObservability').hidden = !adminMetricsEnabled;
       hideLogin();
       const label = me.user.name || me.user.email || 'Mein Konto';
       $('#accountName').textContent = label;
@@ -49,10 +52,27 @@ async function checkSession() {
       const initial = String(label).trim().charAt(0).toLocaleUpperCase('de-DE');
       if (initial) document.querySelectorAll('.avatar').forEach(el => { el.textContent = initial; });
     } else {
+      adminMetricsEnabled = false;
+      $('#adminObservability').hidden = true;
       $('#accountName').textContent = 'Mein Konto';
       $('#accountDetail').textContent = 'Nicht angemeldet';
     }
   } catch {}
+}
+
+async function loadAdminMetrics() {
+  if (!adminMetricsEnabled) return;
+  const m = await api('/api/admin/metrics');
+  if (m.error) return;
+  const active = Object.entries(m.tasks || {}).filter(([status]) => ['PENDING','READY','RUNNING'].includes(status)).reduce((n,[,count])=>n+Number(count||0),0);
+  $('#metricTasksActive').textContent = active.toLocaleString('de-DE');
+  $('#metricTokens').textContent = Number(m.usage?.tokens||0).toLocaleString('de-DE');
+  $('#metricApiP95').textContent = Number(m.http?.p95LatencyMs||0).toLocaleString('de-DE');
+  const revenue = (m.billing?.revenue||[]).map(row=>new Intl.NumberFormat('de-DE',{style:'currency',currency:String(row.currency||'EUR').toUpperCase(),maximumFractionDigits:2}).format(Number(row.amount_minor||0)/100));
+  $('#metricRevenue').textContent = revenue.length ? revenue.join(' / ') : '0 €';
+  const usage=m.usage||{};
+  $('#metricBudgetState').textContent = usage.killSwitch ? 'Kosten-/Token-Schutz aktiv · bezahlte Routen pausiert; kostenlose Routen bleiben verfügbar.' : `${Number(usage.tokenRemaining||0).toLocaleString('de-DE')} Tokens verbleibend · geschätzt ${Number(usage.costUsd||0).toFixed(2)} / ${Number(usage.costLimitUsd||0).toFixed(2)} USD heute · API p50 ${Number(m.http?.p50LatencyMs||0)} ms · ${Number(m.http?.errors24h||0)} Serverfehler / 24 h`;
+  $('#metricsUpdated').textContent = `LIVE · ${new Date(m.generatedAt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}`;
 }
 
 /* ---------- Navigation (Bottom-Tabs) ---------- */
@@ -598,5 +618,5 @@ $('#addSecretBtn').addEventListener('click', addSecret);
 document.querySelectorAll('.tab-chip').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#detailPanel').hidden) closeWorkspace(); });
 
-function boot() { checkSession(); checkHealth(); loadOpenHandsCanvas(); loadVillas(); loadRoutes(); loadSecrets(); loadPacks(); loadControlCatalog(); connectEvents(); }
-boot(); setInterval(checkHealth, 20000);
+function boot() { checkSession().then(loadAdminMetrics); checkHealth(); loadOpenHandsCanvas(); loadVillas(); loadRoutes(); loadSecrets(); loadPacks(); loadControlCatalog(); connectEvents(); }
+boot(); setInterval(checkHealth, 20000); setInterval(loadAdminMetrics,15000);

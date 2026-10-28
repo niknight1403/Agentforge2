@@ -89,6 +89,7 @@ export class AgentWorker {
       await this.prisma.$transaction(async tx=>{
         const retry=task.attempt<3;const changed=await tx.agentTask.updateMany({where:{id:task.id,status:TaskStatus.RUNNING,updatedAt:{lt:cutoff}},data:{status:retry?TaskStatus.PENDING:TaskStatus.FAILED,result:{error:'Recovered stale task after worker shutdown.'}}});
         if(retry&&changed.count){const id=randomUUID();await tx.agentOutbox.create({data:{id,stream:this.stream,availableAt:new Date(),event:{id,type:'task.created',agentId:'recovery',timestamp:Date.now(),payload:{taskId:task.id}}}});}
+        if(!retry&&changed.count){const id=randomUUID();await tx.agentOutbox.create({data:{id,stream:`${this.stream}:dead`,event:{id,type:'task.failed',agentId:'recovery',timestamp:Date.now(),payload:{taskId:task.id,attempt:task.attempt,errorCode:'STALE_TASK_EXHAUSTED'}}}});}
       },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable,maxWait:5000,timeout:10_000});
     }
   }
@@ -150,6 +151,9 @@ export class AgentWorker {
             availableAt: new Date(Date.now() + 1000 * 2 ** claimed.attempt), event: {
               id: retryId, type: 'task.created', agentId: event.agentId, timestamp: Date.now(), payload: { taskId }
             } } });
+        } else {
+          const deadId=randomUUID();
+          await tx.agentOutbox.create({data:{id:deadId,stream:`${this.stream}:dead`,event:{id:deadId,type:'task.failed',agentId:event.agentId,timestamp:Date.now(),payload:{taskId,attempt:claimed.attempt,errorCode:String((error as {code?:unknown})?.code||(error as Error)?.name||'ERROR').slice(0,80)}}}});
         }
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 10_000 });
       await this.recordTelemetry(canRetry ? 'task.retry_scheduled' : 'task.failed', taskId, event.agentId, {

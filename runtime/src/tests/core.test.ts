@@ -5,6 +5,9 @@ import { LLMCircuitBreaker, ProviderError, executeCascade } from '../LLMCircuitB
 import { validateShell, validateSql } from '../Guardrails.js';
 import { createHubTaskExecutor } from '../HubTaskExecutor.js';
 import { sanitizeTelemetryMetadata, TelemetryStore } from '../TelemetryStore.js';
+import { AgentWorker } from '../AgentWorker.js';
+import type { AgentEvent } from '../RedisEventBus.js';
+import type { PrismaClient } from '@prisma/client';
 
 test('supervisor stops identical no-delta calls and intervenes with a new strategy', () => {
   const supervisor = new HierarchicalSupervisor();
@@ -88,6 +91,26 @@ test('Hub executor forwards supervisor recovery and preserves terminal task fail
   await assert.rejects(() => failed.execute({ hubTaskId: 12, villaId: 3 }, {
     taskId: 'runtime-task', attempt: 2, signal: new AbortController().signal
   }), error => (error as { retryable?: boolean }).retryable === false);
+});
+
+test('worker atomically records exhausted task retries in the dead-letter outbox', async () => {
+  const outbox: Array<{stream:string;event:AgentEvent}> = [];
+  const task={id:'task-dlq',status:'PENDING',attempt:0,input:{operation:'unit-test'}};
+  const fake: Record<string,any> = {
+    async $transaction(callback:(tx:any)=>Promise<unknown>){return callback(fake);},
+    agentEventReceipt:{async createMany(){return {count:1};}},
+    agentTask:{async findUnique(){return {...task};},async updateMany({data}:any){task.status='RUNNING';task.attempt+=data.attempt.increment;return {count:1};},async update({data}:any){Object.assign(task,data);return task;}},
+    agentCheckpoint:{async findMany(){return [];}},
+    agentOutbox:{async create({data}:any){outbox.push(data);return data;}},
+    agentTelemetry:{async create(){return {};}}
+  };
+  const worker=new AgentWorker(fake as unknown as PrismaClient,{} as any,{async execute(){throw Object.assign(new Error('provider unavailable'),{retryable:false,code:'PROVIDER_DOWN'});}},'vf:test:tasks');
+  const event:AgentEvent={id:'evt-dlq',type:'task.created',agentId:'unit-test',timestamp:Date.now(),payload:{taskId:task.id}};
+  await (worker as unknown as {process(event:AgentEvent,signal:AbortSignal):Promise<void>}).process(event,new AbortController().signal);
+  assert.equal(task.status,'FAILED');
+  assert.equal(outbox.length,1);
+  assert.equal(outbox[0]!.stream,'vf:test:tasks:dead');
+  assert.deepEqual(outbox[0]!.event.payload,{taskId:'task-dlq',attempt:1,errorCode:'PROVIDER_DOWN'});
 });
 
 test('telemetry metadata allowlists bounded operational fields and drops sensitive content', () => {

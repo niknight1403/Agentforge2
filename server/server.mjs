@@ -42,6 +42,9 @@ import { openHandsCanvasStatus } from './openhands.mjs';
 import { startTelemetryConsumer } from './event-mesh.mjs';
 import { controlCatalog, saveConnector, updateConnector, deleteConnector, readConnector, saveControlSkill, setControlSkillEnabled, deleteControlSkill } from './control-store.mjs';
 import { createReadStream, existsSync as fsExists } from 'node:fs';
+import { initBillingStore, createCheckoutSession, createBillingPortalSession, billingSummary, adminBillingMetrics, flushStripeUsage } from './billing.mjs';
+import { issueGatewayToken, gatewayPrincipal, hasGatewayScope, canAccessVilla, gatewayRoleScopes, initGatewayStore, createGatewayApiKey, listGatewayApiKeys, revokeGatewayApiKey } from './api-gateway.mjs';
+import { initObservabilityStore, tokenBudgetStatus, httpMetrics, recordHttpRequest } from './observability.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -97,6 +100,9 @@ if (db.prepare('SELECT COUNT(*) c FROM routes').get().c === 0) {
 // legen beim ersten Start automatisch ein Admin-Konto an (Plan: elite).
 // Das Passwort wird ausschliesslich als Hash in der lokalen DB gespeichert.
 initWebhookStore();
+initBillingStore();
+initGatewayStore();
+initObservabilityStore();
 
 /* v1.44.0 — SUPERADMIN-Anker (Nutzerdirektive 2026-10-19): Der Administrator
  * aus VF_ADMIN_EMAIL wird bei JEDEM Start idempotent gesichert — Rolle
@@ -153,6 +159,12 @@ function readRawBody(req, limit = 5_000_000) {
   });
 }
 
+async function collectAdminMetrics() {
+  const tasks=db.prepare("SELECT status,COUNT(*) count FROM tasks GROUP BY status").all();
+  const usage=tokenBudgetStatus();
+  return { generatedAt:now(), uptimeSec:Math.round(process.uptime()), tasks:Object.fromEntries(tasks.map(x=>[x.status,Number(x.count)])), usage, http:httpMetrics(), billing:adminBillingMetrics(30), villas:{total:Number(db.prepare('SELECT COUNT(*) count FROM villas').get().count),running:Number(db.prepare("SELECT COUNT(*) count FROM villas WHERE status IN ('RUNNING','WAITING_FOR_MODEL')").get().count)} };
+}
+
 function serveStatic(req, res, pathname) {
   const rel = pathname === '/' ? '/index.html' : pathname;
   const file = join(PUBLIC_DIR, rel.replace(/\.\./g, ''));
@@ -185,6 +197,53 @@ async function api(req, res, url) {
   const openMode = process.env.VF_OPEN_MODE === '1' || !usersExist();
   const needAuth = !openMode && !user;
   const isAdmin = !!user && (user.role === 'admin' || user.role === 'superadmin');
+
+  if (p.startsWith('/api/v1/gateway/')) {
+    const auth = await gatewayPrincipal(req);
+    if (!auth.ok) return json(res, auth.statusCode || 401, { error: auth.error });
+    const claims = auth.claims;
+    if (p === '/api/v1/gateway/villas' && m === 'GET') {
+      if (!hasGatewayScope(claims, 'villas:read')) return json(res, 403, { error: 'Insufficient scope.' });
+      return json(res, 200, db.prepare('SELECT id,name,idea,status,created_at,updated_at FROM villas ORDER BY id').all().filter(v => canAccessVilla(claims, v.id)));
+    }
+    const action = /^\/api\/v1\/gateway\/villas\/(\d+)\/(start|stop)$/.exec(p);
+    if (action) {
+      if (!hasGatewayScope(claims, 'villas:write')) return json(res, 403, { error: 'Insufficient scope.' });
+      const id = Number(action[1]);
+      if (!canAccessVilla(claims, id)) return json(res, 403, { error: 'Villa scope denied.' });
+      if (!db.prepare('SELECT id FROM villas WHERE id=?').get(id)) return json(res, 404, { error: 'Villa not found.' });
+      if (action[2] === 'start' && m === 'POST') { scheduleVilla(id, { runToCompletion: true }); return json(res, 202, { accepted: true, villaId: id }); }
+      if (action[2] === 'stop' && m === 'POST') { stopVilla(id); cancelScheduledVilla(id); return json(res, 200, { stopped: true, villaId: id }); }
+    }
+    if (p === '/api/v1/gateway/tasks' && m === 'POST') {
+      if (!hasGatewayScope(claims, 'tasks:write')) return json(res, 403, { error: 'Insufficient scope.' });
+      const b = await readBody(req), id = Number(b.villaId);
+      if (!canAccessVilla(claims, id)) return json(res, 403, { error: 'Villa scope denied.' });
+      if (typeof b.title !== 'string' || !b.title.trim() || b.title.length > 300 || typeof b.description !== 'string' || b.description.length > 12000) return json(res, 400, { error: 'Valid title and description are required.' });
+      if (!db.prepare('SELECT id FROM villas WHERE id=?').get(id)) return json(res, 404, { error: 'Villa not found.' });
+      const t=now(), taskId=Number(db.prepare("INSERT INTO tasks(villa_id,title,description,status,priority,created_at,updated_at) VALUES (?,?,?,'PENDING',5,?,?)").run(id,b.title.trim(),b.description,t,t).lastInsertRowid);
+      scheduleVilla(id, { runToCompletion: true });
+      return json(res, 202, { taskId, villaId: id, status: 'PENDING' });
+    }
+    if (p === '/api/v1/gateway/metrics' && m === 'GET') {
+      if (claims.role !== 'admin' || !hasGatewayScope(claims, 'metrics:read')) return json(res, 403, { error: 'Admin metrics scope required.' });
+      return json(res, 200, await collectAdminMetrics());
+    }
+    return json(res, 404, { error: 'Gateway endpoint not found.' });
+  }
+
+  if (p.startsWith('/api/v1/gateway-keys')) {
+    if (!isAdmin) return json(res, needAuth ? 401 : 403, { error: needAuth ? 'Login required.' : 'Administrator role required.' });
+    if (p === '/api/v1/gateway-keys' && m === 'GET') return json(res, 200, listGatewayApiKeys(user.id));
+    if (p === '/api/v1/gateway-keys' && m === 'POST') {
+      const b=await readBody(req); if (b.role === 'admin' && user.role !== 'superadmin') return json(res, 403, { error: 'Only superadmins may issue admin keys.' });
+      try { return json(res, 201, await createGatewayApiKey({userId:user.id,label:b.label,role:b.role,villaIds:b.villaIds,ttlSeconds:Number(b.ttlSeconds)||30*86400})); }
+      catch(error) { return json(res, 400, { error:error.message }); }
+    }
+    const keyId=/^\/api\/v1\/gateway-keys\/([\w-]+)$/.exec(p);
+    if (keyId && m === 'DELETE') return json(res, await revokeGatewayApiKey(keyId[1],user.id,user.role==='superadmin') ? 200 : 404, { ok: true });
+    return json(res, 404, { error: 'Gateway key endpoint not found.' });
+  }
 
   if (m === 'OPTIONS' && p === '/api/health') {
     res.writeHead(204, {
@@ -357,16 +416,20 @@ async function api(req, res, url) {
     }
 
     if (sub === 'stripe' && m === 'POST') {
-      const raw = await readBody(req);
+      let raw; try { raw = await readRawBody(req); } catch (error) { return json(res,413,{received:false,error:error.message}); }
       const check = verifyStripeSignature(raw, req.headers['stripe-signature'], process.env.STRIPE_WEBHOOK_SECRET);
       if (!check.ok) return json(res, 400, { received: false, error: check.error });
       let event;
-      try { event = JSON.parse(raw); } catch { return json(res, 400, { received: false, error: 'Kein gueltiges JSON' }); }
+      try { event = JSON.parse(raw.toString('utf8')); } catch { return json(res, 400, { received: false, error: 'Kein gueltiges JSON' }); }
       const row = logWebhookEvent('stripe', event.id, { type: event.type });
-      if (!await claimEventId('stripe', event.id)) {
+      if (row?.status === 'PROCESSED') return json(res,200,{received:true,duplicate:true,eventId:event.id});
+      const claim=await claimEventId('stripe', event.id);
+      if (claim === false) {
         return json(res, 200, { received: true, duplicate: true, eventId: event.id });
       }
-      const result = await handleStripeEvent(event);
+      let result;
+      try { result = await handleStripeEvent(event); }
+      catch (error) { await releaseEventId('stripe',event.id); logError('Stripe event processing failed:',error?.code||error?.name||'ERROR'); return json(res,503,{received:false,eventId:event.id,retry:true,error:'Billing event persistence failed.'}); }
       markWebhookProcessed('stripe', event.id);
       emit({ webhook: 'stripe', type: event.type });
       return json(res, 200, { received: true, eventId: event.id, handled: result.handled, slack: result.slack, logId: row?.id ?? null });
@@ -461,6 +524,13 @@ async function api(req, res, url) {
   // Ausnahme: der SSE-Eventstrom (/api/events) laesst sich aus dem Browser
   // nicht mit Headern verbinden; er uebertraegt nur Fortschrittsereignisse.
   if (needAuth && p !== '/api/events') return json(res, 401, { error: 'Login erforderlich.' });
+  if (p === '/api/billing/summary' && m === 'GET') return user ? json(res,200,billingSummary(user.id)) : json(res,401,{error:'Login erforderlich.'});
+  if (p === '/api/billing/checkout' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createCheckoutSession(user)); }
+  if (p === '/api/billing/portal' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createBillingPortalSession(user.id)); }
+  if (p === '/api/admin/metrics' && m === 'GET') { if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'}); return json(res,200,await collectAdminMetrics()); }
+  if (p === '/api/admin/gateway-keys' && m === 'GET') { if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'}); return json(res,200,listGatewayApiKeys(user.id)); }
+  if (p === '/api/admin/gateway-keys' && m === 'POST') { if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'}); const b=await readBody(req); if(b.role==='admin'&&user.role!=='superadmin')return json(res,403,{error:'Only superadmins may issue admin keys.'}); try{return json(res,201,await createGatewayApiKey({userId:user.id,label:b.label,role:b.role,villaIds:b.villaIds,ttlSeconds:Number(b.ttlSeconds)||30*86400}));}catch(error){return json(res,400,{error:error.message});} }
+  if (p === '/api/admin/gateway-token' && m === 'POST') { if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'}); const b=await readBody(req),role=b.role||'reader',villaIds=Array.isArray(b.villaIds)?b.villaIds:[]; if(role==='admin'&&user.role!=='superadmin')return json(res,403,{error:'Only superadmins may issue admin tokens.'}); if(role!=='admin'&&villaIds.some(id=>!db.prepare('SELECT id FROM villas WHERE id=?').get(Number(id))))return json(res,400,{error:'Unknown villa in allowlist.'}); try{return json(res,201,{token:issueGatewayToken({subject:String(user.id),role,villaIds,ttlSeconds:b.ttlSeconds}),scopes:gatewayRoleScopes(role)});}catch(error){return json(res,error.statusCode||400,{error:error.message});} }
   if (p === '/api/integrations/openhands' && m === 'GET') {
     return json(res, 200, openHandsCanvasStatus());
   }
@@ -1115,6 +1185,8 @@ async function internalMesh(req,res,url){
 
 /* --------------------------- Server --------------------------- */
 export const server = http.createServer((req, res) => {
+  const requestStarted=Date.now();
+  res.once('finish',()=>{if(req.url?.startsWith('/api/'))recordHttpRequest(req.method,new URL(req.url,'http://localhost').pathname,res.statusCode,Date.now()-requestStarted);});
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   if(serveStudioPreview(req,res,url))return;
   if(url.pathname.startsWith('/internal/')){
@@ -1146,6 +1218,7 @@ server.listen(PORT, HOST, () => {
   log(`Hub laeuft auf http://${HOST}:${PORT}`);
   log(`UI:      http://localhost:${PORT}/`);
   log(`Health:  http://localhost:${PORT}/api/health`);
+  const usageLoop=setInterval(()=>flushStripeUsage().catch(error=>logError('Stripe usage outbox:',error?.code||error?.name||'ERROR')),30_000); usageLoop.unref();
   startResourceAgent({
     onSample: (snapshot) => emit('resources', { snapshot }),
     onError: (error) => logError('Resource-Agent:', error?.message || error)

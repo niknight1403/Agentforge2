@@ -69,8 +69,7 @@ export function upsertUser({ email, password, role, plan, isUnlimited }) {
   if (!row) return createUser({ email, password, role, plan, isUnlimited: Boolean(isUnlimited) });
   const sets = [];
   const args = [];
-  const passwordChanged = Boolean(password) && !verifyPassword(password, row.password_hash);
-  if (passwordChanged) { sets.push('password_hash = ?'); args.push(hashPassword(password)); }
+  if (password) { sets.push('password_hash = ?'); args.push(hashPassword(password)); }
   if (role) { sets.push('role = ?'); args.push(role); }
   if (plan) { sets.push('plan = ?'); args.push(plan); }
   // v1.44.0 — Unlimited-Tier ist dauerhaft: einmal gesetzt, bleibt es beim
@@ -78,7 +77,6 @@ export function upsertUser({ email, password, role, plan, isUnlimited }) {
   if (isUnlimited !== undefined) { sets.push('is_unlimited = ?'); args.push(isUnlimited ? 1 : 0); }
   if (isUnlimited) { sets.push('token_budget = ?'); args.push('UNLIMITED'); }
   if (sets.length) db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...args, row.id);
-  if (passwordChanged) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.id);
   return db.prepare('SELECT * FROM users WHERE id = ?').get(row.id);
 }
 
@@ -134,10 +132,11 @@ export function destroyToken(token) {
 
 /** Elite/Admin = unbegrenzt (Infinity), Free = Tageskontingent. */
 export function quotaLeft(user) {
-  if (!user || user.plan === 'elite' || user.role === 'admin' || user.role === 'superadmin' || Number(user.is_unlimited) === 1) return Infinity;
+  if (!user || user.plan === 'elite' || user.role === 'admin' || user.role === 'superadmin' || Number(user.is_unlimited) === 1 || user.token_budget === 'UNLIMITED') return Infinity;
   const t = now();
-  if (t - Number(user.tokens_reset_at || 0) > 86_400_000) return FREE_DAILY_TOKENS;
-  return Math.max(0, FREE_DAILY_TOKENS - Number(user.tokens_used || 0));
+  const limit=Math.max(1,Number(user.token_budget)||FREE_DAILY_TOKENS);
+  if (t - Number(user.tokens_reset_at || 0) > 86_400_000) return limit;
+  return Math.max(0, limit - Number(user.tokens_used || 0));
 }
 
 /** Zaehlt Verbrauch; rollt das Kontingent bei Tageswechsel automatisch um. */
@@ -151,4 +150,5 @@ export function chargeTokens(userId, n) {
   } else {
     db.prepare('UPDATE users SET tokens_used = tokens_used + ? WHERE id = ?').run(Math.round(n), userId);
   }
+  import('./billing.mjs').then(({enqueueStripeUsage})=>enqueueStripeUsage(userId,n)).catch(()=>{});
 }

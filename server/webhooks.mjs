@@ -16,6 +16,7 @@ import { createHmac, createHash, timingSafeEqual } from 'node:crypto';
 import { emit } from './events.mjs';
 import { db } from './db.mjs';
 import { redisTrySetNx, redisTryDel, redisAvailable } from './redis.mjs';
+import { applyStripeBillingEvent } from './billing.mjs';
 
 // ── Persistenz: jedes eingehende Event wird revisionssicher geloggt ──
 export function initWebhookStore() {
@@ -155,12 +156,19 @@ export async function handleStripeEvent(event) {
   const obj = event?.data?.object ?? {};
   const supported = [
     'checkout.session.completed',
+    'customer.subscription.created',
     'customer.subscription.updated',
-    'invoice.payment_failed'
+    'customer.subscription.deleted',
+    'customer.subscription.paused',
+    'customer.subscription.resumed',
+    'invoice.paid',
+    'invoice.payment_failed',
+    'invoice.payment_action_required'
   ];
   const amount = obj.amount_total != null ? (obj.amount_total / 100).toFixed(2)
     : obj.amount_due != null ? (obj.amount_due / 100).toFixed(2)
     : '?';
+  const billing = supported.includes(type) ? applyStripeBillingEvent(event) : { handled: false, updated: false };
   if (type === 'checkout.session.completed') {
     const r = await postSlackAlert(slackSaleBlocks({
       title: '✅ Verkauf: Stripe-Checkout abgeschlossen',
@@ -169,25 +177,26 @@ export async function handleStripeEvent(event) {
       amount, currency: (obj.currency ?? 'EUR').toUpperCase(),
       source: 'Stripe', eventId: event.id
     }));
-    return { handled: true, slack: r };
+    return { handled: true, billing, slack: r };
   }
-  if (type === 'customer.subscription.updated') {
+  if (type.startsWith('customer.subscription.')) {
     const r = await postSlackAlert(slackSystemBlocks({
       title: '🔄 Abo aktualisiert (Stripe)',
       message: `Abo \`${obj.id ?? '?'}\` → Status *${obj.status ?? '?'}*`,
       detail: `Event: ${event.id}`
     }));
-    return { handled: true, slack: r };
+    return { handled: true, billing, slack: r };
   }
-  if (type === 'invoice.payment_failed') {
+  if (type === 'invoice.payment_failed' || type === 'invoice.payment_action_required') {
     const r = await postSlackAlert(slackSystemBlocks({
       title: '⚠️ Zahlung fehlgeschlagen (Stripe)',
       message: `Rechnung \`${obj.id ?? '?'}\`: Zahlung fehlgeschlagen.`,
       detail: `Event: ${event.id}`
     }));
-    return { handled: true, slack: r };
+    return { handled: true, billing, slack: r };
   }
-  return { handled: false, supported, slack: { sent: false, reason: `Event-Typ ${type} nicht abonniert` } };
+  if (type === 'invoice.paid') return { handled: true, billing, slack: { sent: false, reason: 'Invoice wurde in Billing gespeichert.' } };
+  return { handled: false, supported, billing, slack: { sent: false, reason: `Event-Typ ${type} nicht abonniert` } };
 }
 
 // ── Digistore24: IPN-SHA256-Passphrase-Validierung ──

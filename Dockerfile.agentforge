@@ -1,7 +1,8 @@
 FROM node:24-bookworm-slim
 
 WORKDIR /app
-COPY package.json ./package.json
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
 COPY server ./server
 COPY scripts ./scripts
 RUN mkdir -p /data && chown -R node:node /app /data
