@@ -67,6 +67,9 @@ jobs:
       - name: TypeScript Runtime-Abhaengigkeiten installieren
         run: npm ci --prefix runtime --no-audit --no-fund
 
+      - name: Runtime-Abhaengigkeiten auf bekannte Schwachstellen pruefen
+        run: npm audit --prefix runtime --audit-level=high
+
       - name: Prisma PostgreSQL-Migrationen ausfuehren
         run: npm --prefix runtime run migrate
 
