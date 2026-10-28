@@ -165,6 +165,13 @@ ensureColumn('villas', 'vision', "TEXT NOT NULL DEFAULT ''");
 // Sperrzeit einer Route nach einem Fehler (Zeitstempel). Verhindert, dass jeder
 // Aufruf erneut in dieselbe tote Route laeuft.
 ensureColumn('routes', 'cooldown_until', 'INTEGER NOT NULL DEFAULT 0');
+// v1.57.5 — Routen-Messspalten zentral anlegen, damit jede Datenbank
+// (auch die temporaere Test-DB) sie von Anfang an hat. Bisher entstanden
+// lat_ms/tokens/dead nur beim Import von llm.mjs per ALTER TABLE; Tests, die
+// nur db.mjs laden, liefen deshalb in "no such column: lat_ms".
+ensureColumn('routes', 'lat_ms', 'INTEGER');
+ensureColumn('routes', 'tokens', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('routes', 'dead', 'INTEGER NOT NULL DEFAULT 0');
 // Automatische Wiederholung fehlgeschlagener Aufgaben (max. 3 Versuche).
 ensureColumn('tasks', 'retry_count', 'INTEGER NOT NULL DEFAULT 0');
 // ETA uses measured execution time, not the time tasks waited in the queue.
