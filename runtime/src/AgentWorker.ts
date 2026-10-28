@@ -4,6 +4,7 @@ import { Prisma, PrismaClient, TaskStatus } from '@prisma/client';
 import { RedisEventBus, type AgentEvent } from './RedisEventBus.js';
 import { CheckpointStore } from './CheckpointStore.js';
 import { AgentTelemetry } from './AgentTelemetry.js';
+import { TelemetryStore } from './TelemetryStore.js';
 import { HierarchicalSupervisor, type ExecutionStep } from './HierarchicalSupervisor.js';
 
 export interface PlannedStep { toolName: string; arguments: Record<string, unknown>; result?: unknown; error?: string; state: unknown }
@@ -18,11 +19,12 @@ function assertNoCredentialFields(value: unknown, depth = 0): void {
 
 export class AgentWorker {
   private readonly checkpoints: CheckpointStore;
+  private readonly telemetry: TelemetryStore;
   private readonly supervisor = new HierarchicalSupervisor();
   private stopped = false;
   constructor(private readonly prisma: PrismaClient, private readonly bus: RedisEventBus,
     private readonly executor: TaskExecutor, private readonly stream = process.env.VF_AGENT_TASK_STREAM || 'vf:agent-tasks',
-    private readonly group = 'agentforge-workers') { this.checkpoints = new CheckpointStore(prisma); }
+    private readonly group = 'agentforge-workers') { this.checkpoints = new CheckpointStore(prisma); this.telemetry = new TelemetryStore(prisma); }
 
   async enqueue(title: string, input: Prisma.InputJsonValue, requestKey?: string) {
     assertNoCredentialFields(input);
@@ -107,6 +109,8 @@ export class AgentWorker {
       return tx.agentTask.findUnique({ where: { id: taskId } });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 10_000 });
     if (!claimed) return; // duplicate, already claimed, or already terminal
+    const startedAt = Date.now();
+    await this.recordTelemetry('task.started', taskId, event.agentId, { attempt: claimed.attempt, status: 'RUNNING' });
     try {
       const recovery = await this.checkpoints.recover(taskId, event.agentId);
       let output: Awaited<ReturnType<TaskExecutor['execute']>> | null = null;
@@ -134,6 +138,7 @@ export class AgentWorker {
       }
       await this.prisma.agentTask.update({ where: { id: taskId }, data: { status: TaskStatus.COMPLETED,
         result: output.result == null ? Prisma.JsonNull : output.result as Prisma.InputJsonValue } });
+      await this.recordTelemetry('task.completed', taskId, event.agentId, { attempt: claimed.attempt, durationMs: Date.now() - startedAt, stepCount: output.steps.length, status: 'COMPLETED' });
     } catch (error) {
       const canRetry = claimed.attempt < 3 && !signal.aborted && (error as {retryable?:boolean})?.retryable !== false;
       await this.prisma.$transaction(async tx => {
@@ -147,7 +152,16 @@ export class AgentWorker {
             } } });
         }
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5000, timeout: 10_000 });
+      await this.recordTelemetry(canRetry ? 'task.retry_scheduled' : 'task.failed', taskId, event.agentId, {
+        attempt: claimed.attempt, durationMs: Date.now() - startedAt,
+        errorCode: String((error as { code?: unknown })?.code || (error as Error)?.name || 'ERROR'), status: canRetry ? 'PENDING' : 'FAILED'
+      });
     }
+  }
+
+  private async recordTelemetry(eventType: string, taskId: string, agentId: string, metadata: Record<string, unknown>) {
+    try { await this.telemetry.record(eventType, taskId, agentId, metadata); }
+    catch (error) { console.error('[TelemetryStore] persist failed', { eventType, code: (error as Error)?.name }); }
   }
 }
 
