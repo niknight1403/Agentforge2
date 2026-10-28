@@ -1,6 +1,6 @@
 # Integrationsprüfung für Entwicklungsqualität
 
-Stand: VillaForge 1.57.0. Priorisiert wurden Integrationen, die Fehler vor dem Release finden, die installierbaren Artefakte nachvollziehbar machen und ohne bezahlte Zusatzdienste nutzbar sind.
+Stand: VillaForge 1.57.1. Priorisiert wurden Integrationen, die Fehler vor dem Release finden, die installierbaren Artefakte nachvollziehbar machen und ohne bezahlte Zusatzdienste nutzbar sind.
 
 | Bereich | Entscheidung | Nutzen / Betriebsgrenze |
 |---|---|---|

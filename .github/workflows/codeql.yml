@@ -64,7 +64,7 @@ jobs:
 
       - name: Kotlin/Android-Quellen instrumentiert kompilieren
         if: matrix.language == 'java-kotlin'
-        run: gradle :app:compileDebugKotlin --no-daemon --stacktrace
+        run: gradle :app:compileDebugKotlin --no-daemon --no-build-cache --rerun-tasks --stacktrace
 
       - name: CodeQL analysieren
         uses: github/codeql-action/analyze@v4
