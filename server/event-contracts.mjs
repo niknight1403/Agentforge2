@@ -116,3 +116,26 @@ export function assertMeshEvent(event) {
   if (!result.ok) throw new Error('Event verletzt Vertrag: ' + result.errors.join(', '));
   return event;
 }
+
+/**
+ * Reduziert ein Live-Event (SSE-Strom) auf Metadaten.
+ *
+ * Hintergrund: `emit()` publiziert Rohdaten, inklusive Tool-Argumenten und
+ * Dateiinhalten. Der SSE-Endpunkt braucht davon nichts - und darf ohne Anmeldung
+ * keinesfalls Prompts, Code oder Modellantworten ausliefern. Diese Funktion ist
+ * die Whitelist fuer den Stream und nutzt dieselben Felder wie der Mesh-Vertrag.
+ *
+ * @param {any} event
+ * @returns {{type: string, ts: number} & Record<string, any>}
+ */
+export function sanitizeForStream(event) {
+  const out = { type: String(event?.type || 'event').slice(0, 40), ts: Number(event?.ts) || Date.now() };
+  if (!event || typeof event !== 'object') return out;
+  for (const key of MESH_METADATA_FIELDS) {
+    const value = event[key];
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) out[key] = value;
+    else if (typeof value === 'string') out[key] = value.slice(0, MESH_TEXT_MAX);
+  }
+  return out;
+}
