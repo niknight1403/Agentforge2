@@ -42,6 +42,10 @@ jobs:
                   try: return e.code, json.loads(e.read() or b'{}')
                   except Exception: return e.code, {}
 
+          # Let the matching safe deploy finish before probing the new production code.
+          import time
+          time.sleep(45)
+
           print('== 1) Login ==')
           st, data = call('POST', '/api/auth/login', body={'email': os.environ['VF_ADMIN_EMAIL'], 'password': os.environ['VF_ADMIN_PASSWORD']})
           print('HTTP', st, '| Token:', 'ja' if data.get('token') else 'NEIN')

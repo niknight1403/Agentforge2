@@ -1,0 +1,106 @@
+name: agentforge-mesh
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - mesh-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cybersarah
+      POSTGRES_USER: cybersarah
+      POSTGRES_PASSWORD: ${MESH_POSTGRES_PASSWORD:?Set MESH_POSTGRES_PASSWORD in an untracked .env file}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - mesh-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cybersarah -d cybersarah"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  agentforge:
+    build:
+      context: .
+      dockerfile: Dockerfile.agentforge
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 12000
+      VF_DB: /data/villaforge.db
+      REDIS_URL: redis://redis:6379/0
+      CYBERSARAH_TELEMETRY_URL: http://control-center:3000
+      CYBERSARAH_TELEMETRY_TOKEN: ${AGENTFORGE_TELEMETRY_TOKEN:?Set AGENTFORGE_TELEMETRY_TOKEN in an untracked .env file}
+    ports:
+      - "127.0.0.1:12000:12000"
+    volumes:
+      - agentforge-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      control-center:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:12000/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  control-center:
+    build:
+      context: ../CyberSarah-Control-Center
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: ../CyberSarah-Control-Center/.env
+        required: false
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://cybersarah:${MESH_POSTGRES_PASSWORD}@postgres:5432/cybersarah
+      AGENTFORGE_TELEMETRY_TOKEN: ${AGENTFORGE_TELEMETRY_TOKEN:?Set AGENTFORGE_TELEMETRY_TOKEN in an untracked .env file}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      control-center-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 45s
+      retries: 5
+
+  control-center-migrate:
+    build:
+      context: ../CyberSarah-Control-Center
+      dockerfile: Dockerfile
+      target: build
+    command: ["npx", "drizzle-kit", "migrate"]
+    restart: "no"
+    env_file:
+      - path: ../CyberSarah-Control-Center/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://cybersarah:${MESH_POSTGRES_PASSWORD}@postgres:5432/cybersarah
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  agentforge-data:
+  mesh-postgres:
+  mesh-redis:
