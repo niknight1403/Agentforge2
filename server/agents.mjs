@@ -847,9 +847,12 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
       const repeats=previous?.result===resultFingerprint?(previous.count+1):1;
       repeatedCalls.set(fingerprint,{result:resultFingerprint,count:repeats});
       if (ctx.taskId) saveCheckpoint({taskId:ctx.taskId,agentId:agent.id,state:{step:step+1,lastTool:parsed.tool,completedTools:[...new Set(trace.filter(t=>t.tool).map(t=>t.tool))],repeatCount:repeats}});
-      if (repeats>=3) return {error:`Supervisor stopped a repeated ${parsed.tool} call without a state change.`,code:'AGENT_LOOP',trace};
       history.push({ role: 'assistant', content: out.content });
       history.push({ role: 'user', content: `Werkzeug-Ergebnis (${parsed.tool}): ${String(result).slice(0, 2000)}` });
+      if (repeats >= 3) {
+        if (repeats >= 5) return {error:`Supervisor stopped a repeated ${parsed.tool} call without a state change.`,code:'AGENT_LOOP',trace};
+        history.push({ role: 'user', content: `[SELF-HEALING] Der letzte Werkzeugaufruf ${parsed.tool} hat bei identischen Argumenten keinen neuen Zustand erzeugt. Verwende sofort ein anderes passendes Werkzeug oder eine geaenderte Strategie. Wiederhole diesen Aufruf nicht.` });
+      }
       continue;
     }
 
