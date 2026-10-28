@@ -46,6 +46,7 @@ let chrome = null;
 let page = null;
 let workDir = null;
 let modelMock = null;
+let villaId = null;
 
 function step(name) {
   const record = { name, status: 'running', ms: 0, note: '' };
@@ -137,23 +138,26 @@ async function run() {
   });
 
   await check('Kennzahlen und Routenleiste sind gefuellt', async () => {
-    await page.waitFor("Number(document.querySelector('#metricRoutes').textContent) > 0", { timeout: 15_000, label: 'Routen-Kachel' });
+    await page.waitFor("Number(document.querySelector('#metricRoutes').textContent) > 0 && document.querySelectorAll('#routeList .route-row').length > 0", { timeout: 15_000, label: 'Routen-Kachel und Routenliste' });
     const snap = await page.evaluate(`
       return {
         routes: Number(document.querySelector('#metricRoutes').textContent),
-        villas: Number(document.querySelector('#metricVillas').textContent),
-        routeRows: document.querySelectorAll('#routeList .row').length,
-        stats: (document.querySelector('#statsBar').textContent || '').trim()
+        agents: Number(document.querySelector('#metricAgents').textContent),
+        active: Number(document.querySelector('#metricRunning').textContent),
+        completed: Number(document.querySelector('#metricDone').textContent),
+        routeRows: document.querySelectorAll('#routeList .route-row').length,
+        stats: (document.querySelector('.stats-row').textContent || '').trim()
       };`);
     if (!snap.routeRows) throw new Error('Routenliste ist leer');
     if (!snap.stats) throw new Error('Statistik-Leiste bleibt leer');
-    return `${snap.routes} Routen, ${snap.routeRows} Zeilen, Statistik: ${snap.stats.slice(0, 60)}…`;
+    return `${snap.routes} Routen, ${snap.routeRows} Routen-Einträge, ${snap.agents} Agenten, ${snap.active} aktiv, ${snap.completed} erledigt`;
   });
 
   await safeShot('01-uebersicht-desktop');
 
-  let villaId = null;
   await check('Villa per UI anlegen oeffnet den Arbeitsbereich', async () => {
+    await page.evaluate("document.querySelector('#dashboardNewBtn').click(); return true;");
+    await page.waitFor("document.querySelector('#createSheet').hidden === false", { timeout: 5_000, label: 'Formular zum Erstellen' });
     await page.evaluate(`
       document.querySelector('#villaName').value = 'Live-Test Villa';
       document.querySelector('#idea').value = ${JSON.stringify(VILLA_IDEA)};
@@ -176,7 +180,7 @@ async function run() {
         agentRows: document.querySelectorAll('#agentList .row').length,
         progress: document.querySelector('#progressLabel').textContent
       };`);
-    if (snap.stats < 4) throw new Error(`Nur ${snap.stats} Kennzahlen-Kacheln`);
+    if (snap.stats !== 3) throw new Error(`Unerwartete Kennzahlen: ${snap.stats} statt 3`);
     if (!snap.agents) throw new Error('Keine Agenten im Pool');
     if (!snap.tasks) throw new Error('Kein Aufgabenplan');
     if (!snap.agentRows) throw new Error('Agentenliste bleibt leer');
@@ -187,18 +191,18 @@ async function run() {
 
   await check('Alle Arbeitsbereich-Tabs schalten um und sind gefuellt', async () => {
     const report = [];
-    for (const tab of ['tasks', 'agents', 'packs', 'reports', 'memory', 'audit']) {
-      await page.evaluate(`document.querySelector('.side-tab[data-tab="${tab}"]').click(); return true;`);
+    for (const tab of ['tasks', 'agents', 'reports', 'memory', 'audit']) {
+      await page.evaluate(`document.querySelector('.tab-chip[data-tab="${tab}"]').click(); return true;`);
       await delay(600);
       const state = await page.evaluate(`
         const pane = document.querySelector('.workspace-main .tabpane[data-pane="${tab}"]');
-        const list = pane.querySelector('.list, .tabpane');
-        return { active: pane.classList.contains('active'), html: (list ? list.innerHTML : '').trim().length };`);
+        const list = pane?.querySelector('.list');
+        return { active: !!pane?.classList.contains('active'), html: (list ? list.innerHTML : '').trim().length };`);
       if (!state.active) throw new Error(`Tab ${tab} wurde nicht aktiv`);
       if (!state.html) throw new Error(`Tab ${tab} ist leer`);
       report.push(`${tab}:${state.html}b`);
     }
-    await page.evaluate("document.querySelector('.side-tab[data-tab=\"chat\"]').click(); return true;");
+    await page.evaluate("document.querySelector('.tab-chip[data-tab=\"chat\"]').click(); return true;");
     return report.join(' ');
   });
 
@@ -233,19 +237,16 @@ async function run() {
     return `Status „${running}" → gestoppt`;
   });
 
-  await check('Aufgabenfilter arbeitet ohne Fehler', async () => {
-    const counts = {};
-    for (const value of ['', 'PENDING', 'FAILED']) {
-      counts[value || 'ALLE'] = await page.evaluate(`
-        const f = document.querySelector('#taskFilter');
-        f.value = ${JSON.stringify(value)};
-        f.dispatchEvent(new Event('change'));
-        await new Promise(r => setTimeout(r, 250));
-        return document.querySelectorAll('#taskList .row').length;`);
-    }
-    const sum = Object.values(counts).reduce((a, b) => a + b, 0);
-    if (!sum) throw new Error('Filter zeigt in keiner Ansicht Aufgaben');
-    return Object.entries(counts).map(([k, v]) => `${k}=${v}`).join(' ');
+  await check('Aufgabenliste zeigt den konkreten Projektplan', async () => {
+    await page.evaluate("document.querySelector('.tab-chip[data-tab=\"tasks\"]').click(); return true;");
+    const snap = await page.evaluate(`
+      return {
+        expected: Number(document.querySelector('#taskCount').textContent),
+        visible: document.querySelectorAll('#taskList .row').length,
+        empty: !!document.querySelector('#taskList .empty-state')
+      };`);
+    if (snap.expected < 1 || snap.visible < 1 || snap.empty) throw new Error(`Aufgaben nicht sichtbar: ${snap.visible}/${snap.expected}`);
+    return `${snap.visible} Aufgaben sichtbar, ${snap.expected} im Plan`;
   });
 
   await check('Live-Ereignisse (SSE) sind verbunden', async () => {
@@ -279,11 +280,11 @@ async function run() {
     const snap = await page.evaluate(`
       const overflowX = document.documentElement.scrollWidth - window.innerWidth;
       const card = document.querySelector('#villaList .villa-card');
+      const create = document.querySelector('#dashboardNewBtn');
       return {
         overflowX,
         hasVilla: !!card,
-        chatVisible: !!document.querySelector('#heroCreateBtn'),
-        createBtnHeight: Math.round(document.querySelector('#heroCreateBtn').getBoundingClientRect().height)
+        createBtnHeight: create ? Math.round(create.getBoundingClientRect().height) : 0
       };`);
     await safeShot('05-mobile-uebersicht');
     if (snap.overflowX > 2) throw new Error(`Horizontales Ueberlaufen: ${snap.overflowX}px`);
@@ -297,16 +298,16 @@ async function run() {
     await page.waitFor("document.querySelector('#detailPanel').hidden === false", { timeout: 30_000, label: 'Arbeitsbereich mobil' });
     await delay(600);
     const snap = await page.evaluate(`
-      const shell = document.querySelector('.workspace-shell').getBoundingClientRect();
       const panel = document.querySelector('#detailPanel').getBoundingClientRect();
+      const workspace = document.querySelector('.workspace-main').getBoundingClientRect();
       return {
-        shellH: Math.round(shell.height), panelH: Math.round(panel.height),
+        panelH: Math.round(panel.height), workspaceH: Math.round(workspace.height),
         overflowX: document.documentElement.scrollWidth - window.innerWidth,
-        tabs: document.querySelectorAll('.side-tab').length
+        tabs: document.querySelectorAll('#detailPanel .tab-chip').length
       };`);
     await safeShot('06-mobile-arbeitsbereich');
     if (snap.overflowX > 2) throw new Error(`Horizontales Ueberlaufen: ${snap.overflowX}px`);
-    if (snap.shellH < Math.round(snap.panelH * 0.98)) throw new Error('Arbeitsbereich nutzt die Hoehe nicht');
+    if (snap.panelH < Math.round(window.innerHeight * 0.9) || snap.workspaceH < 180) throw new Error('Arbeitsbereich nutzt die Hoehe nicht');
     if (snap.tabs < 6) throw new Error(`Nur ${snap.tabs} Tabs sichtbar`);
     return `${snap.panelH}px hoch, ${snap.tabs} Tabs, kein Ueberlauf`;
   });
@@ -335,7 +336,7 @@ function writeReport() {
     generated_at: new Date().toISOString(),
     duration_ms: Date.now() - started,
     hub_port: PORT,
-    villa_id: results.length ? null : null,
+    villa_id: villaId,
     summary: { total: results.length, passed, failed: failed.length, skipped: results.filter((r) => r.status === 'skip').length },
     console: { logs: page?.logs?.slice(-50) || [], errors: page?.errors || [] },
     network: {
