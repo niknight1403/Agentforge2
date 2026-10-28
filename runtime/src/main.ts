@@ -6,6 +6,7 @@ import { AgentWorker } from './AgentWorker.js';
 import { AgentTelemetry } from './AgentTelemetry.js';
 import { CheckpointStore } from './CheckpointStore.js';
 import { createHubTaskExecutor } from './HubTaskExecutor.js';
+import { TelemetryStore } from './TelemetryStore.js';
 
 const port = Number(process.env.PORT || 12001);
 const token = String(process.env.MESH_INTERNAL_TOKEN || '');
@@ -17,11 +18,13 @@ if (!hubUrl) throw new Error('AGENTFORGE_EXECUTOR_URL is required.');
 const prisma = new PrismaClient();
 const bus = new RedisEventBus();
 const checkpointStore = new CheckpointStore(prisma);
+const telemetryStore = new TelemetryStore(prisma);
 const executor = createHubTaskExecutor({hubUrl,token});
 const worker = new AgentWorker(prisma, bus, executor);
 const controller = new AbortController();
 let outboxTimer: NodeJS.Timeout | undefined;
 let recoveryTimer: NodeJS.Timeout | undefined;
+let telemetryRetentionTimer: NodeJS.Timeout | undefined;
 const auth = (req: IncomingMessage) => {
   const supplied = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   const a = Buffer.from(supplied); const b = Buffer.from(token);
@@ -73,12 +76,17 @@ const server = createServer(async (req, res) => {
       return task ? send(res, 200, task) : send(res, 404, { error: 'Task not found.' });
     }
     return send(res, 404, { error: 'Not found.' });
-  } catch (error) { return send(res, Number((error as { status?: number }).status) || 500, { error: String((error as Error).message).slice(0, 300) }); }
+  } catch (error) {
+    const status = Number((error as { status?: number }).status) || 500;
+    if (status >= 500) console.error('[agentforge-runtime] request failed', { method: req.method, path: req.url, code: (error as Error)?.name });
+    return send(res, status, { error: status >= 500 ? 'Internal runtime error.' : String((error as Error).message).slice(0, 300) });
+  }
 });
 
 async function start() {
   await AgentTelemetry.init();
   await prisma.$connect();
+  void telemetryStore.prune().catch(error => console.error('[TelemetryRetention]', (error as Error).name));
   server.listen(port, '0.0.0.0');
   outboxTimer = setInterval(() => { void worker.flushOutbox().catch(error => console.error('[Outbox]', (error as Error).message)); }, 500);
   outboxTimer.unref();
@@ -86,6 +94,8 @@ async function start() {
   // cannot leave a task stuck until another deployment.
   recoveryTimer = setInterval(() => { void worker.recoverStaleTasks().catch(error => console.error('[Recovery]', (error as Error).message)); }, 60_000);
   recoveryTimer.unref();
+  telemetryRetentionTimer = setInterval(() => { void telemetryStore.prune().catch(error => console.error('[TelemetryRetention]', (error as Error).name)); }, 24 * 60 * 60 * 1000);
+  telemetryRetentionTimer.unref();
   const concurrency=Math.max(1,Math.min(16,Number(process.env.AGENT_WORKER_CONCURRENCY)||3));
   void Promise.all(Array.from({length:concurrency},()=>worker.run(controller.signal)))
     .catch(error => console.error('[AgentWorker]', (error as Error).message));
@@ -95,6 +105,7 @@ async function shutdown() {
   controller.abort(); worker.stop();
   if (outboxTimer) clearInterval(outboxTimer);
   if (recoveryTimer) clearInterval(recoveryTimer);
+  if (telemetryRetentionTimer) clearInterval(telemetryRetentionTimer);
   await new Promise<void>(resolve => server.close(() => resolve()));
   await Promise.allSettled([bus.disconnect(), prisma.$disconnect(), AgentTelemetry.shutdown()]);
   process.exit(0);
