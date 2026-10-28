@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { buildMeshEvent } from '../event-mesh.mjs';
 import {
   MESH_EVENT_TYPES, MESH_METADATA_FIELDS, MESH_TEXT_MAX,
-  MESH_EVENT_CONTRACTS, validateMeshEvent, assertMeshEvent,
+  MESH_EVENT_CONTRACTS, validateMeshEvent, assertMeshEvent, sanitizeForStream,
 } from '../event-contracts.mjs';
 
 const VILLA = 5, TASK = 42, AGENT = 7;
@@ -83,4 +83,23 @@ test('assertMeshEvent wirft bei Vertragsbruch', () => {
   assert.throws(() => assertMeshEvent({ id: 'e1', type: 'tool.executed', at: 1 }), /verletzt Vertrag/);
   const good = buildMeshEvent('tool', { villaId: VILLA, tool: 'read_file' });
   assert.equal(assertMeshEvent(good), good);
+});
+
+test('sanitizeForStream entfernt Inhalte aus dem Live-Strom', () => {
+  const raw = {
+    type: 'tool', ts: 1, villaId: 18, agentId: 382, tool: 'project_write',
+    args: { path: 'a.js', content: 'const secret = 1;' }, prompt: 'GEHEIM', response: 'Antwort',
+  };
+  const safe = sanitizeForStream(raw);
+  assert.equal(safe.args, undefined);
+  assert.equal(safe.prompt, undefined);
+  assert.equal(safe.response, undefined);
+  assert.equal(safe.type, 'tool');
+  assert.equal(safe.villaId, 18);
+  assert.equal(safe.tool, 'project_write');
+});
+
+test('sanitizeForStream kuerzt lange Texte und vertraegt Unsinn', () => {
+  assert.equal(sanitizeForStream({ type: 'llm', model: 'x'.repeat(500) }).model.length, MESH_TEXT_MAX);
+  assert.deepEqual(Object.keys(sanitizeForStream(null)).sort(), ['ts', 'type']);
 });
