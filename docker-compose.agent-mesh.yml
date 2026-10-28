@@ -44,6 +44,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       CYBERSARAH_TELEMETRY_URL: http://control-center:3000
       CYBERSARAH_TELEMETRY_TOKEN: ${AGENTFORGE_TELEMETRY_TOKEN:?Set AGENTFORGE_TELEMETRY_TOKEN in an untracked .env file}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: agentforge2
     ports:
       - "127.0.0.1:12000:12000"
     volumes:
@@ -53,6 +55,8 @@ services:
         condition: service_healthy
       control-center:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:12000/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -99,6 +103,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.121.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    restart: unless-stopped
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "127.0.0.1:4318:4318"
 
 volumes:
   agentforge-data:
