@@ -6,7 +6,7 @@ const endpoint = () => String(process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT ||
   (process.env.OTEL_EXPORTER_OTLP_ENDPOINT ? `${String(process.env.OTEL_EXPORTER_OTLP_ENDPOINT).replace(/\/+$/, '')}/v1/traces` : '')).trim();
 const nowNs = () => (BigInt(Date.now()) * 1_000_000n).toString();
 const safeAttrs = attrs => Object.entries(attrs || {}).filter(([k,v]) => /^[a-zA-Z0-9_.-]{1,64}$/.test(k) && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'))
-  .map(([key,value]) => ({ key, value: typeof value === 'string' ? { stringValue: value.slice(0,160) } : typeof value === 'boolean' ? { boolValue: value } : { intValue: Math.trunc(value) } }));
+  .map(([key,value]) => ({ key, value: typeof value === 'string' ? { stringValue: value.slice(0,160) } : typeof value === 'boolean' ? { boolValue: value } : { intValue: String(Math.trunc(value)) } }));
 
 /** Export one metadata-only OTel span. Export failures never fail agent work. */
 export async function exportOtelSpan(name, attributes = {}, { startedAt = Date.now(), statusCode = 1 } = {}) {
