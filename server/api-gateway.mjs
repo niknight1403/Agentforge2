@@ -1,114 +1,68 @@
-import { createHmac, createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { db, now } from './db.mjs';
-import { redisTrySetNx, redisTryDel } from './redis.mjs';
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛÎ½N‹Z–‹­¦ëeŠw¬Õ¥µÁ½ÉĞìÉ•…Ñ•!µ…Œ°É•…Ñ•!…Í °É…¹‘½µ	åÑ•Ì°É…¹‘½µUU%°Ñ¥µ¥¹M…™•ÅÕ…°ô™É½´€¹½‘”éÉåÁÑ¼œì)¥µÁ½ÉĞì‘ˆ°¹½Üô™É½´€œ¸½‘ˆ¹µ©Ìœì)¥µÁ½ÉĞìÉ•‘¥ÍQÉåM•Ñ9à°É•‘¥ÍQÉå•°ô™É½´€œ¸½É•‘¥Ì¹µ©Ìœì()½¹ÍĞ%MMUH€ô€…•¹Ñ™½É”Èœì)½¹ÍĞU%9€ô€…•¹Ñ™½É”Èµ…Á¤œì)½¹ÍĞI=1}M=AL€ô=‰©•Ğ¹™É••é”¡ì(€É•…‘•ÈèlÙ¥±±…ÌéÉ•…t°(€½Á•É…Ñ½ÈèlÙ¥±±…ÌéÉ•…œ°€Ù¥±±…ÌéİÉ¥Ñ”œ°€Ñ…Í­ÌéİÉ¥Ñ”t°(€…‘µ¥¸èlÙ¥±±…ÌéÉ•…œ°€Ù¥±±…ÌéİÉ¥Ñ”œ°€Ñ…Í­ÌéİÉ¥Ñ”œ°€µ•ÑÉ¥ÌéÉ•…œ°€‰¥±±¥¹œéÉ•…t)ô¤ì)½¹ÍĞˆØÑÕÉ°€ô€¡Ù…±Õ”¤€ôø	Õ™™•È¹™É½´¡Ù…±Õ”¤¹Ñ½MÑÉ¥¹œ ‰…Í”ØÑÕÉ°œ¤ì()™Õ¹Ñ¥½¸Í¥¹¥¹M•É•Ğ¡Í•É•Ğ¤ì(€½¹ÍĞÙ…±Õ”€ôMÑÉ¥¹œ¡Í•É•Ğ€üüÁÉ½•ÍÌ¹•¹Ø¹Y}Q]e})]Q}MIP€üü€œœ¤ì(€¥˜€¡	Õ™™•È¹‰åÑ•1•¹Ñ ¡Ù…±Õ”¤€ğ€ÌÈ¤Ñ¡É½Ü=‰©•Ğ¹…ÍÍ¥¸¡¹•ÜÉÉ½È Y}Q]e})]Q}MIPµÕÍĞ½¹Ñ…¥¸…Ğ±•…ÍĞ€ÌÈ‰åÑ•Ì¸œ¤°ì½‘”è€)]Q}9=Q}=9%UIœ°ÍÑ…ÑÕÍ½‘”è€ÔÀÌô¤ì(€É•ÑÕÉ¸Ù…±Õ”ì)ô()•áÁ½ÉĞ™Õ¹Ñ¥½¸¥ÍÍÕ•…Ñ•İ…åQ½­•¸¡ìÍÕ‰©•Ğ°É½±”€ô€É•…‘•Èœ°Ù¥±±…%‘Ì€ômt°ÑÑ±M•½¹‘Ì€ô€äÀÀô°Í•É•Ğ°¹½İM•½¹‘Ì€ô5…Ñ ¹™±½½È¡…Ñ”¹¹½Ü ¤€¼€ÄÀÀÀ¤¤ì(€½¹ÍĞ­•ä€ôÍ¥¹¥¹M•É•Ğ¡Í•É•Ğ¤ì(€¥˜€¡ÑåÁ•½˜ÍÕ‰©•Ğ€„ôô€ÍÑÉ¥¹œœñğ€…ÍÕ‰©•Ğ¹ÑÉ¥´ ¤ñğÍÕ‰©•Ğ¹±•¹Ñ €ø€ÄàÀ¤Ñ¡É½Ü¹•ÜQåÁ•ÉÉ½È Ù…±¥Ñ½­•¸ÍÕ‰©•Ğ¥ÌÉ•ÅÕ¥É•¸œ¤ì(€¥˜€ …=‰©•Ğ¹¡…Í=İ¸¡I=1}M=AL°É½±”¤¤Ñ¡É½Ü¹•ÜQåÁ•ÉÉ½È I½±”µÕÍĞ‰”É•…‘•È°½Á•É…Ñ½È°½È…‘µ¥¸¸œ¤ì(€¥˜€ …ÉÉ…ä¹¥ÍÉÉ…ä¡Ù¥±±…%‘Ì¤ñğÙ¥±±…%‘Ì¹±•¹Ñ €ø€ÄÀÀÀñğÙ¥±±…%‘Ì¹Í½µ”¡¥€ôø€…9Õµ‰•È¹¥ÍM…™•%¹Ñ••È¡9Õµ‰•È¡¥¤¤ñğ9Õµ‰•È¡¥¤€ğ€Ä¤¤Ñ¡É½Ü¹•ÜQåÁ•ÉÉ½È Ù¥±±…%‘ÌµÕÍĞ½¹Ñ…¥¸…Ğµ½ÍĞ€ÄÀÀÀÁ½Í¥Ñ¥Ù”¥¹Ñ••È%Ì¸œ¤ì(€¥˜€¡É½±”€„ôô€…‘µ¥¸œ€˜˜Ù¥±±…%‘Ì¹±•¹Ñ €ôôô€À¤Ñ¡É½Ü¹•ÜQåÁ•ÉÉ½È 9½¸µ…‘µ¥¸A$±¥•¹ÑÌÉ•ÅÕ¥É”…¸•áÁ±¥¥ĞÙ¥±±„…±±½İ±¥ÍĞ¸œ¤ì(€½¹ÍĞÑÑ°€ô5…Ñ ¹µ…à ØÀ°5…Ñ ¹µ¥¸ ÌØÀÀ°5…Ñ ¹ÑÉÕ¹Œ¡9Õµ‰•È¡ÑÑ±M•½¹‘Ì¤ñğ€äÀÀ¤¤¤ì(€½¹ÍĞ¡•…‘•È€ôˆØÑÕÉ°¡)M=8¹ÍÑÉ¥¹¥™ä¡ì…±œè€!LÈÔØœ°ÑåÀè€)]Pœô¤¤ì(€½¹ÍĞÁ…å±½…€ôˆØÑÕÉ°¡)M=8¹ÍÑÉ¥¹¥™ä¡ì(€€€¥ÍÌè%MMUH°…ÕèU%9°ÍÕˆèÍÕ‰©•Ğ¹ÑÉ¥´ ¤°É½±”°(€€€Í½Á•ÌèI=1}M=AMmÉ½±•t°Ù¥±±…Ìèl¸¸¹¹•ÜM•Ğ¡Ù¥±±…%‘Ì¹µ…À¡9Õµ‰•È¤¥t°(€€€¥…Ğè¹½İM•½¹‘Ì°•áÀè¹½İM•½¹‘Ì€¬ÑÑ°°©Ñ¤èÉ…¹‘½µUU% ¤(€ô¤¤ì(€½¹ÍĞ¥¹ÁÕĞ€ô€‘í¡•…‘•Éô¸‘íÁ…å±½…‘õ€ì(€É•ÑÕÉ¸€‘í¥¹ÁÕÑô¸‘íÉ•…Ñ•!µ…Œ Í¡„ÈÔØœ°­•ä¤¹ÕÁ‘…Ñ”¡¥¹ÁÕĞ¤¹‘¥•ÍĞ ‰…Í”ØÑÕÉ°œ¥õ€ì)ô()•áÁ½ÉĞ™Õ¹Ñ¥½¸Ù•É¥™å…Ñ•İ…åQ½­•¸¡Ñ½­•¸°Í•É•Ğ°¹½İM•½¹‘Ì€ô5…Ñ ¹™±½½È¡…Ñ”¹¹½Ü ¤€¼€ÄÀÀÀ¤¤ì(€ÑÉäì(€€€½¹ÍĞ­•ä€ôÍ¥¹¥¹M•É•Ğ¡Í•É•Ğ¤ì(€€€¥˜€¡ÑåÁ•½˜Ñ½­•¸€„ôô€ÍÑÉ¥¹œœñğÑ½­•¸¹±•¹Ñ €ø€àÄäÈ¤É•ÑÕÉ¸ì½¬è™…±Í”°•ÉÉ½Èè€¥¹Ù…±¥‘}Ñ½­•¸œôì(€€€½¹ÍĞÁ…ÉÑÌ€ôÑ½­•¸¹ÍÁ±¥Ğ œ¸œ¤ì(€€€¥˜€¡Á…ÉÑÌ¹±•¹Ñ €„ôô€Ì¤É•ÑÕÉ¸ì½¬è™…±Í”°•ÉÉ½Èè€¥¹Ù…±¥‘}Ñ½­•¸œôì(€€€½¹ÍĞm¡•…‘•ÉA…ÉĞ°Á…å±½…‘A…ÉĞ°Í¥¹…ÑÕÉ•A…ÉÑt€ôÁ…ÉÑÌì(€€€½¹ÍĞ¡•…‘•È€ô)M=8¹Á…ÉÍ”¡	Õ™™•È¹™É½´¡¡•…‘•ÉA…ÉĞ°€‰…Í”ØÑÕÉ°œ¤¹Ñ½MÑÉ¥¹œ ÕÑ˜àœ¤¤ì(€€€½¹ÍĞ±…¥µÌ€ô)M=8¹Á…ÉÍ”¡	Õ™™•È¹™É½´¡Á…å±½…‘A…ÉĞ°€‰…Í”ØÑÕÉ°œ¤¹Ñ½MÑÉ¥¹œ ÕÑ˜àœ¤¤ì(€€€¥˜€¡¡•…‘•È¹…±œ€„ôô€!LÈÔØœñğ¡•…‘•È¹ÑåÀ€„ôô€)]Pœ¤É•ÑÕÉ¸ì½¬è™…±Í”°•ÉÉ½Èè€¥¹Ù…±¥‘}…±½É¥Ñ¡´œôì(€€€½¹ÍĞ•áÁ•Ñ•€ôÉ•…Ñ•!µ…Œ Í¡„ÈÔØœ°­•ä¤¹ÕÁ‘…Ñ”¡€‘í¡•…‘•ÉA…ÉÑô¸‘íÁ…å±½…‘A…ÉÑõ€¤¹‘¥•ÍĞ ¤ì(€€€½¹ÍĞÍÕÁÁ±¥•€ô	Õ™™•È¹™É½´¡Í¥¹…ÑÕÉ•A…ÉĞ°€‰…Í”ØÑÕÉ°œ¤ì(€€€¥˜€¡•áÁ•Ñ•¹±•¹Ñ €„ôôÍÕÁÁ±¥•¹±•¹Ñ ñğ€…Ñ¥µ¥¹M…™•ÅÕ…°¡•áÁ•Ñ•°ÍÕÁÁ±¥•¤¤É•ÑÕÉ¸ì½¬è™…±Í”°•ÉÉ½Èè€¥¹Ù…±¥‘}Í¥¹…ÑÕÉ”œôì(€€€¥˜€¡±…¥µÌ¹¥ÍÌ€„ôô%MMUHñğ±…¥µÌ¹…Õ€„ôôU%9ñğÑåÁ•½˜±…¥µÌ¹ÍÕˆ€„ôô€ÍÑÉ¥¹œœñğ€…±…¥µÌ¹ÍÕˆñğ€…=‰©•Ğ¹¡…Í=İ¸¡I=1}M=AL°±…¥µÌ¹É½±”¤¤É•ÑÕÉ¸ì½¬è™…±Í”°•ÉÉ½Èè€¥¹Ù…±¥‘}±…¥µÌœôì(€€€¥˜€ …9Õµ‰•È¹¥ÍM…™•%¹Ñ••È¡±…¥µÌ¹¥…Ğ¤ñğ€…9Õµ‰•È¹¥ÍM…™•%¹Ñ••È¡±…¥µÌ¹•áÀ¤ñğ±…¥µÌ¹¥…Ğ€ø¹½İM•½¹‘Ì€¬€ÌÀñğ±…¥µÌ¹•áÀ€ğô¹½İM•½¹‘Ìñğ±…¥µÌ¹•áÀ€´±…¥µÌ¹¥…Ğ€ø€ÌØÀÀ¤É•ÑÕÉ¸ì½¬è™…±Í”°•ÉÉ½Èè€•áÁ¥É•‘}Ñ½­•¸œôì(€€€¥˜€ …ÉÉ…ä¹¥ÍÉÉ…ä¡±…¥µÌ¹Í½Á•Ì¤ñğ±…¥µÌ¹Í½Á•Ì¹Í½µ”¡Í½Á”€ôø€…I=1}M=AMm±…¥µÌ¹É½±•t¹¥¹±Õ‘•Ì¡Í½Á”¤¤¤É•ÑÕÉ¸ì½¬è™…±Í”°•ÉÉ½Èè€¥¹Ù…±¥‘}Í½Á•Ìœôì(€€€¥˜€ …ÉÉ…ä¹¥ÍÉÉ…ä¡±…¥µÌ¹Ù¥±±…Ï~½¶‰ËkºwµçY\šYšYYÂŸB‚™^Ü[˜İ[Ûˆ[š]Ø]]Ø^TİÜ™J
+HÂˆ‹™^XÊÔ‘PUHP“HQˆ“ÕVTÕÈØ]]Ø^WØ\WÚÙ^\È
+ˆYV’SPT–HÑVKÙ^WÚ\ÚV“Õ•SS’TUQK\Ù\—ÚYS•QÑTˆ“Õ•SˆX™[V“Õ•S›ÛHV“Õ•Sš[\ÈV“Õ•SQUS	Ö×IËˆÜ™X]YØ]S•QÑTˆ“Õ•S^\™\×Ø]S•QÑTˆ“Õ•S™]›ÚÙYØ]S•QÑT‹ˆ\İİ\ÙYØ]S•QÑT‚ˆ
+NÈÔ‘PUHS‘VQˆ“ÕVTÕÈYÙØ]]Ø^WÚÙ^\×İ\Ù\ˆÓˆØ]]Ø^WØ\WÚÙ^\Ê\Ù\—ÚYÜ™X]YØ]TĞÊNØ
+NÂŸB˜ÛÛœİYÙ\İÙ^HH˜[YHOˆÜ™X]R\Ú
+	ÜÚLM‰ÊK\]J˜[YJK™YÙ\İ
+	Ú^	ÊNÂ™^Ü\Ş[˜È[˜İ[ÛˆÜ™X]QØ]]Ø^P\RÙ^JÈ\Ù\’YX™[›ÛOIÜ™XY\‰Ëš[RYÏV×KÙXÛÛ™ÏLÌ
+JHÂˆ[š]Ø]]Ø^TİÜ™J
+NÂˆYˆ
+SØš™Xİš\ÓİÛŠ“ÓWÔĞÓÔTË›ÛJJH›İÈ™]È\Q\œ›ÜŠ	Ô›ÛH]\İ™H™XY\‹Ü\˜]Ü‹ÜˆYZ[‹‰ÊNÂˆYˆ
+P\œ˜^Kš\Ğ\œ˜^Jš[RYÊHš[RYË›[™İˆLš[RYËœÛÛYJYOˆS[X™\‹š\ÔØY™R[YÙ\Š[X™\ŠY
+JH[X™\ŠY
+OJJH›İÈ™]È\Q\œ›ÜŠ	Ò[˜[Yš[H[İÛ\İ‰ÊNÂˆYˆ
+›ÛHOOH	ØYZ[‰È	‰ˆ]š[RYË›[™İ
+H›İÈ™]È\Q\œ›ÜŠ	Ó›Û‹XYZ[ˆTHÙ^\È™YYHš[H[İÛ\İ‰ÊNÂˆÛÛœİ˜]ÈH™—Û]™WÉÜ˜[™ÛP]\ÊÌŠKÔİš[™Ê	Ø˜\ÙM\›	Ê_X\ÚYYÙ\İÙ^J˜]ÊKY\˜[™ÛUURQ
 
-const ISSUER = 'agentforge2';
-const AUDIENCE = 'agentforge2-api';
-const ROLE_SCOPES = Object.freeze({
-  reader: ['villas:read'],
-  operator: ['villas:read', 'villas:write', 'tasks:write'],
-  admin: ['villas:read', 'villas:write', 'tasks:write', 'metrics:read', 'billing:read']
-});
-const b64url = (value) => Buffer.from(value).toString('base64url');
+NÂˆÛÛœİ^\™\Ğ][›İÊ
+JÓX]›X^
+ŒX]›Z[ŠÍJX][˜Ê[X™\ŠÙXÛÛ™Ê_Ì
+
+JJJŒLÂˆÛÛœİ›İÏ^ÈY\Ù\’Y“[X™\Š\Ù\’Y
+KX™[”İš[™ÊX™[	ĞTHÙ^IÊKœÛXÙJL
+K›ÛKš[\Î–Ë‹‹›™]ÈÙ]
+š[RYË›X\
+[X™\ŠJWK^\™\Ğ]NÂˆ‹œ™\\™J	ÒS”ÑT•S•ÈØ]]Ø^WØ\WÚÙ^\ÊYÙ^WÚ\Ú\Ù\—ÚYX™[›ÛKš[\ËÜ™X]YØ]^\™\×Ø]
+HSQTÈ
+ËËËËËËËÊIÊKœ[ŠY\Ú›İË\Ù\’Y›İË›X™[›ÛK”ÓÓ‹œİš[™ÚYJ›İËš[\ÊK›İÊ
+K^\™\Ğ]
+NÂˆ]ØZ]™Y\ÕTÙ]
+™™Ø]]Ø^NšÙ^N‰Ú\ÚX”ÓÓ‹œİš[™ÚYJ›İÊKX]˜ÙZ[
 
-function signingSecret(secret) {
-  const value = String(secret ?? process.env.VF_GATEWAY_JWT_SECRET ?? '');
-  if (Buffer.byteLength(value) < 32) throw Object.assign(new Error('VF_GATEWAY_JWT_SECRET must contain at least 32 bytes.'), { code: 'JWT_NOT_CONFIGURED', statusCode: 503 });
-  return value;
-}
-
-export function issueGatewayToken({ subject, role = 'reader', villaIds = [], ttlSeconds = 900 }, secret, nowSeconds = Math.floor(Date.now() / 1000)) {
-  const key = signingSecret(secret);
-  if (typeof subject !== 'string' || !subject.trim() || subject.length > 180) throw new TypeError('A valid token subject is required.');
-  if (!Object.hasOwn(ROLE_SCOPES, role)) throw new TypeError('Role must be reader, operator, or admin.');
-  if (!Array.isArray(villaIds) || villaIds.length > 1000 || villaIds.some(id => !Number.isSafeInteger(Number(id)) || Number(id) < 1)) throw new TypeError('villaIds must contain at most 1000 positive integer IDs.');
-  if (role !== 'admin' && villaIds.length === 0) throw new TypeError('Non-admin API clients require an explicit villa allowlist.');
-  const ttl = Math.max(60, Math.min(3600, Math.trunc(Number(ttlSeconds) || 900)));
-  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = b64url(JSON.stringify({
-    iss: ISSUER, aud: AUDIENCE, sub: subject.trim(), role,
-    scopes: ROLE_SCOPES[role], villas: [...new Set(villaIds.map(Number))],
-    iat: nowSeconds, exp: nowSeconds + ttl, jti: randomUUID()
-  }));
-  const input = `${header}.${payload}`;
-  return `${input}.${createHmac('sha256', key).update(input).digest('base64url')}`;
-}
-
-export function verifyGatewayToken(token, secret, nowSeconds = Math.floor(Date.now() / 1000)) {
-  try {
-    const key = signingSecret(secret);
-    if (typeof token !== 'string' || token.length > 8192) return { ok: false, error: 'invalid_token' };
-    const parts = token.split('.');
-    if (parts.length !== 3) return { ok: false, error: 'invalid_token' };
-    const [headerPart, payloadPart, signaturePart] = parts;
-    const header = JSON.parse(Buffer.from(headerPart, 'base64url').toString('utf8'));
-    const claims = JSON.parse(Buffer.from(payloadPart, 'base64url').toString('utf8'));
-    if (header.alg !== 'HS256' || header.typ !== 'JWT') return { ok: false, error: 'invalid_algorithm' };
-    const expected = createHmac('sha256', key).update(`${headerPart}.${payloadPart}`).digest();
-    const supplied = Buffer.from(signaturePart, 'base64url');
-    if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return { ok: false, error: 'invalid_signature' };
-    if (claims.iss !== ISSUER || claims.aud !== AUDIENCE || typeof claims.sub !== 'string' || !claims.sub || !Object.hasOwn(ROLE_SCOPES, claims.role)) return { ok: false, error: 'invalid_claims' };
-    if (!Number.isSafeInteger(claims.iat) || !Number.isSafeInteger(claims.exp) || claims.iat > nowSeconds + 30 || claims.exp <= nowSeconds || claims.exp - claims.iat > 3600) return { ok: false, error: 'expired_token' };
-    if (!Array.isArray(claims.scopes) || claims.scopes.some(scope => !ROLE_SCOPES[claims.role].includes(scope))) return { ok: false, error: 'invalid_scopes' };
-    if (!Array.isArray(claims.villas) || claims.villas.some(id => !Number.isSafeInteger(id) || id < 1)) return { ok: false, error: 'invalid_villa_scope' };
-    return { ok: true, claims };
-  } catch (error) {
-    if (error?.code === 'JWT_NOT_CONFIGURED') return { ok: false, error: 'not_configured', statusCode: 503 };
-    return { ok: false, error: 'invalid_token' };
-  }
-}
-
-export async function gatewayPrincipal(req, secret) {
-  const keyHeader = String(req?.headers?.['x-api-key'] ?? '');
-  if (keyHeader) return await apiKeyPrincipal(keyHeader);
-  const header = String(req?.headers?.authorization ?? '');
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  if (!match) return { ok: false, error: 'bearer_token_required', statusCode: 401 };
-  const verified = verifyGatewayToken(match[1].trim(), secret);
-  return verified.ok ? verified : { ...verified, statusCode: verified.statusCode || 401 };
-}
-
-export function initGatewayStore() {
-  db.exec(`CREATE TABLE IF NOT EXISTS gateway_api_keys (
-    id TEXT PRIMARY KEY, key_hash TEXT NOT NULL UNIQUE, user_id INTEGER NOT NULL,
-    label TEXT NOT NULL, role TEXT NOT NULL, villas TEXT NOT NULL DEFAULT '[]',
-    created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER,
-    last_used_at INTEGER
-  ); CREATE INDEX IF NOT EXISTS idx_gateway_keys_user ON gateway_api_keys(user_id,created_at DESC);`);
-}
-const digestKey = value => createHash('sha256').update(value).digest('hex');
-export async function createGatewayApiKey({ userId, label, role='reader', villaIds=[], ttlSeconds=30*86400 }) {
-  initGatewayStore();
-  if (!Object.hasOwn(ROLE_SCOPES, role)) throw new TypeError('Role must be reader, operator, or admin.');
-  if (!Array.isArray(villaIds) || villaIds.length > 1000 || villaIds.some(id => !Number.isSafeInteger(Number(id)) || Number(id)<1)) throw new TypeError('Invalid villa allowlist.');
-  if (role !== 'admin' && !villaIds.length) throw new TypeError('Non-admin API keys need a villa allowlist.');
-  const raw = `vf_live_${randomBytes(32).toString('base64url')}`, hash=digestKey(raw), id=randomUUID();
-  const expiresAt=now()+Math.max(60,Math.min(365*86400,Math.trunc(Number(ttlSeconds)||30*86400)))*1000;
-  const row={ id, userId:Number(userId), label:String(label||'API key').slice(0,100), role, villas:[...new Set(villaIds.map(Number))], expiresAt };
-  db.prepare('INSERT INTO gateway_api_keys(id,key_hash,user_id,label,role,villas,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?)').run(id,hash,row.userId,row.label,role,JSON.stringify(row.villas),now(),expiresAt);
-  await redisTrySetNx(`vf:gateway:key:${hash}`,JSON.stringify(row),Math.ceil((expiresAt-now())/1000));
-  return { id, key:raw, label:row.label, role, villas:row.villas, expiresAt };
-}
-async function apiKeyPrincipal(raw) {
-  if (!raw.startsWith('vf_live_') || raw.length > 256) return {ok:false,error:'invalid_api_key',statusCode:401};
-  initGatewayStore();
-  const hash=digestKey(raw), row=db.prepare('SELECT * FROM gateway_api_keys WHERE key_hash=?').get(hash);
-  if (!row || row.revoked_at || Number(row.expires_at)<=now()) return {ok:false,error:'invalid_api_key',statusCode:401};
-  const claims={sub:String(row.user_id), role:row.role, scopes:ROLE_SCOPES[row.role], villas:JSON.parse(row.villas), keyId:row.id};
-  if (!row.last_used_at || now()-row.last_used_at>60_000) db.prepare('UPDATE gateway_api_keys SET last_used_at=? WHERE id=?').run(now(),row.id);
-  return {ok:true,claims};
-}
-export function listGatewayApiKeys(userId) { initGatewayStore(); return db.prepare('SELECT id,label,role,villas,created_at,expires_at,revoked_at,last_used_at FROM gateway_api_keys WHERE user_id=? ORDER BY created_at DESC').all(userId).map(r=>({...r,villas:JSON.parse(r.villas)})); }
-export async function revokeGatewayApiKey(id,userId,admin=false) { initGatewayStore(); const row=db.prepare('SELECT id,key_hash,user_id FROM gateway_api_keys WHERE id=?').get(id); if(!row||(!admin&&row.user_id!==userId))return false; db.prepare('UPDATE gateway_api_keys SET revoked_at=? WHERE id=? AND revoked_at IS NULL').run(now(),id); await redisTryDel(`vf:gateway:key:${row.key_hash}`); return true; }
-
-export function hasGatewayScope(claims, scope) {
-  return !!claims && Array.isArray(claims.scopes) && claims.scopes.includes(scope);
-}
-
-export function canAccessVilla(claims, villaId) {
-  return claims?.role === 'admin' || claims?.villas?.includes(Number(villaId)) === true;
-}
-
-export function gatewayRoleScopes(role) {
-  return ROLE_SCOPES[role] ? [...ROLE_SCOPES[role]] : null;
-}
+^\™\Ğ][›İÊ
+JKÌL
+JNÂˆ™]\›ˆÈYÙ^Nœ˜]ËX™[œ›İË›X™[›ÛKš[\Îœ›İËš[\Ë^\™\Ğ]NÂŸB˜\Ş[˜È[˜İ[Ûˆ\RÙ^Tš[˜Ú\[
+˜]ÊHÂˆYˆ
+\˜]Ëœİ\ÕÚ]
+	İ™—Û]™WÉÊH˜]Ë›[™İˆMŠH™]\›ˆÛÚÎ™˜[ÙK\œ›Ü‰Ú[˜[YØ\WÚÙ^IËİ]\ĞÛÙN_NÂˆ[š]Ø]]Ø^TİÜ™J
+NÂˆÛÛœİ\ÚYYÙ\İÙ^J˜]ÊK›İÏY‹œ™\\™J	ÔÑSPÕ
+ˆ”“ÓHØ]]Ø^WØ\WÚÙ^\ÈÒT‘HÙ^WÚ\ÚOÉÊK™Ù]
+\Ú
+NÂˆYˆ
+\›İÈ›İËœ™]›ÚÙYØ][X™\Š›İË™^\™\×Ø]
+O[›İÊ
+JH™]\›ˆÛÚÎ™˜[ÙK\œ›Ü‰Ú[˜[YØ\WÚÙ^IËİ]\ĞÛÙN_NÂˆYŠY‹œ™\\™J	ÔÑSPÕY”“ÓH\Ù\œÈÒT‘HYOÉÊK™Ù]
+›İË\Ù\—ÚY
+J\™]\›ˆÛÚÎ™˜[ÙK\œ›Ü‰Ú[˜[YØ\WÚÙ^IËİ]\ĞÛÙN_NÂˆÛÛœİÛZ[\Ï^ÜİX”İš[™Ê›İË\Ù\—ÚY
+K›ÛNœ›İËœ›ÛKØÛÜ\Î”“ÓWÔĞÓÔTÖÜ›İËœ›ÛWKš[\Î’”ÓÓ‹œ\œÙJ›İËš[\ÊKÙ^RYœ›İËšYNÂˆYˆ
+\›İË›\İİ\ÙYØ]›İÊ
+K\›İË›\İİ\ÙYØ]ŒÌ
+H‹œ™\\™J	ÕTUHØ]]Ø^WØ\WÚÙ^\ÈÑU\İİ\ÙYØ]OÈÒT‘HYOÉÊKœ[Š›İÊ
+K›İËšY
+NÂˆ™]\›ˆÛÚÎYKÛZ[\ßNÂŸB™^Ü[˜İ[Ûˆ\İØ]]Ø^P\RÙ^\Ê\Ù\’Y
+HÈ[š]Ø]]Ø^TİÜ™J
+NÈ™]\›ˆ‹œ™\\™J	ÔÑSPÕYX™[›ÛKš[\ËÜ™X]YØ]^\™\×Ø]™]›ÚÙYØ]\İİ\ÙYØ]”“ÓHØ]]Ø^WØ\WÚÙ^\ÈÒT‘H\Ù\—ÚYOÈÔ‘Tˆ–HÜ™X]YØ]TĞÉÊK˜[
+\Ù\’Y
+K›X\
+OŠË‹‹œ‹š[\Î’”ÓÓ‹œ\œÙJ‹š[\Ê_JJNÈB™^Ü\Ş[˜È[˜İ[Ûˆ™]›ÚÙQØ]]Ø^P\RÙ^JY\Ù\’YYZ[Y˜[ÙJHÈ[š]Ø]]Ø^TİÜ™J
+NÈÛÛœİ›İÏY‹œ™\\™J	ÔÑSPÕYÙ^WÚ\Ú\Ù\—ÚY”“ÓHØ]]Ø^WØ\WÚÙ^\ÈÒT‘HYOÉÊK™Ù]
+Y
+NÈYŠ\›İß
+XYZ[‰‰œ›İË\Ù\—ÚYOO]\Ù\’Y
+J\™]\›ˆ˜[ÙNÈ‹œ™\\™J	ÕTUHØ]]Ø^WØ\WÚÙ^\ÈÑU™]›ÚÙYØ]OÈÒT‘HYOÈS‘™]›ÚÙYØ]TÈ•S	ÊKœ[Š›İÊ
+KY
+NÈ]ØZ]™Y\ÕQ[
+™™Ø]]Ø^NšÙ^N‰Ü›İËšÙ^WÚ\ÚX
+NÈ™]\›ˆYNÈB‚™^Ü[˜İ[Ûˆ\ÑØ]]Ø^TØÛÜJÛZ[\ËØÛÜJHÂˆ™]\›ˆHXÛZ[\È	‰ˆ\œ˜^Kš\Ğ\œ˜^JÛZ[\ËœØÛÜ\ÊH	‰ˆÛZ[\ËœØÛÜ\Ëš[˜ÛY\ÊØÛÜJNÂŸB‚™^Ü[˜İ[ÛˆØ[XØÙ\ÜÕš[JÛZ[\Ëš[RY
+HÂˆ™]\›ˆÛZ[\ÏËœ›ÛHOOH	ØYZ[‰ÈÛZ[\ÏËš[\ÏËš[˜ÛY\Ê[X™\Šš[RY
+JHOOHYNÂŸB‚™^Ü[˜İ[ÛˆØ]]Ø^T›ÛTØÛÜ\Ê›ÛJHÂˆ™]\›ˆ“ÓWÔĞÓÔTÖÜ›ÛWHÈË‹‹”“ÓWÔĞÓÔTÖÜ›ÛWWHˆ[ÂŸB
