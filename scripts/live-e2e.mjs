@@ -164,7 +164,7 @@ async function run() {
   await safeShot('01-uebersicht-desktop');
 
   await check('Villa per UI anlegen oeffnet den Arbeitsbereich', async () => {
-    await page.evaluate("document.querySelector('#dashboardNewBtn').click(); return true;");
+    await page.evaluate("document.querySelector('#newVillaBtn').click(); return true;");
     await page.waitFor("document.querySelector('#createSheet').hidden === false", { timeout: 5_000, label: 'Formular zum Erstellen' });
     await page.evaluate(`
       document.querySelector('#villaName').value = 'Live-Test Villa';
@@ -292,20 +292,25 @@ async function run() {
     const snap = await page.evaluate(`
       const overflowX = document.documentElement.scrollWidth - window.innerWidth;
       const card = document.querySelector('#villaList .villa-card');
-      const create = document.querySelector('#dashboardNewBtn');
+      const create = document.querySelector('#activeProjectOpen');
       return {
         overflowX,
         homeVisible: document.querySelector('#view-home').classList.contains('active'),
         workspaceClosed: document.querySelector('#detailPanel').hidden,
         hasVilla: !!card,
-        createBtnHeight: create ? Math.round(create.getBoundingClientRect().height) : 0
+        createBtnHeight: create ? Math.round(create.getBoundingClientRect().height) : 0,
+        navCount: document.querySelectorAll('.bottomnav .nav-item[data-view]').length,
+        resourcePanel: getComputedStyle(document.querySelector('.resource-panel')).display !== 'none',
+        resourceValues: ['#resourceCpu','#resourceRam','#resourceGpu'].every(id => !!document.querySelector(id)?.textContent.trim())
       };`);
     await safeShot('05-mobile-uebersicht');
     if (snap.overflowX > 2) throw new Error(`Horizontales Ueberlaufen: ${snap.overflowX}px`);
     if (!snap.homeVisible || !snap.workspaceClosed) throw new Error('Die mobile Übersicht wird nicht angezeigt');
     if (!snap.hasVilla) throw new Error('Villen-Kachel fehlt in der mobilen Ansicht');
     if (snap.createBtnHeight < 44) throw new Error(`Touch-Ziel zu klein: ${snap.createBtnHeight}px`);
-    return `kein Ueberlauf, Touch-Ziel ${snap.createBtnHeight}px`;
+    if (snap.navCount !== 4) throw new Error(`Erwartet 4 Navigationselemente, gefunden ${snap.navCount}`);
+    if (!snap.resourcePanel || !snap.resourceValues) throw new Error('Ressourcenanzeige ist nicht sichtbar oder nicht geladen');
+    return `kein Ueberlauf, Touch-Ziel ${snap.createBtnHeight}px, ${snap.navCount} Tabs, Live-Ressourcen`;
   });
 
   await check('Mobiler Arbeitsbereich nutzt die volle Hoehe', async () => {

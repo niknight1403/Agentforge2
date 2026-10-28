@@ -74,6 +74,20 @@ async function checkHealth() {
     $('#systemHeadline').textContent = 'Hub erreichbar';
     const llm = h.llm || {};
     const resources = h.resources || {};
+    const percent = (value) => Number.isFinite(Number(value)) ? Math.max(0, Math.min(100, Number(value))) : null;
+    const cpuPct = percent(resources.cpu?.usagePct);
+    const ramPct = percent(resources.memory?.usedPct);
+    const gpuPct = resources.gpu?.available ? percent(resources.gpu?.usedPct) : null;
+    $('#resourceCpu').textContent = cpuPct === null ? '–' : Math.round(cpuPct) + '%';
+    $('#resourceRam').textContent = ramPct === null ? '–' : Math.round(ramPct) + '%';
+    $('#resourceGpu').textContent = !resources.gpu?.available ? 'Nicht erkannt' : gpuPct === null ? 'Erkannt' : Math.round(gpuPct) + '%';
+    $('#resourceCpuMeter').style.width = (cpuPct ?? 0) + '%';
+    $('#resourceRamMeter').style.width = (ramPct ?? 0) + '%';
+    $('#resourceGpuMeter').style.width = (gpuPct ?? 0) + '%';
+    const pressureLabels = { NORMAL: 'Stabil', WARNING: 'Auslastung erhöht', CRITICAL: 'Ressourcen knapp' };
+    const pressure = resources.pressure || 'NORMAL';
+    $('#resourcePressure').className = 'resource-stability ' + pressure.toLowerCase();
+    $('#resourcePressure').innerHTML = `<span class="dot ${pressure === 'CRITICAL' ? 'err' : 'ok'}"></span>${pressureLabels[pressure] || 'Status unbekannt'}`;
     $('#systemDetail').textContent = `${llm.eligibleRoutes ?? 0} nutzbare KI-Routen · ${llm.freeOnly ? 'kostenfreie Routen bevorzugt' : 'Routenmodus aktiv'}`;
     $('#metricRoutes').textContent = h.routes ?? '–';
     const up = h.uptime || {};
@@ -196,6 +210,14 @@ function renderOverview(villas) {
     $('#activeChip').textContent = statusLabel(active.status).toUpperCase();
     $('#activeChip').className = 'chip ' + (active.status === 'RUNNING' ? 'ok' : '');
     $('#activeVillaCard').dataset.id = active.id;
+    $('#activeProjectOpen').innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>Projekt öffnen<span class="material-symbols-rounded action-arrow" aria-hidden="true">arrow_forward</span>';
+    const running = active.status === 'RUNNING' || active.executing || active.queued;
+    $('#activeControlBtn').hidden = false;
+    $('#activeControlBtn').dataset.id = active.id;
+    $('#activeControlBtn').dataset.active = running ? '1' : '0';
+    $('#activeControlBtn').classList.toggle('is-running', running);
+    $('#activeControlBtn').querySelector('.material-symbols-rounded').textContent = running ? 'pause' : 'play_arrow';
+    $('#activeControlLabel').textContent = running ? 'Villa pausieren' : 'Villa starten';
     $('#activeQualityChip').textContent = 'Prüfung lädt';
     $('#activeQualityChip').className = 'chip';
     $('#activeQualityHint').textContent = 'Lade den belegten Reifegrad und aktuelle Abnahmehindernisse …';
@@ -208,6 +230,8 @@ function renderOverview(villas) {
     $('#ringPct').textContent = '0%';
     $('#ringFg').style.strokeDashoffset = 213.6;
     $('#activeVillaCard').removeAttribute('data-id');
+    $('#activeProjectOpen').innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">add</span>Neue Villa erstellen<span class="material-symbols-rounded action-arrow" aria-hidden="true">arrow_forward</span>';
+    $('#activeControlBtn').hidden = true;
   }
   renderVillaLists(villas);
   updateActivity(totalDone);
@@ -474,7 +498,7 @@ async function addControlSkill() {
   if (result.error) { toast(result.error); return; }
   ['skillId','skillTitle','skillInstructions'].forEach(id => { $('#'+id).value = ''; }); toast('Skill gespeichert'); loadControlCatalog();
 }
-const themes = { aurora: { bg:'#07090E', card:'rgba(18,22,34,.72)', 'card-solid':'#121622', cyan:'#00E5FF', purple:'#8B5CF6', pink:'#EC4899', green:'#00FFA3', blue:'#2EA7FF' }, nebula: { bg:'#0C0916', card:'rgba(27,20,42,.82)', 'card-solid':'#1B142A', cyan:'#A78BFA', purple:'#C084FC', pink:'#F472B6', green:'#86EFAC', blue:'#60A5FA' }, slate: { bg:'#0B1114', card:'rgba(19,31,34,.84)', 'card-solid':'#131F22', cyan:'#5EEAD4', purple:'#2DD4BF', pink:'#A7F3D0', green:'#86EFAC', blue:'#67E8F9' } };
+const themes = { orbital: { bg:'#080D1E', card:'rgba(17,24,45,.88)', 'card-solid':'#11192E', cyan:'#31D9FF', purple:'#955CFF', pink:'#E26AFF', green:'#46E7B8', blue:'#3477FF' }, aurora: { bg:'#07090E', card:'rgba(18,22,34,.72)', 'card-solid':'#121622', cyan:'#00E5FF', purple:'#8B5CF6', pink:'#EC4899', green:'#00FFA3', blue:'#2EA7FF' }, nebula: { bg:'#0C0916', card:'rgba(27,20,42,.82)', 'card-solid':'#1B142A', cyan:'#A78BFA', purple:'#C084FC', pink:'#F472B6', green:'#86EFAC', blue:'#60A5FA' }, slate: { bg:'#0B1114', card:'rgba(19,31,34,.84)', 'card-solid':'#131F22', cyan:'#5EEAD4', purple:'#2DD4BF', pink:'#A7F3D0', green:'#86EFAC', blue:'#67E8F9' } };
 function applyTheme(name) {
   const key = themes[name] ? name : 'aurora'; const t = themes[key];
   const root = document.documentElement; root.dataset.theme = key;
@@ -534,10 +558,24 @@ $('#villaSearch').addEventListener('input', () => renderVillaLists());
 $('#chatVillaSearch').addEventListener('input', () => renderVillaLists());
 $('#createBackdrop').addEventListener('click', closeSheet);
 $('#createBtn').addEventListener('click', createVilla);
-$('#activeVillaCard').addEventListener('click', () => { const id = $('#activeVillaCard').dataset.id; if (id) openVilla(Number(id)); else openSheet(); });
-$('#activeVillaCard').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#activeVillaCard').click(); } });
-$('#dashboardNewBtn').addEventListener('click',openSheet);
-$('#dashboardMasterBtn').addEventListener('click',()=>window.openVillaForgeMaster?.());
+$('#activeProjectOpen').addEventListener('click', () => { const id = Number($('#activeVillaCard').dataset.id); if (id) openVilla(id); else openSheet(); });
+$('#activeControlBtn').addEventListener('click', async () => {
+  const button = $('#activeControlBtn');
+  const id = Number(button.dataset.id);
+  if (!id) return;
+  const wasActive = button.dataset.active === '1';
+  button.disabled = true;
+  try {
+    const result = await api(wasActive ? `/api/villas/${id}/stop` : `/api/villas/${id}/orchestrate`, {
+      method: 'POST', body: wasActive ? {} : { concurrency: 4, maxTasks: 500, adaptive: true, runToCompletion: true }
+    });
+    if (result.error) throw new Error(result.error);
+    toast(wasActive ? (result.cancelled ? 'Villa aus der Warteschlange entfernt' : 'Villa wird angehalten') : (result.queued ? 'Villa vorgemerkt' : 'Entwicklung gestartet'));
+    await loadVillas();
+  } catch (error) {
+    toast('Villa-Steuerung fehlgeschlagen: ' + String(error.message || error));
+  } finally { button.disabled = false; }
+});
 $('#dashboardActionsRefresh').addEventListener('click',()=>loadDashboardActions(true));
 $('#superagentOpen').addEventListener('click', () => window.openVillaForgeMaster());
 
@@ -551,7 +589,11 @@ $('#addRouteBtn').addEventListener('click', addRoute);
 $('#addConnectorBtn').addEventListener('click', addConnector);
 $('#addSkillBtn').addEventListener('click', addControlSkill);
 document.querySelectorAll('[data-theme-choice]').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.themeChoice)));
-applyTheme(localStorage.getItem('vf_design_theme') || 'aurora');
+if (localStorage.getItem('vf_design_theme_version') !== 'orbital-1') {
+  localStorage.setItem('vf_design_theme', 'orbital');
+  localStorage.setItem('vf_design_theme_version', 'orbital-1');
+}
+applyTheme(localStorage.getItem('vf_design_theme') || 'orbital');
 $('#addSecretBtn').addEventListener('click', addSecret);
 document.querySelectorAll('.tab-chip').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#detailPanel').hidden) closeWorkspace(); });
