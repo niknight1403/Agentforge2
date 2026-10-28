@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { freeOnlyEnabled,isFreeRoute,isLocalRoute,routeTier } from './llm-config.mjs';
+import { withOtelSpan } from './otel.mjs';
 export class LlmUnavailableError extends Error {
  constructor(attempts=[]) {super('Kein echtes Sprachmodell erreichbar. Cloud-Zugänge, Modellstatus und lokale LLM-Verbindung prüfen; die Anfrage wurde nicht durch einen regelbasierten Planer ersetzt.');this.name='LlmUnavailableError';this.code='LLM_UNAVAILABLE';this.statusCode=503;this.retryAfter=15;this.attempts=attempts;}
 }
@@ -55,7 +56,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    const slotDeadline=isLocalRoute(r)?Math.min(deadline,clock()+localQueueWaitMs):cloudDeadline;
    if(!await acquire(r.base_url,limit,slotDeadline)){attempted.push({route:r.name,code:'BUSY'});continue;}
    if(clock()>=deadline){release(r.base_url);break;}
-   const started=clock();
+    const started=clock();
    try {
     // Lokale Modelle laufen hinter mehreren getesteten Alternativen. Begrenze
     // einen einzelnen langsamen Versuch, damit die Kaskade schnell weiterkommt.
@@ -65,7 +66,12 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
     const localTimeoutMs=Math.max(1000,Math.min(Number(process.env.VF_LLM_LOCAL_TIMEOUT_MS)||15000,15000));
     const defaultMs=isLocalRoute(r)?localTimeoutMs:Math.max(500,Math.min(Number(process.env.VF_LLM_CLOUD_TIMEOUT_MS)||8000,15000));
     const timeoutMs=Math.max(1,Math.min(Number(opts.timeoutMs)||defaultMs,defaultMs,(isLocalRoute(r)?deadline:cloudDeadline)-clock()));
-    const out=await call(r,messages,{...opts,timeoutMs});
+    const out=await withOtelSpan('llm.provider.request',{
+     'llm.provider':String(r.provider||'unknown'),
+     'llm.route':String(r.name||'unknown'),
+     'llm.model':String(r.model||'unknown'),
+     'llm.timeout_ms':timeoutMs
+    },()=>call(r,messages,{...opts,timeoutMs}));
     if(out?.offline||!String(out?.content||'').trim())throw Object.assign(new Error('Keine echte Modellantwort'),{code:'INVALID_RESPONSE'});
     success(r,out,clock()-started);
     return {...out,offline:false,failovers:attempted};
