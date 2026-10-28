@@ -135,7 +135,7 @@ export class AgentWorker {
       await this.prisma.agentTask.update({ where: { id: taskId }, data: { status: TaskStatus.COMPLETED,
         result: output.result == null ? Prisma.JsonNull : output.result as Prisma.InputJsonValue } });
     } catch (error) {
-      const canRetry = claimed.attempt < 3 && !signal.aborted;
+      const canRetry = claimed.attempt < 3 && !signal.aborted && (error as {retryable?:boolean})?.retryable !== false;
       await this.prisma.$transaction(async tx => {
         await tx.agentTask.update({ where: { id: taskId }, data: { status: canRetry ? TaskStatus.PENDING : TaskStatus.FAILED,
           result: { error: String(error).slice(0, 1000) } } });
