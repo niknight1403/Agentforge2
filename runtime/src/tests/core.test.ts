@@ -4,6 +4,7 @@ import { HierarchicalSupervisor } from '../HierarchicalSupervisor.js';
 import { LLMCircuitBreaker, ProviderError, executeCascade } from '../LLMCircuitBreaker.js';
 import { validateShell, validateSql } from '../Guardrails.js';
 import { createHubTaskExecutor } from '../HubTaskExecutor.js';
+import { sanitizeTelemetryMetadata, TelemetryStore } from '../TelemetryStore.js';
 
 test('supervisor stops identical no-delta calls and intervenes with a new strategy', () => {
   const supervisor = new HierarchicalSupervisor();
@@ -69,6 +70,8 @@ test('provider errors have a stable type for fallback telemetry', () => {
 });
 
 test('Hub executor forwards supervisor recovery and preserves terminal task failures', async () => {
+  assert.throws(() => createHubTaskExecutor({ hubUrl: 'http://public.example', token: 'x'.repeat(40) }));
+  assert.throws(() => createHubTaskExecutor({ hubUrl: 'https://user:pass@hub.example', token: 'x'.repeat(40) }));
   let request: RequestInit | undefined;
   const executor = createHubTaskExecutor({ hubUrl: 'http://agentforge:12000/', token: 'x'.repeat(40), fetcher: async (_url, init) => {
     request = init; return Response.json({ status: 'DONE', result: { ok: true } });
@@ -85,4 +88,23 @@ test('Hub executor forwards supervisor recovery and preserves terminal task fail
   await assert.rejects(() => failed.execute({ hubTaskId: 12, villaId: 3 }, {
     taskId: 'runtime-task', attempt: 2, signal: new AbortController().signal
   }), error => (error as { retryable?: boolean }).retryable === false);
+});
+
+test('telemetry metadata allowlists bounded operational fields and drops sensitive content', () => {
+  assert.deepEqual(sanitizeTelemetryMetadata({ status: 'COMPLETED', attempt: 2, durationMs: 123.8, prompt: 'private', arguments: { token: 'secret' }, route: 'local'.repeat(60), invalid: 'drop' }), {
+    status: 'COMPLETED', attempt: 2, durationMs: 123, route: 'local'.repeat(24)
+  });
+});
+
+test('telemetry store writes allowlisted records and applies bounded retention', async () => {
+  let created: Record<string, unknown> | undefined; let deleted: Record<string, unknown> | undefined;
+  const fake = { agentTelemetry: {
+    async create({ data }: { data: Record<string, unknown> }) { created = data; return data; },
+    async deleteMany({ where }: { where: Record<string, unknown> }) { deleted = where; return { count: 4 }; }
+  } } as unknown as import('@prisma/client').PrismaClient;
+  const store = new TelemetryStore(fake, 30);
+  assert.equal(await store.record('task.completed', 'task-1', 'worker-1', { status: 'COMPLETED', prompt: 'private' }), true);
+  assert.deepEqual(created?.metadata, { status: 'COMPLETED' });
+  assert.equal(await store.prune(30 * 24 * 60 * 60 * 1000), 4);
+  assert.deepEqual(deleted, { occurredAt: { lt: new Date(0) } });
 });
