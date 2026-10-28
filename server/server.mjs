@@ -25,7 +25,7 @@ import { maturity, developCycle, PHASES, proposalsToTasks } from './product.mjs'
 import { evolutionState, proposeForVilla, evolveAll, listVillaProposals, listAllPending, approveVillaProposal, rejectVillaProposal, KINDS as EVOLVE_KINDS } from './evolve.mjs';
 import { systemAudit, healTick, healActions } from './heal.mjs';
 import { startBuild, buildStatus, buildArtifact, previewInfo, previewFile, maybeAutoBuild } from './builds.mjs';
-import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, linkDeepProjectVilla } from './deepagent.mjs';
+import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
 import {
@@ -905,7 +905,9 @@ async function api(req, res, url) {
     return json(res, 200, listDeepProjects());
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts.length === 4 && m === 'DELETE') {
-    return deleteDeepProject(Number(parts[3]))
+    const projectId = Number(parts[3]);
+    if (isDeepProjectDeveloping(projectId)) return json(res, 409, { error: 'Projekt wird gerade an die Entwicklungs-Villa übergeben.' });
+    return deleteDeepProject(projectId)
       ? json(res, 200, { ok: true, deleted: true })
       : json(res, 404, { error: 'Projekt nicht gefunden' });
   }
@@ -913,38 +915,40 @@ async function api(req, res, url) {
     const projectId = Number(parts[3]);
     const detail = deepProjectDetail(projectId);
     if (!detail) return json(res, 404, { error: 'Projekt nicht gefunden' });
-    try {
-      const previousVillaId = Number(detail.project.villa_id || 0);
-      let villaId = previousVillaId;
-      if (!villaId || !db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)) {
-        const context = detail.messages
-          .filter((message) => message.role === 'user' || message.role === 'assistant')
-          .slice(-8)
-          .map((message) => `${message.role === 'user' ? 'Nutzer' : 'Projekt-Experte'}: ${String(message.content).slice(0, 900)}`)
-          .join('\n');
-        const buildIdea = `${detail.project.idea}\n\nProjektanforderungen und DeepAgent-Plan:\n${context}`.slice(0, 9000);
-        const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD' });
-        villaId = linkDeepProjectVilla(projectId, built.villaId);
+    return runDeepProjectDevelopmentOnce(projectId, async () => {
+      try {
+        const previousVillaId = Number(deepProjectDetail(projectId)?.project.villa_id || 0);
+        let villaId = previousVillaId;
+        if (!villaId || !db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)) {
+          const context = detail.messages
+            .filter((message) => message.role === 'user' || message.role === 'assistant')
+            .slice(-8)
+            .map((message) => `${message.role === 'user' ? 'Nutzer' : 'Projekt-Experte'}: ${String(message.content).slice(0, 900)}`)
+            .join('\\n');
+          const buildIdea = `${detail.project.idea}\\n\\nProjektanforderungen und DeepAgent-Plan:\\n${context}`.slice(0, 9000);
+          const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD' });
+          villaId = linkDeepProjectVilla(projectId, built.villaId);
+        }
+        const scheduled = isRunning(villaId)
+          ? { active: [villaId], queue: [] }
+          : scheduleVilla(villaId, { concurrency: 2, maxRounds: 12 });
+        const blocked = Number(scheduled.blockedVillaId || 0) === villaId;
+        return json(res, 202, {
+          ok: !blocked,
+          projectId,
+          villaId,
+          started: !blocked && (scheduled.active || []).includes(villaId),
+          queued: !blocked && (scheduled.queue || []).includes(villaId),
+          blocked,
+          reason: blocked ? scheduled.reason : undefined,
+          message: blocked
+            ? 'Projektplan und Villa wurden angelegt. Der konfigurierte Villen-Fokus blockiert derzeit den Start.'
+            : 'Projekt an die autonome VillaForge-Entwicklungs- und Build-Kette übergeben.'
+        });
+      } catch (e) {
+        return json(res, 503, { error: String(e.message || e).slice(0, 400), code: e.code || 'DEVELOPMENT_START_FAILED' });
       }
-      const scheduled = isRunning(villaId)
-        ? { active: [villaId], queue: [] }
-        : scheduleVilla(villaId, { concurrency: 2, maxRounds: 12 });
-      const blocked = Number(scheduled.blockedVillaId || 0) === villaId;
-      return json(res, 202, {
-        ok: !blocked,
-        projectId,
-        villaId,
-        started: !blocked && (scheduled.active || []).includes(villaId),
-        queued: !blocked && (scheduled.queue || []).includes(villaId),
-        blocked,
-        reason: blocked ? scheduled.reason : undefined,
-        message: blocked
-          ? 'Projektplan und Villa wurden angelegt. Der konfigurierte Villen-Fokus blockiert derzeit den Start.'
-          : 'Projekt an die autonome VillaForge-Entwicklungs- und Build-Kette übergeben.'
-      });
-    } catch (e) {
-      return json(res, 503, { error: String(e.message || e).slice(0, 400), code: e.code || 'DEVELOPMENT_START_FAILED' });
-    }
+    });
   }
   if (p === '/api/deep/projects' && m === 'POST') {
     try {
