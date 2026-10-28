@@ -42,6 +42,7 @@ jobs:
           const vid = Number(process.argv[2] || 2);
           const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
           const now = () => Date.now();
+          const rootId = db.prepare('SELECT id FROM agents WHERE villa_id = ? AND is_root = 1').get(vid)?.id ?? 0;
           const marker = (desc) => { const m = String(desc || '').match(/\[OH:([0-9a-f-]+)\]/); return m ? m[1] : null; };
           const getJson = async (url, opts) => fetch(url, opts).then((r) => r.json()).catch((e) => ({ error: String(e) }));
 
@@ -62,7 +63,7 @@ jobs:
               text = JSON.stringify(info).slice(0, 2000);
             }
             db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?').run('DONE', '[OpenHands] ' + text, now(), delegated.id);
-            db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(vid, null, 'user', `[OpenHands] Task ${delegated.id} (${delegated.title}) abgeschlossen. Ergebnis: ${text.slice(0, 1000)}`, now());
+            db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(vid, rootId, 'user', `[OpenHands] Task ${delegated.id} (${delegated.title}) abgeschlossen. Ergebnis: ${text.slice(0, 1000)}`, now());
             console.log('Task ' + delegated.id + ' mit OpenHands-Ergebnis abgeschlossen.');
             process.exit(0);
           }
@@ -75,7 +76,7 @@ jobs:
           const res = await getJson(`${OH}/api/conversations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initial_user_msg: prompt, selected_class: 'agent' }), signal: AbortSignal.timeout(120000) });
           if (!res.conversation_id) { console.log('OH-Conversation fehlgeschlagen: ' + JSON.stringify(res).slice(0, 300)); process.exit(1); }
           db.prepare("UPDATE tasks SET description = description || ' [OH:' || ? || ']', updated_at = ? WHERE id = ?").run(res.conversation_id, now(), task.id);
-          db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(vid, null, 'user', `[OpenHands] Task ${task.id} (${task.title}) wurde an OpenHands delegiert (Conversation ${res.conversation_id}). Der Executor sammelt das Ergebnis ein.`, now());
+          db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(vid, rootId, 'user', `[OpenHands] Task ${task.id} (${task.title}) wurde an OpenHands delegiert (Conversation ${res.conversation_id}). Der Executor sammelt das Ergebnis ein.`, now());
           console.log(`Task ${task.id} an OpenHands delegiert: ${res.conversation_id}`);
           NODEJS
           sudo node $F "$VID"
