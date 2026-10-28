@@ -96,6 +96,7 @@ export const TOOL_PACKS = [
   { id: 'recherche', title: 'Recherche', description: 'Websuche und Seitenabruf mit Jina-Reader-Kaskade.', tools: ['web_search', 'web_fetch'] },
   { id: 'medien', title: 'Medienproduktion', description: 'Fähigkeiten prüfen, Bild-/Video-/Audio-Produktionspakete vorbereiten und Medien über konfigurierte Fal.ai-Routen rendern.', tools: ['media_capabilities', 'media_prepare', 'media_generate'] },
   { id: 'extern', title: 'Connectoren & externe Dienste', description: 'Konfigurierte HTTPS-JSON-Connectoren, Fireflies-Meetingprotokolle und Asana-Aufgaben. Benötigte Secret-Referenzen: FIREFLIES_API_KEY, ASANA_PAT.', tools: ['connector_read', 'fireflies_transcripts', 'asana_list_projects', 'asana_create_task'] },
+  { id: 'github', title: 'GitHub Produkt-Pack', description: 'Veröffentlicht ein fertiges Villa-Projekt in einem eigenen GitHub-Repository. Benötigt GITHUB_TOKEN im Secret-Speicher.', tools: ['github_publish'] },
   { id: 'open-data', title: 'Offene Daten (keylos)', description: 'Wikipedia, Hacker News, Wetter, Waehrungen und Paket-Infos — alles ohne API-Key.', tools: ['wikipedia_search', 'hackernews_search', 'weather_lookup', 'currency_convert', 'package_info'] },
   { id: 'berichte', title: 'Berichte', description: 'Analyse-, Umsatz- und Review-Berichte ablegen.', tools: ['report_write'] }
 ];
@@ -156,17 +157,16 @@ export function packState() {
     enabled: state.has(p.id) ? state.get(p.id) : true,
     toolPacks: TOOL_PACKS.filter((t) => t.id === p.id).map((t) => t.id)
   }));
-  const tools = TOOL_PACKS.map((p) => ({
-    ...p,
-    enabled: state.has(p.id) ? state.get(p.id) : true,
-    count: p.tools.length,
-    effective: canUseTool(p.tools[0]).allowed
-  }));
+  const tools = TOOL_PACKS.map((p) => {
+    const enabled = state.has(p.id) ? state.get(p.id) : true;
+    const availability = p.tools.map((name) => ({ name, ...canUseTool(name) }));
+    return { ...p, enabled, count: p.tools.length, effective: enabled && availability.some((tool) => tool.allowed), availability };
+  });
   return {
     features,
     tools,
     master: { id: MASTER_PACK, enabled: packEnabled(MASTER_PACK) },
-    blocked: TOOL_PACKS.filter((p) => !canUseTool(p.tools[0]).allowed).map((p) => p.id)
+    blocked: tools.filter((p) => !p.effective).map((p) => p.id)
   };
 }
 

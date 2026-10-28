@@ -29,7 +29,7 @@ test('Rangfolge: meister Fortschritt zuerst, Fehler kosten', () => {
   assert.ok(order.indexOf(clean) < order.indexOf(faulty), 'bei gleichem Fortschritt: Fehler zurueck');
 });
 
-test('Slot-Grenze: 3 gleichzeitig, weiteste zuerst, Rest rueckt nach', async () => {
+test('Slot-Grenze: drei Startanforderungen laufen parallel, Queue bleibt FIFO', async () => {
   _resetScheduler();
   const a = villa('A', 1, 9);
   const b = villa('B', 9, 1);
@@ -43,14 +43,14 @@ test('Slot-Grenze: 3 gleichzeitig, weiteste zuerst, Rest rueckt nach', async () 
     releases.set(id, () => { current -= 1; resolve(); });
   }) });
   enqueueVillas([a, b, c, d]);
-  assert.deepEqual(started, [b, d, c], 'die drei weitesten starten');
+  assert.deepEqual(started, [a, b, c], 'die ersten drei Anforderungen starten unveraendert');
   assert.equal(schedulerStatus().queued, 1);
   releases.get(b)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [b, d, c, a], 'B fertig -> A rueckt nach');
+  assert.deepEqual(started, [a, b, c, d], 'B fertig -> D rueckt nach');
   releases.get(d)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [b, d, c, a], 'D fertig, kein weiterer Lauf wartet');
+  assert.deepEqual(started, [a, b, c, d], 'D fertig, kein weiterer Lauf wartet');
   releases.get(c)(); releases.get(a)();
   await new Promise((r) => setImmediate(r));
   assert.ok(peak <= 3, `Spitze ${peak} ueber Grenze`);
@@ -105,6 +105,8 @@ test('produktionsfokus aktiviert CyberSarah und Revenue Engine, entfernt Legacy-
 
   const started = [];
   configureScheduler({ start: async (id) => { started.push(id); return new Promise(() => {}); } });
+  db.prepare("INSERT OR REPLACE INTO control_settings(key,value) VALUES ('villaFocusId',?)").run(String(a));
+  assert.equal(schedulerStatus().slots, 3, 'Fokus darf die Parallel-Slots nicht reduzieren');
   const enq = enqueueVillas([other, a, b]);
   assert.ok(enq.active.includes(a) && enq.active.includes(b), 'beide Produktionsvillaen laufen');
   assert.ok(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(other).autonomy === 0, 'geparkte Villa bleibt autonomy 0');

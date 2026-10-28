@@ -16,7 +16,7 @@ import { userStore, usersExist, userForRequest, userForToken, verifyPassword, cr
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, extendVillaRunToCompletion, executeTaskOnce, TOOL_SPECS, toolSpecs, memoryContext, setSource, analyzeProject, refreshAgentPrompts, PROMPT_VERSION, ROLES, runTool } from './agents.mjs';
 import { packState, packSummary, setPackEnabled } from './packs.mjs';
 import { resumePendingVillas } from './resume.mjs';
-import { schedulerStatus, villaRanking, enqueueVillas, configureScheduler, scheduleVilla, cancelScheduledVilla, villaFocusId} from './scheduler.mjs';
+import { schedulerStatus, villaRanking, enqueueVillas, configureScheduler, scheduleVilla, cancelScheduledVilla} from './scheduler.mjs';
 import { maintenanceTick, pruneOldData, dbSize } from './maintenance.mjs';
 import { cmdGateStatus } from './fs-tools.mjs';
 import { bus, emit } from './events.mjs';
@@ -166,7 +166,7 @@ function serveStatic(req, res, pathname) {
 /* --------------------------- API --------------------------- */
 syncCascadeRoutes();
 syncFreeRouteFlags();
-const masterControl = createMasterControl({ chat, createVilla, isRunning, stopVilla, cancelScheduledVilla, toolSpecs, packState, setPackEnabled, emit, startVilla(id) { const scheduled = scheduleVilla(id); if (scheduled.blockedVillaId) throw new Error('Einzelfokus aktiv: Nur die Test Villa kann gestartet werden.'); return scheduled; } });
+const masterControl = createMasterControl({ chat, createVilla, isRunning, stopVilla, cancelScheduledVilla, toolSpecs, packState, setPackEnabled, emit, startVilla(id) { return scheduleVilla(id, { runToCompletion: true }); } });
 if (process.argv.includes('--check')) {
   console.log(JSON.stringify({ ok: true, host: HOST, port: PORT, version: VERSION, routing: routingSummary() }, null, 2));
   process.exit(0);
@@ -254,8 +254,6 @@ async function api(req, res, url) {
       if (!name) return rpcErr(-32602, 'params.name fehlt.');
       const villaId = Number(a.villa_id ?? a.villaId ?? 0);
       if (!villaId) return rpcErr(-32602, 'params.arguments.villa_id fehlt — Werkzeuge laufen im Villa-Kontext.');
-      const focusId = villaFocusId();
-      if (focusId !== null && villaId !== focusId) return rpcErr(-32000, 'Einzelfokus aktiv: Werkzeuge sind auf die Test Villa begrenzt.');
       try {
         const toolArgs = a.args && typeof a.args === 'object' ? a.args : a;
         const out = await runTool({ villaId, agentId: 0 }, name, toolArgs);
@@ -729,14 +727,13 @@ async function api(req, res, url) {
     const villa = db.prepare('SELECT status FROM villas WHERE id=?').get(id);
     if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
     if (villa.status === 'ARCHIVED') return json(res, 409, { error: 'Archivierte Villa zuerst wiederherstellen.' });
-    const focusId = villaFocusId();
-    if (focusId !== null && id !== focusId) return json(res, 409, { error: 'Einzelfokus aktiv: Nur die fokussierte Test Villa kann gestartet werden.', focusVillaId: focusId });
     const b = await readBody(req).catch(() => ({}));
     db.prepare('UPDATE villas SET autonomy=1,updated_at=? WHERE id=?').run(now(), id);
-    const scheduled = scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6, runToCompletion: b.runToCompletion === true });
+    const runToCompletion = b.runToCompletion !== false;
+    const scheduled = scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6, runToCompletion });
     if (isRunning(id)) {
-      if (b.runToCompletion === true) extendVillaRunToCompletion(id);
-      return json(res, 202, { ok: true, alreadyRunning: true, started: true, runToCompletion: b.runToCompletion === true });
+      if (runToCompletion) extendVillaRunToCompletion(id);
+      return json(res, 202, { ok: true, alreadyRunning: true, started: true, runToCompletion });
     }
     return json(res, 202, { ok: true, started: scheduled.active.includes(id), queued: scheduled.queue.includes(id), scheduler: scheduled });
   }
@@ -758,8 +755,6 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'chat' && m === 'POST') {
     const id = Number(parts[2]);
-    const focusId = villaFocusId();
-    if (focusId !== null && id !== focusId) return json(res, 409, { error: 'Einzelfokus aktiv: Agentenaktionen sind auf die Test Villa begrenzt.', focusVillaId: focusId });
     const b = await readBody(req);
     const agent = b.agentId
       ? db.prepare('SELECT * FROM agents WHERE id = ?').get(Number(b.agentId))
@@ -777,8 +772,6 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'agents' && parts[2] && parts[3] === 'chat' && m === 'POST') {
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(Number(parts[2]));
     if (!agent) return json(res, 404, { error: 'Agent nicht gefunden' });
-    const focusId = villaFocusId();
-    if (focusId !== null && Number(agent.villa_id) !== focusId) return json(res, 409, { error: 'Einzelfokus aktiv: Agentenaktionen sind auf die Test Villa begrenzt.', focusVillaId: focusId });
     const b = await readBody(req);
     const r = await runAgent(agent, String(b.message || ''), { maxSteps: 6, villaId: agent.villa_id });
     if(r.code==='LLM_UNAVAILABLE')return json(res,503,{error:r.error,code:r.code,retryAfter:15});
@@ -1062,8 +1055,6 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'develop' && m === 'POST') {
     const id = Number(parts[2]);
     if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
-    const focusId = villaFocusId();
-    if (focusId !== null && id !== focusId) return json(res, 409, { error: 'Einzelfokus aktiv: Entwicklungszyklen sind auf die Test Villa begrenzt.', focusVillaId: focusId });
     const out = developCycle(id);
     if (out.added > 0 && !isRunning(id)) scheduleVilla(id, { concurrency: 0, maxRounds: 6 });
     return json(res, 200, { ok: true, added: out.added, maturity: out.maturity.score, stage: out.maturity.stage, phase: out.maturity.currentPhase });

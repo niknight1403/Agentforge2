@@ -104,7 +104,7 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
                     ) {
                         Text("ENTWICKLUNGSFOKUS", color = Aqua, style = MaterialTheme.typography.labelSmall)
                         Text(focusName, color = TextMain, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                        Text("Nur dieses Projekt wird autonom gestartet. Weitere Villen bleiben pausiert.", color = TextMuted, style = muted())
+                        Text("Fokusprojekt. Alle Villen lassen sich weiterhin einzeln starten und stoppen.", color = TextMuted, style = muted())
                     }
                 }
             }
@@ -180,10 +180,7 @@ fun VillaListScreen(state: UiState, viewModel: MainViewModel? = null, onOpen: (L
                             Spacer(Modifier.weight(1f))
                             if (viewModel != null) {
                                 val vid = villa.id
-                                val focusAllowed = state.focusVillaId == null || state.focusVillaId == vid
-                                if (!focusAllowed) {
-                                    Text("PAUSIERT", color = TextMuted, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                                } else if (villa.executing) {
+                                if (villa.executing || villa.queued) {
                                     Text(
                                         "■  STOPP", color = Danger, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp,
                                         modifier = Modifier.clip(RoundedCornerShape(50))

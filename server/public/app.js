@@ -138,7 +138,7 @@ function renderVillaLists(villas = latestVillas) {
   const homeMatches = matches(homeQuery);
   const chatMatches = matches(chatQuery);
   $('#villaList').innerHTML = homeMatches.length
-    ? homeMatches.slice(0, homeQuery ? homeMatches.length : 12).map(v => villaCardHtml(v, true)).join('')
+    ? homeMatches.map(v => villaCardHtml(v, true)).join('')
     : `<p class="empty-state">${villas.length ? 'Keine Villa passt zu deiner Suche.' : 'Noch keine Villa. Tippe oben auf ＋ Neue Villa.'}</p>`;
   $('#chatPickList').innerHTML = chatMatches.length
     ? chatMatches.map(v => villaCardHtml(v,false)).join('')
@@ -148,7 +148,7 @@ function renderVillaLists(villas = latestVillas) {
     event.preventDefault(); event.stopPropagation();
     const id=Number(el.dataset.villaControl), active=el.dataset.active==='1'; el.disabled=true;
     try {
-      const out=await api(active?`/api/villas/${id}/stop`:`/api/villas/${id}/orchestrate`,{method:'POST',body:active?{}:{concurrency:4,maxTasks:500,adaptive:true}});
+      const out=await api(active?`/api/villas/${id}/stop`:`/api/villas/${id}/orchestrate`,{method:'POST',body:active?{}:{concurrency:4,maxTasks:500,adaptive:true,runToCompletion:true}});
       if(out.error)throw new Error(out.error);
       toast(active?(out.cancelled?'Villa aus der Warteschlange entfernt':'Villa wird angehalten'):(out.queued?'Villa vorgemerkt':'Entwicklung gestartet'));
       await loadVillas();

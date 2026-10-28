@@ -1159,11 +1159,9 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
   // verhungern in der Scheduler-Queue. Nach dem Budget endet der Lauf planmaessig
   // (PAUSED), der Slot rotiert fair zur naechsten Villa (Least-Recently-Started).
   const runStart = now();
-  // Lange fokussierte Laufzeit ist jetzt opt-in; standardmaessig rotiert jede
-  // Villa fair nach dem normalen Laufbudget, waehrend drei Villen parallel laufen.
-  const focusRun = process.env.VF_FOCUS_MODE === '1';
-  const budgetMs = runToCompletion ? Number.POSITIVE_INFINITY : focusRun
-    ? Math.max(120 * 60_000, Number(process.env.VF_RUN_BUDGET_MIN || 20) * 60_000)
+  // Manuell gestartete Villen bleiben bis zur Abnahme oder einem expliziten
+  // Stopp aktiv. Zeitlimits gelten nur fuer normale Hintergrund-Laeufe.
+  const budgetMs = runToCompletion ? Number.POSITIVE_INFINITY
     : Math.max(5 * 60_000, Number(process.env.VF_RUN_BUDGET_MIN || 20) * 60_000);
   // Verwaiste Aufgaben aus einem abgebrochenen Lauf zurueck auf PENDING setzen.
   // Beim Start eines Laufs kann keine Aufgabe legitim auf RUNNING stehen: dieser
@@ -1238,7 +1236,9 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
         // 24/7: kein Stillstand. Ohne offene Aufgaben kommt sofort die
         // naechste Welle (Phasen-Pflichten, sonst Verbesserungswelle).
         const { developCycle } = await import('./product.mjs');
-        const wave = developCycle(villaId);
+        // Im Abschlusslauf keine endlosen Verbesserungswellen anhaengen:
+        // nur fehlende Pflicht- und Verifikationsaufgaben nachziehen.
+        const wave = developCycle(villaId, { includeImprovementWave: !job.runToCompletion });
         if (wave.added > 0) {
           emit('progress', { villaId, processed: job.processed, wave: wave.added, maturity: wave.maturity.score, phase: wave.maturity.currentPhase, note: 'Naechste Welle' });
           continue;

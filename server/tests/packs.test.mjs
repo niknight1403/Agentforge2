@@ -81,3 +81,15 @@ test('Jedes bekannte Werkzeug hat ein Pack oder bleibt bewusst packfrei', () => 
     if (packTools.has(spec.name)) assert.ok(spec.pack, `${spec.name} sollte ein Pack haben`);
   }
 });
+
+test('GitHub-Publish ist als abschaltbares Plugin-Pack registriert', () => {
+  const pack = packState().tools.find((item) => item.id === 'github');
+  assert.ok(pack, 'GitHub-Plugin-Pack fehlt');
+  assert.ok(pack.tools.includes('github_publish'));
+  assert.equal(canUseTool('github_publish').pack, 'github');
+  assert.equal(canUseTool('github_publish').allowed, true);
+  setPackEnabled('github', false);
+  assert.equal(canUseTool('github_publish').allowed, false);
+  assert.equal(packState().tools.find((item) => item.id === 'github').effective, false);
+  setPackEnabled('github', true);
+});

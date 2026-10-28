@@ -37,7 +37,7 @@ export function setVillaRunToCompletion(id, enabled) {
   else db.prepare('DELETE FROM control_settings WHERE key=?').run(key);
   return villaRunToCompletion(id);
 }
-const SLOTS = () => villaFocusId() !== null ? 1 : Math.max(1, Math.min(4, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? 3)) || 3));
+const SLOTS = () => Math.max(1, Math.min(4, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? 3)) || 3));
 
 /** Fortschritt und Rang aller Villen in einer einzigen Abfrage. */
 export function villaRanking() {
@@ -60,7 +60,7 @@ export function villaRanking() {
     .sort((a, b) => b.rank - a.rank || a.id - b.id);
 }
 
-const queue = [];          // wartende Villa-IDs (faire Reihenfolge, Rang als Stichbrecher)
+const queue = [];          // wartende Villa-IDs in der Reihenfolge der Startanforderung
 const active = new Set();  // Villen, die gerade einen Slot halten
 const lastStart = new Map(); // villaId -> Zeitpunkt des letzten Starts (Anti-Streben)
 let starter = null;        // Funktion (villaId) => Promise, die den Lauf startet
@@ -77,7 +77,7 @@ export function schedulerStatus() {
     slots: SLOTS(),
     active: [...active],
     queued: queue.length,
-    queue: queue.slice(0, 20),
+    queue: queue.slice(),
     lastStart: Object.fromEntries(lastStart)
   };
 }
@@ -117,29 +117,19 @@ function pump() {
  * Die Warteschlange wird nach aktuellem Fortschritt sortiert.
  */
 export function enqueueVillas(ids) {
-  const focusId = villaFocusId();
-  const rank = new Map(villaRanking().map((r, i) => [r.id, i]));
   for (const id of ids) {
-    if (focusId !== null && Number(id) !== focusId) continue;
-    if (!active.has(id) && !queue.includes(id)) queue.push(id);
+    const villaId = Number(id);
+    if (Number.isSafeInteger(villaId) && villaId > 0 && !active.has(villaId) && !queue.includes(villaId)) queue.push(villaId);
   }
-  // Faire Reihenfolge: wer am laengsten nicht mehr dran war, kommt zuerst.
-  // Der Rang bricht nur Gleichstand - sonst verhungern niedrig gerankte
-  // Villen dauerhaft, weil hohergerankte nach jedem Lauf wieder vor drängen.
-  queue.sort((a, b) => (lastStart.get(a) ?? 0) - (lastStart.get(b) ?? 0) || (rank.get(a) ?? 1e9) - (rank.get(b) ?? 1e9));
   pump();
   return schedulerStatus();
 }
 
 /** Einheitlicher Einstieg: alle automatischen und manuellen Starts laufen
  *  ueber denselben Scheduler (Default 3 Slots). */
-export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, runToCompletion = false } = {}) {
+export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, runToCompletion = true } = {}) {
   if (runToCompletion) setVillaRunToCompletion(id, true);
   configureScheduler({ start: (vid) => orchestrate(vid, { concurrency, maxRounds, runToCompletion: villaRunToCompletion(vid) }) });
-  const focusId = villaFocusId();
-  if (focusId !== null && Number(id) !== focusId) {
-    return { ...schedulerStatus(), blockedVillaId: Number(id), reason: 'FOCUS_VILLA_ONLY' };
-  }
   const status = enqueueVillas([id]);
   return status;
 }
