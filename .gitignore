@@ -29,3 +29,8 @@ artifacts/
 # Python
 __pycache__/
 *.pyc
+
+# Secrets nie ins Repo
+.env
+.env.*
+!.env.example
