@@ -1,0 +1,76 @@
+name: LLM Cascade Safe Deploy
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - server/llm-cascade.mjs
+      - server/tests/llm-cascade.test.mjs
+      - .github/workflows/llm-cascade-deploy.yml
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage exact files for hub
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          scp -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key server/llm-cascade.mjs server/tests/llm-cascade.test.mjs ubuntu@92.5.177.159:/tmp/
+          cat > /tmp/deploy-llm-cascade.sh <<'DEPLOY'
+          set -Eeuo pipefail
+          UNIT=villaforge-hub.service
+          systemctl cat "$UNIT" >/dev/null
+          WD=$(systemctl show "$UNIT" -p WorkingDirectory --value)
+          EXEC=$(systemctl show "$UNIT" -p ExecStart --value)
+          MJS=$(printf '%s' "$EXEC" | grep -oE '[^ ;"=]*server\.mjs' | head -1 || true)
+          if [ -n "$MJS" ] && [ "${MJS:0:1}" = / ]; then HUBDIR=$(dirname "$MJS")
+          elif [ -n "$WD" ] && [ -n "$MJS" ]; then HUBDIR=$(dirname "$WD/$MJS")
+          elif [ -n "$WD" ]; then HUBDIR="$WD/server"
+          else echo 'Cannot determine hub source directory'; exit 2; fi
+          test -f "$HUBDIR/server.mjs"
+          test -f "$HUBDIR/tests/llm-cascade.test.mjs"
+          BACKUP=$(mktemp -d /tmp/vf-llm-deploy.XXXXXX)
+          cp "$HUBDIR/llm-cascade.mjs" "$BACKUP/llm-cascade.mjs"
+          cp "$HUBDIR/tests/llm-cascade.test.mjs" "$BACKUP/llm-cascade.test.mjs"
+          rollback() {
+            rc=$?
+            trap - ERR
+            if [ "$rc" -ne 0 ]; then
+              echo 'Deployment check failed; restoring only the two LLM cascade files.'
+              cp "$BACKUP/llm-cascade.mjs" "$HUBDIR/llm-cascade.mjs"
+              cp "$BACKUP/llm-cascade.test.mjs" "$HUBDIR/tests/llm-cascade.test.mjs"
+              systemctl restart "$UNIT" || true
+            fi
+            rm -rf "$BACKUP"
+            exit "$rc"
+          }
+          trap rollback ERR
+          install -o root -g root -m 0644 /tmp/llm-cascade.mjs "$HUBDIR/llm-cascade.mjs"
+          install -o root -g root -m 0644 /tmp/llm-cascade.test.mjs "$HUBDIR/tests/llm-cascade.test.mjs"
+          node --check "$HUBDIR/llm-cascade.mjs"
+          cd "$HUBDIR"
+          VF_TEST=1 timeout 180 node --test tests/llm-cascade.test.mjs
+          systemctl restart "$UNIT"
+          for attempt in $(seq 1 20); do
+            if systemctl is-active --quiet "$UNIT"; then break; fi
+            sleep 2
+          done
+          systemctl is-active "$UNIT"
+          PORT=$(systemctl show "$UNIT" -p Environment --value | grep -oE 'PORT=[0-9]+' | head -1 | cut -d= -f2 || true)
+          [ -n "$PORT" ] || PORT=12000
+          curl --fail --silent --show-error --max-time 20 "http://127.0.0.1:${PORT}/api/health" -o /tmp/vf-health.json
+          node --input-type=module -e 'const fs=await import("node:fs/promises");const d=JSON.parse(await fs.readFile("/tmp/vf-health.json","utf8"));if(d.ok!==true||d.masterControl!==1)process.exit(1);console.log("Hub health OK; version",d.version,"routes",d.routes)'
+          trap - ERR
+          rm -rf "$BACKUP"
+          echo 'SAFE_LLM_CASCADE_DEPLOY_OK'
+          DEPLOY
+          scp -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key /tmp/deploy-llm-cascade.sh ubuntu@92.5.177.159:/tmp/
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash /tmp/deploy-llm-cascade.sh'
+      - name: Verify public hub health
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 3 --max-time 20 https://hub.cybersarah-ki.com/api/health -o /tmp/public-health.json
+          python3 -c 'import json; d=json.load(open("/tmp/public-health.json")); assert d.get("ok") is True and d.get("masterControl") == 1; print("PUBLIC_HUB_HEALTH_OK:", d.get("version"), "routes:", d.get("routes"))'
