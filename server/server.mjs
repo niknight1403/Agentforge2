@@ -46,6 +46,7 @@ import { controlCatalog, saveConnector, updateConnector, deleteConnector, readCo
 import { createReadStream, existsSync as fsExists } from 'node:fs';
 import { initBillingStore, createCheckoutSession, createBillingPortalSession, billingSummary, adminBillingMetrics, flushStripeUsage } from './billing.mjs';
 import { issueGatewayToken, gatewayPrincipal, hasGatewayScope, canAccessVilla, gatewayRoleScopes, initGatewayStore, createGatewayApiKey, listGatewayApiKeys, revokeGatewayApiKey } from './api-gateway.mjs';
+import { dlqTick, dlqStatus, restartFailedWorkflow, initDlq } from './event-dlq.mjs';
 import { initObservabilityStore, tokenBudgetStatus, httpMetrics, recordHttpRequest } from './observability.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
@@ -550,6 +551,22 @@ async function api(req, res, url) {
   if (p === '/api/billing/checkout' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createCheckoutSession(user)); }
   if (p === '/api/billing/portal' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createBillingPortalSession(user.id)); }
   if (p === '/api/admin/metrics' && m === 'GET') { if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'}); return json(res,200,await collectAdminMetrics()); }
+  // Dead-Letter-Queue: gescheiterte Agenten-Workflows einsehen, neu einreihen, Alerting-Takt manuell auslösen.
+  if (p === '/api/dlq' && m === 'GET') {
+    if (!isAdmin) return json(res, needAuth ? 401 : 403, { error: 'Administrator role required.' });
+    return json(res, 200, dlqStatus({ limit: Math.min(Number(url.searchParams.get('limit')) || 20, 100) }));
+  }
+  if (p === '/api/dlq/tick' && m === 'POST') {
+    if (!isAdmin) return json(res, needAuth ? 401 : 403, { error: 'Administrator role required.' });
+    const b = await readBody(req).catch(() => ({}));
+    return json(res, 200, dlqTick({ limit: Math.min(Number(b?.limit) || 20, 100), autoRestart: b?.autoRestart !== false }));
+  }
+  if (/^\/api\/dlq\/\d+\/restart$/.test(p) && m === 'POST') {
+    if (!isAdmin) return json(res, needAuth ? 401 : 403, { error: 'Administrator role required.' });
+    const dlqId = Number(p.split('/')[3]);
+    const out = restartFailedWorkflow(dlqId);
+    return json(res, out.ok ? 200 : 400, out);
+  }
   if (p === '/api/admin/gateway-keys' && m === 'GET') { if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'}); return json(res,200,listGatewayApiKeys(user.id)); }
   if (p === '/api/admin/gateway-keys' && m === 'POST') { if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'}); const b=await readBody(req); if(b.role==='admin'&&user.role!=='superadmin')return json(res,403,{error:'Only superadmins may issue admin keys.'}); try{return json(res,201,await createGatewayApiKey({userId:user.id,label:b.label,role:b.role,villaIds:b.villaIds,ttlSeconds:Number(b.ttlSeconds)||30*86400}));}catch(error){return json(res,400,{error:error.message});} }
   if (p === '/api/admin/gateway-token' && m === 'POST') { if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'}); const b=await readBody(req),role=b.role||'reader',villaIds=Array.isArray(b.villaIds)?b.villaIds:[]; if(role==='admin'&&user.role!=='superadmin')return json(res,403,{error:'Only superadmins may issue admin tokens.'}); if(role!=='admin'&&villaIds.some(id=>!db.prepare('SELECT id FROM villas WHERE id=?').get(Number(id))))return json(res,400,{error:'Unknown villa in allowlist.'}); try{return json(res,201,{token:issueGatewayToken({subject:String(user.id),role,villaIds,ttlSeconds:b.ttlSeconds}),scopes:gatewayRoleScopes(role)});}catch(error){return json(res,error.statusCode||400,{error:error.message});} }
@@ -1291,6 +1308,9 @@ server.listen(PORT, HOST, () => {
   log(`UI:      http://localhost:${PORT}/`);
   log(`Health:  http://localhost:${PORT}/api/health`);
   const usageLoop=setInterval(()=>flushStripeUsage().catch(error=>logError('Stripe usage outbox:',error?.code||error?.name||'ERROR')),30_000); usageLoop.unref();
+  // Alerting-Agent: gescheiterte Workflows isolieren, begrenzt neu einreihen, sonst eskalieren.
+  let dlqLoop=null;
+  try { initDlq(); dlqLoop = setInterval(() => { try { const out = dlqTick(); if (out.ok && (out.isolated || out.restarted || out.escalated)) log('DLQ-Takt: isoliert ' + out.isolated + ', neu eingereiht ' + out.restarted + ', eskaliert ' + out.escalated); } catch (error) { logError('DLQ-Takt:', error?.message || error); } }, 5 * 60_000); dlqLoop.unref?.(); } catch (error) { logError('DLQ-Start:', error?.message || error); }
   startResourceAgent({
     onSample: (snapshot) => emit('resources', { snapshot }),
     onError: (error) => logError('Resource-Agent:', error?.message || error)
