@@ -73,7 +73,7 @@ const SYSTEM_PROMPT = [
   '- Keine Platzhalter, Pseudocode oder unbelegten Fertigmeldungen. Bei Fehlern nenne Ursache, Reparaturversuch und Fallback.',
   '- Nenne am Ende 1-3 priorisierte nächste Schritte mit jeweiligen Abnahmekriterien.',
   'Antworte NUR mit dem Antworttext (kein JSON), alles auf Deutsch.'
-].join('\\n');
+].join('\n');
 
 function projectDir(id) {
   return join(DEEP_DIR, String(id));
