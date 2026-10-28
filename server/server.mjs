@@ -12,7 +12,7 @@ import { FREE_ROUTE_CATALOG } from './routes.mjs';
 import { chat, routingStatus, routingSummary, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { masterChat, masterHistory } from './master.mjs';
 import { reapZombies } from './agents.mjs';
-import { userStore, usersExist, userForRequest, userForToken, verifyPassword, createSession, destroyToken, upsertUser, publicUser, quotaLeft, FREE_DAILY_TOKENS } from './auth.mjs';
+import { userStore, usersExist, userForRequest, userForToken, verifyPassword, createSession, destroyToken, upsertUser, publicUser, quotaLeft, FREE_DAILY_TOKENS, loginBlockedFor, recordLoginFailure, clearLoginFailures } from './auth.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, extendVillaRunToCompletion, executeTaskOnce, TOOL_SPECS, toolSpecs, memoryContext, setSource, analyzeProject, refreshAgentPrompts, PROMPT_VERSION, ROLES, runTool } from './agents.mjs';
 import { packState, packSummary, setPackEnabled } from './packs.mjs';
 import { resumePendingVillas } from './resume.mjs';
@@ -199,6 +199,14 @@ async function api(req, res, url) {
   const openMode = process.env.VF_OPEN_MODE === '1' || !usersExist();
   const needAuth = !openMode && !user;
   const isAdmin = !!user && (user.role === 'admin' || user.role === 'superadmin');
+  // Sicherheitsalarm: offener Modus ist ein stiller Auth-Ausfall (leere users-Tabelle
+  // oder bewusst gesetzter Open-Mode-Schalter). Einmal pro Prozess laut protokollieren.
+  if (openMode && !globalThis.__vfOpenModeWarned) {
+    globalThis.__vfOpenModeWarned = true;
+    log('WARNUNG: API laeuft OHNE Authentifizierung (offener Modus: ' +
+      (process.env.VF_OPEN_MODE === '1' ? 'Open-Mode-Schalter gesetzt' : 'keine Nutzer in der Datenbank') +
+      '). Alle Endpunkte sind fuer jeden erreichbar.');
+  }
 
   if (p.startsWith('/api/v1/gateway/')) {
     const auth = await gatewayPrincipal(req);
@@ -478,10 +486,22 @@ async function api(req, res, url) {
   /* --------------------------- Auth --------------------------- */
   if (p === '/api/auth/login' && m === 'POST') {
     const b = await readBody(req);
-    const row = db.prepare('SELECT * FROM users WHERE email = ?').get(String(b.email || '').toLowerCase());
+    const loginEmail = String(b.email || '').toLowerCase();
+    const loginIp = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+    const throttleKey = `${loginEmail}|${loginIp}`;
+    const blockedMs = loginBlockedFor(throttleKey);
+    if (blockedMs > 0) {
+      const retryAfter = Math.ceil(blockedMs / 1000);
+      log(`Login gesperrt (zu viele Fehlversuche): ${loginEmail} von ${loginIp}, noch ${retryAfter}s`);
+      return json(res, 429, { error: 'Zu viele Fehlversuche. Bitte spaeter erneut versuchen.', retryAfterSeconds: retryAfter });
+    }
+    const row = db.prepare('SELECT * FROM users WHERE email = ?').get(loginEmail);
     if (!row || !verifyPassword(String(b.password || ''), row.password_hash)) {
+      const state = recordLoginFailure(throttleKey);
+      log(`Login fehlgeschlagen: ${loginEmail} von ${loginIp} (Versuch ${state.count})`);
       return json(res, 401, { error: 'E-Mail oder Passwort falsch.' });
     }
+    clearLoginFailures(throttleKey);
     const token = createSession(row.id);
     return json(res, 200, { token, user: publicUser(row), quotaLeft: quotaLeft(row) });
   }
