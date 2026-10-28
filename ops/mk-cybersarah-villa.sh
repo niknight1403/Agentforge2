@@ -49,6 +49,12 @@ else
   git -C "$REPO" fetch -q origin main 2>/dev/null || true
   git -C "$REPO" reset -q --hard origin/main 2>/dev/null || true
 fi
+
+# --- Abhaengigkeiten provisionieren (Q-Gate braucht lauffaehigen Build) ---
+if [ -f "$REPO/package.json" ] && [ "$(ls "$REPO/node_modules" 2>/dev/null | wc -l)" -lt 100 ]; then
+  echo "--- npm-Abhaengigkeiten im Hintergrund installieren ---" | tee -a "$STATUS_FILE"
+  ( cd "$REPO" && nohup sh -c 'npm install --no-audit --no-fund; npm install-scripts approve esbuild 2>/dev/null || true; npm rebuild esbuild 2>/dev/null || true; npm install --no-audit --no-fund; echo DEPS-FERTIG > /tmp/deps-done.flag' > /tmp/prov-ccc.log 2>&1 & ) || true
+fi
 echo "Repo bereit: $REPO ($(git -C "$REPO" rev-parse --short HEAD))" | tee -a "$STATUS_FILE"
 
 # --- Villa anlegen (idempotent) ---
