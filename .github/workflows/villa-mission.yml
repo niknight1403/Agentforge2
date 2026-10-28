@@ -52,7 +52,7 @@ jobs:
           start_villa() {
             ID="$1"
             echo "== Starte Villa $ID =="
-            curl -s -m 60 -X POST -H "$AUTH" -H "Content-Type: application/json" \
+            curl -fsS -m 60 -X POST -H "$AUTH" -H "Content-Type: application/json" \
               -d '{"concurrency":4,"maxTasks":200,"adaptive":true}' \
               "$H/api/villas/$ID/orchestrate" | head -c 300; echo
           }
@@ -60,7 +60,7 @@ jobs:
           retry_failed() {
             ID="$1"
             echo "   retry-failed fuer Villa $ID:"
-            curl -s -m 120 -X POST -H "$AUTH" "$H/api/villas/$ID/retry-failed" | head -c 220; echo
+            curl -fsS -m 120 -X POST -H "$AUTH" "$H/api/villas/$ID/retry-failed" | head -c 220; echo
           }
 
           IDS='${{ github.event.inputs.ids }}'
@@ -71,7 +71,7 @@ jobs:
             echo "=== Modus: Neue Villa anlegen ($CNAME) ==="
             BODY=$(jq -n --arg n "$CNAME" --arg i "$CIDEA" --arg s "$CSRC" \
               '{name:$n, idea:$i} + (if $s != "" then {sourcePath:$s} else {} end)')
-            RES=$(curl -s -m 120 -X POST -H "$AUTH" -H "Content-Type: application/json" -d "$BODY" "$H/api/villas")
+            RES=$(curl -fsS -m 120 -X POST -H "$AUTH" -H "Content-Type: application/json" -d "$BODY" "$H/api/villas")
             echo "$RES" | head -c 300; echo
             NID=$(echo "$RES" | jq -r '.villaId // empty')
             if [ -z "$NID" ]; then echo "Anlegen fehlgeschlagen"; exit 1; fi
