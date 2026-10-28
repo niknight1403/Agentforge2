@@ -14,6 +14,7 @@ import { projectSummary, searchProject, readProjectFile, runCommand, safePath } 
 import { canUseTool, toolPackOf, packEnabled } from './packs.mjs';
 import { generateMedia, mediaCapabilities } from './media.mjs';
 import { saveCheckpoint, recoverCheckpoint } from './checkpoints.mjs';
+import { withOtelSpan } from './otel.mjs';
 
 export const WORKSPACE = PROJECT_WORKSPACE;
 mkdirSync(WORKSPACE, { recursive: true });
@@ -566,7 +567,7 @@ function audit(villaId, agentId, tool, args, result, allowed = 1) {
     .run(now(), villaId, agentId, tool, String(JSON.stringify(args ?? null)).slice(0, 500), String(result).slice(0, 500), allowed);
 }
 
-export async function runTool(ctx, name, args) {
+async function executeTool(ctx, name, args) {
   const tool = TOOLS[name];
   if (!tool) { audit(ctx.villaId, ctx.agentId, name, args, 'unbekanntes Werkzeug', 0); return `Unbekanntes Werkzeug: ${name}`; }
   // Packs sind echte Schalter: ist das Werkzeug-Pack aus, blockiert der Hub
@@ -587,6 +588,15 @@ export async function runTool(ctx, name, args) {
     audit(ctx.villaId, ctx.agentId, name, args, msg, 0);
     return `Fehler in ${name}: ${msg}`;
   }
+}
+
+/** Trace tool execution with identifiers only; arguments and outputs stay private. */
+export function runTool(ctx, name, args) {
+  return withOtelSpan('agent.tool.execute', {
+    'agent.tool': String(name || 'unknown'),
+    'agent.villa_id': Number(ctx?.villaId || 0),
+    'agent.id': Number(ctx?.agentId || 0)
+  }, () => executeTool(ctx, name, args));
 }
 
 /* ------------------------------------------------------------------ */
