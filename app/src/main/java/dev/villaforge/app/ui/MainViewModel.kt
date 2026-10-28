@@ -195,6 +195,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (_: Exception) { }
     }
 
+    /** Übergibt das Projekt an Planung, Agentenpool, Tests und Build der VillaForge-Baustraße. */
+    fun developDeepProject(id: Long, onVillaReady: (Long) -> Unit) = viewModelScope.launch {
+        if (_state.value.busy) return@launch
+        _state.update { it.copy(busy = true, message = "Projekt-Experte erstellt den ausführbaren Entwicklungsplan …") }
+        try {
+            val result = client.deepDevelopProject(id)
+            val villaId = result.optLong("villaId", 0)
+            if (villaId <= 0) throw IllegalStateException(result.optString("error", "Keine Entwicklungs-Villa erstellt"))
+            _state.update { it.copy(message = result.optString("message", "Entwicklung übergeben")) }
+            loadDeepProjects()
+            openVilla(villaId)
+            onVillaReady(villaId)
+        } catch (e: Exception) {
+            _state.update { it.copy(message = "Übergabe fehlgeschlagen: ${e.message?.take(180) ?: "Hub nicht erreichbar"}") }
+        } finally { _state.update { it.copy(busy = false) } }
+    }
+
+    /** Entfernt ein einzelnes Deep-Projekt samt Verlauf und Uploads. */
+    fun deleteDeepProject(id: Long) = viewModelScope.launch {
+        try {
+            client.deepDeleteProject(id)
+            _state.update {
+                it.copy(
+                    deepProjects = it.deepProjects.filterNot { project -> project.id == id },
+                    deepActiveProject = if (it.deepActiveProject?.id == id) null else it.deepActiveProject,
+                    deepMessages = if (it.deepActiveProject?.id == id) emptyList() else it.deepMessages,
+                    message = "Deep-Projekt gelöscht. Eine bereits übergebene Villa bleibt separat erhalten."
+                )
+            }
+        } catch (e: Exception) {
+            _state.update { it.copy(message = "Projekt konnte nicht gelöscht werden: ${e.message?.take(160) ?: "Hub nicht erreichbar"}") }
+        }
+    }
+
     /** Datei/Foto/Video hochladen und als Anhang vormerken. */
     fun addDeepAttachment(projectId: Long, name: String, mime: String, base64: String) = viewModelScope.launch {
         _state.update { it.copy(busy = true) }
