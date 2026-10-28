@@ -15,6 +15,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { launchChrome, newTarget, Page, delay } from './lib/cdp.mjs';
 import { startHub, ROOT } from './lib/hub.mjs';
+import { startMockLlm } from './lib/mock-llm.mjs';
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -173,6 +174,7 @@ const results = {};
 let hub = null;
 let chrome = null;
 let page = null;
+let modelMock = null;
 
 /** Probe ausfuehren und unter einem Namen ablegen. */
 async function probe(name) {
@@ -185,7 +187,8 @@ async function probe(name) {
   console.log('\nVillaForge Design-Audit\n' + '-'.repeat(60));
   let code = 0;
   try {
-    hub = await startHub({ keep: has('--keep') });
+    modelMock = await startMockLlm();
+    hub = await startHub({ keep: has('--keep'), env: { VF_LOCAL_LLM_URL: modelMock.url, VF_LOCAL_LLM_MODEL: 'villa-test' } });
     console.log(`Hub v${hub.health.version} auf ${hub.base}`);
     chrome = await launchChrome({ port: 9500 + Math.floor(Math.random() * 200) });
     const target = await newTarget(chrome.base, 'about:blank');
@@ -194,10 +197,12 @@ async function probe(name) {
     const url = `${hub.base}/`;
 
     // Eine Villa anlegen, damit auch der Arbeitsbereich bewertet wird.
-    const created = await (await fetch(`${hub.base}/api/villas`, {
+    const response = await fetch(`${hub.base}/api/villas`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Design-Audit', idea: 'Oberflaeche pruefen', agentCount: 8 })
-    })).json();
+    });
+    const created = await response.json();
+    if (!response.ok || !created.villaId) throw new Error(`Testvilla konnte nicht angelegt werden: HTTP ${response.status} ${created.error || ''}`.trim());
     console.log(`Testvilla #${created.villaId}`);
 
     for (const [name, vp] of [['desktop', { w: 1440, h: 960 }], ['mobil', { w: 390, h: 844, mobile: true }]]) {
@@ -222,6 +227,7 @@ async function probe(name) {
     console.error('Abbruch:', err.message);
     code = 1;
   } finally {
+    try { await modelMock?.close(); } catch { /* Testprozess wird ohnehin beendet. */ }
     mkdirSync(OUT, { recursive: true });
     const violations = Object.entries(results)
       .flatMap(([scope, r]) => Object.entries(r.findings || {}).map(([kind, list]) => ({ scope, kind, list })));

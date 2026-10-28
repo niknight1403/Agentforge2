@@ -50,11 +50,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Gradle 8.7 einrichten
+        if: matrix.language == 'java-kotlin'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
       - name: CodeQL initialisieren
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.language == 'java-kotlin' && 'autobuild' || 'none' }}
+          build-mode: ${{ matrix.language == 'java-kotlin' && 'manual' || 'none' }}
+
+      - name: Kotlin/Android-Quellen instrumentiert kompilieren
+        if: matrix.language == 'java-kotlin'
+        run: gradle :app:compileDebugKotlin --no-daemon --stacktrace
 
       - name: CodeQL analysieren
         uses: github/codeql-action/analyze@v4

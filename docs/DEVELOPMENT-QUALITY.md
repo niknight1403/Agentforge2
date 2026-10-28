@@ -17,7 +17,7 @@ npm run test:design
 npm run test:live
 ```
 
-Die browserbasierten Prüfungen brauchen Chrome oder Chromium (`VF_CHROME` kann den Programmpfad vorgeben). Sie prüfen vier Viewportgrößen, Kontrast, Fokus, Überläufe und wichtige Arbeitsabläufe; CI bewahrt Berichte und Screenshots als Workflow-Artefakte auf.
+Die browserbasierten Prüfungen brauchen Chrome oder Chromium (`VF_CHROME` kann den Programmpfad vorgeben). Sie verwenden einen lokalen deterministischen Modellstub statt externer LLM-Schlüssel, prüfen vier Viewportgrößen, Kontrast, Fokus, Überläufe und wichtige Arbeitsabläufe; CI bewahrt Berichte und Screenshots als Workflow-Artefakte auf.
 
 Android:
 

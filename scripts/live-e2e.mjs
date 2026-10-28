@@ -3,7 +3,7 @@
  * VillaForge Live-E2E: faehrt den echten Hub in einem echten Chrome durch.
  *
  * Der Test startet eine eigene Hub-Instanz (eigene Datenbank, eigener
- * Workspace, ohne LLM-Keys -> Offline-Planer), oeffnet die Web-Oberflaeche in
+ * Workspace, ohne externe LLM-Keys und mit lokalem deterministischen Modellstub), oeffnet die Web-Oberflaeche in
  * Chrome und klickt den kompletten Weg durch: Villa anlegen, Arbeitsbereich
  * oeffnen, alle Tabs, Chat, Entwicklung starten/stoppen, Filter. Alles, was
  * dabei schiefgeht — Konsolenfehler, 5xx-Antworten, abgebrochene Anfragen —
@@ -22,6 +22,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { launchChrome, newTarget, Page, delay } from './lib/cdp.mjs';
+import { startMockLlm } from './lib/mock-llm.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const argv = process.argv.slice(2);
@@ -44,6 +45,7 @@ let hub = null;
 let chrome = null;
 let page = null;
 let workDir = null;
+let modelMock = null;
 
 function step(name) {
   const record = { name, status: 'running', ms: 0, note: '' };
@@ -78,6 +80,7 @@ async function safeShot(label) {
 /* ------------------------- Hub starten ------------------------- */
 async function startHub() {
   workDir = mkdtempSync(join(tmpdir(), 'vf-live-'));
+  modelMock = await startMockLlm();
   const env = {
     ...process.env,
     PORT: String(PORT),
@@ -85,7 +88,9 @@ async function startHub() {
     VF_DB: join(workDir, 'hub.db'),
     VF_WORKSPACE: join(workDir, 'workspace'),
     VF_LOG_FILE: join(workDir, 'hub.log'),
-    VF_RESUME: '0'
+    VF_RESUME: '0',
+    VF_LOCAL_LLM_URL: modelMock.url,
+    VF_LOCAL_LLM_MODEL: 'villa-test'
   };
   // Keine LLM-Schluessel: der Offline-Planer muss den Test allein tragen.
   for (const k of Object.keys(env)) if (/^(GROQ|GEMINI|CEREBRAS|MISTRAL|TOGETHER|OPENROUTER|DEEPSEEK)_API_KEY/.test(k)) delete env[k];
@@ -318,6 +323,7 @@ async function teardown() {
   try { hub?.kill('SIGTERM'); } catch { /* egal */ }
   await delay(400);
   try { hub?.kill('SIGKILL'); } catch { /* egal */ }
+  try { await modelMock?.close(); } catch { /* Prozess bereits beendet */ }
   if (workDir && !KEEP) { try { rmSync(workDir, { recursive: true, force: true }); } catch { /* egal */ } }
 }
 

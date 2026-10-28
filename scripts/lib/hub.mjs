@@ -2,9 +2,9 @@
  * Gemeinsamer Hub-Start fuer Live-Tests und Design-Audit.
  *
  * Startet eine vollstaendig isolierte Hub-Instanz: eigene SQLite-Datei,
- * eigener Workspace, eigene Logdatei und bewusst KEINE LLM-Schluessel —
+ * eigener Workspace, eigene Logdatei und bewusst KEINE externen LLM-Schluessel —
  * damit ein Lauf reproduzierbar bleibt und nie versehentlich echte Kontingente
- * verbraucht. Der Offline-Planer muss den Test allein tragen.
+ * verbraucht. Tests koennen bei Bedarf einen lokalen Modellstub injizieren.
  */
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
