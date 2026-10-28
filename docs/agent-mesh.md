@@ -22,4 +22,6 @@ With the telemetry URL and token configured, Agentforge publishes allowlisted li
 
 The optional `otel-collector` accepts OTLP/HTTP traces on the internal Docker network at `http://otel-collector:4318/v1/traces`. Agentforge traces model-provider attempts and tool execution with identifiers and timing metadata only. Configure `OTEL_EXPORTER_OTLP_ENDPOINT` for another collector. The bundled collector uses a bounded-memory processor and debug exporter, so traces appear in its container logs; configure a persistent exporter before relying on it for long-term retention.
 
+The runtime also stores allowlisted task lifecycle telemetry (start, completion, retry, failure) in PostgreSQL. Prompt text, chain-of-thought, tool arguments, and user content are excluded. Records older than 30 days are pruned daily; operational spans are exported over OTLP.
+
 `AGENTFORGE_MESH_TOKEN` is shared only between the Hub and runtime worker and must be different from the Control Center telemetry token. The compose stack is an optional self-hosted profile. Existing production services keep their own deployment lifecycle; configuring the shared tokens and applying migrations are required before cross-repository telemetry and task dispatch are live.
