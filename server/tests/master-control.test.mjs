@@ -57,6 +57,20 @@ test('Master-Turn wird bei Retry nicht erneut ausgeführt und behält einen Proj
   assert.match(db.prepare("SELECT content FROM memories WHERE kind='CONSTRAINT'").get().content,/Latenz/);
   await assert.rejects(service.turn({...input,message:'Anderer Inhalt'}),/andere/);
 });
+test('Master-Planung priorisiert kostenlose Cloud-Qualitätsrouten und begrenzt die Antwortzeit', async () => {
+  let options;
+  const service=createMasterControl({
+    chat:async(_messages,opts)=>{options=opts;return {content:JSON.stringify({answer:'Status ist bereit.',actions:[]})};},
+    createVilla:async()=>{throw new Error('unexpected');},isRunning:()=>false,stopVilla:()=>false,startVilla:()=>{},
+    packState,setPackEnabled,toolSpecs:()=>[],emit:()=>{}
+  });
+  const out=await service.turn({message:'Wie kann ich das Projekt verbessern?',requestId:'master-quality-route-1'});
+  assert.equal(out.ok,true);
+  assert.equal(options.role,'ARCHITECT');
+  assert.equal(options.strategy,'FALLBACK');
+  assert.equal(options.totalTimeoutMs,60000);
+  assert.equal(options.maxTokens,1200);
+});
 test('Eigene Skills und einzelne Werkzeugschalter sind echte Laufzeitkonfiguration', async () => {
   const {service}=control([{type:'upsert_skill',args:{id:'quality',title:'Qualität',instructions:'Prüfe Fehlerfälle'}},{type:'set_tool',args:{name:'web_fetch',enabled:false}}]);
   const out=await service.turn({message:'Speichere Arbeitsregeln',requestId:'turn-skills-1234'});

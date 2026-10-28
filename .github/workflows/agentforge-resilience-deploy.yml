@@ -1,0 +1,121 @@
+name: Agentforge Resilience Safe Deploy
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - server/.env.example
+      - server/agents.mjs
+      - server/circuit-breaker.mjs
+      - server/checkpoints.mjs
+      - server/event-mesh.mjs
+      - server/events.mjs
+      - server/llm-cascade.mjs
+      - server/llm.mjs
+      - server/master-control.mjs
+      - server/redis.mjs
+      - server/supervisor.mjs
+      - server/tests/event-mesh.test.mjs
+      - server/tests/llm-cascade.test.mjs
+      - server/tests/master-control.test.mjs
+      - server/tests/resilience-core.test.mjs
+      - .github/workflows/agentforge-resilience-deploy.yml
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage exact source files
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          tar -czf /tmp/agentforge-patch.tgz server/.env.example server/agents.mjs server/circuit-breaker.mjs server/checkpoints.mjs server/event-mesh.mjs server/events.mjs server/llm-cascade.mjs server/llm.mjs server/master-control.mjs server/redis.mjs server/supervisor.mjs server/tests/event-mesh.test.mjs server/tests/llm-cascade.test.mjs server/tests/master-control.test.mjs server/tests/resilience-core.test.mjs
+          scp -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key /tmp/agentforge-patch.tgz ubuntu@92.5.177.159:/tmp/
+          cat > /tmp/deploy-agentforge-patch.sh <<'DEPLOY'
+          set -Eeuo pipefail
+          UNIT=villaforge-hub.service
+          systemctl cat "$UNIT" >/dev/null
+          WD=$(systemctl show "$UNIT" -p WorkingDirectory --value)
+          EXEC=$(systemctl show "$UNIT" -p ExecStart --value)
+          MJS=$(printf '%s' "$EXEC" | grep -oE '[^ ;"=]*server\.mjs' | head -1 || true)
+          if [ -n "$MJS" ] && [ "${MJS:0:1}" = / ]; then HUBDIR=$(dirname "$MJS")
+          elif [ -n "$WD" ] && [ -n "$MJS" ]; then HUBDIR=$(dirname "$WD/$MJS")
+          elif [ -n "$WD" ]; then HUBDIR="$WD/server"
+          else echo 'Cannot determine hub source directory'; exit 2; fi
+          test -f "$HUBDIR/server.mjs"
+          STAGE=$(mktemp -d /tmp/vf-agentforge-stage.XXXXXX)
+          BACKUP=$(mktemp -d /tmp/vf-agentforge-backup.XXXXXX)
+          tar -xzf /tmp/agentforge-patch.tgz -C "$STAGE"
+          FILES=("server/.env.example" "server/agents.mjs" "server/circuit-breaker.mjs" "server/checkpoints.mjs" "server/event-mesh.mjs" "server/events.mjs" "server/llm-cascade.mjs" "server/llm.mjs" "server/master-control.mjs" "server/redis.mjs" "server/supervisor.mjs" "server/tests/event-mesh.test.mjs" "server/tests/llm-cascade.test.mjs" "server/tests/master-control.test.mjs" "server/tests/resilience-core.test.mjs")
+          for f in "${FILES[@]}"; do
+            test -f "$STAGE/$f"
+            target="$HUBDIR/${f#server/}"
+            mkdir -p "$(dirname "$target")"
+            if [ -f "$target" ]; then mkdir -p "$BACKUP/$(dirname "${f#server/}")"; cp -a "$target" "$BACKUP/${f#server/}"; else : > "$BACKUP/${f#server/}.absent"; fi
+          done
+          rollback() {
+            rc=$?
+            trap - ERR
+            if [ "$rc" -ne 0 ]; then
+              echo 'Deploy validation failed; restoring only staged files.'
+              for f in "${FILES[@]}"; do
+                target="$HUBDIR/${f#server/}"
+                if [ -f "$BACKUP/${f#server/}.absent" ]; then rm -f "$target"
+                elif [ -f "$BACKUP/${f#server/}" ]; then cp -a "$BACKUP/${f#server/}" "$target"; fi
+              done
+              systemctl restart "$UNIT" || true
+            fi
+            rm -rf "$STAGE" "$BACKUP"
+            exit "$rc"
+          }
+          trap rollback ERR
+          for f in "${FILES[@]}"; do
+            target="$HUBDIR/${f#server/}"
+            install -o root -g root -m 0644 "$STAGE/$f" "$target"
+          done
+          node --check "$STAGE/server/agents.mjs"
+          node --check "$STAGE/server/circuit-breaker.mjs"
+          node --check "$STAGE/server/checkpoints.mjs"
+          node --check "$STAGE/server/event-mesh.mjs"
+          node --check "$STAGE/server/events.mjs"
+          node --check "$STAGE/server/llm-cascade.mjs"
+          node --check "$STAGE/server/llm.mjs"
+          node --check "$STAGE/server/master-control.mjs"
+          node --check "$STAGE/server/redis.mjs"
+          node --check "$STAGE/server/supervisor.mjs"
+          node --check "$STAGE/server/tests/event-mesh.test.mjs"
+          node --check "$STAGE/server/tests/llm-cascade.test.mjs"
+          node --check "$STAGE/server/tests/master-control.test.mjs"
+          node --check "$STAGE/server/tests/resilience-core.test.mjs"
+          cd "$HUBDIR"
+          VF_TEST=1 timeout 240 node --test "$HUBDIR/tests/event-mesh.test.mjs" "$HUBDIR/tests/llm-cascade.test.mjs" "$HUBDIR/tests/master-control.test.mjs" "$HUBDIR/tests/resilience-core.test.mjs"
+          systemctl restart "$UNIT"
+          for attempt in $(seq 1 20); do
+            if systemctl is-active --quiet "$UNIT"; then break; fi
+            sleep 2
+          done
+          systemctl is-active "$UNIT"
+          PORT=
+          for attempt in $(seq 1 15); do
+            for p in $(ss -ltnpH 2>/dev/null | awk 'tolower($0) ~ /node|mainthread/ {split($4,a,":"); p=a[length(a)]; if(p ~ /^[0-9]+$/) print p}' | sort -u); do
+              if curl --fail --silent --show-error --max-time 3 "http://127.0.0.1:${p}/api/health" -o /tmp/vf-health.json 2>/dev/null &&
+                 node --input-type=module -e 'const fs=await import("node:fs/promises");const d=JSON.parse(await fs.readFile("/tmp/vf-health.json","utf8"));if(d.ok!==true||d.masterControl!==1)process.exit(1)' 2>/dev/null; then PORT=$p; break; fi
+            done
+            [ -n "$PORT" ] && break
+            sleep 2
+          done
+          [ -n "$PORT" ] || { echo 'No healthy local hub listener found'; exit 1; }
+          node --input-type=module -e 'const fs=await import("node:fs/promises");const d=JSON.parse(await fs.readFile("/tmp/vf-health.json","utf8"));console.log("Hub health OK on port",process.argv[1],"; version",d.version,"routes",d.routes)' "$PORT"
+          trap - ERR
+          rm -rf "$STAGE" "$BACKUP"
+          echo 'AGENTFORGE_RESILIENCE_SAFE_DEPLOY_OK'
+          DEPLOY
+          scp -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key /tmp/deploy-agentforge-patch.sh ubuntu@92.5.177.159:/tmp/
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash /tmp/deploy-agentforge-patch.sh'
+      - name: Verify public hub health
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 3 --max-time 20 https://hub.cybersarah-ki.com/api/health -o /tmp/public-health.json
+          python3 -c 'import json; d=json.load(open("/tmp/public-health.json")); assert d.get("ok") is True and d.get("masterControl") == 1; print("PUBLIC_HUB_HEALTH_OK:", d.get("version"), "routes:", d.get("routes"))'

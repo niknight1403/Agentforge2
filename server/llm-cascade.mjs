@@ -48,11 +48,18 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    if(seen.has(identity))continue;seen.add(identity);
    if(clock()>=deadline)break;
    const limit=isLocalRoute(r)?Math.max(1,Number(process.env.OLLAMA_MAX_PARALLEL)||1):Math.max(1,Number(process.env.VF_LLM_ROUTE_CONCURRENCY)||3);
-   const slotDeadline=isLocalRoute(r)?deadline:cloudDeadline;
+   // A saturated local endpoint must not consume the whole request budget
+   // while a cloud failover is available. Queue briefly, then let the cascade
+   // continue to the next independent route.
+   const localQueueWaitMs=Math.max(25,Math.min(Number(process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS)||5000,30000));
+   const slotDeadline=isLocalRoute(r)?Math.min(deadline,clock()+localQueueWaitMs):cloudDeadline;
    if(!await acquire(r.base_url,limit,slotDeadline)){attempted.push({route:r.name,code:'BUSY'});continue;}
    if(clock()>=deadline){release(r.base_url);break;}
    const started=clock();
    try {
+    // Lokale Modelle laufen hinter mehreren getesteten Alternativen. Begrenze
+    // einen einzelnen langsamen Versuch, damit die Kaskade schnell weiterkommt.
+    // Große lokale Installationen können den Wert bis 90 s anheben.
     const localTimeoutMs=Math.max(5000,Math.min(Number(process.env.VF_LLM_LOCAL_TIMEOUT_MS)||30000,90000));
     const defaultMs=isLocalRoute(r)?localTimeoutMs:Math.max(500,Math.min(Number(process.env.VF_LLM_CLOUD_TIMEOUT_MS)||8000,30000));
     const timeoutMs=Math.max(1,Math.min(Number(opts.timeoutMs)||defaultMs,defaultMs,(isLocalRoute(r)?deadline:cloudDeadline)-clock()));

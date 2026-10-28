@@ -13,6 +13,7 @@ import { resolve, join, dirname } from 'node:path';
 import { projectSummary, searchProject, readProjectFile, runCommand, safePath } from './fs-tools.mjs';
 import { canUseTool, toolPackOf, packEnabled } from './packs.mjs';
 import { generateMedia, mediaCapabilities } from './media.mjs';
+import { saveCheckpoint, recoverCheckpoint } from './checkpoints.mjs';
 
 export const WORKSPACE = PROJECT_WORKSPACE;
 mkdirSync(WORKSPACE, { recursive: true });
@@ -798,8 +799,8 @@ function openTasks(villaId) {
 }
 
 /** Fuehrt einen Agenten in einem begrenzten ReAct-Loop aus. */
-export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 1500, temperature, villaId = agent.villa_id, mode = 'agent', reflect } = {}) {
-  const ctx = { villaId, agentId: agent.id };
+export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 1500, temperature, villaId = agent.villa_id, mode = 'agent', reflect, taskId } = {}) {
+  const ctx = { villaId, agentId: agent.id, taskId };
   const context = statusContext(villaId);
   const history = [
     { role: 'system', content: `${agent.system_prompt}\nEigene Skills:\n${skillInstructions()}${memoryContext(villaId, agent.id)}\n\nWerkzeuge: ${JSON.stringify(TOOL_SPECS)}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
@@ -807,6 +808,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
   ];
 
   const trace = [];
+  const repeatedCalls = new Map();
   for (let step = 0; step < maxSteps; step++) {
     let out;
     try {
@@ -829,6 +831,13 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
     if (parsed && parsed.tool && TOOLS[parsed.tool]) {
       const result = await runTool(ctx, parsed.tool, parsed.args);
       trace.push({ step, tool: parsed.tool, args: parsed.args, result });
+      const fingerprint=JSON.stringify([parsed.tool,parsed.args||{}]);
+      const resultFingerprint=String(result).slice(0,1000);
+      const previous=repeatedCalls.get(fingerprint);
+      const repeats=previous?.result===resultFingerprint?(previous.count+1):1;
+      repeatedCalls.set(fingerprint,{result:resultFingerprint,count:repeats});
+      if (ctx.taskId) saveCheckpoint({taskId:ctx.taskId,agentId:agent.id,state:{step:step+1,lastTool:parsed.tool,completedTools:[...new Set(trace.filter(t=>t.tool).map(t=>t.tool))],repeatCount:repeats}});
+      if (repeats>=3) return {error:`Supervisor stopped a repeated ${parsed.tool} call without a state change.`,code:'AGENT_LOOP',trace};
       history.push({ role: 'assistant', content: out.content });
       history.push({ role: 'user', content: `Werkzeug-Ergebnis (${parsed.tool}): ${String(result).slice(0, 2000)}` });
       continue;
@@ -1379,6 +1388,7 @@ export async function executeTask(villaId, task) {
   // Bevorzugt einen freien Agenten der passenden Rolle, damit parallele
   // Aufgaben nicht denselben Agenten doppelt belegen.
   const agent =
+    (task.agent_id ? db.prepare('SELECT * FROM agents WHERE id = ? AND villa_id = ?').get(task.agent_id,villaId) : null) ||
     db.prepare("SELECT * FROM agents WHERE villa_id = ? AND role = ? AND is_root = 0 AND status = 'IDLE' LIMIT 1").get(villaId, role) ||
     db.prepare("SELECT * FROM agents WHERE villa_id = ? AND role = ? AND is_root = 0 LIMIT 1").get(villaId, role) ||
     db.prepare("SELECT * FROM agents WHERE villa_id = ? AND is_root = 0 AND status = 'IDLE' LIMIT 1").get(villaId) ||
@@ -1392,6 +1402,10 @@ export async function executeTask(villaId, task) {
 
   const idea = db.prepare('SELECT idea FROM villas WHERE id = ?').get(villaId)?.idea;
   const profile = projectProfile(villaId);
+  const recovery = recoverCheckpoint(task.id,agent.id);
+  const recoveryHint = recovery && recovery.state?.status !== 'completed'
+    ? `\nWIEDERAUFNAHME: Checkpoint ${recovery.checkpointId}, Schritt ${recovery.state.step || recovery.sequence}. Prüfe zuerst den vorhandenen Projektzustand und setze bei den noch fehlenden Abnahmekriterien fort; wiederhole bereits ausgeführte Änderungen nicht blind.`
+    : '';
   const recent = db.prepare(
     "SELECT title, result FROM tasks WHERE villa_id = ? AND status = 'DONE' ORDER BY id DESC LIMIT 4"
   ).all(villaId).map((t) => `- ${t.title}: ${String(t.result || '').replace(/\s+/g, ' ').slice(0, 160)}`).join('\n');
@@ -1405,6 +1419,7 @@ export async function executeTask(villaId, task) {
     recent ? `Kuerzlich erledigt (baue darauf auf, wiederhole nichts):\n${recent}\n` : '',
     `Deine Teilaufgabe: ${task.title}`,
     `Beschreibung: ${task.description}`,
+    recoveryHint,
     '',
     codeRole
       ? 'Liefere ECHTEN CODE: Schreibe die Umsetzung als echte Dateien mit code_write in den Projektordner (z.B. src/main.py, tests/, package.json, requirements.txt). Reine Berichte ohne neue Dateien reissen das Qualitaetstor. Nutze project_read/project_search/project_run zum Pruefen und sichere Ergebnisnotizen zusaetzlich mit artifact_write/artifact_patch.'
@@ -1418,8 +1433,9 @@ export async function executeTask(villaId, task) {
   const maxSteps = ['CODER', 'ARCHITECT', 'INTEGRATOR'].includes(role) ? 12 : codeRole ? 8 : 6;
   const maxTokens = ['CODER', 'ARCHITECT', 'DOCUMENTER', 'INTEGRATOR'].includes(role) ? 3500 : 1400;
   let res;
-  try { res = await runAgent(agent,prompt,{maxSteps,villaId,maxTokens}); }
+  try { res = await runAgent(agent,prompt,{maxSteps,villaId,maxTokens,taskId:task.id}); }
   catch(error){
+    saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:'interrupted',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,errorCode:String(error.code||'AGENT_ERROR').slice(0,80)}});
     db.prepare("UPDATE agents SET status='IDLE',last_active_at=? WHERE id=?").run(now(),agent.id);
     db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run(error.code==='LLM_UNAVAILABLE'?'LLM_UNAVAILABLE: Warte auf echte Modellverbindung.':'Agentenlauf unterbrochen.',now(),task.id);
     if(error.code==='LLM_UNAVAILABLE')db.prepare("UPDATE villas SET status='PAUSED',updated_at=? WHERE id=?").run(now(),villaId);
@@ -1427,6 +1443,7 @@ export async function executeTask(villaId, task) {
   }
 
   if(res.code==='LLM_UNAVAILABLE'||res.offline){
+    saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:'waiting_for_model',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,errorCode:'LLM_UNAVAILABLE'}});
     db.prepare("UPDATE agents SET status='IDLE',last_active_at=? WHERE id=?").run(now(),agent.id);
     db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run('LLM_UNAVAILABLE: Warte auf echte Modellverbindung.',now(),task.id);
     throw Object.assign(new Error('Kein echtes Modell erreichbar; Aufgabe bleibt offen.'),{code:'LLM_UNAVAILABLE',statusCode:503});
@@ -1437,6 +1454,7 @@ export async function executeTask(villaId, task) {
   if (!res.error && codeRole) {
     const gate = await runQualityGate(villaId, task, answer);
     if (!gate.passed) {
+      saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:'quality_gate_failed',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,errorCode:'QUALITY_GATE'}});
       db.prepare('UPDATE tasks SET status = ?, result = ?, priority = MAX(1,priority - 1), retry_count=COALESCE(retry_count,0)+1, updated_at = ? WHERE id = ?')
         .run(Number(task.retry_count||0)>=2?'FAILED':'PENDING', `Qualitaetstor nicht bestanden, Retry angefordert:\n${gate.output.slice(0, 1200)}\n\n${answer}`.slice(0, 4000), now(), task.id);
       db.prepare("UPDATE tasks SET title = title || ' [Q-GATE]' WHERE id = ? AND title NOT LIKE '%[Q-GATE]%'").run(task.id);
@@ -1462,6 +1480,7 @@ export async function executeTask(villaId, task) {
   }
 
   db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?').run(res.error ? 'FAILED' : 'DONE', answer.slice(0, 4000), now(), task.id);
+  saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:res.error?'failed':'completed',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,answerBytes:Buffer.byteLength(answer),...(res.error?{errorCode:'AGENT_ERROR'}:{})}});
   if (res.error) {
     recordLesson(villaId, agent.id, `Lehre: ${task.title}`, `Aufgabe schlug fehl. Ursache analysieren und beim naechsten Versuch zuerst beheben:\n${String(res.error).slice(0, 600)}`);
   }

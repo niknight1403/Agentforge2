@@ -59,6 +59,25 @@ test('Lokaler Parallelitätsdeckel reiht Requests ein statt parallele Villen als
  const first=run([]);const second=run([]);await new Promise(r=>setImmediate(r));assert.equal(calls,1);
  release();const [a,b]=await Promise.all([first,second]);assert.equal(calls,2);assert.equal(a.failovers.length,0);assert.equal(b.failovers.length,0);
 });
+test('Volle lokale Warteschlange gibt schnell an eine andere Route ab',async()=>{
+ const previous=process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS;
+ process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS='25';
+ try {
+  let release;const wait=new Promise(r=>release=r);const seen=[];
+  const rows=[route(1,'ollama'),route(2,'gemini')];
+  const run=makeCascade({routes:()=>rows,key:()=>'',call:async r=>{seen.push(r.provider);if(r.provider==='ollama')await wait;return answer;}});
+  const first=run([],{totalTimeoutMs:300});
+  await new Promise(r=>setImmediate(r));
+  const started=Date.now();const second=await run([],{totalTimeoutMs:300});
+  assert.equal(second.content,answer.content);
+  assert.ok(Date.now()-started<200,'local queue should not consume the request budget');
+  assert.deepEqual(seen,['ollama','gemini']);
+  release();await first;
+ } finally {
+  if(previous===undefined)delete process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS;
+  else process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS=previous;
+ }
+});
 test('Keine doppelten Requests für denselben Endpoint und dasselbe Modell',async()=>{
  let n=0;const r=route(1,'gemini');const run=makeCascade({routes:()=>[r,{...r,id:2}],key:()=>'',call:async()=>{n++;throw Error('down');}});
  await assert.rejects(run([]));assert.equal(n,1);

@@ -250,3 +250,51 @@ export async function redisTryPing() {
     return false;
   }
 }
+
+/** Durable Redis Streams append; telemetry callers should send structured metadata only. */
+export async function redisTryStreamAdd(stream, fields, { maxLength = 100_000 } = {}) {
+  try {
+    const entries = Object.entries(fields || {}).flatMap(([key, value]) => [key, String(value)]);
+    return await redisCommand('XADD', stream, 'MAXLEN', '~', String(Math.max(100, Math.trunc(maxLength))), '*', ...entries);
+  } catch (err) { lastError = err; return null; }
+}
+
+export async function redisTryCreateConsumerGroup(stream, group) {
+  try { return await redisCommand('XGROUP', 'CREATE', stream, group, '0', 'MKSTREAM'); }
+  catch (err) {
+    if (/BUSYGROUP/i.test(err.message || '')) return 'BUSYGROUP';
+    lastError = err; return null;
+  }
+}
+
+function decodeStreamEntries(entries) {
+  return (entries || []).map(([id, raw]) => {
+    const fields = {};
+    for (let i = 0; i < (raw || []).length; i += 2) fields[String(raw[i])] = String(raw[i + 1] ?? '');
+    let event = null;
+    try { event = JSON.parse(fields.json || '{}'); } catch { /* malformed entry is returned with parseError */ }
+    return { id: String(id), fields, event, parseError: !event };
+  });
+}
+
+/** Non-blocking group read; avoids pinning the shared RESP socket on XREAD BLOCK. */
+export async function redisTryReadConsumerGroup(stream, group, consumer, { count = 10 } = {}) {
+  try {
+    const result = await redisCommand('XREADGROUP', 'GROUP', group, consumer, 'COUNT', String(Math.max(1, Math.min(100, count))), 'STREAMS', stream, '>');
+    const rows = Array.isArray(result) ? result.flatMap(([, entries]) => decodeStreamEntries(entries)) : [];
+    return rows;
+  } catch (err) { lastError = err; return null; }
+}
+
+/** Reclaim stale pending work after a consumer crash (Redis 6.2+). */
+export async function redisTryClaimStale(stream, group, consumer, { minIdleMs = 30_000, count = 10 } = {}) {
+  try {
+    const result = await redisCommand('XAUTOCLAIM', stream, group, consumer, String(Math.max(1_000, minIdleMs)), '0-0', 'COUNT', String(Math.max(1, Math.min(100, count))));
+    return Array.isArray(result) ? decodeStreamEntries(result[1]) : [];
+  } catch (err) { lastError = err; return null; }
+}
+
+export async function redisTryAck(stream, group, ...ids) {
+  try { return Number(await redisCommand('XACK', stream, group, ...ids)); }
+  catch (err) { lastError = err; return null; }
+}

@@ -2,6 +2,7 @@ import { forgeLog } from './keyforge.mjs';
 import { db, now } from './db.mjs';
 import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute } from './llm-config.mjs';
 import { createCascade, orderCascadeRoutes } from './llm-cascade.mjs';
+import { createCircuitBreaker } from './circuit-breaker.mjs';
 import { userStore, quotaLeft, chargeTokens } from './auth.mjs';
 
 /** Liefert einen Key aus Secrets-Store oder Umgebung. */
@@ -143,14 +144,20 @@ function rateLimited(route) {
   return false;
 }
 
+const providerCircuits=createCircuitBreaker({
+ failureThreshold:Math.max(1,Number(process.env.VF_LLM_CIRCUIT_FAILURES)||3),
+ resetAfterMs:Math.max(1000,Number(process.env.VF_LLM_CIRCUIT_RESET_MS)||30000)
+});
+
 async function callOpenAiCompatible(route, messages, opts) {
   if (!isLocalRoute(route) && rateLimited(route)) {
     const err = new Error('Route lokal gedrosselt (' + routeRpm(route) + ' req/min)');
     err.busy = true; // Drosselung ist kein Fehler der Route: keine Sperre, kein Zaehler
     throw err;
   }
-  if (!isLocalRoute(route)) return callOpenAiCompatibleRaw(route, messages, opts);
-  return callOpenAiCompatibleRaw(route,messages,opts);
+  let key;
+  try { key=new URL(route.base_url).host; } catch { key=String(route.provider||'unknown'); }
+  return providerCircuits.execute(key,()=>callOpenAiCompatibleRaw(route,messages,opts));
 }
 
 const localModels=new Map();
