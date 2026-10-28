@@ -118,6 +118,31 @@ export function userForToken(token) {
   return row;
 }
 
+/* ---- Login-Bremse (Brute-Force-Schutz, In-Memory) ---- */
+const LOGIN_MAX_FAILURES = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_BLOCK_MS = 15 * 60 * 1000;
+const loginFailures = new Map();
+
+/** Verbleibende Sperrzeit in ms fuer einen Schluessel (E-Mail|IP). */
+export function loginBlockedFor(key, at = now()) {
+  const e = loginFailures.get(key);
+  if (!e) return 0;
+  return e.blockedUntil > at ? e.blockedUntil - at : 0;
+}
+
+/** Fehlversuch zaehlen; ab LOGIN_MAX_FAILURES im Fenster wird gesperrt. */
+export function recordLoginFailure(key, at = now()) {
+  const e = loginFailures.get(key) || { count: 0, first: at, blockedUntil: 0 };
+  if (at - e.first > LOGIN_WINDOW_MS) { e.count = 0; e.first = at; }
+  e.count += 1;
+  if (e.count >= LOGIN_MAX_FAILURES) { e.blockedUntil = at + LOGIN_BLOCK_MS; e.count = 0; e.first = at; }
+  loginFailures.set(key, e);
+  return { count: e.count, blockedUntil: e.blockedUntil };
+}
+
+export function clearLoginFailures(key) { loginFailures.delete(key); }
+
 export function userForRequest(req) {
   const header = String(req.headers.authorization || '');
   if (!header.startsWith('Bearer ')) return null;
