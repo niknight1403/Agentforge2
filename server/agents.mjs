@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 25012)
-Total output lines: 1564
-
 import { studioStatus,proposeDesigns } from './studio.mjs';
 import { executeRemoteWorker } from './remote-worker.mjs';
 import { PROJECT_WORKSPACE,ownProjectDir,verifyProjectRuntime,ensureVerificationTasks } from './project-verification.mjs';
@@ -663,7 +660,264 @@ export async function analyzeProject(villaId, rootId) {
   const res = await runAgent(agent, prompt, { maxSteps: 6, villaId, mode: 'analysis' });
 
   let parsed = null;
-  try { parsed = JS…5012 tokens truncated….exists) {
+  try { parsed = JSON.parse(String(res.answer || '').replace(/^```json\s*|\s*```$/g, '')); } catch { parsed = null; }
+
+  const decision = ['REBUILD', 'OPTIMIZE'].includes(parsed?.decision) ? parsed.decision : 'OPTIMIZE';
+  const analysisText = [
+    `Entscheidung: ${decision}`,
+    '',
+    `Zusammenfassung: ${parsed?.summary || 'Keine Angabe (Offline-Planer).'}`,
+    '',
+    `Begruendung: ${parsed?.rationale || 'Ohne angebundenes Sprachmodell wurde regelbasiert entschieden.'}`,
+    '',
+    'Behalten: ' + ((parsed?.keep || []).join('; ') || '—'),
+    'Ersetzen: ' + ((parsed?.replace || []).join('; ') || '—'),
+    'Risiken: ' + ((parsed?.risks || []).join('; ') || '—'),
+    '',
+    'Fakten:',
+    facts
+  ].join('\n');
+
+  db.prepare('INSERT INTO reports (villa_id, kind, title, content, data, created_at) VALUES (?,?,?,?,?,?)')
+    .run(villaId, 'ANALYSIS', `Analyse: ${villa.name}`, analysisText, JSON.stringify(parsed || {}), now());
+  db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
+    .run(villaId, rootId, 'villa', 'DECISION', `Analyse: ${decision}`, analysisText.slice(0, 1500), 10, now());
+  db.prepare('UPDATE villas SET mode = ?, updated_at = ? WHERE id = ?').run(decision, now(), villaId);
+  emit('report', { villaId, kind: 'ANALYSIS', decision });
+
+  const tasks = Array.isArray(parsed?.tasks) && parsed.tasks.length ? parsed.tasks : derivePlan(villa.idea, 12).tasks;
+  return { decision, plan: { summary: parsed?.summary || `Analyse ${decision}`, tasks } };
+}
+
+/* ------------------------------------------------------------------ */
+/* Agenten                                                             */
+/* ------------------------------------------------------------------ */
+
+const ROLE_BRIEF = {
+  ROOT: 'Du bist der Deep Agent und leitest die Villa wie ein erfahrener CTO. Vor jeder Planung prufst du studio_status, maturity_check und backlog_review. Bei UI-Ideen nutzt du studio_designs für zwei konkrete Designrichtungen; speichere die Nutzerentscheidung als Vorgabe. Bei Bild-, Video-, Audio- und Live-Performance-Aufträgen triffst du die Formatentscheidung anhand des Ziels, prüfst zuerst media_capabilities und nutzt bei vorhandener Route media_generate. Wenn eine Fähigkeit fehlt, erstelle mit media_prepare ein direkt nutzbares Produktionspaket und einen konkreten nächsten Integrationsschritt; behaupte nie ein gerendertes Medium ohne gespeicherte und geprüfte Datei. Führe externe Medienjobs nur bei konkretem Nutzerauftrag aus. Zeige die vorhandene Vorschau und prüfbare nächste Schritte. Behaupte keine Live-Ansicht, wenn kein Web-Build existiert. Du delegierst klar (Rolle + Akzeptanzkriterium), pruefst Ergebnisse gegen das Kriterium und legst selbst fehlende Aufgaben an. Jeder Abschluss nennt: was konkret geleistet wurde, was als naechstes folgt und welche Risiken bleiben.',
+  PLANNER: 'Du zerlegst Ziele in scharf umrissene Teilaufgaben. Jede Aufgabe nennt: das konkrete Artefakt (Datei, Bericht, Code), ein pruefbares Akzeptanzkriterium ("Akzeptanz: ..."), die passende Rolle und einen Aufwandsschaetz. Verboten sind vage Aufgaben wie "verbessern" oder "untersuchen" ohne messbares Ziel.',
+  RESEARCHER: 'Du recherchierst belegbar: mindestenens drei Quellen via web_search/web_fetch, Fakten mit Quelle und Datum, Annahmen ausdruecklich als solche markiert, Zahlen mit Spanne statt Scheinpraezision. Am Ende steht eine Quellenliste und eine klare Trennung: belegt / wahrscheinlich / unklar.',
+  ARCHITECT: 'Du entwirfst Architektur im ADR-Stil: Komponenten mit Verantwortlichkeiten, Schnittstellen, Datenmodell, Deployment, bewertete Alternativen mit Begrundung und Fehlermodi (was passiert, wenn X ausfaellt). Vor dem Entwurf liest du mit project_tree/project_read die echte Basis, statt im Blauen zu entwerfen.',
+  CODER: 'Du schreibst produktionsreifen Code: vollstaendige Dateien, Fehler- und Eingabebehandlung, klare Namen, keine Stubs und keine TODOs. Bevor du abschliesst, verifizierst du mit project_run (Build und Tests) und iterierst bis es gruen ist. Bevorzugte Arbeitesweise: echtes Projekt patchen (project_patch/project_write) statt alles neu zu schreiben; in Git-Repos committe du deine Aenderung.',
+  REVIEWER: 'Du pruefst wie ein Senior-Reviewer: jede Fundstelle mit Datei:Zeile, Schweregrad (kritisch/wichtig/kosmetisch) und einer konkreten Loesung, nicht nur dem Befund. Du belegst jeden Befund am echten Code (project_read), nie aus Erinnerung. Security-Checkliste: Injektion, Authentifizierung, Secrets im Code, Fehlerbehandlung.',
+  TESTER: 'Du lieferst echte Tests: happy path, Randfaelle, Fehler- und Timeout-Szenarien, je mit Eingabe und erwartetem Ergebnis. Besteht ein echtes Projekt, schreibst du echte Testdateien (project_write) und fuehrst sie mit project_run aus, statt nur Testfaelle zu beschreiben.',
+  DOCUMENTER: 'Du schreibst Dokumentation, die ein Neuling ohne Nachfragen nutzen kann: Zweck, Schnellstart in max. 5 Schritten, Nutzungsbeispiele, Betrieb und Stolperfallen. Kein Fuelltext, keine Selbstverstaendlichkeiten.',
+  CRITIC: 'Du bist der Advocatus Diaboli: Risiken, Widersprueche, unvalidierte Annahmen und Single Points of Failure. Jeder Punkt: Schweregrad, Beleg (Datei/Bericht/Quelle) und Gegenmassnahme. Du bist direkt, nie destruktiv: dein Ziel ist, Aussetzer vor dem Launch zu finden.',
+  INTEGRATOR: 'Du fuehrst Teilergebnisse zu einem Release-faehigen Ganzen: Vollstaendigkeitspruefung gegen alle Akzeptanzkriterien, Zusammenfuehren der Artefakte, Build und Tests via project_run, am Ende ein klarer Release-Stand mit offenen Restpunkten.',
+  WORKER: 'Du erledigst die zugewiesene Teilaufgabe praeszise und lieferst ein sofort verwertbares Artefakt statt einer Absichtserklaerung. Offene Punkte benennst du ausdruecklich, statt sie zu uebergehen.',
+  BUSINESS: 'Du arbeitest mit konkreten Zahlen: Zielgruppe, Zahlungsbereitschaft, Preisstufen, Kosten, Marge, Break-even. Jede Zahl nennt ihre Annahme und Rechnung, jede Einschaetzung einen Vertrauensbereich. Rechtliche Risiken (DSGVO, Impressum, Lizenzen) pruefst du mit.',
+  GROWTH: 'Du planst Wachstum messbar: 90-Tage-Plan mit Kanaelen, je nach Aufwand, Kosten und erwarteter Wirkung (Range statt Punkt). Aktivierung, Bindung, Empfehlung und ein Messplan (welche KPI, wie gemessen). Ohne Messgroesse gilt ein Vorschlag als unvollstaendig.',
+  STRATEGIST: 'Du denkst in Szenarien und Entscheidungsbaeumen: Zielzustand in 6/12 Monaten, drei Wege dorthin mit Kosten, Risiken und Abbruchkriterien, klarer Weg-Empfehlung mit Begruendung. Du entscheidest, du laberst nicht: jede Analyse endet mit EINER Empfehlung und dem naechsten konkreten Schritt.',
+  REASONER: 'Du zerlegst Probleme in ihre Bausteine: Annahmen, Abhaengigkeiten, Kausalitaeten. Du arbeitest schrittweise von known facts zu unknowns, kennzeichnest jede Ableitung (belegt / gefolgert / spekulativ) und beendest mit dem schwchesten Glied der Argumentation. Ziel: tiefere Antworten als die Frage gestellt hat.',
+  SYNTHESIZER: 'Du verbindest Disziplinen: Technik, Markt, Design und Kosten zu EINEM stimmigen Ganzen. Du erkennst Muster ueber Bereichsgrenzen hinweg, loest Begriffs-Widersprueche zwischen Teilergebnissen auf und machst Kompromisse explizit (was opfern wir wofuer).',
+  OPTIMIZER: 'Du findest den Engpass und hebelt ihn: messbar (vorher/nachher), mit Aufwand-Nutzen-Verhaeltnis und Nebenwirkungen. Du optimierst erst Messbarkeit, dann Durchsatz, dann Kosten — nie auf einer Vermutung, sondern am Profil (project_read, audit, stats).',
+  VERIFIER: 'Du pruefst Behauptungen gegen die Wirklichkeit: jede Aussage kriegt ein Pruefverfahren (wo nachsehen, wie nachmessen, welcher Gegenbeweis wuerde sie umstossen). Nicht verifizierbar heisst "offen", nie "wahr". Du lieferst am Ende eine Tabelle: Behauptung — Pruefung — Ergebnis.'
+};
+
+/** Welche Werkzeuge eine Rolle sinnvoll nutzt - schaerft die Agenten-Prompts. */
+const ROLE_TOOLS = {
+  PLANNER: 'maturity_check, backlog_review, task_create, memory_write, project_tree',
+  RESEARCHER: 'web_search, web_fetch, memory_write, project_search',
+  ARCHITECT: 'memory_write, artifact_write, project_read',
+  CODER: 'project_patch, project_write, artifact_write, artifact_patch, artifact_list, project_read, project_search, project_run',
+  REVIEWER: 'memory_search, memory_write, project_read, project_patch, project_run',
+  TESTER: 'project_write, project_patch, artifact_write, artifact_patch, memory_write, project_run',
+  DOCUMENTER: 'artifact_write, project_read',
+  CRITIC: 'memory_search, memory_write, project_read',
+  INTEGRATOR: 'artifact_list, artifact_write, artifact_patch, project_patch, project_write, memory_write, project_run',
+  WORKER: 'artifact_write, artifact_patch, memory_write',
+  BUSINESS: 'report_write, memory_write, web_search',
+  GROWTH: 'report_write, memory_write, web_search, web_fetch',
+  ROOT: 'maturity_check, council_convene, backlog_review, memory_write, memory_search, task_create, agent_spawn, report_write, media_capabilities, media_prepare, media_generate',
+  STRATEGIST: 'maturity_check, backlog_review, memory_write, report_write, project_tree',
+  REASONER: 'memory_search, memory_write, project_read, project_search, report_write',
+  SYNTHESIZER: 'memory_search, memory_write, artifact_write, report_write, backlog_review',
+  OPTIMIZER: 'project_read, project_search, project_patch, project_run, memory_write, report_write',
+  VERIFIER: 'project_read, project_search, project_run, web_search, memory_write, report_write'
+};
+
+/** Gemeinsamer Qualitaetsauftrag fuer alle Agenten. */
+const QUALITY_RULES = [
+  'Ergebnis statt Absicht: Jede Antwort liefert ein verwertbares Artefakt (Code, Bericht oder Plan mit Zahlen).',
+  'Behaupte nur Geprueftes: Pruefe Fakten mit Werkzeugen (project_read, web_search, memory_search), bevor du sie aussprichst. Erfundene Zahlen oder Quellen sind ein Fehler.',
+  'Verifiziere dich selbst: Bei Code und Aenderungen am Projekt laeuft vor dem Abschluss project_run (Build/Tests). Nur gruen gilt als fertig.',
+  'Speichere Entscheidungen und Lehren mit memory_write, damit das Team davon profitiert.',
+  'Ehrlichkeit ueber Vollstaendigkeit: Benenne offen gebliebene Punkte und Risiken am Ende ausdruecklich.',
+  'Antworte auf Deutsch, klar gegliedert, mit kurzen Absaetzen und Aufzaehlungen.',
+  'Produktstandard (Nutzerdirektive): Alles was du lieferst ist professionell und veroeffentlichungsreif - keine Platzhalter, kein Lorem Ipsum, kein "Coming Soon", sondern echte, finale Inhalte, professionelle Formulierungen und ein ansprechendes, konsistentes Erscheinungsbild.',
+  'Lieferbarkeit: Nach jedem groesseren Schritt steht ein lauffaehiger Stand (lauffaehige index.html bzw. lauffaehiges Projekt), damit die APK-Baustrasse jederzeit eine installierbare APK liefern kann.',
+  'Fokus: Die Villa entwickelt EIN Produkt pro Projekt konsequent zu Ende - Vollstaendigkeit und Fertigstellung haben Vorrang vor neuen Nebenideen.'
+].join('\n- ');
+
+export function agentCount(villaId) {
+  return db.prepare('SELECT COUNT(*) c FROM agents WHERE villa_id = ?').get(villaId).c;
+}
+function maxAgents(villaId) {
+  return db.prepare('SELECT max_agents m FROM villas WHERE id = ?').get(villaId)?.m ?? 1000;
+}
+
+/** Version der Prompt-Vorlage: Bei Erhoehung frischt der Hub beim Start alle Agenten-Prompts auf. */
+export const PROMPT_VERSION = 5;
+
+/** Zentraler Prompt-Bau: eine Quelle der Wahrheit fuer Neuanlage UND Migration. */
+export function buildSystemPrompt(role) {
+  const tools = ROLE_TOOLS[role] || ROLE_TOOLS.WORKER;
+  return [
+    ROLE_BRIEF[role] || ROLE_BRIEF.WORKER,
+    `Rolle: ${role}.`,
+    `Bevorzugte Werkzeuge: ${tools}.`,
+    `Qualitaetsregeln:\n- ${QUALITY_RULES}`,
+    'Schliesse jede Aufgabe mit einem pruefbaren Ergebnis ab.'
+  ].join('\n');
+}
+
+/**
+ * Migration: setzt ALLE Agenten aller Villen auf die aktuelle Prompt-Version.
+ * Idempotent - Agenten mit aktuellem Prompt bleiben unberuehrt. So profitieren
+ * auch laufende Villen sofort von verbesserten Rollen-Anweisungen.
+ */
+export function refreshAgentPrompts() {
+  const rows = db.prepare('SELECT id, role, system_prompt FROM agents').all();
+  const upd = db.prepare('UPDATE agents SET system_prompt = ? WHERE id = ?');
+  let n = 0;
+  for (const a of rows) {
+    const fresh = buildSystemPrompt(a.role);
+    if (a.system_prompt !== fresh) { upd.run(fresh, a.id); n++; }
+  }
+  return n;
+}
+
+export function insertAgent(villaId, name, role, parentId = null, isRoot = 0) {
+  const t = now();
+  return db.prepare(
+    'INSERT INTO agents (villa_id, name, role, system_prompt, status, is_root, parent_id, permissions, autonomy_level, created_at, last_active_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(villaId, name, role, buildSystemPrompt(role), 'IDLE', isRoot, parentId, 127, 3, t, t).lastInsertRowid;
+}
+
+export function memoryContext(villaId, agentId, limit = 12) {
+  const rows = db.prepare(
+    'SELECT kind, title, content FROM memories WHERE villa_id = ? ORDER BY importance DESC, id DESC LIMIT ?'
+  ).all(villaId, limit);
+  if (!rows.length) return '';
+  return '\n\nBekanntes Gedaechtnis:\n' + rows.map((r) => `- [${r.kind}] ${r.title}: ${String(r.content || '').slice(0, 300)}`).join('\n');
+}
+
+function openTasks(villaId) {
+  return db.prepare(
+    "SELECT * FROM tasks WHERE villa_id = ? AND status IN ('PENDING','READY') ORDER BY priority ASC, id ASC"
+  ).all(villaId);
+}
+
+/** Fuehrt einen Agenten in einem begrenzten ReAct-Loop aus. */
+export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 1500, temperature, villaId = agent.villa_id, mode = 'agent', reflect, taskId, promptHint, preferredModel } = {}) {
+  const ctx = { villaId, agentId: agent.id, taskId };
+  const context = statusContext(villaId);
+  const history = [
+    { role: 'system', content: `${agent.system_prompt}${promptHint ? `\n\nSupervisor-Korrektur (beachte diese Strategie bei diesem Lauf):\n${String(promptHint).slice(0, 2000)}` : ''}\nEigene Skills:\n${skillInstructions()}${memoryContext(villaId, agent.id)}\n\nWerkzeuge: ${JSON.stringify(TOOL_SPECS)}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
+    { role: 'user', content: userPrompt }
+  ];
+
+  const trace = [];
+  const repeatedCalls = new Map();
+  for (let step = 0; step < maxSteps; step++) {
+    let out;
+    try {
+      out = await chat(history, {
+        json: true, mode, context,
+        // Rollen-Qualitaetsrouting: Code-/Fuehrungsrollen bekommen die beste Route
+        // (FALLBACK = hoechste Prioritaet zuerst) statt der Rotation.
+        role: agent.role,
+        temperature: temperature ?? (agent.role === 'CODER' ? 0.3 : 0.4),
+        maxTokens, ...(preferredModel ? { preferredModel } : {})
+      });
+    } catch (err) {
+      return { error: String(err.message || err), code:err.code, trace };
+    }
+    let parsed = null;
+    // JSON-Reparatur: Modelle antworten gelegentlich mit Code-Fences um das JSON.
+    const raw = String(out.content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    try { parsed = JSON.parse(raw); } catch { /* Freitext */ }
+
+    if (parsed && parsed.tool && TOOLS[parsed.tool]) {
+      const result = await runTool(ctx, parsed.tool, parsed.args);
+      trace.push({ step, tool: parsed.tool, args: parsed.args, result });
+      const fingerprint=JSON.stringify([parsed.tool,parsed.args||{}]);
+      const resultFingerprint=String(result).slice(0,1000);
+      const previous=repeatedCalls.get(fingerprint);
+      const repeats=previous?.result===resultFingerprint?(previous.count+1):1;
+      repeatedCalls.set(fingerprint,{result:resultFingerprint,count:repeats});
+      if (ctx.taskId) saveCheckpoint({taskId:ctx.taskId,agentId:agent.id,state:{step:step+1,lastTool:parsed.tool,completedTools:[...new Set(trace.filter(t=>t.tool).map(t=>t.tool))],repeatCount:repeats}});
+      if (repeats>=3) return {error:`Supervisor stopped a repeated ${parsed.tool} call without a state change.`,code:'AGENT_LOOP',trace};
+      history.push({ role: 'assistant', content: out.content });
+      history.push({ role: 'user', content: `Werkzeug-Ergebnis (${parsed.tool}): ${String(result).slice(0, 2000)}` });
+      continue;
+    }
+
+    // Freitext statt JSON: weiterarbeiten statt den Lauf abzubrechen.
+    const looksJson = raw.startsWith('{');
+    if (!parsed && !looksJson && step < maxSteps - 1 && out.offline === undefined) {
+      trace.push({ step, note: 'Antwort war kein JSON, Anfrage wiederholt.' });
+      history.push({ role: 'assistant', content: String(out.content || '').slice(0, 400) });
+      history.push({ role: 'user', content: 'Deine Antwort war kein gueltiges JSON. Antworte erneut mit genau einem Objekt: {"tool":"...","args":{...}} oder {"final":"..."}.' });
+      continue;
+    }
+
+    const final = parsed?.final ?? out.content;
+
+    /* Reflexions-Loop: mit echtem Modell prueft der Agent seine eigene
+       Antwort noch einmal gegen die Aufgabe und verbessert sie bei Bedarf.
+       Offline-Antworten werden nicht reflektiert (kein Modell, kein Nutzen),
+       ein Fehler im Reflexions-Pass faellt sanft auf die Original-Antwort
+       zurueck. Schaltbar: Feature-Pack "reflexion" und VF_REFLECTION=off. */
+    const doReflect = (reflect ?? true)
+      && !out.offline
+      && process.env.VF_REFLECTION !== 'off'
+      && packEnabled('reflexion');
+    if (doReflect) {
+      try {
+        const refl = await chat([
+          ...history,
+          { role: 'assistant', content: String(final) },
+          { role: 'user', content: 'REFLEXION: Pruefe deine Antwort strikt gegen die urspruengliche Aufgabe. Vollstaendig? Konkret? Korrekt? Antworte NUR mit JSON: {"verdict":"OK","final":"<deine Antwort, leicht geglaettet>"} oder {"verdict":"IMPROVE","final":"<deutlich verbesserte Antwort>"}.' }
+        ], { json: true, mode, context, role: agent.role, temperature: 0.2, maxTokens, ...(preferredModel ? { preferredModel } : {}) });
+        const rraw = String(refl.content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+        const rp = JSON.parse(rraw);
+        if (rp?.verdict === 'IMPROVE' && rp.final && String(rp.final).trim()) {
+          trace.push({ step, reflection: 'improved' });
+          return { answer: prettify(String(rp.final)), route: out.route, model: out.model, reflection: 'improved', trace, offline: false };
+        }
+        trace.push({ step, reflection: rp?.verdict === 'OK' ? 'ok' : 'ignored', final: true });
+        return { answer: prettify(String(final)), route: out.route, model: out.model, reflection: rp?.verdict === 'OK' ? 'ok' : 'ignored', trace, offline: !!out.offline };
+      } catch {
+        trace.push({ step, reflection: 'skipped', final: true });
+      }
+    }
+    trace.push({ step, final: true });
+    return { answer: prettify(String(final)), route: out.route, model: out.model, reflection: doReflect ? 'off' : undefined, trace, offline: !!out.offline };
+  }
+  return { answer: 'Ich habe die maximale Schrittzahl erreicht. Bitte formuliere die Aufgabe kleiner oder starte die autonome Ausführung.', trace };
+}
+
+/**
+ * Projektspezifischer Kontext: Entscheidung (OPTIMIZE/REBUILD), zentrale
+ * Erkenntnisse und Technik-Stack. Wird in jeden Aufgaben-Prompt eingebaut,
+ * damit jeder Agent das Beste aus DEM Projekt herausholt, nicht generisch arbeitet.
+ */
+export function projectProfile(villaId, maxChars = 1600) {
+  const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(villaId);
+  if (!villa) return '';
+  const lines = [`Ziel: ${String(villa.idea || '').slice(0, 300)}`];
+  if (villa.mode && villa.mode !== 'BUILD') {
+    lines.push(`Vorgehen: ${villa.mode} - bestehende Substanz erhalten und gezielt verbessern, kein Neubau ohne Not.`);
+  }
+  const core = db.prepare(
+    "SELECT title, content FROM memories WHERE villa_id = ? AND kind IN ('DECISION','CONSTRAINT') ORDER BY importance DESC, id DESC LIMIT 6"
+  ).all(villaId);
+  for (const m of core) lines.push(`- ${m.title}: ${String(m.content || '').replace(/\s+/g, ' ').slice(0, 240)}`);
+  const root = sourceRoot(villaId);
+  if (root) {
+    const s = projectSummary(root);
+    if (s.exists) {
       lines.push(`Technik-Stack: ${s.languages.slice(0, 6).map((l) => `${l.ext} (${l.count})`).join(', ')} bei ${s.files} Dateien.`);
     }
   }
@@ -1167,7 +1421,7 @@ export function recordLesson(villaId, agentId, title, content) {
     .run(villaId, agentId, 'villa', 'LESSON', String(title).slice(0, 200), String(content).slice(0, 1500), 7, now());
 }
 
-export async function executeTask(villaId, task) {
+export async function executeTask(villaId, task, executionOptions = {}) {
   const role = guessRole(task);
   // Bevorzugt einen freien Agenten der passenden Rolle, damit parallele
   // Aufgaben nicht denselben Agenten doppelt belegen.
@@ -1217,7 +1471,9 @@ export async function executeTask(villaId, task) {
   const maxSteps = ['CODER', 'ARCHITECT', 'INTEGRATOR'].includes(role) ? 12 : codeRole ? 8 : 6;
   const maxTokens = ['CODER', 'ARCHITECT', 'DOCUMENTER', 'INTEGRATOR'].includes(role) ? 3500 : 1400;
   let res;
-  try { res = await runAgent(agent,prompt,{maxSteps,villaId,maxTokens,taskId:task.id}); }
+  try { res = await runAgent(agent,prompt,{maxSteps,villaId,maxTokens,taskId:task.id,
+    ...(executionOptions.promptHint ? {promptHint:executionOptions.promptHint} : {}),
+    ...(executionOptions.fallbackModel ? {preferredModel:executionOptions.fallbackModel} : {})}); }
   catch(error){
     saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:'interrupted',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,errorCode:String(error.code||'AGENT_ERROR').slice(0,80)}});
     db.prepare("UPDATE agents SET status='IDLE',last_active_at=? WHERE id=?").run(now(),agent.id);
@@ -1277,11 +1533,11 @@ export async function executeTask(villaId, task) {
 }
 
 /** Same-process idempotency guard shared by local scheduling and mesh callbacks. */
-export function executeTaskOnce(villaId, task) {
+export function executeTaskOnce(villaId, task, executionOptions = {}) {
   const key=String(task?.id);
   const current=taskExecutions.get(key);
   if(current)return current;
-  const execution=executeTask(villaId,task).finally(()=>taskExecutions.delete(key));
+  const execution=executeTask(villaId,task,executionOptions).finally(()=>taskExecutions.delete(key));
   taskExecutions.set(key,execution);
   return execution;
 }
