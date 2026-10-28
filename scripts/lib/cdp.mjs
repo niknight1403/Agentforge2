@@ -8,7 +8,8 @@
  * die eingebaute WebSocket-Implementierung von Node (>= 22).
  */
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
 const CANDIDATES = [
@@ -52,8 +53,12 @@ export function resolveChrome() {
  * Debug-Endpunkt antwortet. Gibt Handle mit stop() zurueck.
  */
 export async function launchChrome({ port = 9333, width = 1440, height = 960, chrome = resolveChrome(), extraArgs = [] } = {}) {
+  // Chrome 136+ requires a non-default profile for remote debugging.
+  // A unique temporary profile also prevents parallel CI runs sharing a lock.
+  const profileDir = mkdtempSync(join(tmpdir(), 'villaforge-chrome-'));
   const args = [
     '--headless=new',
+    `--user-data-dir=${profileDir}`,
     '--no-sandbox',
     '--disable-dev-shm-usage',
     '--disable-gpu',
@@ -71,6 +76,7 @@ export async function launchChrome({ port = 9333, width = 1440, height = 960, ch
   const proc = spawn(chrome, args, { stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';
   proc.stderr.on('data', (d) => { stderr += String(d); });
+  proc.once('exit', () => { try { rmSync(profileDir, { recursive: true, force: true }); } catch {} });
 
   const base = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 30_000;
