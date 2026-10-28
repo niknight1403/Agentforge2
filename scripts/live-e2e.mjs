@@ -274,8 +274,12 @@ async function run() {
   });
 
   await check('Mobile Ansicht (390x844) bleibt bedienbar', async () => {
+    await page.evaluate(`
+      document.querySelector('#closeDetail').click();
+      document.querySelector('.bottomnav .nav-item[data-view="home"]').click();
+      return true;`);
+    await delay(300);
     await page.setViewport(390, 844, { mobile: true });
-    await page.navigate(`http://127.0.0.1:${PORT}/`);
     await delay(900);
     const snap = await page.evaluate(`
       const overflowX = document.documentElement.scrollWidth - window.innerWidth;
@@ -283,11 +287,14 @@ async function run() {
       const create = document.querySelector('#dashboardNewBtn');
       return {
         overflowX,
+        homeVisible: document.querySelector('#view-home').classList.contains('active'),
+        workspaceClosed: document.querySelector('#detailPanel').hidden,
         hasVilla: !!card,
         createBtnHeight: create ? Math.round(create.getBoundingClientRect().height) : 0
       };`);
     await safeShot('05-mobile-uebersicht');
     if (snap.overflowX > 2) throw new Error(`Horizontales Ueberlaufen: ${snap.overflowX}px`);
+    if (!snap.homeVisible || !snap.workspaceClosed) throw new Error('Die mobile Übersicht wird nicht angezeigt');
     if (!snap.hasVilla) throw new Error('Villen-Kachel fehlt in der mobilen Ansicht');
     if (snap.createBtnHeight < 44) throw new Error(`Touch-Ziel zu klein: ${snap.createBtnHeight}px`);
     return `kein Ueberlauf, Touch-Ziel ${snap.createBtnHeight}px`;
