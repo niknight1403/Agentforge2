@@ -134,6 +134,14 @@ async function run() {
     const title = await page.evaluate('return document.title;');
     if (!/VillaForge/.test(title)) throw new Error(`Falscher Titel: ${title}`);
     await page.waitFor("document.querySelector('#healthText').textContent.includes('Hub online')", { timeout: 15_000, label: 'Health-Anzeige' });
+    const initial = await page.evaluate(`return {
+      workspaceHidden: document.querySelector('#detailPanel').hidden,
+      workspaceDisplay: getComputedStyle(document.querySelector('#detailPanel')).display,
+      homeVisible: document.querySelector('#view-home').classList.contains('active')
+    };`);
+    if (!initial.workspaceHidden || initial.workspaceDisplay !== 'none' || !initial.homeVisible) {
+      throw new Error(`Falscher Startzustand: Workspace hidden=${initial.workspaceHidden}, display=${initial.workspaceDisplay}, Home=${initial.homeVisible}`);
+    }
     return title;
   });
 

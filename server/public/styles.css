@@ -849,6 +849,9 @@ small { font-size: 12px; }
 @media (max-width:640px) { .route-chain-grid { grid-template-columns:1fr; } .pack-grid { grid-template-columns:1fr; } .theme-grid { gap:7px; }.theme-card { padding:8px; } }
 @media (prefers-reduced-motion:reduce) { .theme-card,.switch-control span,.switch-control span:after { transition:none; } }
 
+/* Respect the HTML hidden state even for components with explicit display rules. */
+[hidden] { display: none !important; }
+
 /* v1.57.1 final audit overrides: keep later component rules readable too. */
 small { font-size: 12px; }
 .brand small { font-size: 11px; }
