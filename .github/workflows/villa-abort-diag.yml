@@ -1,0 +1,21 @@
+name: Villa-Abbruch-Diagnose
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Diagnose via SSH
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdGRUhMRVInOyB9IH07Cgpjb25zb2xlLmxvZygnPT0gSHViLUxvZzogVmlsbGEtL0FiYnJ1Y2gtRXJlaWduaXNzZSAoNjAgTWluKSA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gam91cm5hbGN0bCAtdSB2aWxsYWZvcmdlLWh1YiAtLXNpbmNlICc2MCBtaW4gYWdvJyAtLW5vLXBhZ2VyIDI+L2Rldi9udWxsIHwgZ3JlcCAtaUUgJ3ZpbGxhfGFib3J0fGFiYnJ1Y2h8ZmFpbGVkfHBhdXNlfHdhaXRpbmd8c2xvdHxzY2hlZHVsZXJ8cXVvdGF8NDI5fGV4aGF1c3R8a2VpbmUgcm91dGV8bm8gcm91dGUnIHwgZ3JlcCAtdiByb3V0ZWZvcmdlIHwgdGFpbCAtNDAiKSk7Cgpjb25zb2xlLmxvZygnPT0gREI6IFZpbGxlbiArIGxldHp0ZXIgRmVobGVyID09Jyk7CmNvbnN0IGRiUGF0aCA9IHJ1bigibHMgL29wdC92aWxsYWZvcmdlLyouZGIgL29wdC92aWxsYWZvcmdlL2RhdGEvKi5kYiAvb3B0L3ZpbGxhZm9yZ2UvaHViLyouZGIgMj4vZGV2L251bGwgfCBoZWFkIC0xIik7CmNvbnNvbGUubG9nKCdEQjogJyArIChkYlBhdGggfHwgJ25pY2h0IGdlZnVuZGVuJykpOwppZiAoZGJQYXRoICYmIGRiUGF0aCAhPT0gJ0ZFSExFUicpIHsKICBjb25zb2xlLmxvZyhydW4oInN1ZG8gc3FsaXRlMyAiICsgZGJQYXRoICsgIiBcIlNFTEVDVCBpZCwgc3Vic3RyKG5hbWUsMSwyOCksIHN0YXR1cywgYXV0b25vbXksIHN1YnN0cihjb2FsZXNjZShsYXN0X2Vycm9yLCcnKSwxLDkwKSBGUk9NIHZpbGxhcyBPUkRFUiBCWSB1cGRhdGVkX2F0IERFU0MgTElNSVQgOFwiIDI+L2Rldi9udWxsIikpOwogIGNvbnNvbGUubG9nKCc9PSBMZXR6dGUgRkFJTEVELVRhc2tzID09Jyk7CiAgY29uc29sZS5sb2cocnVuKCJzdWRvIHNxbGl0ZTMgIiArIGRiUGF0aCArICIgXCJTRUxFQ1QgdmlsbGFfaWQsIHN1YnN0cih0aXRsZSwxLDQwKSwgc3RhdHVzLCBzdWJzdHIoY29hbGVzY2UocmVzdWx0LCcnKSwxLDgwKSBGUk9NIHRhc2tzIFdIRVJFIHN0YXR1cyBJTiAoJ0ZBSUxFRCcsJ0JMT0NLRUQnKSBPUkRFUiBCWSB1cGRhdGVkX2F0IERFU0MgTElNSVQgOFwiIDI+L2Rldi9udWxsIikpOwogIGNvbnNvbGUubG9nKCc9PSBTcGFsdGVuIGRlciB2aWxsYXMtVGFiZWxsZSA9PScpOwogIGNvbnNvbGUubG9nKHJ1bigic3VkbyBzcWxpdGUzICIgKyBkYlBhdGggKyAiIFwiUFJBR01BIHRhYmxlX2luZm8odmlsbGFzKVwiIDI+L2Rldi9udWxsIHwgYXdrIC1GJ3wnICd7cHJpbnQgJDJ9JyB8IHRyICdcXG4nICcgJyIpKTsKfQo=" | base64 -d | node -'
