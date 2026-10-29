@@ -41,6 +41,6 @@ function run(label, args) {
 
 run('Secret-Scan', ['scripts/check-secrets.mjs']);
 const tests = readdirSync(join(root, 'server/tests')).filter((file) => file.endsWith('.test.mjs')).sort().map((file) => join('server/tests', file));
-run(`Unit- und Integrationstests (${tests.length} Testdateien)`, ['--test', ...tests]);
+run(`Unit- und Integrationstests (${tests.length} Testdateien)`, ['--import', join(root, 'server/tests/_env.mjs'), '--test', ...tests]);
 run('Web-Produktionsbuild', ['scripts/build-web.mjs']);
 console.log('\n[check] Alle Qualitaetstore bestanden.');

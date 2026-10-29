@@ -8,6 +8,7 @@ import { resourceStatus, recommendedConcurrency } from './resource-agent.mjs';
 import { freeRouteCycleStatus } from './free-route-cycle.mjs';
 import { pruneHistory } from './maintenance.mjs';
 import { chat, enabledRoutes, resolveKey, derivePlan } from './llm.mjs';
+import { freeOnlyEnabled, isFreeRoute, isLocalRoute } from './llm-config.mjs';
 import { emit } from './events.mjs';
 import { mkdirSync, writeFileSync, readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
 import { execSync,execFileSync } from 'node:child_process';
@@ -1107,15 +1108,17 @@ const verifyThrottle = new Map(); // villaId -> letzter Fail-Fast-Verifikationsz
  * - Offline-Planer: praktisch kostenlos, hoch parallel
  */
 export function pickConcurrency() {
-  const usable = enabledRoutes().filter((r) => r.provider !== 'offline');
-  const fast = usable.filter((r) => r.provider !== 'ollama').length;
+  const usable = enabledRoutes().filter((r) => r.provider !== 'offline' && Number(r.cooldown_until || 0) <= now() && (!r.key_env || resolveKey(r.key_env)) && (!freeOnlyEnabled() || isFreeRoute(r)));
+  // Configured rows are not measured compute capacity. Scale up only after a
+  // recent real cloud success; dead/missing-key routes cannot overload Ollama.
+  const fast = usable.filter((r) => !isLocalRoute(r) && r.status === 'OK' && now() - Number(r.last_used || 0) < 300000).length;
   // Free-Tier-Deckel: Cloud-Routen mit geteilten Kontingenten (Gemini, Groq,
   // OpenRouter) verglasen bei zuvielen gleichzeitigen Anfragen mit 429 oder
   // laufen in lokale Drosseln. Wirksamer Durchsatz entsteht durch MAESSIGE
   // Parallelitaet (VF_MAX_CONCURRENCY, Default 3), nicht durch Sturzbett.
   const cap = Math.max(1, Number(process.env.VF_MAX_CONCURRENCY) || 3);
   const safeCap = Math.max(1, Math.min(cap, recommendedConcurrency()));
-  if (!usable.length) return Math.min(8, safeCap);
+  if (!usable.length) return 1;
   if (fast) return Math.min(safeCap, fast * 2);
   return 1; // Nur Ollama: CPU-Instanz mit 1 paralleler Anfrage
 }
@@ -1261,6 +1264,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
       tasks.sort((a, b) => (guessRole(a) === guessRole(b) ? a.priority - b.priority : 0));
 
       const batchStart = now();
+      if (Number(concurrency) <= 0) job.concurrency = Math.max(1, Math.min(hardCap, pickConcurrency()));
       const batch = tasks.slice(0, job.concurrency);
       for (const task of batch) {
         const startedAt = now();

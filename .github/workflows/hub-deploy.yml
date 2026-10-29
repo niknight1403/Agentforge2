@@ -6,6 +6,8 @@ on:
     paths:
       - 'server/**'
       - '!server/tests/**'
+      - 'package.json'
+      - 'package-lock.json'
       - 'app/src/main/java/dev/villaforge/app/ui/**'
       - 'app/build.gradle.kts'
       - 'docs/releases/**'

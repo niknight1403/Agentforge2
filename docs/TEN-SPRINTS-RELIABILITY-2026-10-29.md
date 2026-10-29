@@ -32,7 +32,7 @@ Produktabschlüsse werden nur durch das vorhandene Produkt-Abnahmegate gemeldet.
 
 ## Verifikation dieses Sprintpakets
 
-Lokales vollständiges Gate: 296 Tests bestanden, 0 fehlgeschlagen; Secret-Scan, JavaScript-Syntaxprüfung und Web-Produktionsbuild erfolgreich. Externe Providerverfügbarkeit und Projektabschlüsse sind davon getrennte Live-Nachweise.
+Lokales vollständiges Gate: 297 Tests bestanden, 0 fehlgeschlagen; Secret-Scan, JavaScript-Syntaxprüfung und Web-Produktionsbuild erfolgreich. Externe Providerverfügbarkeit und Projektabschlüsse sind davon getrennte Live-Nachweise.
 
 Der produktive Master-Chat-Test startet nach einem erfolgreichen Hub-Deploy per workflow_run. Die frühere feste 45-Sekunden-Verzögerung wurde entfernt, damit der Test nicht während eines Neustarts läuft.
 
@@ -41,3 +41,5 @@ Der produktive Master-Chat-Test startet nach einem erfolgreichen Hub-Deploy per 
 Interaktive Anfragen werden in der Modellwarteschlange bevorzugt, aber nach zwei interaktiven Freigaben kommt ein wartender Hintergrundjob zum Zug. Der Master plant mit einem strukturierten Zustand von maximal 8000 Zeichen statt abgeschnittenem Vollstatus; Skill-Bodies werden nicht mitgesendet. Vorherige Chatbeiträge sind begrenzt, die aktuelle Nutzernachricht bleibt vollständig. Das reduziert lokale Prefill-Last und verhindert Queue-Verhungern. Providerquoten werden dadurch nicht erhöht.
 
 CI-Isolation: Hub-Unit-Tests verwenden stets eigene temporäre Datenbanken und Workspaces und übernehmen keine Redis-Verbindung aus der vorgeschalteten Runtime-Integration. Die TypeScript-Runtime-Integration bleibt mit echtem Redis/PostgreSQL aktiv; RESP-Client-Tests verwenden eigene TCP-Fixtures. Reine Hub-Teständerungen lösen keinen Produktionsneustart aus.
+
+Die automatische Agentenparallelität zählt nur konfigurierte, freigegebene Routen ohne Cooldown und erhöht die Parallelität erst nach einem kürzlichen echten Cloud-Erfolg. Lokale Alternativ-Endpunkte zählen nicht als zusätzliche Cloud-Rechenleistung. Die Entscheidung wird zwischen Batches aktualisiert; manuelle Startoptionen bleiben erhalten.
