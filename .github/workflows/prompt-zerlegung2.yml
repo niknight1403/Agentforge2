@@ -1,0 +1,21 @@
+name: Prompt-Zerlegung2
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Messen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "Cihhc3luYyAoKSA9PiB7CiAgY29uc3QgbSA9IGF3YWl0IGltcG9ydCgnL29wdC92aWxsYWZvcmdlL3NlcnZlci9hZ2VudHMubWpzJyk7CiAgY29uc3QgZGIgPSAoYXdhaXQgaW1wb3J0KCcvb3B0L3ZpbGxhZm9yZ2Uvc2VydmVyL2RiLm1qcycpKS5kYjsKICBjb25zdCB2aWxsYSA9IGRiLnByZXBhcmUoIlNFTEVDVCBpZCBGUk9NIHZpbGxhcyBXSEVSRSBzdGF0dXM9J1JVTk5JTkcnIExJTUlUIDEiKS5nZXQoKTsKICBjb25zdCBhZ2VudCA9IGRiLnByZXBhcmUoIlNFTEVDVCAqIEZST00gYWdlbnRzIFdIRVJFIHZpbGxhX2lkPT8gT1JERVIgQlkgaXNfcm9vdCBERVNDIExJTUlUIDEiKS5nZXQodmlsbGEuaWQpOwogIGNvbnN0IHNwZWNzID0gbS5UT09MX1NQRUNTID8gSlNPTi5zdHJpbmdpZnkobS5UT09MX1NQRUNTKSA6ICcnOwogIGxldCBza2lsbHMgPSAnbi9hJywgbWVtID0gJ24vYSc7CiAgdHJ5IHsgc2tpbGxzID0gbS5za2lsbEluc3RydWN0aW9ucyA/IFN0cmluZyhtLnNraWxsSW5zdHJ1Y3Rpb25zKCkpLmxlbmd0aCA6ICduL2EnOyB9IGNhdGNoKGUpIHsgc2tpbGxzID0gJ0VSUic7IH0KICB0cnkgeyBtZW0gPSBtLm1lbW9yeUNvbnRleHQgPyBTdHJpbmcobS5tZW1vcnlDb250ZXh0KHZpbGxhLmlkLCBhZ2VudC5pZCkpLmxlbmd0aCA6ICduL2EnOyB9IGNhdGNoKGUpIHsgbWVtID0gJ0VSUic7IH0KICBjb25zb2xlLmxvZygnUFJPTVBULVpFUkxFR1VORyAoWmVpY2hlbiknKTsKICBjb25zb2xlLmxvZygnICBhZ2VudC5zeXN0ZW1fcHJvbXB0IDogJyArIFN0cmluZyhhZ2VudC5zeXN0ZW1fcHJvbXB0fHwnJykubGVuZ3RoKTsKICBjb25zb2xlLmxvZygnICBUT09MX1NQRUNTIChKU09OKSAgIDogJyArIHNwZWNzLmxlbmd0aCk7CiAgY29uc29sZS5sb2coJyAgc2tpbGxJbnN0cnVjdGlvbnMgICA6ICcgKyBza2lsbHMpOwogIGNvbnNvbGUubG9nKCcgIG1lbW9yeUNvbnRleHQgICAgICAgOiAnICsgbWVtKTsKICBjb25zb2xlLmxvZygnICBXZXJremV1Z2FuemFobCAgICAgIDogJyArIChtLlRPT0xfU1BFQ1MgPyBPYmplY3Qua2V5cyhtLlRPT0xfU1BFQ1MpLmxlbmd0aCA6ICc/JykpOwogIGNvbnN0IGJpZyA9IG0uVE9PTF9TUEVDUyA/IE9iamVjdC5lbnRyaWVzKG0uVE9PTF9TUEVDUykubWFwKChbayx2XSkgPT4gW2ssIEpTT04uc3RyaW5naWZ5KHYpLmxlbmd0aF0pLnNvcnQoKGEsYik9PmJbMV0tYVsxXSkuc2xpY2UoMCw2KSA6IFtdOwogIGNvbnNvbGUubG9nKCcgIGdyb2Vzc3RlIFdlcmt6ZXVnZSAgOiAnICsgYmlnLm1hcCgoW2ssbl0pPT5rKyc9JytuKS5qb2luKCcsICcpKTsKfSkoKTsK" | base64 -d > /tmp/pz2.mjs && cd /opt/villaforge && sudo node /tmp/pz2.mjs'
