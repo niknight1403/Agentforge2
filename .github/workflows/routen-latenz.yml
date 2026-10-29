@@ -1,0 +1,21 @@
+name: Routen-Latenz-Opt
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Prioritaeten nach Latenz
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdFUlI6ICcgKyBTdHJpbmcoZS5tZXNzYWdlKS5zbGljZSgwLDgwKTsgfSB9Owpjb25zdCBEQiA9ICcvb3B0L3ZpbGxhZm9yZ2Uvc2VydmVyL2RhdGEvdmlsbGFmb3JnZS5kYic7CmNvbnN0IHEgPSAoc3FsKSA9PiBydW4oInN1ZG8gc3FsaXRlMyAiICsgREIgKyAiIFwiIiArIHNxbCArICJcIiIpOwpxKCJVUERBVEUgcm91dGVzIFNFVCBwcmlvcml0eT00NSBXSEVSRSBuYW1lIExJS0UgJyVDQVg0MSAoN0Igc2NobmVsbCklJyIpOwpxKCJVUERBVEUgcm91dGVzIFNFVCBwcmlvcml0eT00NiBXSEVSRSBuYW1lIExJS0UgJyVDQVgyMS0xICg3QiklJyIpOwpxKCJVUERBVEUgcm91dGVzIFNFVCBwcmlvcml0eT00NyBXSEVSRSBuYW1lIExJS0UgJyVDQVgxMSAoM0IpJSciKTsKcSgiVVBEQVRFIHJvdXRlcyBTRVQgcHJpb3JpdHk9NDggV0hFUkUgbmFtZSBMSUtFICclQ0FYMjEtMiAoN0IpJSciKTsKcSgiVVBEQVRFIHJvdXRlcyBTRVQgcHJpb3JpdHk9NDkgV0hFUkUgbmFtZSBMSUtFICclT2xsYW1hIGxva2FsIDdCJSciKTsKcSgiVVBEQVRFIHJvdXRlcyBTRVQgcHJpb3JpdHk9NTAgV0hFUkUgbmFtZSBMSUtFICclT2xsYW1hIE9yYWNsZSBDbG91ZCUnIE9SIG5hbWUgTElLRSAnJU9sbGFtYSBsb2thbCAoa29zdGVubG9zJSciKTsKcSgiVVBEQVRFIHJvdXRlcyBTRVQgcHJpb3JpdHk9NTUgV0hFUkUgbmFtZSBMSUtFICclQ0FYNDEgKDMyQiklJyIpOwpjb25zb2xlLmxvZygnPT0gTmV1ZSBSZWloZW5mb2xnZSAoYWt0aXYsIFA8PTQ1KSA9PScpOwpjb25zb2xlLmxvZyhxKCJTRUxFQ1QgcHJpb3JpdHkgfHwgJyB8ICcgfHwgQ09BTEVTQ0UobGF0X21zLDApIHx8ICdtcyB8ICcgfHwgc3Vic3RyKG5hbWUsMSw0NikgRlJPTSByb3V0ZXMgV0hFUkUgZW5hYmxlZD0xIE9SREVSIEJZIHByaW9yaXR5IEFTQyBMSU1JVCAxNiIpKTsK" | base64 -d | sudo bash -c "node -"'

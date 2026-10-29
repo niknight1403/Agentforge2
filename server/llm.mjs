@@ -24,7 +24,7 @@ export function keyStatus() {
 }
 
 export function enabledRoutes() {
-  return db.prepare('SELECT * FROM routes WHERE enabled = 1 ORDER BY priority ASC, id ASC').all();
+  return db.prepare('SELECT * FROM routes WHERE enabled = 1 ORDER BY priority ASC, COALESCE(lat_ms, 5000) ASC, id ASC').all();
 }
 
 /** Waehlt die naechste Route: Prioritaet, dann gewichtete Rotation. */
@@ -200,6 +200,9 @@ async function callOpenAiCompatibleRaw(route, messages, opts) {
     max_tokens: opts.maxTokens ?? 2048
   };
   if (opts.json) body.response_format = { type: 'json_object' };
+  /* Ollama: Modell im Speicher halten (keep_alive=-1). Ohne das kostet jeder
+     Aufruf auf einem Remote-Knoten 10-30s Modell-Ladezeit. */
+  if (String(route.base_url || '').includes(':11434')) body.keep_alive = -1;
 
   const res = await fetch(`${route.base_url.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
