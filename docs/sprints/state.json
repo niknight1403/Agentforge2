@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "135e4ed8fdbd5b2708c0b79a4ad858df710c9658",
+  "design": "Aurora / sichtbare Variante 6",
+  "completed": [],
+  "current": "VF-0001",
+  "next": "VF-0002",
+  "blockers": [
+    "Produktions-Master zuletzt HTTP 503 LLM_UNAVAILABLE",
+    "Browser-Audit im APK-Lauf konnte Chrome nicht erreichen"
+  ],
+  "resumeCommand": "node scripts/sprint-ledger.mjs status",
+  "executionMode": "foreground-only"
+}

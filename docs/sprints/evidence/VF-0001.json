@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "135e4ed8fdbd5b2708c0b79a4ad858df710c9658",
+  "command": "npm run check",
+  "exitCode": 0,
+  "tests": {"total":320,"pass":320,"fail":0},
+  "webBuild": {"version":"1.59.6","files":9,"checkedLocalAssets":6},
+  "production": {"health":"HTTP 200 in successful Hub-Deploy; 1.59.6","master":"HTTP 503 LLM_UNAVAILABLE, 60.6s","productAcceptance":"not_verified"},
+  "sources": ["https://github.com/niknight1403/Agentforge2/actions/runs/40950022353","https://github.com/niknight1403/Agentforge2/actions/runs/40950492787","https://github.com/niknight1403/Agentforge2/actions/runs/40950022985"],
+  "browserFailure": "Chrome DevTools not reachable on port 9678; no UI scopes executed. Zero findings was not a valid pass.",
+  "limitations": ["Local workspace is a synchronized source snapshot, not an authenticated git checkout.","Production product flow is not verified; CI browser uses fixtures."]
+}
