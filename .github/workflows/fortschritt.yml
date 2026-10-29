@@ -1,0 +1,21 @@
+name: Fortschritt
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Fortschritt messen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdFUlInOyB9IH07CmNvbnN0IERCID0gJy9vcHQvdmlsbGFmb3JnZS9zZXJ2ZXIvZGF0YS92aWxsYWZvcmdlLmRiJzsKY29uc3QgcSA9IChzcWwpID0+IHJ1bigic3VkbyBzcWxpdGUzICIgKyBEQiArICIgXCIiICsgc3FsICsgIlwiIik7CmNvbnNvbGUubG9nKCc9PSBWaWxsZW4gPT0nKTsKY29uc29sZS5sb2cocSgiU0VMRUNUIHN0YXR1cyB8fCAnIHwgJyB8fCBDT1VOVCgqKSBGUk9NIHZpbGxhcyBHUk9VUCBCWSBzdGF0dXMiKSk7CmNvbnNvbGUubG9nKCc9PSBBdWZnYWJlbiBuYWNoIFN0YXR1cyA9PScpOwpjb25zb2xlLmxvZyhxKCJTRUxFQ1Qgc3RhdHVzIHx8ICcgfCAnIHx8IENPVU5UKCopIEZST00gdGFza3MgR1JPVVAgQlkgc3RhdHVzIE9SREVSIEJZIENPVU5UKCopIERFU0MgTElNSVQgNiIpKTsKY29uc29sZS5sb2coJz09IERPTkUgaW4gbGV0enRlbiAzMCBNaW4gKEFuemFobCArIMOYIERhdWVyIHMpID09Jyk7CmNvbnNvbGUubG9nKHEoIlNFTEVDVCBDT1VOVCgqKSB8fCAnIHwgJyB8fCBST1VORChBVkcoZHVyYXRpb25fbXMpLzEwMDAuMCwxKSBGUk9NIHRhc2tzIFdIRVJFIHN0YXR1cz0nRE9ORScgQU5EIHVwZGF0ZWRfYXQgPj0gZGF0ZXRpbWUoJ25vdycsJy0zMCBtaW51dGVzJykiKSk7CmNvbnNvbGUubG9nKCc9PSBOZXUgRE9ORSAobGV0enRlIDMpID09Jyk7CmNvbnNvbGUubG9nKHEoIlNFTEVDVCBpZCB8fCAnIHwgJyB8fCBST1VORChkdXJhdGlvbl9tcy8xMDAwLjAsMSkgfHwgJ3MgfCAnIHx8IHN1YnN0cih0aXRsZSwxLDM0KSBGUk9NIHRhc2tzIFdIRVJFIHN0YXR1cz0nRE9ORScgQU5EIGR1cmF0aW9uX21zPjAgT1JERVIgQlkgdXBkYXRlZF9hdCBERVNDIExJTUlUIDMiKSk7CmNvbnNvbGUubG9nKCc9PSBMYXN0ID09Jyk7CmNvbnNvbGUubG9nKHJ1bigidXB0aW1lIikpOwo=" | base64 -d | sudo bash -c "node -"'
