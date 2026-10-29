@@ -18,7 +18,7 @@ const tmp = mkdtempSync(join(tmpdir(), 'agi-'));
 process.env.VF_DB = join(tmp, 'test.db');
 process.env.VF_WORKSPACE = join(tmp, 'ws');
 
-const { ROLES, buildSystemPrompt, PROMPT_VERSION, refreshAgentPrompts, insertAgent, createVilla } = await import('../agents.mjs');
+const { ROLES, buildSystemPrompt, PROMPT_VERSION, refreshAgentPrompts, insertAgent, createVilla, roleAllowsTool, runTool, publishToGitHub } = await import('../agents.mjs');
 (await import('../agents.mjs'))._setPlanningChat(async()=>({content:JSON.stringify({summary:'Test plan',tasks:[{title:'Test-App implementieren',description:'Akzeptanz: Tests laufen',role:'CODER'}]})}));
 const { db, now } = await import('../db.mjs');
 
@@ -68,4 +68,25 @@ test('Neue Villen bekommen AGI-Rollen in den Pool', async () => {
   const v = await createVilla({ name: 'Quintett-Villa', idea: 'Eine Testidee', agentCount: 17 });
   const roles = db.prepare('SELECT role FROM agents WHERE villa_id = ?').all(v.villaId).map((r) => r.role);
   for (const r of QUINTETT) assert.ok(roles.includes(r), `${r} fehlt im neuen Pool`);
+});
+
+
+test('Rollenrechte werden im Dispatcher erzwungen', async () => {
+  assert.equal(roleAllowsTool('CODER', 'project_write'), true);
+  assert.equal(roleAllowsTool('BUSINESS', 'project_write'), false);
+  const t = now();
+  const villaId = Number(db.prepare("INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES ('Role-Guard','Test','CREATED',10,1,?,?)").run(t, t).lastInsertRowid);
+  const agentId = insertAgent(villaId, 'Business-Guard', 'BUSINESS');
+  const result = await runTool({ villaId, agentId, role: 'BUSINESS' }, 'project_write', { path: 'blocked.txt', content: 'must not write' });
+  assert.match(result, /blockiert.*project_write/);
+  const row = db.prepare("SELECT allowed FROM audit WHERE villa_id = ? AND agent_id = ? AND tool = 'project_write' ORDER BY ts DESC LIMIT 1").get(villaId, agentId);
+  assert.equal(row.allowed, 0);
+});
+
+test('GitHub publishing fails closed without network or git side effects', async () => {
+  let calls = 0;
+  const result = await publishToGitHub(1, 1, { title: 'test' }, { exec: () => { calls++; }, fetchFn: () => { calls++; } });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /private branch.*pull request/i);
+  assert.equal(calls, 0);
 });
