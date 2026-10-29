@@ -52,7 +52,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    // A saturated local endpoint must not consume the whole request budget
    // while a cloud failover is available. Queue briefly, then let the cascade
    // continue to the next independent route.
-   const localQueueWaitMs=Math.max(25,Math.min(Number(process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS)||5000,30000));
+   const localQueueWaitMs=Math.max(25,Math.min(Number(process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS)||90000,120000));
    const slotDeadline=isLocalRoute(r)?Math.min(deadline,clock()+localQueueWaitMs):cloudDeadline;
    if(!await acquire(r.base_url,limit,slotDeadline)){attempted.push({route:r.name,code:'BUSY'});continue;}
    if(clock()>=deadline){release(r.base_url);break;}
