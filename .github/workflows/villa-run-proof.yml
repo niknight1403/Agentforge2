@@ -1,0 +1,21 @@
+name: Villa-Lauf-Beweis
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Lauf-Zustand pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdFUlInOyB9IH07CmNvbnN0IERCID0gJy9vcHQvdmlsbGFmb3JnZS9zZXJ2ZXIvZGF0YS92aWxsYWZvcmdlLmRiJzsKY29uc29sZS5sb2coJz09IFZpbGxlbi1TdGF0dXMgPT0nKTsKY29uc29sZS5sb2cocnVuKCJzdWRvIHNxbGl0ZTMgIiArIERCICsgIiBcIlNFTEVDVCBzdGF0dXN8fCc6J3x8Q09VTlQoKikgRlJPTSB2aWxsYXMgR1JPVVAgQlkgc3RhdHVzXCIgMj4mMSB8IHRyICdcXG4nICcgJyIpKTsKY29uc29sZS5sb2coJz09IEF1ZmdhYmUtQmV3ZWd1bmcgKDEwIE1pbikgPT0nKTsKY29uc29sZS5sb2cocnVuKCJzdWRvIHNxbGl0ZTMgIiArIERCICsgIiBcIlNFTEVDVCAnRE9ORTonfHxDT1VOVCgqKSBGUk9NIHRhc2tzIFdIRVJFIHN0YXR1cz0nRE9ORScgQU5EIHVwZGF0ZWRfYXQgPj0gZGF0ZXRpbWUoJ25vdycsJy0xMCBtaW51dGVzJylcIiAyPiYxIikpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gc3FsaXRlMyAiICsgREIgKyAiIFwiU0VMRUNUICdSVU5OSU5HOid8fENPVU5UKCopIEZST00gdGFza3MgV0hFUkUgc3RhdHVzPSdSVU5OSU5HJ1wiIDI+JjEiKSk7CmNvbnNvbGUubG9nKCc9PSBMTE0tQW50d29ydGVuID09Jyk7CmNvbnNvbGUubG9nKHJ1bigiY3VybCAtcyAtLW1heC10aW1lIDEwIGh0dHA6Ly8xMjcuMC4wLjE6MTIwMDAvYXBpL2hlYWx0aCB8IGhlYWQgLWMgNTAwIikpOwpjb25zb2xlLmxvZygnPT0gTGF1Zi1FcmVpZ25pc3NlICg2IE1pbikgPT0nKTsKY29uc29sZS5sb2cocnVuKCJzdWRvIGpvdXJuYWxjdGwgLXUgdmlsbGFmb3JnZS1odWIgLS1zaW5jZSAnNiBtaW4gYWdvJyAtLW5vLXBhZ2VyIDI+L2Rldi9udWxsIHwgZ3JlcCAtdkUgJ3JvdXRlZm9yZ2V8Um91dGVGb3JnZScgfCB0YWlsIC0xOCIpKTsKY29uc29sZS5sb2coJz09IExhc3QgPT0nKTsKY29uc29sZS5sb2cocnVuKCJ1cHRpbWUiKSk7Cg==" | base64 -d | node -'
