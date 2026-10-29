@@ -7,6 +7,7 @@ on:
       - 'server/scheduler.mjs'
       - 'server/server.mjs'
       - 'server/resume.mjs'
+      - 'server/llm-cascade.mjs'
       - 'server/product.mjs'
       - 'server/scripts/focus-test-villa.mjs'
       - 'server/public/**'
