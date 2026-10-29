@@ -6,6 +6,7 @@ import { createCircuitBreaker } from './circuit-breaker.mjs';
 import { userStore, quotaLeft, chargeTokens } from './auth.mjs';
 import { emit } from './events.mjs';
 import { tokenBudgetStatus, recordLlmUsage } from './observability.mjs';
+import { createHash } from 'node:crypto';
 
 /** Liefert einen Key aus Secrets-Store oder Umgebung. */
 export function resolveKey(keyEnv) {
@@ -151,15 +152,21 @@ const providerCircuits=createCircuitBreaker({
  resetAfterMs:Math.max(1000,Number(process.env.VF_LLM_CIRCUIT_RESET_MS)||30000)
 });
 
+function providerCircuitKey(route) {
+ let host;try{host=new URL(route.base_url).host;}catch{host=String(route.provider||'unknown');}
+ const credential=resolveKey(route.key_env);
+ // Keep each configured credential's quota isolated; aliases with the same
+ // value still share a circuit. No credential or fingerprint is exposed.
+ return host+'|'+(credential?createHash('sha256').update(credential).digest('hex'):'public');
+}
+
 async function callOpenAiCompatible(route, messages, opts) {
   if (!isLocalRoute(route) && rateLimited(route)) {
     const err = new Error('Route lokal gedrosselt (' + routeRpm(route) + ' req/min)');
     err.busy = true; // Drosselung ist kein Fehler der Route: keine Sperre, kein Zaehler
     throw err;
   }
-  let key;
-  try { key=new URL(route.base_url).host; } catch { key=String(route.provider||'unknown'); }
-  return providerCircuits.execute(key,()=>callOpenAiCompatibleRaw(route,messages,opts));
+  return providerCircuits.execute(providerCircuitKey(route),()=>callOpenAiCompatibleRaw(route,messages,opts));
 }
 
 const localModels=new Map();
@@ -314,8 +321,7 @@ export function routingStatus() {
   const freeOnly=freeOnlyEnabled();
   const enabled=enabledRoutes().filter(r=>r.provider!=='offline');
   const routes=enabled.map(r=>{
-    let circuitKey;try{circuitKey=new URL(r.base_url).host;}catch{circuitKey=String(r.provider||'unknown');}
-    const circuit=providerCircuits.snapshot(circuitKey);
+    const circuit=providerCircuits.snapshot(providerCircuitKey(r));
     const configured=!r.key_env||!!resolveKey(r.key_env);
     const eligible=(!freeOnly||isFreeRoute(r))&&configured&&Number(r.cooldown_until||0)<=Date.now()&&(circuit.state!=='OPEN'||circuit.retryAt<=Date.now());
     return {id:r.id,name:r.name,model:r.model,provider:r.provider,priority:r.priority,isFree:isFreeRoute(r),local:isLocalRoute(r),configured,eligible,cooldownUntil:r.cooldown_until||0,status:r.status,circuit:{state:circuit.state,retryAt:circuit.retryAt}};

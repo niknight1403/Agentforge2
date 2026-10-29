@@ -25,3 +25,24 @@ test('Reale HTTP-Kaskade: 429 -> lokale Modell-Erkennung -> Chat; Retry-After bl
  const row=db.prepare('SELECT cooldown_until,fail FROM routes WHERE name=?').get('Test primary');assert.ok(row.cooldown_until>Date.now()+170000);assert.equal(row.fail,1);
  await chat([{role:'user',content:'again'}]);assert.equal(calls,1,'Cooldown darf nicht sofort erneut versucht werden');
 });
+
+test('Rate-limited credentials do not open the circuit for another configured credential',async()=>{
+ let rejected=0,accepted=0;
+ const endpoint=await listen((req,res)=>{
+  req.resume();
+  if(req.headers.authorization==='Bearer fixture-blocked'){rejected++;return send(res,429,{error:'quota'});}
+  accepted++;return send(res,200,{choices:[{message:{content:'Configured healthy credential works'}}]});
+ });
+ db.exec('DELETE FROM routes');
+ db.prepare('INSERT OR REPLACE INTO secrets(name,value,updated_at) VALUES (?,?,0)').run('CIRCUIT_BAD_FIXTURE','fixture-blocked');
+ db.prepare('INSERT OR REPLACE INTO secrets(name,value,updated_at) VALUES (?,?,0)').run('CIRCUIT_GOOD_FIXTURE','fixture-healthy');
+ const add=db.prepare('INSERT INTO routes(name,provider,base_url,model,key_env,priority) VALUES (?,?,?,?,?,?)');
+ add.run('Quota exhausted','groq',endpoint,'one','CIRCUIT_BAD_FIXTURE',1);
+ add.run('Independent credential','groq',endpoint,'two','CIRCUIT_GOOD_FIXTURE',2);
+ const old=process.env.VF_LLM_FREE_ONLY;process.env.VF_LLM_FREE_ONLY='0';
+ try{
+  const outputs=await Promise.all(Array.from({length:3},()=>chat([{role:'user',content:'fixture'}],{strategy:'FALLBACK'})));
+  assert.equal(outputs.length,3);assert.ok(outputs.every(x=>x.content==='Configured healthy credential works'));
+  assert.equal(rejected,3);assert.equal(accepted,3);
+ }finally{if(old===undefined)delete process.env.VF_LLM_FREE_ONLY;else process.env.VF_LLM_FREE_ONLY=old;}
+});
