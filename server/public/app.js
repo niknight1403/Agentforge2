@@ -107,12 +107,12 @@ async function checkHealth() {
     const pressureLabels = { NORMAL: 'Stabil', WARNING: 'Auslastung erhöht', CRITICAL: 'Ressourcen knapp' };
     const pressure = resources.pressure || 'NORMAL';
     $('#resourcePressure').className = 'resource-stability ' + pressure.toLowerCase();
-    $('#resourcePressure').innerHTML = `<span class="dot ${pressure === 'CRITICAL' ? 'err' : 'ok'}"></span>${pressureLabels[pressure] || 'Status unbekannt'}`;
+    setHtmlIfChanged('#resourcePressure', `<span class="dot ${pressure === 'CRITICAL' ? 'err' : 'ok'}"></span>${pressureLabels[pressure] || 'Status unbekannt'}`);
     $('#systemDetail').textContent = `${llm.eligibleRoutes ?? 0} nutzbare KI-Routen · ${llm.freeOnly ? 'kostenfreie Routen bevorzugt' : 'Routenmodus aktiv'}`;
     $('#metricRoutes').textContent = h.routes ?? '–';
     const up = h.uptime || {};
     $('#superagentStatus').className = 'chip ok'; $('#superagentStatus').textContent = 'LIVE · AKTIV';
-    $('#healthDetails').innerHTML = [
+    const healthHtml = [
       ['Version', 'v' + (h.version || '–')], ['Routen', h.routes ?? '–'],
       ['System-Uptime', up.systemSec ? Math.round(up.systemSec / 3600) + ' h' : '–'],
       ['CPU-Kerne', resources.cpu?.cores ?? h.cpu?.cores ?? '–'],
@@ -122,6 +122,7 @@ async function checkHealth() {
       ['Empfohlene Parallelität', resources.recommendation?.maxConcurrentTasks ?? '–'],
       ['Gratis-Routen', llm.freeOnly ? 'Free-only aktiv · Quoten anbieterabhängig' : 'Free-only aus']
     ].map(([k, v]) => `<div class="row" style="display:flex;justify-content:space-between"><span style="color:var(--muted)">${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
+    setHtmlIfChanged('#healthDetails', healthHtml);
     $('#verNum').textContent = h.version || '–';
   } catch {
     $('#healthDot').className = 'dot err'; $('#healthText').textContent = 'Hub nicht erreichbar';
@@ -177,12 +178,15 @@ function renderVillaLists(villas = latestVillas) {
   const matches = (query) => villas.filter(v => `${v.name || ''} ${v.idea || ''}`.toLocaleLowerCase('de-DE').includes(query));
   const homeMatches = matches(homeQuery);
   const chatMatches = matches(chatQuery);
-  $('#villaList').innerHTML = homeMatches.length
+  const homeHtml = homeMatches.length
     ? homeMatches.map(v => villaCardHtml(v, true)).join('')
     : `<p class="empty-state">${villas.length ? 'Keine Villa passt zu deiner Suche.' : 'Noch keine Villa. Tippe oben auf ＋ Neue Villa.'}</p>`;
-  $('#chatPickList').innerHTML = chatMatches.length
+  const chatHtml = chatMatches.length
     ? chatMatches.map(v => villaCardHtml(v,false)).join('')
     : `<p class="empty-state">${villas.length ? 'Kein Projekt passt zu deiner Suche.' : 'Erstelle zuerst eine Villa, um mit ihrem Deep Agent zu arbeiten.'}</p>`;
+  const homeChanged = setHtmlIfChanged('#villaList', homeHtml);
+  const chatChanged = setHtmlIfChanged('#chatPickList', chatHtml);
+  if (!homeChanged && !chatChanged) return;
   document.querySelectorAll('.villa-card').forEach(el => el.addEventListener('click', () => openVilla(Number(el.dataset.id))));
   document.querySelectorAll('[data-villa-control]').forEach(el => el.addEventListener('click', async event => {
     event.preventDefault(); event.stopPropagation();
@@ -214,7 +218,13 @@ async function loadDashboardActions(force = false) {
   }
 }
 
+/* Flicker-Schutz: DOM nur anfassen, wenn sich der Inhalt wirklich aendert. */
+const _domSig = new Map();
+function domSigChanged(key, val) { const s = JSON.stringify(val); if (_domSig.get(key) === s) return false; _domSig.set(key, s); return true; }
+function setHtmlIfChanged(sel, html) { const el = document.querySelector(sel); if (!el) return false; if (_domSig.get(sel) === html) return false; _domSig.set(sel, html); el.innerHTML = html; return true; }
+
 function renderOverview(villas) {
+  if (!domSigChanged('overview', [villas, latestFocusVillaId])) return;
   const focus = villas.find(v => Number(v.id) === Number(latestFocusVillaId));
   const banner = $('#focusBanner');
   if (banner) banner.hidden = !latestFocusVillaId;
@@ -546,6 +556,19 @@ async function addSecret() {
 }
 
 /* ---------- SSE (Live-Updates mit Selbstheilung) ---------- */
+let _lvLast = 0, _lvTimer = null, _rvLast = 0, _rvTimer = null;
+function loadVillasThrottled() {
+  const nowT = Date.now();
+  if (nowT - _lvLast >= 1500) { _lvLast = nowT; loadVillas(); return; }
+  if (_lvTimer) return;
+  _lvTimer = setTimeout(() => { _lvTimer = null; _lvLast = Date.now(); loadVillas(); }, 1500 - (nowT - _lvLast));
+}
+function refreshCurrentThrottled() {
+  const nowT = Date.now();
+  if (nowT - _rvLast >= 2000) { _rvLast = nowT; refreshCurrent(); return; }
+  if (_rvTimer) return;
+  _rvTimer = setTimeout(() => { _rvTimer = null; _rvLast = Date.now(); refreshCurrent(); }, 2000 - (nowT - _rvLast));
+}
 function connectEvents() {
   if (window.vfES) { try { window.vfES.close(); } catch (e) {} }
   if (window.vfBeatTimer) clearInterval(window.vfBeatTimer);
@@ -556,11 +579,15 @@ function connectEvents() {
     lastBeat = Date.now();
     activityTicks.push(Date.now());
     if (activityTicks.length > 24) activityTicks.shift();
-    loadVillas();
-    if (currentVilla) refreshCurrent();
+    loadVillasThrottled();
+    if (currentVilla) refreshCurrentThrottled();
   };
   es.onerror = () => { try { es.close(); } catch (e) {} setTimeout(connectEvents, 5000); };
-  window.vfBeatTimer = setInterval(() => { if (Date.now() - lastBeat > 45000) { try { window.vfES.close(); } catch (e) {} connectEvents(); } }, 15000);
+  // Flicker-Schutz: gesunde Verbindungen nie erzwingend schliessen. Neuaufbau
+  // nur, wenn die Verbindung wirklich zu ist (sonst Reconnect-Churn alle 15 s).
+  window.vfBeatTimer = setInterval(() => {
+    if (!window.vfES || window.vfES.readyState === EventSource.CLOSED) connectEvents();
+  }, 30000);
 }
 
 /* ---------- Ereignisse & Start ---------- */
