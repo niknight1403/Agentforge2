@@ -23,5 +23,20 @@
     "Cloud cooldowns and local TIMEOUT/BUSY prevent a fresh Master reply.",
     "No quota, payment or eligibility guard was disabled."
   ],
-  "nextAction": "After provider cooldowns expire, run Master-Chat-Probe once. If still red, diagnose one configured endpoint with bounded timeout via an authorized workflow; do not add accounts or bypass quotas."
+  "nextAction": "After provider cooldowns expire, run Master-Chat-Probe once. If still red, diagnose one configured endpoint with bounded timeout via an authorized workflow; do not add accounts or bypass quotas.",
+  "latestProbe": {
+    "source": "https://github.com/niknight1403/Agentforge2/actions/runs/40959050138",
+    "http": 503,
+    "code": "LLM_UNAVAILABLE",
+    "latencySeconds": 39.9,
+    "attemptCodes": [
+      "BUSY",
+      "TIMEOUT"
+    ]
+  },
+  "intermediateModelSuccess": {
+    "source": "https://github.com/niknight1403/Agentforge2/actions/runs/40958119898",
+    "evidence": "The release smoke reached PRODUCT_ACCEPTANCE_MISSING after passing fresh real model-response assertions. A later standalone Master probe failed again.",
+    "reliabilityAccepted": false
+  }
 }

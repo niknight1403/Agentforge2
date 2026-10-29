@@ -25,3 +25,5 @@ Naechster konkreter Schritt nach Laden des aktuellen Heads:
 5. Release-Gates auf demselben Code-Commit erneut ausfuehren. Bestehende Android-Debug-Signierung separat durch eine dauerhaft verwaltete Produktionssignierung ersetzen, bevor Update-Kompatibilitaet zugesagt wird.
 
 Dieser Checkpoint startet keinen unbeaufsichtigten Hintergrunddienst.
+
+Abschlussbefund: Release-Smoke Run 40958119898 bestand die echte Modellstufe und scheiterte anschliessend am Produktgate. Die getrennte Master-Probe Run 40959050138 scheiterte danach erneut mit HTTP 503 nach 39.9s. VF-0004 bleibt deshalb blocked; keine weiteren blinden Gesamt-Retries. APK- und Web-Archive sind in evidence/VF-0010-blocked.json mit SHA-256, Groesse und echten GitHub-Artefaktlinks dokumentiert. Es wurde kein v1.60.0-Release publiziert.

@@ -14,7 +14,7 @@
   "current": "VF-0004",
   "next": "VF-0004",
   "blockers": [
-    "Release-Smoke erreicht Produktgate: frische reale LLM-Antwort bestand dort; gesonderte Master-Probe mit direkt ausgegebener Route/Frische noch offen.",
+    "Master erneut HTTP 503 LLM_UNAVAILABLE nach 39.9s (Run 40959050138). Zwischenzeitlicher echter Modell-Erfolg im Release-Smoke ist kein stabiler Betriebsnachweis.",
     "Zehn reale Villa-Kandidaten: alle verified=false und offene Aufgaben/Blocker trotz buildStatus=ready.",
     "Android-Release verwendet bestehende Debug-Signatur; dauerhafte Produktionssignierung noch nicht nachgewiesen."
   ],
@@ -36,5 +36,7 @@
   "pullRequestStatus": "merged",
   "backgroundExecution": false,
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/40958119898",
-  "releaseStatus": "blocked: PRODUCT_ACCEPTANCE_MISSING"
+  "releaseStatus": "blocked: PRODUCT_ACCEPTANCE_MISSING",
+  "checkpointParent": "35491d80662d51947fd22e0dcc0d2cba24503557",
+  "nextAction": "VF-0004: einen konfigurierten lokalen Endpoint mit autorisiertem Workflow isoliert auf Erreichbarkeit/Last pruefen; Cloud-Cooldowns respektieren. Keine weiteren blinden Gesamt-Retries."
 }
