@@ -136,27 +136,40 @@ jobs:
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/deploy.sh ubuntu@92.5.177.159:/tmp/deploy.sh
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GT='$GT' GTP='$GTP' bash -c 'export GT GTP; bash /tmp/deploy.sh'"
 
-      - name: GitHub-Token fuer Produkt-Repos in den Hub synchronisieren
+      - name: Kostenlose LLM-Secrets in den Hub synchronisieren
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
           GTP: ${{ secrets.AGENTFORGE_PAT }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GTOKEN='$GTP' bash -s" <<'SEED'
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GTOKEN='$GTP' GROQ_API_KEY='$GROQ_API_KEY' OPENROUTER_API_KEY='$OPENROUTER_API_KEY' GEMINI_API_KEY='$GEMINI_API_KEY' bash -s" <<'SEED'
+          set -euo pipefail
           DBP=$(systemctl show villaforge-hub -p Environment --value 2>/dev/null | grep -oE 'VF_DB=[^ ]+' | cut -d= -f2 || true)
           [ -n "$DBP" ] || DBP=/opt/villaforge/server/data/villaforge.db
-          echo "Hub-DB: $DBP"
           NODEBIN=$(command -v node)
-          sudo GTOKEN="$GTOKEN" "$NODEBIN" -e "
-          const { DatabaseSync } = require('node:sqlite');
-          const db = new DatabaseSync('$DBP');
-          const v = process.env.GTOKEN;
-          const r = db.prepare('UPDATE secrets SET value = ?, updated_at = ? WHERE name = ?').run(v, 0, 'GITHUB_TOKEN');
-          if (r.changes === 0) db.prepare('INSERT INTO secrets (name, value, updated_at) VALUES (?,?,?)').run('GITHUB_TOKEN', v, 0);
-          console.log('GITHUB_TOKEN im Hub hinterlegt.');
-          "
+          sudo env GTOKEN="$GTOKEN" GROQ_API_KEY="$GROQ_API_KEY" OPENROUTER_API_KEY="$OPENROUTER_API_KEY" GEMINI_API_KEY="$GEMINI_API_KEY" "$NODEBIN" -e '
+          const { DatabaseSync } = require("node:sqlite");
+          const db = new DatabaseSync(process.argv[1]);
+          const values = {
+            GITHUB_TOKEN: process.env.GTOKEN,
+            GROQ_API_KEY: process.env.GROQ_API_KEY,
+            OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+            GEMINI_API_KEY: process.env.GEMINI_API_KEY
+          };
+          const synced = [];
+          for (const [name, value] of Object.entries(values)) {
+            if (typeof value !== "string" || value.length < 8) continue;
+            const updated = db.prepare("UPDATE secrets SET value = ?, updated_at = ? WHERE name = ?").run(value, Date.now(), name);
+            if (!updated.changes) db.prepare("INSERT INTO secrets (name, value, updated_at) VALUES (?,?,?)").run(name, value, Date.now());
+            synced.push(name);
+          }
+          console.log("Hub-Secret-Namen synchronisiert:", synced.join(", ") || "keine gesetzten LLM-Secrets");
+          ' "$DBP"
           SEED
 
       - name: Hub von aussen verifizieren
