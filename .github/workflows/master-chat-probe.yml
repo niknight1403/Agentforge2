@@ -2,6 +2,9 @@ name: Master-Chat-Probe
 
 on:
   workflow_dispatch: {}
+  push:
+    branches: [main, work/vf500-aurora]
+    paths: [.github/workflows/master-chat-probe.yml]
   workflow_run:
     workflows: [Hub-Deploy]
     types: [completed]
@@ -58,12 +61,22 @@ jobs:
           st, route_status = call('GET', '/api/llm/status', tok)
           routes = route_status.get('routes', []) if isinstance(route_status, dict) else []
           print('HTTP', st, '| eligible/configured:', sum(1 for x in routes if x.get('eligible')), '/', len(routes))
-          print('Route state:', json.dumps([{k: x.get(k) for k in ('name','provider','model','eligible','status','cooldownUntil')} for x in routes if x.get('eligible')][:20])[:3000])
+          for route in routes:
+              print('Route state:', json.dumps({k: route.get(k) for k in ('name','provider','model','configured','eligible','status','cooldownUntil','circuit')}))
+          print('== Product acceptance (read-only) ==')
+          st, villas = call('GET', '/api/villas', tok)
+          villas = villas if isinstance(villas, list) else villas.get('villas', [])
+          for villa in sorted(villas, key=lambda v: int(v.get('tasks_done') or 0), reverse=True)[:10]:
+              vid = int(villa['id'])
+              ps, product = call('GET', '/api/villas/'+str(vid)+'/product', tok)
+              bs, build = call('GET', '/api/villas/'+str(vid)+'/build', tok)
+              print('Product gate:', json.dumps({'villaId': vid, 'productHttp': ps, 'verified': product.get('verified'), 'unfinishedTasks': product.get('unfinishedTasks'), 'blockerCount': len(product.get('blockers') or []), 'buildHttp': bs, 'buildStatus': build.get('status')}))
           print('== 3) Master-Chat ==')
           import time
           started = time.monotonic()
           st, resp = call('POST', '/api/master/chat', tok, {'message': 'Erkläre mir in zwei klaren Sätzen, wie ich eine vorhandene Villa im Dashboard starte. Führe keine Aktion aus.'}, timeout=240)
           print('HTTP', st, '| Dauer:', round(time.monotonic()-started, 1), 's | Response:', json.dumps(resp)[:500])
+          print('Route attempts:', json.dumps(resp.get('routeAttempts', [])))
           answer = str(resp.get('answer') or resp.get('reply') or '')
           assert st == 200 and resp.get('ok') is True and len(answer) >= 30 and 'villa' in answer.lower() and 'start' in answer.lower(), 'Master-Chat liefert keine brauchbare, auftragsbezogene Antwort'
 
