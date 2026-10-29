@@ -8,7 +8,7 @@
  * die eingebaute WebSocket-Implementierung von Node (>= 22).
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
@@ -52,7 +52,7 @@ export function resolveChrome() {
  * Startet Chrome headless mit offenem DevTools-Port und wartet, bis der
  * Debug-Endpunkt antwortet. Gibt Handle mit stop() zurueck.
  */
-export async function launchChrome({ port = 9333, width = 1440, height = 960, chrome = resolveChrome(), extraArgs = [] } = {}) {
+export async function launchChrome({ port = 0, width = 1440, height = 960, chrome = resolveChrome(), extraArgs = [] } = {}) {
   // Chrome 136+ requires a non-default profile for remote debugging.
   // A unique temporary profile also prevents parallel CI runs sharing a lock.
   const profileDir = mkdtempSync(join(tmpdir(), 'villaforge-chrome-'));
@@ -74,17 +74,21 @@ export async function launchChrome({ port = 9333, width = 1440, height = 960, ch
     'about:blank'
   ];
   const proc = spawn(chrome, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  let stderr = '';
+  let stderr = '', spawnError=null;
+  proc.once('error',error=>{spawnError=error;});
   proc.stderr.on('data', (d) => { stderr += String(d); });
   proc.once('exit', () => { try { rmSync(profileDir, { recursive: true, force: true }); } catch {} });
 
-  const base = `http://127.0.0.1:${port}`;
+  let base = port?`http://127.0.0.1:${port}`:null;
   const deadline = Date.now() + 30_000;
   let version = null;
   while (Date.now() < deadline) {
+    if(spawnError){try{rmSync(profileDir,{recursive:true,force:true});}catch{}throw new Error('Chrome konnte nicht gestartet werden: '+spawnError.code);}
+    if(!base){try{const selected=Number(readFileSync(join(profileDir,'DevToolsActivePort'),'utf8').split('\n')[0]);if(Number.isInteger(selected)&&selected>0&&selected<65536){port=selected;base=`http://127.0.0.1:${port}`;}}catch{}}
     if (proc.exitCode != null) throw new Error(`Chrome beendet (Code ${proc.exitCode}): ${stderr.slice(-400)}`);
     try {
-      const res = await fetch(`${base}/json/version`);
+      if(!base){await delay(120);continue;}
+      const res = await fetch(`${base}/json/version`,{signal:AbortSignal.timeout(1000)});
       if (res.ok) { version = await res.json(); break; }
     } catch { /* noch nicht bereit */ }
     await delay(120);

@@ -44,3 +44,9 @@ test('Automatic task concurrency counts verified cloud capacity, not configured 
   assert.equal(pickConcurrency(),1);
  }finally{if(old===undefined)delete process.env.VF_LLM_FREE_ONLY;else process.env.VF_LLM_FREE_ONLY=old;}
 });
+
+test('Unavailable OS process memory does not break health and is never fabricated as zero',async()=>{
+ const {safeProcessRss}=await import('../resource-agent.mjs');
+ assert.equal(safeProcessRss(()=>{throw Object.assign(Error('unavailable'),{code:'ENOENT'});}),null);
+ assert.equal(safeProcessRss(()=>12345),12345);assert.equal(safeProcessRss(()=>NaN),null);
+});

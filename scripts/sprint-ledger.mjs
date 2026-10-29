@@ -16,7 +16,7 @@ export function completeSprint({root=defaultRoot,id,commit,evidencePath}){
  if(!/^[a-f0-9]{40}$/.test(commit||''))throw Error('A real implementation commit SHA is required.');
  if(s.dependencies.some(id=>backlog.sprints.find(x=>x.id===id)?.status!=='done'))throw Error('Sprint dependency is not complete.');
  const evidence=resolve(root,evidencePath||'');if(!evidence.startsWith(resolve(root,'docs/sprints/evidence')+'/')||!existsSync(evidence))throw Error('Evidence file is required within docs/sprints/evidence.');
- const result=JSON.parse(readFileSync(evidence,'utf8'));if(result.exitCode!==0)throw Error('Evidence gate did not pass.');
+ const result=JSON.parse(readFileSync(evidence,'utf8'));if(result.exitCode!==0||result.acceptanceComplete!==true)throw Error('Evidence gate did not pass.');
  s.status='done';s.implementationCommit=commit;s.evidence=[evidencePath];
  state.completed=backlog.sprints.filter(x=>x.status==='done').map(x=>x.id);state.current=null;state.next=backlog.sprints.find(x=>x.status!=='done')?.id||null;
  for(const [name,data] of [['backlog',backlog],['state',state]]){const path=resolve(root,`docs/sprints/${name}.json`);writeFileSync(path+'.tmp',JSON.stringify(data,null,2)+'\n');renameSync(path+'.tmp',path);}

@@ -15,6 +15,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { launchChrome, newTarget, Page, delay } from './lib/cdp.mjs';
 import { startHub, ROOT } from './lib/hub.mjs';
+import { auditResult } from './lib/audit-result.mjs';
 import { startMockLlm } from './lib/mock-llm.mjs';
 
 const argv = process.argv.slice(2);
@@ -175,6 +176,7 @@ let hub = null;
 let chrome = null;
 let page = null;
 let modelMock = null;
+let auditError=null;
 
 /** Probe ausfuehren und unter einem Namen ablegen. */
 async function probe(name) {
@@ -190,7 +192,7 @@ async function probe(name) {
     modelMock = await startMockLlm();
     hub = await startHub({ keep: has('--keep'), env: { VF_LOCAL_LLM_URL: modelMock.url, VF_LOCAL_LLM_MODEL: 'villa-test' } });
     console.log(`Hub v${hub.health.version} auf ${hub.base}`);
-    chrome = await launchChrome({ port: 9500 + Math.floor(Math.random() * 200) });
+    chrome = await launchChrome();
     const target = await newTarget(chrome.base, 'about:blank');
     page = await Page.attach(target.webSocketDebuggerUrl);
     await page.enableAll();
@@ -205,7 +207,7 @@ async function probe(name) {
     if (!response.ok || !created.villaId) throw new Error(`Testvilla konnte nicht angelegt werden: HTTP ${response.status} ${created.error || ''}`.trim());
     console.log(`Testvilla #${created.villaId}`);
 
-    for (const [name, vp] of [['desktop', { w: 1440, h: 960 }], ['mobil', { w: 390, h: 844, mobile: true }]]) {
+    for (const [name, vp] of [['desktop', { w: 1440, h: 960 }], ['mobil-360', { w: 360, h: 844, mobile: true }], ['mobil', { w: 390, h: 844, mobile: true }], ['mobil-430', { w: 430, h: 844, mobile: true }]]) {
       await page.navigate(url);
       await page.setViewport(vp.w, vp.h, { mobile: !!vp.mobile });
       await delay(600);
@@ -228,7 +230,7 @@ async function probe(name) {
     results.reduzierteBewegung = reduced;
     console.log(`reduziert  Animationsname der Hero-Kugel: ${reduced.orbAnimation}`);
   } catch (err) {
-    console.error('Abbruch:', err.message);
+    auditError=err;console.error('Abbruch:', err.message);
     code = 1;
   } finally {
     try { await modelMock?.close(); } catch { /* Testprozess wird ohnehin beendet. */ }
@@ -236,7 +238,8 @@ async function probe(name) {
     const violations = Object.entries(results)
       .flatMap(([scope, r]) => Object.entries(r.findings || {}).map(([kind, list]) => ({ scope, kind, list })));
     const total = violations.reduce((a, v) => a + v.list.length, 0);
-    writeFileSync(join(OUT, 'report.json'), JSON.stringify({ generated_at: new Date().toISOString(), total, results }, null, 2));
+    const verdict=auditResult(results,{error:auditError,maxFindings:MAX_FINDINGS});
+    writeFileSync(join(OUT, 'report.json'), JSON.stringify({ generated_at: new Date().toISOString(), ...verdict, results }, null, 2));
     console.log('-'.repeat(60));
     for (const v of violations) {
       if (!v.list.length) continue;
@@ -245,8 +248,8 @@ async function probe(name) {
     }
     const notes = results.desktop?.notes || [];
     for (const n of notes) console.log(`\u26a0 ${n}`);
-    console.log(`${total > MAX_FINDINGS ? '\u2716' : '\u2714'} ${total} Befund(e) · Report: ${join(OUT, 'report.json')}`);
-    if (total > MAX_FINDINGS) code = 1;
+    console.log(`${verdict.status==='passed'?'PASS':verdict.status.toUpperCase()} · ${total} Befund(e) · ${verdict.missingScopes.length} ungeprüfte Ansichten · Report: ${join(OUT,'report.json')}`);
+    code=verdict.exitCode;
     try { page?.close(); } catch { /* egal */ }
     try { chrome?.stop(); } catch { /* egal */ }
     try { await hub?.stop(); } catch { /* egal */ }

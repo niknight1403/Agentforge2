@@ -21,10 +21,12 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "in_progress",
+      "status": "done",
       "scopeDefined": true,
-      "evidence": [],
-      "implementationCommit": null
+      "evidence": [
+        "docs/sprints/evidence/VF-0001.json"
+      ],
+      "implementationCommit": "1019949f05d4c9bf7d20a3638a41cad30deb5e2d"
     },
     {
       "id": "VF-0002",
@@ -36,7 +38,8 @@
       ],
       "modules": [
         "scripts/lib/cdp.mjs",
-        "scripts/design-audit.mjs"
+        "scripts/design-audit.mjs",
+        "server/resource-agent.mjs"
       ],
       "acceptanceCriteria": [
         "Fehlender Browser wird kontrolliert gemeldet",
@@ -47,7 +50,7 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "planned",
+      "status": "in_progress",
       "scopeDefined": true,
       "evidence": [],
       "implementationCommit": null
