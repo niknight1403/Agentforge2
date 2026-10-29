@@ -43,3 +43,23 @@ Interaktive Anfragen werden in der Modellwarteschlange bevorzugt, aber nach zwei
 CI-Isolation: Hub-Unit-Tests verwenden stets eigene temporäre Datenbanken und Workspaces und übernehmen keine Redis-Verbindung aus der vorgeschalteten Runtime-Integration. Die TypeScript-Runtime-Integration bleibt mit echtem Redis/PostgreSQL aktiv; RESP-Client-Tests verwenden eigene TCP-Fixtures. Reine Hub-Teständerungen lösen keinen Produktionsneustart aus.
 
 Die automatische Agentenparallelität zählt nur konfigurierte, freigegebene Routen ohne Cooldown und erhöht die Parallelität erst nach einem kürzlichen echten Cloud-Erfolg. Lokale Alternativ-Endpunkte zählen nicht als zusätzliche Cloud-Rechenleistung. Die Entscheidung wird zwischen Batches aktualisiert; manuelle Startoptionen bleiben erhalten.
+
+
+## Abschließender Live-Status
+
+Geprüfter Code-Stand: `8ee65072b8bd26b2280ec152595322b22bfb9fdc`.
+
+| Gate | Ergebnis | Nachweis |
+| --- | --- | --- |
+| Lokales vollständiges Gate | GRÜN: 297/297 Tests, Syntax, Secrets, Web-Build | Auch mit geerbter REDIS_URL ausgeführt |
+| Produktions-Deploy | GRÜN: 297/297 Tests und HTTP 200 (0,70 s) | [Hub-Deploy](https://github.com/niknight1403/Agentforge2/actions/runs/40816571418) |
+| Runtime, Redis/PostgreSQL, Migrationen, Docker, Compose | GRÜN | [Hub-Tests](https://github.com/niknight1403/Agentforge2/actions/runs/40816571459) |
+| Browser-E2E und Design | GRÜN | [Live-Test](https://github.com/niknight1403/Agentforge2/actions/runs/40816571392) |
+| CodeQL | GRÜN | [Analyse](https://github.com/niknight1403/Agentforge2/actions/runs/40816571403) |
+| Android-Lint, Tests, Release-APK-Build | Erfolgreich; Gesamtworkflow wegen nachfolgendem LLM-Smoke ROT | [APK-Pipeline](https://github.com/niknight1403/Agentforge2/actions/runs/40816571402) |
+| Produktiver Master-Chat | ROT: HTTP 503 / LLM_UNAVAILABLE; Cloud HTTP 429, lokale Route BUSY | [Master-Probe](https://github.com/niknight1403/Agentforge2/actions/runs/40816733505) |
+| Echter Cloud-LLM-Smoke | ROT: HTTP 503; kein verifizierter Modell-Reply | APK-Pipeline, Schritt LLM-Smoke |
+
+Die Villen 2 und 3 wurden nach dem letzten Deploy als RUNNING und executing=1 verifiziert; Scheduler active=[2,3], queued=0. Das ist kein Nachweis abgeschlossener Produkte.
+
+**Das Gesamt-Q-Gate ist wegen der Live-LLM-Verfügbarkeit NICHT GRÜN.** Die zehn implementierten Sprintpakete sind getestet und veröffentlicht; ein vollständig grüner Produktabschluss oder Release wird nicht behauptet. Die strikten Live-Gates wurden nicht abgeschwächt.
