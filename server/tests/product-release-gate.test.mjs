@@ -8,7 +8,7 @@ function zip(name='index.html'){
  return Buffer.concat([local,n,data,header,n,end]);
 }
 test('Product archive requires a complete app archive instead of PK bytes or an empty package',()=>{
- assert.equal(inspectProductZip(zip()).entries,1);assert.throws(()=>inspectProductZip(Buffer.from('PK-not-an-archive')),/INVALID/);
+ assert.equal(inspectProductZip(zip()).entries,1);const bad=zip();bad.writeUInt32LE(999999,30+Buffer.byteLength('index.html')+Buffer.byteLength('<main>Fixture app</main>')+20);assert.throws(()=>inspectProductZip(bad),/INVALID/);assert.throws(()=>inspectProductZip(Buffer.from('PK-not-an-archive')),/INVALID/);
  assert.throws(()=>inspectProductZip(zip('README.md')),/FILES_MISSING/);assert.throws(()=>inspectProductZip(zip('../index.html')),/UNSAFE/);
 });
 test('Release acceptance requires independent product evidence, zero open work, ready build and actual download',async()=>{

@@ -11,7 +11,11 @@ export function inspectProductZip(bytes){
   const len=b.readUInt16LE(cursor+28),extra=b.readUInt16LE(cursor+30),comment=b.readUInt16LE(cursor+32),next=cursor+46+len+extra+comment;
   if(next>offset+size)throw Error('PRODUCT_ARCHIVE_INVALID');const name=b.subarray(cursor+46,cursor+46+len).toString('utf8');
   if(name.startsWith('/')||name.split(/[\\/]/).includes('..'))throw Error('PRODUCT_ARCHIVE_UNSAFE');
-  if(b.readUInt32LE(cursor+24)>0)names.push(name);cursor=next;
+  const localOffset=b.readUInt32LE(cursor+42),packed=b.readUInt32LE(cursor+20),unpacked=b.readUInt32LE(cursor+24);
+  if(localOffset+30>offset||b.readUInt32LE(localOffset)!==0x04034b50||b.readUInt16LE(cursor+8)&1)throw Error('PRODUCT_ARCHIVE_INVALID');
+  const localLen=b.readUInt16LE(localOffset+26),localExtra=b.readUInt16LE(localOffset+28),payload=localOffset+30+localLen+localExtra;
+  if(payload+packed>offset||b.subarray(localOffset+30,localOffset+30+localLen).toString('utf8')!==name)throw Error('PRODUCT_ARCHIVE_INVALID');
+  if(unpacked>0&&packed>0)names.push(name);cursor=next;
  }
  if(cursor!==offset+size||!names.some(n=>/(?:^|\/)(?:index\.html|package\.json|AndroidManifest\.xml)$/.test(n)))throw Error('PRODUCT_APP_FILES_MISSING');
  return {entries:count,bytes:b.length};
