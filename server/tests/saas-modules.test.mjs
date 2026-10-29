@@ -62,8 +62,13 @@ test('Budget reset time is explicit and token exhaustion returns a typed retriab
  const budget=observability.tokenBudgetStatus();assert.equal(budget.tokenAllowed,false);
  assert.equal(new Date(budget.resetsAt).getUTCHours(),0);assert.ok(budget.resetsAt>Date.now());
  const {chat}=await import('../llm.mjs');
+ /* Frische Testdatenbank hat keine Routen: eine kostenlose, schluessellose
+    lokale Route anlegen — genau der Fall, der laut Vertrag weiterlaufen muss. */
+ const t0=Date.now();
+ db.prepare("INSERT INTO routes (name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used,cooldown_until) VALUES (?,?,?,?,?,1,1,1,1,'OK',0,0,0,0)")
+   .run('Test Ollama frei','ollama','http://127.0.0.1:11434/v1','qwen2.5-coder:7b','',);
  /* Erschoepftes bezahltes Budget darf kostenlose Routen nicht hart blocken:
-    Der Aufruf darf scheitern, aber nicht mit GLOBAL_TOKEN_BUDGET, solange
-    kostenlose Routen konfiguriert sind. */
+    Der Aufruf darf scheitern (kein Server im Test), aber nicht mit
+    GLOBAL_TOKEN_BUDGET, solange eine kostenlose Route nutzbar ist. */
  try { await chat([{role:'user',content:'fixture'}]); } catch (e) { assert.notEqual(e.code,'GLOBAL_TOKEN_BUDGET','freie Routen duerfen nicht blockiert werden'); }
 });
