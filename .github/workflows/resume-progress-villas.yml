@@ -1,0 +1,32 @@
+name: Resume Progress Villas
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resume:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resume Villas 2 and 3 in run-to-completion mode
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BASE=https://hub.cybersarah-ki.com
+          TOKEN=$(curl -fsS --max-time 30 -H 'Content-Type: application/json' \
+            -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" \
+            "$BASE/api/auth/login" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))')
+          test -n "$TOKEN"
+          for ID in 2 3; do
+            BODY=$(curl -fsS --max-time 30 -H "Authorization: Bearer $TOKEN" \
+              -H 'Content-Type: application/json' \
+              -d '{"runToCompletion":true,"concurrency":1,"maxRounds":6}' \
+              "$BASE/api/villas/$ID/start")
+            python3 -c 'import json,sys; d=json.load(sys.stdin); print("VILLA_START", json.dumps({k:d.get(k) for k in ("ok","started","queued","alreadyRunning","runToCompletion","status")}, separators=(",",":"))); assert d.get("ok") and d.get("runToCompletion") is True' <<< "$BODY"
+          done
+          curl -fsS --max-time 30 -H "Authorization: Bearer $TOKEN" "$BASE/api/scheduler" | \
+            python3 -c 'import json,sys; d=json.load(sys.stdin); print("SCHEDULER", json.dumps({"slots":d.get("slots"),"active":d.get("active"),"queued":d.get("queued")}, separators=(",",":")))'
