@@ -29,6 +29,7 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = fal
 
 function renderRuntime(state) {
   $('#runtimeConsole').dataset.state=state.state;
+  $('#auroraModelEvidence').textContent='Modell: '+state.label;
   $('.quality-card').dataset.modelState=state.state;
   $('#runtimeState').textContent=({ready:'BESTÄTIGT',busy:'BELEGT',blocked:'BLOCKIERT',unverified:'UNGEPRÜFT',offline:'OFFLINE'})[state.state];
   $('#runtimeTitle').textContent=state.label;$('#runtimeDetail').textContent=state.detail;

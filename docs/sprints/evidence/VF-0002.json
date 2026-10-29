@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "acceptanceComplete": true,
+  "command": "node scripts/design-audit.mjs (GitHub Chrome runner) plus harness regression tests",
+  "exitCode": 0,
+  "testedCommit": "f55d8e4696f86c00f3eba68cbf3961dd31531536",
+  "status": "passed",
+  "scopes": [
+    "desktop-dashboard",
+    "desktop",
+    "mobil-360-dashboard",
+    "mobil-360",
+    "mobil-dashboard",
+    "mobil",
+    "mobil-430-dashboard",
+    "mobil-430",
+    "reduzierteBewegung"
+  ],
+  "findings": 0,
+  "source": "https://github.com/niknight1403/Agentforge2/actions/runs/40955780943"
+}

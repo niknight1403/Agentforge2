@@ -50,10 +50,12 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "in_progress",
+      "status": "done",
       "scopeDefined": true,
-      "evidence": [],
-      "implementationCommit": null
+      "evidence": [
+        "docs/sprints/evidence/VF-0002.json"
+      ],
+      "implementationCommit": "26cee66ac07b4021da89e3b3fdf174a482a8c77a"
     },
     {
       "id": "VF-0003",
@@ -76,10 +78,12 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "planned",
+      "status": "done",
       "scopeDefined": true,
-      "evidence": [],
-      "implementationCommit": null
+      "evidence": [
+        "docs/sprints/evidence/VF-0003.json"
+      ],
+      "implementationCommit": "619ac7ec67e53a1dedd62ea2b514dd7376e5d16d"
     },
     {
       "id": "VF-0004",
@@ -125,10 +129,12 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "planned",
+      "status": "done",
       "scopeDefined": true,
-      "evidence": [],
-      "implementationCommit": null
+      "evidence": [
+        "docs/sprints/evidence/VF-0005.json"
+      ],
+      "implementationCommit": "3271ac3401a1258889f7baa45b3d098b771a4fec"
     },
     {
       "id": "VF-0006",

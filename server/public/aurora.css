@@ -70,3 +70,10 @@
  :root[data-theme="aurora"] .dashboard-action { padding:14px; }
  :root[data-theme="aurora"] .active-actions { margin:16px 0; }
 }
+.aurora-model-status { color:var(--muted); font-size:13px; margin:12px 0 0; }
+@media(min-width:700px){:root[data-theme="aurora"] .aurora-model-status { grid-column:2; margin:0; }}
+@media(max-width:699px){
+ :root[data-theme="aurora"] .hero-copy h1 { max-width:300px; font-size:32px; }
+ :root[data-theme="aurora"] .dashboard-actions .section-head { margin-bottom:8px; }
+ :root[data-theme="aurora"] .active-actions { margin-top:12px; margin-bottom:12px; }
+}
