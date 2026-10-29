@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: JSON route probe on production Hub
+      - name: Agent JSON route trace on production Hub
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
@@ -26,29 +26,28 @@ jobs:
           set -euo pipefail
           cd /opt/villaforge
           node --input-type=module <<'NODE'
-          import { chat } from './server/llm.mjs';
           import { db } from './server/db.mjs';
-          const agent = db.prepare('SELECT role, system_prompt FROM agents WHERE villa_id=34 AND is_root=1').get();
+          const originalFetch = globalThis.fetch;
+          globalThis.fetch = async (input, init = {}) => {
+            const url = typeof input === 'string' || input instanceof URL ? String(input) : input.url;
+            const response = await originalFetch(input, init);
+            if (url.includes('/chat/completions')) {
+              let model = 'unknown';
+              try { model = JSON.parse(init.body || '{}').model || model; } catch {}
+              console.log('PROVIDER_HTTP', JSON.stringify({host: new URL(url).host, model, status: response.status}));
+            }
+            return response;
+          };
+          const agent = db.prepare('SELECT * FROM agents WHERE villa_id=34 AND is_root=1').get();
           if (!agent) throw new Error('Villa root agent not found');
-          const messages = [
-            { role: 'system', content: agent.system_prompt },
-            { role: 'user', content: 'Antworte ausschließlich als JSON: {"final":"ok"}' }
-          ];
-          try {
-            const result = await chat(messages, {
-              role: agent.role, json: true, maxTokens: 1500,
-              timeoutMs: 8000, totalTimeoutMs: 45000
-            });
-            console.log('AGENT_JSON_RESULT', JSON.stringify({
-              ok: true, route: result.route || null, model: result.model || null,
-              answerLength: String(result.content || '').length
-            }));
-          } catch (error) {
-            console.log('AGENT_JSON_RESULT', JSON.stringify({
-              ok: false, code: error.code || 'LLM_ERROR',
-              attempts: Array.isArray(error.attempts) ? error.attempts : []
-            }));
-            process.exitCode = 1;
-          }
+          const { runAgent } = await import('./server/agents.mjs');
+          const result = await runAgent(agent, 'Antworte nur mit ok. Keine Werkzeuge verwenden.', {
+            maxSteps: 1, maxTokens: 1500, villaId: 34, reflect: false
+          });
+          console.log('AGENT_RUN_RESULT', JSON.stringify({
+            ok: !result.error, code: result.code || null,
+            route: result.route || null, model: result.model || null,
+            error: result.error || null, trace: result.trace || []
+          }));
           NODE
           REMOTE
