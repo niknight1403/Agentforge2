@@ -53,5 +53,5 @@ export function createCircuitBreaker({ failureThreshold = 3, resetAfterMs = 30_0
 
 function defaultShouldTrip(error) {
   const status=Number(error?.status)||0;
-  return status===429 || status>=500 || error?.name==='TimeoutError' || error?.name==='AbortError' || error?.code==='ECONNRESET' || error?.code==='ECONNREFUSED';
+  return status===429 || status>=500 || error?.name==='TimeoutError' || error?.name==='AbortError' || error?.code==='ECONNRESET' || error?.code==='ECONNREFUSED' || ['ECONNRESET','ECONNREFUSED','ETIMEDOUT','ENOTFOUND','EAI_AGAIN','UND_ERR_CONNECT_TIMEOUT','UND_ERR_SOCKET'].includes(error?.cause?.code);
 }

@@ -119,6 +119,7 @@ export function cancelScheduledVilla(id) {
   retryTimers.delete(villaId);
   retryCounts.delete(villaId);
   retryDetails.delete(villaId);
+  runOptions.delete(villaId);
   const index = queue.indexOf(villaId);
   if (index < 0) return !!timer;
   queue.splice(index, 1);
@@ -128,7 +129,8 @@ export function cancelScheduledVilla(id) {
 function pump() {
   while (starter && active.size < SLOTS() && queue.length) {
     const id = queue.shift();
-    if (active.has(id) || db.prepare('SELECT status FROM villas WHERE id=?').get(id)?.status === 'ARCHIVED') continue;
+    const villa=db.prepare('SELECT status FROM villas WHERE id=?').get(id);
+    if(active.has(id)||!villa||['ARCHIVED','STOPPING','COMPLETED'].includes(villa.status)){runOptions.delete(id);continue;}
     active.add(id);
     const generation = generations.get(id) || 0;
     const failed = (err) => {
@@ -199,6 +201,7 @@ export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, runToComplet
 export function _resetScheduler() {
   queue.length = 0;
   active.clear();
+  lastStart.clear();
   for (const timer of retryTimers.values()) clearTimeout(timer);
   retryTimers.clear();
   retryCounts.clear();

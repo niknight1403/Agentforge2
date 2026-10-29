@@ -222,3 +222,24 @@ test('Recently verified cloud routes precede failing priorities while routine ro
  rows[1].last_used=Date.now()-600000;
  assert.equal(orderCascadeRoutes(rows,{role:'CODER',freeOnlyMode:false})[0].id,1);
 });
+
+test('Local-first work cannot expire the cloud budget before the first cloud attempt',async()=>{
+ let time=0;const seen=[];
+ const run=makeCascade({routes:()=>[route(1,'ollama'),route(2,'gemini')],key:()=>'',clock:()=>time,call:async r=>{seen.push(r.provider);if(r.provider==='ollama'){time+=30000;throw Error('local timeout');}return answer;}});
+ await run([],{strategy:'LOCAL_FIRST',totalTimeoutMs:60000});assert.deepEqual(seen,['ollama','gemini']);
+});
+test('Endpoint slashes and credential aliases share attempt and quota identity',async()=>{
+ const a=route(1,'gemini','KEY',{base_url:'https://fixture.example/v1/',model:'same'});
+ let calls=0;const run=makeCascade({routes:()=>[a,{...a,id:2,base_url:'https://fixture.example/v1///',key_env:'ALIAS'}],key:()=> 'fixture-key',call:async()=>{calls++;throw Object.assign(Error('quota'),{status:429});}});
+ await assert.rejects(run([]));assert.equal(calls,1);
+});
+test('A cancelled provider answer is never recorded as a successful reply',async()=>{
+ const controller=new AbortController();let successes=0,failures=0;
+ const run=makeCascade({routes:()=>[route(1,'ollama')],key:()=>'',success:()=>successes++,failure:()=>failures++,call:async()=>{controller.abort();return answer;}});
+ await assert.rejects(run([],{signal:controller.signal}),e=>e.name==='AbortError');
+ assert.equal(successes,0);assert.equal(failures,0);assert.equal(run.stats().active,0);
+});
+test('Infinite concurrency configuration remains bounded',async()=>{
+ const prev=process.env.VF_LLM_MAX_QUEUE;process.env.VF_LLM_MAX_QUEUE='Infinity';
+ try{const run=makeCascade({routes:()=>[],key:()=>'',call:async()=>answer});assert.equal(run.stats().maxQueuePerEndpoint,64);}finally{if(prev===undefined)delete process.env.VF_LLM_MAX_QUEUE;else process.env.VF_LLM_MAX_QUEUE=prev;}
+});

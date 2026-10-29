@@ -232,3 +232,9 @@ test('Sprint 5: retry status exposes bounded timing and a safe reason', async ()
  assert.ok(info.nextRetryAt>=before+90000&&info.nextRetryAt<=Date.now()+90000);
  cancelScheduledVilla(id);assert.equal(schedulerStatus().retryDetails[id],undefined);_resetScheduler();
 });
+
+test('Deleted and terminal villas cannot consume scheduler slots',async()=>{
+ _resetScheduler();const ids=['ARCHIVED','STOPPING','COMPLETED'].map(status=>{const id=villa(status,0,1);db.prepare('UPDATE villas SET status=? WHERE id=?').run(status,id);return id;});
+ let calls=0;configureScheduler({start:async()=>calls++});enqueueVillas([...ids,99999999]);
+ await new Promise(r=>setImmediate(r));assert.equal(calls,0);assert.deepEqual(schedulerStatus().active,[]);_resetScheduler();
+});

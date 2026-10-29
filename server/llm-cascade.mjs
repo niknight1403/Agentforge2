@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { freeOnlyEnabled,isFreeRoute,isLocalRoute,routeTier } from './llm-config.mjs';
 import { withOtelSpan } from './otel.mjs';
+const finiteLimit=(value,fallback,min,max)=>{const n=Number(value);return Number.isFinite(n)&&n>0?Math.max(min,Math.min(max,Math.floor(n))):fallback;};
+export const normalizeEndpoint=value=>String(value||'').replace(/\/+$/,'');
 export class LlmUnavailableError extends Error {
  constructor(attempts=[],retryAfter=15) {super('Kein echtes Sprachmodell erreichbar. Cloud-Zugänge, Modellstatus und lokale LLM-Verbindung prüfen; die Anfrage wurde nicht durch einen regelbasierten Planer ersetzt.');this.name='LlmUnavailableError';this.code='LLM_UNAVAILABLE';this.statusCode=503;this.retryAfter=Math.max(15,Math.min(600,Math.ceil(Number(retryAfter)||15)));this.attempts=attempts;}
 }
@@ -21,7 +23,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
   if(current<limit){inFlight.set(base,current+1);return true;}
   const waitMs=Math.max(0,deadline-clock());
   if(!waitMs)return false;
-  const maxQueue=Math.max(1,Math.min(512,Number(process.env.VF_LLM_MAX_QUEUE)||64));
+  const maxQueue=finiteLimit(process.env.VF_LLM_MAX_QUEUE,64,1,512);
   if((permitWaiters.get(base)?.length||0)>=maxQueue)return false;
   return new Promise((resolve,reject)=>{
    let finished=false,timer;
@@ -55,31 +57,36 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
  const cascade = async function(messages,opts={}) {
   opts.signal?.throwIfAborted();
   const attempted=[],seen=new Set();let earliestRetryAt=Infinity;
+  for(const [credential,until] of credentialBlocks)if(until<=clock())credentialBlocks.delete(credential);
   const freeOnlyMode=typeof freeOnly==='function'?freeOnly():Boolean(freeOnly);
   const configuredRoutes=routes().filter(r=>(!r.key_env||key(r.key_env))&&(!freeOnlyMode||isFreeRoute(r))&&r.provider!=='offline');
   for(const r of configuredRoutes)if(Number(r.cooldown_until)>clock())earliestRetryAt=Math.min(earliestRetryAt,Number(r.cooldown_until));
   const candidateRoutes=configuredRoutes.filter(r=>Number(r.cooldown_until||0)<=clock());
   const ordered=orderCascadeRoutes(candidateRoutes,{strategy:opts.strategy,role:opts.role,freeOnlyMode,preferredModel:String(opts.preferredModel||'').slice(0,120)});
-  const deadline=clock()+Math.max(1000,Math.min(Number(opts.totalTimeoutMs)||120000,600000));
-  const cloudDeadline=Math.min(deadline,clock()+Math.max(1000,Math.min(Number(process.env.VF_LLM_CLOUD_BUDGET_MS)||24000,60000)));
+  const deadline=clock()+finiteLimit(opts.totalTimeoutMs,120000,1000,600000);
+  // Cloud time is consumed by cloud work, never by earlier local work.
+  let cloudRemaining=finiteLimit(process.env.VF_LLM_CLOUD_BUDGET_MS,24000,1000,60000);
   const busyEndpoints=new Set();
   for(const r of ordered) {
    opts.signal?.throwIfAborted();
-   if(!isLocalRoute(r) && clock()>=cloudDeadline)continue;
-   const credential=r.key_env ? r.base_url+'|'+createHash('sha256').update(String(key(r.key_env))).digest('hex') : '';
+   if(!isLocalRoute(r) && cloudRemaining<=0)continue;
+   const cloudDeadline=Math.min(deadline,clock()+cloudRemaining);
+   const routeStarted=clock();
+   const credential=r.key_env ? normalizeEndpoint(r.base_url)+'|'+createHash('sha256').update(String(key(r.key_env))).digest('hex') : '';
    if(credential && (credentialBlocks.get(credential)||0)>clock()){earliestRetryAt=Math.min(earliestRetryAt,credentialBlocks.get(credential));continue;}
-   const identity=`${r.base_url.replace(/\/$/,'')}|${r.model}|${r.key_env||''}`;
-   const endpoint=r.base_url.replace(/\/$/,'');
+   const identity=`${normalizeEndpoint(r.base_url)}|${r.model}|${credential||'public'}`;
+   const endpoint=normalizeEndpoint(r.base_url);
    if(busyEndpoints.has(endpoint))continue;
    if(seen.has(identity))continue;seen.add(identity);
    if(clock()>=deadline)break;
-   const limit=isLocalRoute(r)?Math.max(1,Number(process.env.OLLAMA_MAX_PARALLEL)||1):Math.max(1,Number(process.env.VF_LLM_ROUTE_CONCURRENCY)||3);
+   const limit=isLocalRoute(r)?finiteLimit(process.env.OLLAMA_MAX_PARALLEL,1,1,32):finiteLimit(process.env.VF_LLM_ROUTE_CONCURRENCY,3,1,32);
    // Serialize local work within the request deadline. Queue capacity and
    // cancellation keep concurrent villa starts bounded and stoppable.
    const localQueueWaitMs=Math.max(25,Math.min(Number(process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS)||90000,120000));
    const cloudQueueWaitMs=Math.max(25,Math.min(Number(process.env.VF_LLM_CLOUD_QUEUE_WAIT_MS)||250,1000));
    const slotDeadline=isLocalRoute(r)?Math.min(deadline,clock()+localQueueWaitMs):Math.min(cloudDeadline,clock()+cloudQueueWaitMs);
    if(!await acquire(endpoint,limit,slotDeadline,opts.signal,opts.priority)){attempted.push({route:r.name,code:'BUSY'});busyEndpoints.add(endpoint);earliestRetryAt=Math.min(earliestRetryAt,clock()+15000);continue;}
+   if(opts.signal?.aborted){release(endpoint);opts.signal.throwIfAborted();}
    if(clock()>=deadline){release(endpoint);break;}
     const started=clock();
    try {
@@ -98,6 +105,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
      'llm.model':String(r.model||'unknown'),
      'llm.timeout_ms':timeoutMs
     },()=>call(r,messages,{...opts,timeoutMs}));
+    opts.signal?.throwIfAborted();
     if(out?.offline||!String(out?.content||'').trim())throw Object.assign(new Error('Keine echte Modellantwort'),{code:'INVALID_RESPONSE'});
     success(r,out,clock()-started);
     return {...out,offline:false,failovers:attempted};
@@ -109,7 +117,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
     const code=e.busy?'BUSY':e.status ? `HTTP_${e.status}` : /timeout|abort/i.test(e.name||'')?'TIMEOUT':(e.code||'CONNECTION_ERROR');
     attempted.push({route:r.name,code});failure(r,e);
     opts.onFailover?.(r.name,code);
-   }finally {release(endpoint);}
+   }finally {release(endpoint);if(!isLocalRoute(r))cloudRemaining=Math.max(0,cloudRemaining-(clock()-routeStarted));}
   }
   throw new LlmUnavailableError(attempted,Number.isFinite(earliestRetryAt)?(earliestRetryAt-clock())/1000:15);
  };
@@ -117,6 +125,6 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    active: [...inFlight.values()].reduce((n,v)=>n+v,0),
    waiting: [...permitWaiters.values()].reduce((n,q)=>n+q.length,0),
    interactiveWaiting: [...permitWaiters.values()].reduce((n,q)=>n+q.filter(w=>w.interactive).length,0),
-   maxQueuePerEndpoint: Math.max(1,Math.min(512,Number(process.env.VF_LLM_MAX_QUEUE)||64))
+   maxQueuePerEndpoint: finiteLimit(process.env.VF_LLM_MAX_QUEUE,64,1,512)
  }) });
 }

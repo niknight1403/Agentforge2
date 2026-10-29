@@ -43,32 +43,7 @@ jobs:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
           VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
           VILLA_ID: ${{ inputs.villa_id }}
-        run: |
-          H=https://hub.cybersarah-ki.com
-          TOK=$(curl -s -m 30 -X POST -H "Content-Type: application/json" -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" $H/api/auth/login | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))')
-          [ -z "$TOK" ] && { echo "FEHLER: Hub-Login nicht moeglich"; exit 1; }
-          echo "TOK=$TOK" >> $GITHUB_ENV
-          echo "HUB=$H" >> $GITHUB_ENV
-          VILLA_NAME=$(curl -s -m 30 -H "Authorization: Bearer $TOK" "$H/api/villas" | python3 -c 'import json,os,sys; vid=int(os.environ["VILLA_ID"]); vs=json.load(sys.stdin); vs=vs if isinstance(vs,list) else vs.get("villas",[]); m=[v.get("name") for v in vs if v.get("id")==vid]; print(m[0] if m else "Villa %d"%vid)')
-          echo "VILLA_NAME=$VILLA_NAME" >> $GITHUB_ENV
-          echo "Villa: $VILLA_NAME"
-          ST=$(curl -s -m 30 -H "Authorization: Bearer $TOK" "$H/api/villas/$VILLA_ID/build" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status","none"))')
-          if [ "$ST" != "ready" ]; then
-            echo "Build nicht bereit ($ST) - starte Produkt-Build ..."
-            curl -s -m 60 -X POST -H "Authorization: Bearer $TOK" "$H/api/villas/$VILLA_ID/build" >/dev/null || true
-            for i in $(seq 1 24); do
-              sleep 5
-              ST=$(curl -s -m 30 -H "Authorization: Bearer $TOK" "$H/api/villas/$VILLA_ID/build" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status","none"))')
-              echo "  Build-Status: $ST"
-              if [ "$ST" = "ready" ] || [ "$ST" = "failed" ]; then break; fi
-            done
-          fi
-          if [ "$ST" = "ready" ]; then
-            curl -s -m 120 -H "Authorization: Bearer $TOK" -o /tmp/villa.zip "$H/api/villas/$VILLA_ID/build/download"
-            echo "Artefakt geladen: $(stat -c%s /tmp/villa.zip 2>/dev/null || echo 0) Bytes"
-          else
-            echo "Kein fertiges Hub-Artefakt ($ST) - Fallback-Landing-Page wird gebaut"
-          fi
+        run: node scripts/fetch-villa-build.mjs
 
       - name: Web-Root fuer das APK herrichten
         run: |
@@ -96,7 +71,8 @@ jobs:
               fi
             fi
           fi
-          ls $WWW | head -5
+          test -s "$WWW/index.html" || { echo "Kein lauffaehiges Villa-Webprodukt; APK-Release blockiert"; exit 1; }
+          ls "$WWW" | head -5
 
       - name: App-Name setzen, Icon-URL und Landing-Fallback vorbereiten
         env:
@@ -124,10 +100,11 @@ jobs:
 
       - name: APK umbenennen
         env:
+          APP_NAME: ${{ inputs.app_name }}
           VILLA_ID: ${{ inputs.villa_id }}
           VILLA_NAME: ${{ env.VILLA_NAME }}
         run: |
-          APP="${{ inputs.app_name }}"; [ -z "$APP" ] && APP="$VILLA_NAME"
+          APP="$APP_NAME"; [ -z "$APP" ] && APP="$VILLA_NAME"
           export APP
           SLUG=$(python3 -c "import re,os; print(re.sub(r'[^a-z0-9]+','-',os.environ['APP'].lower()).strip('-')[:30])")
           TAG="villa-$VILLA_ID-$(date +%Y%m%d)"

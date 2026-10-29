@@ -50,3 +50,28 @@ test('Sprint 6: concurrent responses cannot erase an open circuit',async()=>{
  pass('late response');assert.equal(await oldSuccess,'late response');
  assert.equal(breaker.snapshot('shared').state,'OPEN');
 });
+
+test('Fetch transport errors trip circuits through their nested cause',async()=>{
+ const breaker=createCircuitBreaker({failureThreshold:1});
+ await assert.rejects(breaker.execute('network',async()=>{throw new TypeError('fetch failed',{cause:Object.assign(Error('refused'),{code:'ECONNREFUSED'})});}));
+ assert.equal(breaker.snapshot('network').state,'OPEN');
+});
+test('A rejected completion is checkpointed as running, never completed',async()=>{
+ const taskId=90101;db.prepare('DELETE FROM agent_checkpoints WHERE task_id=?').run(taskId);
+ const out=await runSupervisedTask({taskId,agentId:77,maxSteps:1,step:async()=>({done:true,state:{files:1}}),validate:async()=>({ok:false,errors:['artifact missing']})});
+ assert.equal(out.status,'step_limit');assert.equal(recoverCheckpoint(taskId,77).state.status,'running');
+});
+test('Recovery uses execution cursor and does not reexecute an accepted completion',async()=>{
+ const taskId=90102;db.prepare('DELETE FROM agent_checkpoints WHERE task_id=?').run(taskId);
+ saveCheckpoint({taskId,agentId:77,state:{status:'running',cursor:4,state:{count:1}}});let attempt;
+ const out=await runSupervisedTask({taskId,agentId:77,maxSteps:6,step:async args=>{attempt=args.attempt;return {done:true,state:{count:2}};}});
+ assert.equal(attempt,5);assert.equal(out.status,'completed');
+ const recovered=await runSupervisedTask({taskId,agentId:77,step:async()=>{throw Error('must not run');}});
+ assert.equal(recovered.status,'completed');assert.equal(recovered.recovered,true);assert.equal(recovered.steps,5);
+});
+test('Supervisor cancellation interrupts execution without a new checkpoint',async()=>{
+ const taskId=90103;db.prepare('DELETE FROM agent_checkpoints WHERE task_id=?').run(taskId);
+ const controller=new AbortController();
+ const run=runSupervisedTask({taskId,agentId:77,signal:controller.signal,step:async()=>{controller.abort();return {done:true,state:{count:99}};}});
+ const out=await run;assert.equal(out.status,'cancelled');assert.equal(recoverCheckpoint(taskId,77),null);
+});

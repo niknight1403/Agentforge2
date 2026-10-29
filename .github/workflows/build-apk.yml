@@ -64,10 +64,10 @@ jobs:
           path: VillaForge.apk
           if-no-files-found: error
 
-      - name: Node 23 einrichten
+      - name: Node 24 einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: "23"
+          node-version: "24"
 
       - name: Hub-Laufzeitabhaengigkeiten installieren
         run: npm ci --no-audit --no-fund
@@ -101,9 +101,8 @@ jobs:
           path: VillaForge-Web.zip
           if-no-files-found: error
 
-      # LLM-Smoke-Test: laeuft nur, wenn Repository-Secrets hinterlegt sind
-      # (Settings → Secrets and variables → Actions). Keys erscheinen nie
-      # im Log und liegen nicht im Repo; der Hub liest sie aus der Umgebung.
+      # Mandatory production LLM gate; missing credentials fail closed.
+      # Credentials are supplied through GitHub Secrets and never logged.
       - name: Produktive kostenlose LLM-Kette prüfen
         env:
           VF_SMOKE_BASE_URL: https://hub.cybersarah-ki.com

@@ -46,3 +46,14 @@ test('Rate-limited credentials do not open the circuit for another configured cr
   assert.equal(rejected,3);assert.equal(accepted,3);
  }finally{if(old===undefined)delete process.env.VF_LLM_FREE_ONLY;else process.env.VF_LLM_FREE_ONLY=old;}
 });
+
+test('Local discovery and completion share a single provider deadline',async()=>{
+ const endpoint=await listen((req,res)=>{
+  req.resume();
+  setTimeout(()=>send(res,200,req.url.endsWith('/models')?{data:[{id:'deadline-fixture'}]}:{choices:[{message:{content:'too late'}}]}),130);
+ });
+ db.exec('DELETE FROM routes');db.prepare('INSERT INTO routes(name,provider,base_url,model,priority) VALUES (?,?,?,?,?)').run('Shared deadline','ollama',endpoint,'auto',1);
+ const started=Date.now();
+ await assert.rejects(chat([{role:'user',content:'fixture'}],{timeoutMs:200}),e=>e.code==='LLM_UNAVAILABLE'&&e.attempts[0].code==='TIMEOUT');
+ assert.ok(Date.now()-started<600,'model discovery must not create a second full timeout');
+});

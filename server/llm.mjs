@@ -171,6 +171,7 @@ async function callOpenAiCompatible(route, messages, opts) {
 
 const localModels=new Map();
 async function callOpenAiCompatibleRaw(route, messages, opts) {
+  const requestSignal=opts.signal?AbortSignal.any([opts.signal,AbortSignal.timeout(opts.timeoutMs??15000)]):AbortSignal.timeout(opts.timeoutMs??15000);
   const key = resolveKey(route.key_env);
   const headers = { 'Content-Type': 'application/json' };
   // Fal.ai authentifiziert mit "Key" statt "Bearer": provider-abhaengig setzen.
@@ -181,7 +182,7 @@ async function callOpenAiCompatibleRaw(route, messages, opts) {
     if(found && found.until>Date.now()) selectedModel=found.id;
     else {
       const discoveryTimeout=AbortSignal.timeout(Math.min(opts.timeoutMs,1500));
-      const models=await fetch(`${route.base_url.replace(/\/$/,'')}/models`,{headers,signal:opts.signal?AbortSignal.any([opts.signal,discoveryTimeout]):discoveryTimeout});
+      const models=await fetch(`${route.base_url.replace(/\/$/,'')}/models`,{headers,signal:AbortSignal.any([requestSignal,discoveryTimeout])});
       if(!models.ok)throw Object.assign(new Error('Local model discovery failed'),{status:models.status});
       const data=await models.json();
       const list=(data.data||[]).filter(m=>typeof m.id==='string');
@@ -200,18 +201,11 @@ async function callOpenAiCompatibleRaw(route, messages, opts) {
   };
   if (opts.json) body.response_format = { type: 'json_object' };
 
-  // Selbst gehostetes Ollama auf ARM ist deutlich langsamer als Cloud-APIs:
-  // grosszuegigeres Timeout verhindert Failover-Thrashing auf funktionierenden Routen.
-  /* Ollama-artige Timeouts auch fuer den lokalen LiteLLM-Proxy (Port 4000):
-     im Worst-Case (Cloud-Legs im Cooldown) bedient Ollama die Kaskade und
-     braucht auf der ARM-CPU je nach Last bis ~180 s. */
-  const isSlowLocal = route.provider === 'ollama' || /127\.0\.0\.1:4000/.test(route.base_url || '');
-  const defaultTimeout = isSlowLocal ? (Number(process.env.OLLAMA_TIMEOUT_MS) || 180000) : 60000;
   const res = await fetch(`${route.base_url.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal: opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(opts.timeoutMs ?? defaultTimeout)]) : AbortSignal.timeout(opts.timeoutMs ?? defaultTimeout)
+    signal: requestSignal
   });
   if (!res.ok) {
     await res.body?.cancel().catch(()=>{});
