@@ -66,27 +66,30 @@ async function waitForHub() {
 try {
   await waitForHub();
 
-  const created = await (await fetch(`${BASE}/api/villas`, {
+  const createdResponse = await fetch(`${BASE}/api/villas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'CI-Smoke', idea: 'Ein-Satz-Antworten testen', agentCount: 3 })
-  })).json();
-  const villaId = created.villaId;
-  console.log(`Villa #${villaId} angelegt, Planer-Route: ${created.plan?.summary?.slice(0, 60) || 'n/a'}`);
+  });
+  if (!createdResponse.ok) throw new Error(`Villa-Anlage HTTP ${createdResponse.status}`);
+  const created = await createdResponse.json();
+  const villaId = Number(created.villaId);
+  if (!Number.isSafeInteger(villaId) || villaId <= 0) throw new Error('Villa-Anlage lieferte keine gueltige villaId.');
 
-  const chatRes = await (await fetch(`${BASE}/api/villas/${villaId}/chat`, {
+  const chatResponse = await fetch(`${BASE}/api/villas/${villaId}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: 'Antworte mit genau einem kurzen Satz, dass du einsatzbereit bist.' })
-  })).json();
-
-  console.log('Antwort-Route:', chatRes.route, '| offline:', chatRes.offline);
-  if (chatRes.offline) {
-    console.error('FEHLER: keine echte LLM-Route zustande gekommen (Key ungueltig/Limit erreicht?).');
-    console.error('Hub-Log (Auszug):\n' + log.slice(-1500));
-    cleanup(1);
+  });
+  const chatRes = await chatResponse.json().catch(() => null);
+  if (!chatResponse.ok) throw new Error(`LLM-Smoke HTTP ${chatResponse.status}; keine echte Modellantwort.`);
+  if (chatRes?.offline !== false || typeof chatRes.route !== 'string' || !chatRes.route.trim()
+      || typeof chatRes.answer !== 'string' || !chatRes.answer.trim()) {
+    throw new Error('LLM-Smoke lieferte keine verifizierbare echte Modellantwort (route/answer/offline).');
   }
-  console.log('Antwort:', String(chatRes.answer).slice(0, 140).replace(/\n/g, ' '));
+
+  console.log(`Antwort-Route: ${chatRes.route} | Modell: ${chatRes.model || 'unbekannt'} | offline: false`);
+  console.log('Antwort:', chatRes.answer.slice(0, 140).replace(/\\n/g, ' '));
   console.log('OK: echte LLM-Route hat geantwortet.');
   cleanup(0);
 } catch (err) {
