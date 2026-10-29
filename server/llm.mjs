@@ -60,6 +60,9 @@ function coolDown(route,error) {
  const status=Number(error.status)||0;
  const retry=Number(error.retryAfterMs)||0;
  const ms=[401,403].includes(status)?300000:status===429?Math.max(120000,Math.min(retry,600000)):15000;
+ /* Kadaver-Routen: viele Fehlversuche und null Erfolge belegen dauerhaft
+    fehlende Erreichbarkeit - stilllegen statt bei jedem Aufruf erneut testen. */
+ try{const st=db.prepare('SELECT ok,fail FROM routes WHERE id=?').get(route.id);if(st&&Number(st.fail)>=50&&Number(st.ok)===0)db.prepare("UPDATE routes SET enabled=0,status='DEAD' WHERE id=?").run(route.id);}catch{}
  db.prepare('UPDATE routes SET cooldown_until=? WHERE id=?').run(Math.max(now()+ms,Number(route.cooldown_until)||0),route.id);
 }
 
@@ -290,7 +293,7 @@ function logRouteSwitch(failedName, successName, reason) {
   try { forgeLog('routeforge:switch', `Route SWITCHED: ${failedName} -> ${successName} [Reason: ${String(reason).slice(0, 120)}]`); } catch { /* Log darf den Takt nie brechen */ }
 }
 
-const routesWithinBudget=()=>{const all=enabledRoutes(),budget=tokenBudgetStatus();return !budget.tokenAllowed?[]:budget.paidRoutesAllowed?all:all.filter(isFreeRoute);};
+const routesWithinBudget=()=>{const all=enabledRoutes(),budget=tokenBudgetStatus();return budget.paidRoutesAllowed?all:all.filter(isFreeRoute);};
 const cascade=createCascade({
  routes:routesWithinBudget,key:resolveKey,call:callOpenAiCompatible,
  success(route,out,latency){recordRoute(route.id,true,latency,usageTokens([],out));},
@@ -300,7 +303,10 @@ export async function chat(messages,opts={}) {
  const user=userStore.getStore();
  if(user && quotaLeft(user)<=0) throw new Error('QUOTA_EXCEEDED: Tageskontingent aufgebraucht.');
  const tokenBudget=tokenBudgetStatus();
- if(!tokenBudget.tokenAllowed) throw Object.assign(new Error('QUOTA_EXCEEDED: Globales Tages-Tokenbudget erreicht; Kill-Switch aktiv.'),{code:'GLOBAL_TOKEN_BUDGET',statusCode:429,retryAfter:Math.max(1,Math.ceil((tokenBudget.resetsAt-Date.now())/1000)),resetsAt:tokenBudget.resetsAt});
+ /* Bezahlte Routen sind bei erschoepftem Budget gesperrt - kostenlose
+    Routen und selbst gehostete Knoten laufen weiter. Nur wenn es gar
+    keine freie Route gibt, ist der Kill-Switch wirklich aktiv. */
+ if(!tokenBudget.tokenAllowed && !enabledRoutes().some(r=>r.provider!=='offline'&&isFreeRoute(r))) throw Object.assign(new Error('QUOTA_EXCEEDED: Globales Tages-Tokenbudget erreicht; Kill-Switch aktiv.'),{code:'GLOBAL_TOKEN_BUDGET',statusCode:429,retryAfter:Math.max(1,Math.ceil((tokenBudget.resetsAt-Date.now())/1000)),resetsAt:tokenBudget.resetsAt});
  const started=Date.now();
  try {
   const out=await cascade(messages,opts);
