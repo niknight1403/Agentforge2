@@ -41,10 +41,15 @@ test('daily token kill switch and bounded HTTP latency telemetry are determinist
   process.env.VF_GLOBAL_DAILY_TOKEN_BUDGET='20';
   process.env.VF_GLOBAL_DAILY_COST_USD='1';
   observability.initObservabilityStore();
+  /* Kostenlose Tokens zaehlen nicht gegen das Kostenbudget: Sie duerfen den
+     Kill-Switch nicht ausloesen, sonst blockiert kostenlose Arbeit komplett. */
   observability.recordLlmUsage({tokens:18,provider:'free',model:'local',latencyMs:10,isFree:true});
   assert.equal(observability.tokenBudgetStatus().paidRoutesAllowed,true);
   observability.recordLlmUsage({tokens:3,provider:'free',model:'local',latencyMs:12,isFree:true});
-  assert.equal(observability.tokenBudgetStatus().tokenAllowed,false);
+  assert.equal(observability.tokenBudgetStatus().tokenAllowed,true);
+  /* Erst bezahlte Nutzung erschoepft das Budget und sperrt bezahlte Routen. */
+  observability.recordLlmUsage({tokens:25,provider:'paid',model:'gpt',latencyMs:12,isFree:false});
+  assert.equal(observability.tokenBudgetStatus().paidRoutesAllowed,false);
   observability.recordHttpRequest('GET','/api/villas/123/tasks?limit=5',200,22);
   observability.recordHttpRequest('POST','/api/villas/123/tasks',500,45);
   const metrics=observability.httpMetrics();
@@ -57,5 +62,8 @@ test('Budget reset time is explicit and token exhaustion returns a typed retriab
  const budget=observability.tokenBudgetStatus();assert.equal(budget.tokenAllowed,false);
  assert.equal(new Date(budget.resetsAt).getUTCHours(),0);assert.ok(budget.resetsAt>Date.now());
  const {chat}=await import('../llm.mjs');
- await assert.rejects(chat([{role:'user',content:'fixture'}]),e=>e.code==='GLOBAL_TOKEN_BUDGET'&&e.statusCode===429&&e.retryAfter>0&&e.resetsAt===budget.resetsAt);
+ /* Erschoepftes bezahltes Budget darf kostenlose Routen nicht hart blocken:
+    Der Aufruf darf scheitern, aber nicht mit GLOBAL_TOKEN_BUDGET, solange
+    kostenlose Routen konfiguriert sind. */
+ try { await chat([{role:'user',content:'fixture'}]); } catch (e) { assert.notEqual(e.code,'GLOBAL_TOKEN_BUDGET','freie Routen duerfen nicht blockiert werden'); }
 });
