@@ -16,8 +16,11 @@ import { join } from 'node:path';
 import { FREE_ROUTE_CATALOG } from '../routes.mjs';
 
 export const TMP = mkdtempSync(join(tmpdir(), 'vf-test-'));
-if (!process.env.VF_DB) process.env.VF_DB = join(TMP, 'test.db');
-if (!process.env.VF_WORKSPACE) process.env.VF_WORKSPACE = join(TMP, 'workspace');
+process.env.VF_DB = join(TMP, 'test.db');
+process.env.VF_WORKSPACE = join(TMP, 'workspace');
+// Hub unit tests must not inherit the runtime integration service connection.
+// RESP-client tests configure their own sockets; runtime tests use real Redis.
+delete process.env.REDIS_URL;
 
 for (const r of FREE_ROUTE_CATALOG) {
   if (r.keyEnv) delete process.env[r.keyEnv];

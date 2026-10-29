@@ -39,3 +39,5 @@ Der produktive Master-Chat-Test startet nach einem erfolgreichen Hub-Deploy per 
 ### Live-Nachbesserung: interaktiver Master bei ausgelasteten Villen
 
 Interaktive Anfragen werden in der Modellwarteschlange bevorzugt, aber nach zwei interaktiven Freigaben kommt ein wartender Hintergrundjob zum Zug. Der Master plant mit einem strukturierten Zustand von maximal 8000 Zeichen statt abgeschnittenem Vollstatus; Skill-Bodies werden nicht mitgesendet. Vorherige Chatbeiträge sind begrenzt, die aktuelle Nutzernachricht bleibt vollständig. Das reduziert lokale Prefill-Last und verhindert Queue-Verhungern. Providerquoten werden dadurch nicht erhöht.
+
+CI-Isolation: Hub-Unit-Tests verwenden stets eigene temporäre Datenbanken und Workspaces und übernehmen keine Redis-Verbindung aus der vorgeschalteten Runtime-Integration. Die TypeScript-Runtime-Integration bleibt mit echtem Redis/PostgreSQL aktiv; RESP-Client-Tests verwenden eigene TCP-Fixtures. Reine Hub-Teständerungen lösen keinen Produktionsneustart aus.

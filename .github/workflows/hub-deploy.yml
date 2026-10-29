@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'server/**'
+      - '!server/tests/**'
       - 'app/src/main/java/dev/villaforge/app/ui/**'
       - 'app/build.gradle.kts'
       - 'docs/releases/**'
