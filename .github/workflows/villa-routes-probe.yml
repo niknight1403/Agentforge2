@@ -1,0 +1,21 @@
+name: Villa-Routen-Probe
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Routen und Pull-Fortschritt
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdGRUhMRVI6ICcrU3RyaW5nKGUubWVzc2FnZSkuc2xpY2UoMCw4MCk7IH0gfTsKY29uc3QgREIgPSAnL29wdC92aWxsYWZvcmdlL3NlcnZlci9kYXRhL3ZpbGxhZm9yZ2UuZGInOwoKY29uc29sZS5sb2coJz09IFJvdXRlbiAoTmFtZSwgUHJpbywgZW5hYmxlZCwgTW9kZWxsKSA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gc3FsaXRlMyAtc2VwYXJhdG9yICcgfCAnICIgKyBEQiArICIgXCJTRUxFQ1Qgc3Vic3RyKG5hbWUsMSw0MiksIHByaW9yaXR5LCBlbmFibGVkLCBzdWJzdHIoY29hbGVzY2UobW9kZWwsJycpLDEsMjQpIEZST00gcm91dGVzIE9SREVSIEJZIHByaW9yaXR5IExJTUlUIDIyXCIgMj4mMSIpKTsKY29uc29sZS5sb2coJz09IExva2FsZSBSb3V0ZW4gKDEyNy4wLjAuMS9hcGkvZ2VuZXJhdGUgYXVmIGRpZXNlciBWTSkgPT0nKTsKY29uc29sZS5sb2cocnVuKCJzdWRvIHNxbGl0ZTMgLXNlcGFyYXRvciAnIHwgJyAiICsgREIgKyAiIFwiU0VMRUNUIGlkLCBzdWJzdHIobmFtZSwxLDQwKSwgcHJpb3JpdHksIGVuYWJsZWQgRlJPTSByb3V0ZXMgV0hFUkUgYmFzZV91cmwgTElLRSAnJTEyNy4wLjAuMSUnIE9SIGJhc2VfdXJsIExJS0UgJyVsb2NhbGhvc3QlJ1wiIDI+JjEiKSk7CmNvbnNvbGUubG9nKCc9PSBQdWxsLUZvcnRzY2hyaXR0ICgyIEtub3RlbikgPT0nKTsKZm9yIChjb25zdCBob3N0IG9mIFsnMi4zMS43Ny43MicsJzIuMjguMTIuNjMnXSkgewogIGNvbnNvbGUubG9nKGhvc3QgKyAnOiAnICsgcnVuKCJjdXJsIC1zIC0tbWF4LXRpbWUgNiBodHRwOi8vIiArIGhvc3QgKyAiOjExNDM0L2FwaS90YWdzIHwgbm9kZSAtZSBcImxldCBzPScnO3Byb2Nlc3Muc3RkaW4ub24oJ2RhdGEnLGQ9PnMrPWQpO3Byb2Nlc3Muc3RkaW4ub24oJ2VuZCcsKCk9Pnt0cnl7Y29uc3Qgaj1KU09OLnBhcnNlKHMpO2NvbnNvbGUubG9nKGoubW9kZWxzLm1hcChtPT5tLm5hbWUpLmpvaW4oJywgJykpfWNhdGNoKGUpe2NvbnNvbGUubG9nKCcoa2VpbmUgQW50d29ydCknKX19KVwiIDI+JjEiKSk7Cn0K" | base64 -d | node -'
