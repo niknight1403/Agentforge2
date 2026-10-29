@@ -81,8 +81,8 @@ test('Unbekannte Aktionen oder ungültige Parameter verändern nichts', async ()
   const out=await service.turn({message:'Test',requestId:'turn-invalid-123'});assert.equal(out.ok,false);
   assert.equal(db.prepare('SELECT COUNT(*) c FROM control_skills').get().c,0);
   assert.throws(()=>validateAction({type:'set_setting',args:{key:'villaSlots',value:100}}),/ungültig/);
-  assert.throws(()=>validateAction({type:'set_setting',args:{key:'villaSlots',value:2}}),/ungültig/);
-  assert.equal(getSetting('villaSlots'),3);
+  assert.throws(()=>validateAction({type:'set_setting',args:{key:'villaSlots',value:0}}),/ungültig/);
+  assert.equal(getSetting('villaSlots'),6);
 });
 test('Connectoren sperren private Adressen und unbeauftragte Schlüsselzuordnung', () => {
   for (const ip of ['127.0.0.1','10.2.3.4','192.168.1.1','169.254.169.254','::1','fe80::1','::ffff:127.0.0.1']) assert.equal(publicAddress(ip),false,ip);

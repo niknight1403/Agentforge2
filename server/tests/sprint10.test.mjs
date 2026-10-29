@@ -32,7 +32,7 @@ test('Scheduler: mindestens 3 Villen parallel und alle Startstellen ueber schedu
   const srv = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8');
   assert.ok(!/[^A-Za-z.]orchestrate\(/.test(srv.replace(/scheduleVilla\(/g, '')), 'server.mjs startet keine Villa direkt');
   const sched = readFileSync(new URL('../scheduler.mjs', import.meta.url), 'utf8');
-  assert.ok(sched.includes('VF_VILLA_SLOTS ?? 3'), 'Slot-Default 3');
+  assert.ok(sched.includes('VF_VILLA_SLOTS ?? 6'), 'Slot-Default 6');
   assert.ok(sched.includes('export function scheduleVilla'), 'scheduleVilla exportiert');
 });
 
