@@ -6,14 +6,28 @@
     "VF-0001",
     "VF-0002",
     "VF-0003",
-    "VF-0005"
+    "VF-0005",
+    "VF-0006",
+    "VF-0007",
+    "VF-0008"
   ],
-  "current": null,
+  "current": "VF-0004",
   "next": "VF-0004",
   "blockers": [
-    "Produktions-Master zuletzt HTTP 503 LLM_UNAVAILABLE",
-    "Browser-Audit im APK-Lauf konnte Chrome nicht erreichen"
+    "Produktions-LLM muss nach Deployment von 1.60.0 frisch verifiziert werden",
+    "Reale Villa-Produktabnahme mit Download noch nicht verifiziert"
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
-  "executionMode": "foreground-only"
+  "executionMode": "foreground-only",
+  "workBranch": "work/vf500-aurora",
+  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/31",
+  "qualityBaseline": {
+    "tests": 329,
+    "pass": 329,
+    "fail": 0,
+    "browserE2E": 19,
+    "browserAuditScopes": 9,
+    "findings": 0
+  },
+  "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden."
 }

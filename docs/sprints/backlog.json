@@ -105,7 +105,7 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "planned",
+      "status": "blocked",
       "scopeDefined": true,
       "evidence": [],
       "implementationCommit": null
@@ -142,7 +142,7 @@
       "goal": "Aurora-Projektcockpit in bestehende Web-App integrieren",
       "benefit": "Aktives Projekt und naechster Schritt sind klar bedienbar",
       "dependencies": [
-        "VF-0001"
+        "VF-0005"
       ],
       "modules": [
         "server/public/index.html",
@@ -158,10 +158,12 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "planned",
+      "status": "done",
       "scopeDefined": true,
-      "evidence": [],
-      "implementationCommit": null
+      "evidence": [
+        "docs/sprints/evidence/VF-0006.json"
+      ],
+      "implementationCommit": "f55d8e4696f86c00f3eba68cbf3961dd31531536"
     },
     {
       "id": "VF-0007",
@@ -169,7 +171,7 @@
       "goal": "Stabile Projektaktionen waehrend Live-Updates",
       "benefit": "Live-Refresh darf Projekte oder Fokus nicht versetzen",
       "dependencies": [
-        "VF-0001"
+        "VF-0006"
       ],
       "modules": [
         "server/public/app.js",
@@ -184,10 +186,12 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "planned",
+      "status": "done",
       "scopeDefined": true,
-      "evidence": [],
-      "implementationCommit": null
+      "evidence": [
+        "docs/sprints/evidence/VF-0007.json"
+      ],
+      "implementationCommit": "94781aecec2208ecb874dfb7329cabfb311f72a6"
     },
     {
       "id": "VF-0008",
@@ -195,7 +199,7 @@
       "goal": "Aurora responsiv und zugaenglich pruefen",
       "benefit": "Mobile Bedienung ohne abgeschnittene Inhalte",
       "dependencies": [
-        "VF-0001"
+        "VF-0006"
       ],
       "modules": [
         "scripts/design-audit.mjs",
@@ -211,10 +215,12 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "planned",
+      "status": "done",
       "scopeDefined": true,
-      "evidence": [],
-      "implementationCommit": null
+      "evidence": [
+        "docs/sprints/evidence/VF-0008.json"
+      ],
+      "implementationCommit": "94781aecec2208ecb874dfb7329cabfb311f72a6"
     },
     {
       "id": "VF-0009",
@@ -222,7 +228,8 @@
       "goal": "Reales Villa-Produkt mit Abnahmekriterien pruefen",
       "benefit": "Kein leeres Produkt wird als fertig freigegeben",
       "dependencies": [
-        "VF-0001"
+        "VF-0004",
+        "VF-0008"
       ],
       "modules": [
         "server/builds.mjs",
@@ -237,7 +244,7 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "planned",
+      "status": "blocked",
       "scopeDefined": true,
       "evidence": [],
       "implementationCommit": null
@@ -248,7 +255,8 @@
       "goal": "Release aus identischem geprueftem Commit",
       "benefit": "Nutzbare Web- und APK-Pakete mit ehrlicher Freigabe",
       "dependencies": [
-        "VF-0001"
+        "VF-0008",
+        "VF-0009"
       ],
       "modules": [
         ".github/workflows/build-apk.yml",
