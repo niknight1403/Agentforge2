@@ -1,0 +1,21 @@
+name: VM-Leistungsprobe
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdFUlI6ICcgKyBTdHJpbmcoZS5tZXNzYWdlKS5zbGljZSgwLDEyMCk7IH0gfTsKY29uc29sZS5sb2coJz09IEtlcm5lIC8gTW9kZWxsID09Jyk7CmNvbnNvbGUubG9nKCducHJvYzogJyArIHJ1bignbnByb2MnKSk7CmNvbnNvbGUubG9nKHJ1bigibHNjcHUgfCBncmVwIC1FICdNb2RlbCBuYW1lfENQVVxcKHNcXCl8VGhyZWFkfENvcmV8U29ja2V0fE1IeicgfCBoZWFkIC02IikpOwpjb25zb2xlLmxvZygnPT0gU2hhcGUgKE9DSS1NZXRhZGF0ZW4pID09Jyk7CmNvbnNvbGUubG9nKCdzaGFwZTogJyArIHJ1bigiY3VybCAtcyAtbSAzIC1IICdBdXRob3JpemF0aW9uOiBCZWFyZXIgT3JhY2xlJyBodHRwOi8vMTY5LjI1NC4xNjkuMjU0L29wYy92Mi9pbnN0YW5jZS9zaGFwZSIpKTsKY29uc29sZS5sb2coJ29jcHVzOiAnICsgcnVuKCJjdXJsIC1zIC1tIDMgLUggJ0F1dGhvcml6YXRpb246IEJlYXJlciBPcmFjbGUnIGh0dHA6Ly8xNjkuMjU0LjE2OS4yNTQvb3BjL3YyL2luc3RhbmNlL3NoYXBlQ29uZmlnL29jcHVzIikpOwpjb25zb2xlLmxvZygnbWVtR0I6ICcgKyBydW4oImN1cmwgLXMgLW0gMyAtSCAnQXV0aG9yaXphdGlvbjogQmVhcmVyIE9yYWNsZScgaHR0cDovLzE2OS4yNTQuMTY5LjI1NC9vcGMvdjIvaW5zdGFuY2Uvc2hhcGVDb25maWcvbWVtb3J5SW5HQnMiKSk7CmNvbnNvbGUubG9nKCdyZWdpb246ICcgKyBydW4oImN1cmwgLXMgLW0gMyAtSCAnQXV0aG9yaXphdGlvbjogQmVhcmVyIE9yYWNsZScgaHR0cDovLzE2OS4yNTQuMTY5LjI1NC9vcGMvdjIvaW5zdGFuY2UvY2Fub25pY2FsUmVnaW9uTmFtZSIpKTsKY29uc29sZS5sb2coJz09IE9DSS1DTEkgdm9yaGFuZGVuPyA9PScpOwpjb25zb2xlLmxvZygnb2NpOiAnICsgcnVuKCd3aGljaCBvY2kgfHwgZWNobyBuaWNodC1pbnN0YWxsaWVydCcpKTsKY29uc29sZS5sb2coJ2NvbmZpZzogJyArIHJ1bignbHMgLWxhIC9yb290Ly5vY2kvY29uZmlnIC9ob21lL3VidW50dS8ub2NpL2NvbmZpZyAyPi9kZXYvbnVsbCB8fCBlY2hvIGtlaW5lLWNvbmZpZycpKTsKY29uc29sZS5sb2coJz09IExhc3QgLyBBdXNsYXN0dW5nID09Jyk7CmNvbnNvbGUubG9nKHJ1bigndXB0aW1lJykpOwpjb25zb2xlLmxvZyhydW4oJ2ZyZWUgLWggfCBoZWFkIC0yJykpOwpjb25zb2xlLmxvZygnPT0gTm9kZS1Qcm96ZXNzZSA9PScpOwpjb25zb2xlLmxvZyhydW4oInBzIC1lbyBwY3B1LHBtZW0sY29tbSAtLXNvcnQ9LXBjcHUgfCBoZWFkIC02IikpOwo=" | base64 -d | sudo bash -c "node -"'
