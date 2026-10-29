@@ -1,0 +1,21 @@
+name: Ollama-Routen-Audit
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Routen und Knoten pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdFUlI6ICcrU3RyaW5nKGUuc3RkZXJyfHxlLm1lc3NhZ2UpLnNsaWNlKDAsMTUwKTsgfSB9Owpjb25zdCBEQiA9ICcvb3B0L3ZpbGxhZm9yZ2Uvc2VydmVyL2RhdGEvdmlsbGFmb3JnZS5kYic7CmNvbnNvbGUubG9nKCc9PSBPbGxhbWEtUm91dGVuIGltIEh1YiAoTmFtZSB8IFByaW8gfCBlbmFibGVkIHwgYmFzZV91cmwgfCBNb2RlbGwpID09Jyk7CmNvbnNvbGUubG9nKHJ1bigic3VkbyBzcWxpdGUzICIgKyBEQiArICIgXCJTRUxFQ1QgbmFtZXx8JyB8ICd8fHByaW9yaXR5fHwnIHwgJ3x8ZW5hYmxlZHx8JyB8ICd8fENPQUxFU0NFKGJhc2VfdXJsLCctJyl8fCcgfCAnfHxDT0FMRVNDRShtb2RlbCwnLScpIEZST00gcm91dGVzIFdIRVJFIExPV0VSKG5hbWUpIExJS0UgJyVvbGxhbWElJyBPUiBMT1dFUihDT0FMRVNDRShiYXNlX3VybCwnJykpIExJS0UgJyUxMTQzNCUnIE9SREVSIEJZIHByaW9yaXR5XCIgMj4mMSIpKTsKY29uc29sZS5sb2coJz09IEtub3Rlbi1FcnJlaWNoYmFya2VpdCArIE1vZGVsbGUgPT0nKTsKZm9yIChjb25zdCBpcCBvZiBbJzIuMzEuNzcuNzInLCcyLjMxLjQ1LjI0MScsJzIuMzEuNjQuNjUnLCcyLjI4LjEyLjYzJ10pIHsKICBjb25zdCB0YWdzID0gcnVuKCJjdXJsIC1zIC0tbWF4LXRpbWUgNiBodHRwOi8vIitpcCsiOjExNDM0L2FwaS90YWdzIik7CiAgbGV0IG1vZGVscyA9ICduaWNodCBlcnJlaWNoYmFyJzsKICB0cnkgeyBtb2RlbHMgPSAoSlNPTi5wYXJzZSh0YWdzKS5tb2RlbHN8fFtdKS5tYXAobT0+bS5uYW1lKS5qb2luKCcsJyk7IH0gY2F0Y2goZSkge30KICBjb25zb2xlLmxvZyhpcCsnOiAnK21vZGVscyk7Cn0K" | base64 -d | node -'
