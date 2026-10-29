@@ -19,7 +19,9 @@ test('JWT gateway enforces signatures, expiry bounds, role scopes and villa allo
   assert.equal(gateway.hasGatewayScope(checked.claims,'tasks:write'),true);
   assert.equal(gateway.canAccessVilla(checked.claims,3),true);
   assert.equal(gateway.canAccessVilla(checked.claims,9),false);
-  assert.equal(gateway.verifyGatewayToken(`${token.slice(0,-1)}x`,undefined).ok,false);
+  const [header,payload,signature]=token.split('.');
+  const tampered=`${header}.${payload}.${signature[0]==='A'?'B':'A'}${signature.slice(1)}`;
+  assert.equal(gateway.verifyGatewayToken(tampered,undefined).ok,false);
   assert.throws(()=>gateway.issueGatewayToken({subject:'42',role:'reader'}),/allowlist/);
 });
 
