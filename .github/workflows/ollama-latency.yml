@@ -1,0 +1,21 @@
+name: Ollama-Latenztest
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  lat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Latenz je Knoten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdFUlInOyB9IH07CmZ1bmN0aW9uIHRlc3QoYmFzZSwgbW9kZWwsIGxhYmVsKSB7CiAgY29uc3QgcGF5bG9hZCA9IEpTT04uc3RyaW5naWZ5KHttb2RlbCwgbWVzc2FnZXM6W3tyb2xlOid1c2VyJyxjb250ZW50OidBbnR3b3J0ZSBudXIgbWl0OiBPSyd9XSwgbWF4X3Rva2Vuczo1LCBzdHJlYW06ZmFsc2V9KTsKICBjb25zdCB0MCA9IERhdGUubm93KCk7CiAgY29uc3Qgb3V0ID0gcnVuKGBjdXJsIC1zIC1tIDYwIC1IICdDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24nIC1kICcke3BheWxvYWQucmVwbGFjZSgvJy9nLCAiJ1xcJyciKX0nICR7YmFzZX0vY2hhdC9jb21wbGV0aW9uc2ApOwogIGNvbnN0IG1zID0gRGF0ZS5ub3coKSAtIHQwOwogIGxldCBvayA9IGZhbHNlLCB0eHQgPSAnJzsKICB0cnkgeyBjb25zdCBqID0gSlNPTi5wYXJzZShvdXQpOyBvayA9ICEhai5jaG9pY2VzPy5bMF0/Lm1lc3NhZ2U/LmNvbnRlbnQ7IHR4dCA9IChqLmNob2ljZXM/LlswXT8ubWVzc2FnZT8uY29udGVudHx8ai5lcnJvcj8ubWVzc2FnZXx8JycpLnNsaWNlKDAsNDApOyB9IGNhdGNoKGUpIHsgdHh0ID0gb3V0LnNsaWNlKDAsNDApOyB9CiAgY29uc29sZS5sb2coYCR7bGFiZWx9OiAke29rPydPSyc6J0ZBSUwnfSB8ICR7bXN9bXMgfCAke3R4dH1gKTsKfQp0ZXN0KCdodHRwOi8vMi4zMS43Ny43MjoxMTQzNC92MScsJ3F3ZW4yLjUtY29kZXI6N2InLCdDQVg0MS03QicpOwp0ZXN0KCdodHRwOi8vMi4zMS40NS4yNDE6MTE0MzQvdjEnLCdxd2VuMi41LWNvZGVyOjdiJywnQ0FYMjEtMScpOwp0ZXN0KCdodHRwOi8vMi4zMS42NC42NToxMTQzNC92MScsJ3F3ZW4yLjUtY29kZXI6N2InLCdDQVgyMS0yJyk7CnRlc3QoJ2h0dHA6Ly8yLjI4LjEyLjYzOjExNDM0L3YxJywncXdlbjIuNS1jb2Rlcjo3YicsJ0NBWDExLTdCKC92MSknKTsKdGVzdCgnaHR0cDovLzEyNy4wLjAuMToxMTQzNC92MScsJ3F3ZW4yLjUtY29kZXI6N2InLCdMT0tBTC03QicpOwo=" | base64 -d | node -'
