@@ -39,3 +39,13 @@ test('Sprint 10: production deploy preserves user villa selection',()=>{
  assert.ok(workflow.includes("'server/**'"));
  assert.ok(workflow.includes('systemctl restart "$UNIT"'));
 });
+
+test('Production has one automatic writer and serializes optional recovery deploys',()=>{
+ const paths=['hub-deploy.yml','llm-cascade-deploy.yml','agentforge-resilience-deploy.yml'];
+ for(const [index,path] of paths.entries()){
+  const workflow=readFileSync(join(ROOT,'.github/workflows',path),'utf8');
+  assert.ok(workflow.includes('group: villaforge-production-hub'));
+  assert.ok(workflow.includes('cancel-in-progress: false'));
+  if(index>0){assert.ok(workflow.includes('workflow_dispatch:'));assert.ok(!/^  push:/m.test(workflow));}
+ }
+});

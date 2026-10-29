@@ -11,8 +11,8 @@ on:
       - '.github/workflows/hub-deploy.yml'
 
 concurrency:
-  group: villaforge-production-deploy
-  cancel-in-progress: true
+  group: villaforge-production-hub
+  cancel-in-progress: false
 
 jobs:
   deploy:

@@ -15,7 +15,7 @@ Datum: 29. Oktober 2026. Ausgangsstand: e03709ce3ae1235d1eb02a74173208dae73488cd
 | 7 | Begrenzte Warteschlange pro Modell-Endpunkt; volle Queues liefern BUSY statt unbegrenzt Speicher zu binden. | Kapazitäts- und Slot-Wiederverwendungstest |
 | 8 | Wartende und laufende lokale Modellanfragen sind abbrechbar. Villa-Stopp reicht das Signal bis fetch weiter; unfertige Aufgaben bleiben PENDING. | Queue-Abbruch, Orchestrator- und HTTP-Integrationstest |
 | 9 | Provider-Backpressure und Cooldowns bestimmen Retry-After. Der Wert bleibt über Agent, Aufgabe und Scheduler erhalten, bis maximal zehn Minuten. | 429-, Cooldown- und HTTP-Kaskadentests |
-| 10 | Reguläre Deploys bewahren Villenauswahl und Autonomie. Alle Backend-Dateien lösen Deploys aus; Tests, Rollback und Healthchecks bleiben vorgeschaltet. | Deploy-Regressionstest und vollständiges check-Gate |
+| 10 | Reguläre Deploys bewahren Villenauswahl und Autonomie. Alle Backend-Dateien lösen den zentralen Deploy aus. Die beiden früheren partiellen Deploys bleiben ausschließlich manuell aufrufbar und teilen dessen Ausführungssperre; Tests, Rollback und Healthchecks bleiben vorgeschaltet. | Deploy-Regressionstest und vollständiges check-Gate |
 
 ## Konfiguration
 

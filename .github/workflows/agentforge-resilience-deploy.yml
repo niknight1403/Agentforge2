@@ -5,38 +5,6 @@ concurrency:
   cancel-in-progress: false
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - server/.env.example
-      - server/agents.mjs
-      - server/db.mjs
-      - server/server.mjs
-      - server/evolve.mjs
-      - server/task-eta.mjs
-      - server/tests/task-eta.test.mjs
-      - server/agent-roles.mjs
-      - server/swarm.mjs
-      - server/quality-gate.mjs
-      - server/project-verification.mjs
-      - server/tests/agi-roles.test.mjs
-      - server/tests/swarm.test.mjs
-      - server/tests/quality-gate.test.mjs
-      - server/tests/project-verification.test.mjs
-      - server/circuit-breaker.mjs
-      - server/checkpoints.mjs
-      - server/event-mesh.mjs
-      - server/events.mjs
-      - server/llm-cascade.mjs
-      - server/llm.mjs
-      - server/master-control.mjs
-      - server/otel.mjs
-      - server/redis.mjs
-      - server/supervisor.mjs
-      - server/tests/event-mesh.test.mjs
-      - server/tests/llm-cascade.test.mjs
-      - server/tests/master-control.test.mjs
-      - server/tests/resilience-core.test.mjs
-      - .github/workflows/agentforge-resilience-deploy.yml
 jobs:
   deploy:
     runs-on: ubuntu-latest
