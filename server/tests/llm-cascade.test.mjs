@@ -213,3 +213,12 @@ test('Saturated cloud endpoints do not consume the whole failover budget',async(
   release();await first;assert.equal(run.stats().active,0);assert.equal(run.stats().waiting,0);assert.equal(run.stats().interactiveWaiting,0);assert.ok(run.stats().maxQueuePerEndpoint>=1);
  }finally{release();if(oldLimit===undefined)delete process.env.VF_LLM_ROUTE_CONCURRENCY;else process.env.VF_LLM_ROUTE_CONCURRENCY=oldLimit;if(oldWait===undefined)delete process.env.VF_LLM_CLOUD_QUEUE_WAIT_MS;else process.env.VF_LLM_CLOUD_QUEUE_WAIT_MS=oldWait;}
 });
+
+test('Recently verified cloud routes precede failing priorities while routine routing stays local',async()=>{
+ const {orderCascadeRoutes}=await import('../llm-cascade.mjs');
+ const rows=[route(1,'gemini','',{status:'ERROR',last_used:Date.now(),priority:1}),route(2,'groq','',{status:'OK',last_used:Date.now(),priority:99}),route(3,'ollama','',{status:'OK',last_used:Date.now(),priority:1})];
+ assert.equal(orderCascadeRoutes(rows,{role:'CODER',freeOnlyMode:false})[0].id,2);
+ assert.equal(orderCascadeRoutes(rows,{strategy:'LOCAL_FIRST',freeOnlyMode:false})[0].id,3);
+ rows[1].last_used=Date.now()-600000;
+ assert.equal(orderCascadeRoutes(rows,{role:'CODER',freeOnlyMode:false})[0].id,1);
+});

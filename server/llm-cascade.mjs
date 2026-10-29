@@ -7,8 +7,10 @@ export class LlmUnavailableError extends Error {
 const QUALITY_ROLES=new Set(['ROOT','CODER','ARCHITECT','REVIEWER','INTEGRATOR']);
 export function orderCascadeRoutes(routes,{role='',strategy='',freeOnlyMode=freeOnlyEnabled(),preferredModel=''}={}) {
  const localFirst=strategy==='LOCAL_FIRST'||(strategy!=='FALLBACK'&&!QUALITY_ROLES.has(String(role||'').toUpperCase()));
+ const checkedAt=Date.now();
+ const verifiedCloud=r=>!isLocalRoute(r)&&r.status==='OK'&&Number(r.last_used)>0&&checkedAt-Number(r.last_used)>=0&&checkedAt-Number(r.last_used)<300000;
  return routes.filter(r=>r.provider!=='offline'&&(!freeOnlyMode||isFreeRoute(r)))
-  .sort((a,b)=>(preferredModel?Number(String(b.model||'')===preferredModel)-Number(String(a.model||'')===preferredModel):0)||(localFirst?Number(!isLocalRoute(a))-Number(!isLocalRoute(b)):0)||routeTier(a)-routeTier(b)||Number(a.priority)-Number(b.priority)||Number(b.weight||1)-Number(a.weight||1)||Number(a.last_used||0)-Number(b.last_used||0)||a.id-b.id);
+  .sort((a,b)=>(preferredModel?Number(String(b.model||'')===preferredModel)-Number(String(a.model||'')===preferredModel):0)||(localFirst?Number(!isLocalRoute(a))-Number(!isLocalRoute(b)):0)||Number(verifiedCloud(b))-Number(verifiedCloud(a))||routeTier(a)-routeTier(b)||Number(a.priority)-Number(b.priority)||Number(b.weight||1)-Number(a.weight||1)||Number(a.last_used||0)-Number(b.last_used||0)||a.id-b.id);
 }
 /** Single pass, no cooldown sleeps and no duplicate endpoint/model attempts. */
 export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clock=Date.now,freeOnly=freeOnlyEnabled}) {
