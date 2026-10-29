@@ -1,0 +1,21 @@
+name: Villa-CPU-Probe
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: CPU- und Prozess-Diagnose
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdGRUhMRVI6ICcrU3RyaW5nKGUubWVzc2FnZSkuc2xpY2UoMCw4MCk7IH0gfTsKCmNvbnNvbGUubG9nKCc9PSBMb2FkIC8gQ1BVID09Jyk7CmNvbnNvbGUubG9nKHJ1bigidXB0aW1lOyBucHJvYzsgZ3JlcCAtYyBecHJvY2Vzc29yIC9wcm9jL2NwdWluZm8iKSk7CmNvbnNvbGUubG9nKCc9PSBUb3AtQ1BVLVByb3plc3NlID09Jyk7CmNvbnNvbGUubG9nKHJ1bigicHMgLWVvIHBpZCxwY3B1LHBtZW0sZXRpbWUsY29tbSxhcmdzIC0tc29ydD0tcGNwdSB8IGhlYWQgLTEwIikpOwpjb25zb2xlLmxvZygnPT0gSHViLVByb3plc3MgaW0gRGV0YWlsICgyIE1lc3N1bmdlbiwgM3MgQWJzdGFuZCkgPT0nKTsKY29uc3QgcGlkID0gcnVuKCJwZ3JlcCAtZiAnc2VydmVyL3NlcnZlci5tanN8c2VydmVyLm1qcycgfCBoZWFkIC0xIik7CmNvbnNvbGUubG9nKCdIdWItUElEOiAnICsgcGlkKTsKY29uc29sZS5sb2cocnVuKCJ0b3AgLWIgLW4xIC1wICIgKyBwaWQgKyAiIHwgdGFpbCAtMiIpKTsKY29uc29sZS5sb2cocnVuKCJzbGVlcCAzOyB0b3AgLWIgLW4xIC1wICIgKyBwaWQgKyAiIHwgdGFpbCAtMiIpKTsKY29uc29sZS5sb2coJz09IFRocmVhZHMvSGFuZGxlcyA9PScpOwpjb25zb2xlLmxvZyhydW4oImxzIC9wcm9jLyIgKyBwaWQgKyAiL3Rhc2sgfCB3YyAtbCIpICsgJyBUaHJlYWRzJyk7CmNvbnNvbGUubG9nKCc9PSBSZXNzb3VyY2VuLUFnZW50LVN0YXR1cyAoSHViLVNpY2h0KSA9PScpOwpjb25zb2xlLmxvZyhydW4oImN1cmwgLXMgLS1tYXgtdGltZSAxMCBodHRwOi8vMTI3LjAuMC4xOjEyMDAwL2FwaS9oZWFsdGggfCBoZWFkIC1jIDIwMCIpKTsKY29uc29sZS5sb2coJz09IEZlaGxnZXNjaGxhZ2VuZSBBdWZnYWJlbiAoVXJzYWNoZW4pID09Jyk7CmNvbnNvbGUubG9nKHJ1bigic3VkbyBzcWxpdGUzIC9vcHQvdmlsbGFmb3JnZS9zZXJ2ZXIvZGF0YS92aWxsYWZvcmdlLmRiIFwiU0VMRUNUIHZpbGxhX2lkLCBzdWJzdHIodGl0bGUsMSw0NCksIHN1YnN0cihjb2FsZXNjZShyZXN1bHQsJycpLDEsMTEwKSBGUk9NIHRhc2tzIFdIRVJFIHN0YXR1cz0nRkFJTEVEJyBPUkRFUiBCWSB1cGRhdGVkX2F0IERFU0MgTElNSVQgNlwiIDI+JjEiKSk7CmNvbnNvbGUubG9nKCc9PSBFdmVudC1Mb29wIC8gTG9vcC1WZXJkYWNodDogQ1BVLVplaXQgZGVzIEh1YnMgc2VpdCBTdGFydCA9PScpOwpjb25zb2xlLmxvZyhydW4oInBzIC1vIGV0aW1lcz0sdGltZXM9IC1wICIgKyBwaWQpKTsK" | base64 -d | node -'
