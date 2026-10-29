@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "acceptanceComplete": false,
+  "exitCode": 1,
+  "testedCommit": "29801696136f633c5fc7fed6105e1db077138782",
+  "version": "1.60.0",
+  "source": "https://github.com/niknight1403/Agentforge2/actions/runs/40958295058",
+  "diagnosticSource": "https://github.com/niknight1403/Agentforge2/actions/runs/40958597449",
+  "command": "Master-Chat-Probe using existing GitHub Secrets",
+  "production": true,
+  "fixture": false,
+  "health": {
+    "http": 200,
+    "deploymentRun": "https://github.com/niknight1403/Agentforge2/actions/runs/40958119903"
+  },
+  "master": {
+    "http": 503,
+    "code": "LLM_UNAVAILABLE",
+    "latencySeconds": 60.5
+  },
+  "observations": [
+    "Production version 1.60.0 deployed successfully.",
+    "Cloud cooldowns and local TIMEOUT/BUSY prevent a fresh Master reply.",
+    "No quota, payment or eligibility guard was disabled."
+  ],
+  "nextAction": "After provider cooldowns expire, run Master-Chat-Probe once. If still red, diagnose one configured endpoint with bounded timeout via an authorized workflow; do not add accounts or bypass quotas."
+}

@@ -107,7 +107,9 @@
       ],
       "status": "blocked",
       "scopeDefined": true,
-      "evidence": [],
+      "evidence": [
+        "docs/sprints/evidence/VF-0004-blocked.json"
+      ],
       "implementationCommit": null
     },
     {
@@ -246,7 +248,9 @@
       ],
       "status": "blocked",
       "scopeDefined": true,
-      "evidence": [],
+      "evidence": [
+        "docs/sprints/evidence/VF-0009-blocked.json"
+      ],
       "implementationCommit": null
     },
     {
@@ -271,9 +275,11 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "planned",
+      "status": "blocked",
       "scopeDefined": true,
-      "evidence": [],
+      "evidence": [
+        "docs/sprints/evidence/VF-0010-blocked.json"
+      ],
       "implementationCommit": null
     },
     {

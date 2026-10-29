@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "acceptanceComplete": false,
+  "exitCode": 1,
+  "testedCommit": "29801696136f633c5fc7fed6105e1db077138782",
+  "source": "https://github.com/niknight1403/Agentforge2/actions/runs/40958597449",
+  "production": true,
+  "fixture": false,
+  "operation": "Read-only product and build metadata; no projects started, modified or deleted.",
+  "candidates": [
+    {
+      "villaId": 18,
+      "verified": false,
+      "unfinishedTasks": 3,
+      "blockerCount": 3,
+      "buildStatus": "ready"
+    },
+    {
+      "villaId": 17,
+      "verified": false,
+      "unfinishedTasks": 14,
+      "blockerCount": 4,
+      "buildStatus": "ready"
+    },
+    {
+      "villaId": 8,
+      "verified": false,
+      "unfinishedTasks": 13,
+      "blockerCount": 4,
+      "buildStatus": "ready"
+    },
+    {
+      "villaId": 4,
+      "verified": false,
+      "unfinishedTasks": 22,
+      "blockerCount": 4,
+      "buildStatus": "ready"
+    },
+    {
+      "villaId": 3,
+      "verified": false,
+      "unfinishedTasks": 10,
+      "blockerCount": 3,
+      "buildStatus": "ready"
+    },
+    {
+      "villaId": 10,
+      "verified": false,
+      "unfinishedTasks": 1,
+      "blockerCount": 4,
+      "buildStatus": "ready"
+    },
+    {
+      "villaId": 9,
+      "verified": false,
+      "unfinishedTasks": 24,
+      "blockerCount": 4,
+      "buildStatus": "ready"
+    },
+    {
+      "villaId": 12,
+      "verified": false,
+      "unfinishedTasks": 1,
+      "blockerCount": 3,
+      "buildStatus": "ready"
+    },
+    {
+      "villaId": 24,
+      "verified": false,
+      "unfinishedTasks": 27,
+      "blockerCount": 5,
+      "buildStatus": "ready"
+    },
+    {
+      "villaId": 2,
+      "verified": false,
+      "unfinishedTasks": 7,
+      "blockerCount": 5,
+      "buildStatus": "ready"
+    }
+  ],
+  "downloadAcceptance": "Not attempted for unverified products. A ready archive alone does not satisfy product acceptance.",
+  "nextAction": "Select a real existing product, inspect its acceptance blockers and implement its actual missing requirements; do not generate a replacement landing page to pass."
+}

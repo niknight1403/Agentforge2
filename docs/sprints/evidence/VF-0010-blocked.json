@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "acceptanceComplete": false,
+  "exitCode": 1,
+  "testedCommit": "29801696136f633c5fc7fed6105e1db077138782",
+  "version": "1.60.0",
+  "source": "https://github.com/niknight1403/Agentforge2/actions/runs/40958119898",
+  "result": "PRODUCT_ACCEPTANCE_MISSING",
+  "modelGate": "Passed before product check, inferred from sequential production smoke control flow; route and latency not emitted by this run.",
+  "checks": {
+    "tests": 330,
+    "passed": 330,
+    "browserE2E": 19,
+    "auditScopes": 9,
+    "auditFindings": 0,
+    "androidLintAndUnit": "passed",
+    "androidReleaseBuild": "passed",
+    "codeQL": "passed",
+    "externalHealth": "HTTP 200, 1.60.0"
+  },
+  "artifacts": [
+    {
+      "kind": "apk",
+      "id": 12933674750,
+      "bytes": 1864852,
+      "sha256": "6db38e708a985f8eb47db9fbfa132f9373c96ec1d36fc9bb2c254f011cd6e655",
+      "archiveEntries": 373,
+      "archiveIntegrity": "passed",
+      "url": "https://github.com/niknight1403/Agentforge2/actions/runs/40958119898/artifacts/12933674750",
+      "signing": "Existing debug signing; stable production signing is not yet verified."
+    },
+    {
+      "kind": "web",
+      "id": 12935025921,
+      "bytes": 121552,
+      "sha256": "ce2cd3f86a4338f8a2cf5148b224ecae93b4575ebe33dc70e3fe3163e34ee9e9",
+      "archiveEntries": 15,
+      "archiveIntegrity": "passed",
+      "url": "https://github.com/niknight1403/Agentforge2/actions/runs/40958119898/artifacts/12935025921"
+    }
+  ],
+  "releasePublished": false
+}
