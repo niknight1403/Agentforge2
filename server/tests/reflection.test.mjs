@@ -49,7 +49,7 @@ test('Reflexion verbessert eine schwache Antwort (IMPROVE -> bessere Fassung)', 
     { verdict: 'IMPROVE', final: 'Vollstaendige, konkrete und gepruefte Antwort mit allen Punkten.' }
   ]);
   try {
-    const out = await runAgent(agent, 'Baue einen Login.', { villaId });
+    const out = await runAgent(agent, 'Baue einen Login.', { villaId, gate: true });
     assert.equal(out.reflection, 'improved');
     assert.match(out.answer, /Vollstaendige/);
     assert.ok(out.trace.some((e) => e.reflection === 'improved'));
@@ -63,7 +63,7 @@ test('Reflexion bestaetigt eine gute Antwort (OK -> Original bleibt)', async () 
     { verdict: 'OK', final: 'Sauber durchgearbeitete Loesung mit allen Akzeptanzkriterien.' }
   ]);
   try {
-    const out = await runAgent(agent, 'Baue einen Login.', { villaId });
+    const out = await runAgent(agent, 'Baue einen Login.', { villaId, gate: true });
     assert.equal(out.reflection, 'ok');
     assert.match(out.answer, /Sauber durchgearbeitete/);
   } finally { restore(); }
@@ -73,7 +73,7 @@ test('Reflexions-Pack aus: nur ein Modellauf, keine Selbstkritik', async () => {
   setPackEnabled('reflexion', false);
   const restore = mockChat([{ final: 'Antwort ohne Spiegel.' }]);
   try {
-    const out = await runAgent(agent, 'Baue einen Login.', { villaId });
+    const out = await runAgent(agent, 'Baue einen Login.', { villaId, gate: true });
     assert.equal(restore(), 1, 'kein zweiter Lauf');
     assert.notEqual(out.reflection, 'improved');
   } finally {
@@ -91,7 +91,7 @@ test('Defektes Reflexions-JSON faellt sanft auf die Original-Antwort zurueck', a
     return new Response(JSON.stringify({ choices: [{ message: { content: 'kein json, gar nichts' } }] }), { status: 200 });
   };
   try {
-    const out = await runAgent(agent, 'Baue einen Login.', { villaId });
+    const out = await runAgent(agent, 'Baue einen Login.', { villaId, gate: true });
     assert.match(out.answer, /Solide Original-Antwort/);
     assert.ok(out.trace.some((e) => e.reflection === 'skipped' || e.final === true));
   } finally { globalThis.fetch = orig; }
