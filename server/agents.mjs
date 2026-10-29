@@ -865,7 +865,31 @@ function openTasks(villaId) {
 }
 
 /** Fuehrt einen Agenten in einem begrenzten ReAct-Loop aus. */
-export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 1500, temperature, villaId = agent.villa_id, mode = 'agent', reflect, taskId, promptHint, preferredModel, signal, priority } = {}) {
+/* Kontext-Kompression: Der Agentenverlauf wuchs pro Werkzeugschritt um bis zu
+   2.000 Zeichen Werkzeugausgabe und wurde bei jedem Schritt komplett erneut
+   gesendet (quadratischer Tokenverbrauch). Aeltere Schritte werden jetzt
+   gekuerzt, die letzten beiden Runden bleiben vollstaendig erhalten. */
+function compactHistory(history) {
+  const KEEP_TAIL = 4;
+  if (!Array.isArray(history) || history.length <= KEEP_TAIL + 1) return history;
+  const head = history[0];
+  const body = history.slice(1);
+  const tail = body.slice(-KEEP_TAIL);
+  const older = body.slice(0, -KEEP_TAIL);
+  const compacted = older.map((m) => {
+    const text = String(m.content || '');
+    if (m.role === 'user' && text.startsWith('Werkzeug-Ergebnis')) {
+      return { role: m.role, content: text.slice(0, 220) + ' \u2026[aeltere Werkzeugausgabe gekuerzt]' };
+    }
+    return { role: m.role, content: text.slice(0, 300) };
+  });
+  const note = older.length
+    ? [{ role: 'user', content: `[Kontext komprimiert: ${older.length} aeltere Schritte zusammengefasst.]` }]
+    : [];
+  return [head, ...compacted, ...note, ...tail];
+}
+
+export async function runAgent(agent, userPrompt, { maxSteps = 5, maxTokens = 1500, temperature, villaId = agent.villa_id, mode = 'agent', reflect, gate = false, taskId, promptHint, preferredModel, signal, priority } = {}) {
   signal ??= running.get(villaId)?.controller?.signal;
   signal?.throwIfAborted();
   const ctx = { villaId, agentId: agent.id, taskId };
@@ -880,7 +904,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
   for (let step = 0; step < maxSteps; step++) {
     let out;
     try {
-      out = await chat(history, {
+      out = await chat(compactHistory(history), {
         json: true, mode, context, signal, priority,
         // Rollen-Qualitaetsrouting: Code-/Fuehrungsrollen bekommen die beste Route
         // (FALLBACK = hoechste Prioritaet zuerst) statt der Rotation.
@@ -931,7 +955,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
        Offline-Antworten werden nicht reflektiert (kein Modell, kein Nutzen),
        ein Fehler im Reflexions-Pass faellt sanft auf die Original-Antwort
        zurueck. Schaltbar: Feature-Pack "reflexion" und VF_REFLECTION=off. */
-    const doReflect = (reflect ?? true)
+    const doReflect = (reflect ?? gate === true)
       && !out.offline
       && process.env.VF_REFLECTION !== 'off'
       && packEnabled('reflexion');
@@ -1576,10 +1600,12 @@ export async function executeTask(villaId, task, executionOptions = {}) {
 
   // Rollenbasierte Budgets: Code-Rollen brauchen mehr Schritte und Tokens,
   // einfache Rollen weniger - das beschleunigt den Lauf spuerbar.
-  const maxSteps = ['CODER', 'ARCHITECT', 'INTEGRATOR'].includes(role) ? 12 : codeRole ? 8 : 6;
+  const stepCeiling = Math.max(1, Number(process.env.VF_MAX_STEPS_CAP) || 8);
+  const maxSteps = Math.min(stepCeiling, ['CODER', 'ARCHITECT', 'INTEGRATOR'].includes(role) ? 8 : codeRole ? 6 : 5);
   const maxTokens = ['CODER', 'ARCHITECT', 'DOCUMENTER', 'INTEGRATOR'].includes(role) ? 3500 : 1400;
   let res;
-  try { res = await runAgent(agent,prompt,{maxSteps,villaId,maxTokens,taskId:task.id,
+  const taskGate = /\[(REPARATUR|DELIVERY|VERIFIKATION|QUALITAET)\]/i.test(String(task.title || ''));
+  try { res = await runAgent(agent,prompt,{maxSteps,villaId,maxTokens,taskId:task.id,gate:taskGate,
     ...(executionOptions.promptHint ? {promptHint:executionOptions.promptHint} : {}),
     ...(executionOptions.fallbackModel ? {preferredModel:executionOptions.fallbackModel} : {})}); }
   catch(error){
