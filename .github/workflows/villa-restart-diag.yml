@@ -1,0 +1,21 @@
+name: Villa-Restart-Diagnose
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Restart-Ursache finden
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdGRUhMRVI6ICcrU3RyaW5nKGUubWVzc2FnZSkuc2xpY2UoMCw4MCk7IH0gfTsKCmNvbnNvbGUubG9nKCc9PSBTZXJ2aWNlLVp1c3RhbmQgPT0nKTsKY29uc29sZS5sb2cocnVuKCJzeXN0ZW1jdGwgc2hvdyB2aWxsYWZvcmdlLWh1YiAtcCBOUmVzdGFydHMsQWN0aXZlRW50ZXJUaW1lc3RhbXAsRXhlY01haW5TdGFydFRpbWVzdGFtcCxSZXN0YXJ0IDI+JjEiKSk7CmNvbnNvbGUubG9nKCc9PSBTdG9wLS9TdGFydC1FcmVpZ25pc3NlIGRlciBsZXR6dGVuIDMwIE1pbiA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gam91cm5hbGN0bCAtLXNpbmNlICczMCBtaW4gYWdvJyAtLW5vLXBhZ2VyIDI+L2Rldi9udWxsIHwgZ3JlcCAtRSAnU3RvcHBpbmcgdmlsbGFmb3JnZS1odWJ8U3RhcnRlZCB2aWxsYWZvcmdlLWh1YnxEZWFjdGl2YXRlZHxTY2hlZHVsZWQgcmVzdGFydHx2aWxsYWZvcmdlLXN5bmN8b3JhY2xlLWhlYWxlcnxoZWFsZXInIHwgdGFpbCAtMjUiKSk7CmNvbnNvbGUubG9nKCc9PSBUaW1lciArIENyb24gPT0nKTsKY29uc29sZS5sb2cocnVuKCJzeXN0ZW1jdGwgbGlzdC10aW1lcnMgLS1hbGwgLS1uby1wYWdlciAyPi9kZXYvbnVsbCB8IGdyZXAgLWlFICd2aWxsYXxoZWFsfHN5bmMnIHwgaGVhZCAtNiIpKTsKY29uc29sZS5sb2cocnVuKCJzdWRvIGNyb250YWIgLWwgMj4vZGV2L251bGwgfCBncmVwIC12aUUgJ14jJyB8IGhlYWQgLTgiKSk7CmNvbnNvbGUubG9nKCc9PSBXZXIgcnVmdCBzeXN0ZW1jdGwgcmVzdGFydD8gKGF1ZGl0L2pvdXJuYWwpID09Jyk7CmNvbnNvbGUubG9nKHJ1bigic3VkbyBqb3VybmFsY3RsIC0tc2luY2UgJzMwIG1pbiBhZ28nIC0tbm8tcGFnZXIgMj4vZGV2L251bGwgfCBncmVwIC1pRSAnc3lzdGVtY3RsfHJlc3RhcnQgdmlsbGF8S2lsbHxPT018b3V0IG9mIG1lbW9yeXxzaWduYWwnIHwgdGFpbCAtMTUiKSk7Cg==" | base64 -d | node -'
