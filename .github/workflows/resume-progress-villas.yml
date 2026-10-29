@@ -25,8 +25,8 @@ jobs:
             BODY=$(curl -fsS --max-time 30 -H "Authorization: Bearer $TOKEN" \
               -H 'Content-Type: application/json' \
               -d '{"runToCompletion":true,"concurrency":1,"maxRounds":6}' \
-              "$BASE/api/villas/$ID/start")
-            python3 -c 'import json,sys; d=json.load(sys.stdin); print("VILLA_START", json.dumps({k:d.get(k) for k in ("ok","started","queued","alreadyRunning","runToCompletion","status")}, separators=(",",":"))); assert d.get("ok") and d.get("runToCompletion") is True' <<< "$BODY"
+              "$BASE/api/villas/$ID/orchestrate")
+            python3 -c 'import json,sys; d=json.load(sys.stdin); print("VILLA_START", json.dumps({k:d.get(k) for k in ("ok","started","queued","alreadyRunning","runToCompletion")}, separators=(",",":"))); assert d.get("ok") and d.get("runToCompletion") is True' <<< "$BODY"
           done
           curl -fsS --max-time 30 -H "Authorization: Bearer $TOKEN" "$BASE/api/scheduler" | \
             python3 -c 'import json,sys; d=json.load(sys.stdin); print("SCHEDULER", json.dumps({"slots":d.get("slots"),"active":d.get("active"),"queued":d.get("queued")}, separators=(",",":")))'
