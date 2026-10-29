@@ -839,7 +839,7 @@ export function buildSystemPrompt(role) {
   const tools = ROLE_TOOLS[role] || ROLE_TOOLS.WORKER;
   return [
     ROLE_BRIEF[role] || ROLE_BRIEF.WORKER,
-    `Rolle: ${role}.`,
+    `Rolle: ${role}. Tools: ${tools}.`,
     `Qualitaetsregeln:\n- ${QUALITY_RULES}`,
     'Schliesse jede Aufgabe mit einem pruefbaren Ergebnis ab.'
   ].join('\n');
