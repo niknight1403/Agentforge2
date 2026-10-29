@@ -657,8 +657,8 @@ class HubClient(context: Context) {
         )
     }
 
-    suspend fun orchestrate(villaId: Long, concurrency: Int = 4, maxTasks: Int = 500) {
-        val body = JSONObject().put("concurrency", concurrency).put("maxTasks", maxTasks)
+    suspend fun orchestrate(villaId: Long, concurrency: Int = 0, maxTasks: Int = 500) {
+        val body = JSONObject().put("concurrency", concurrency).put("maxTasks", maxTasks).put("runToCompletion", true)
         execute("POST", "/api/villas/$villaId/orchestrate", body)
     }
 

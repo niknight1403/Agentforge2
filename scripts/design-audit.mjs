@@ -209,6 +209,10 @@ async function probe(name) {
       await page.navigate(url);
       await page.setViewport(vp.w, vp.h, { mobile: !!vp.mobile });
       await delay(600);
+      await page.waitFor("document.querySelector('#villaList .villa-card') && document.querySelector('#runtimeState')?.textContent !== 'PRÜFT'", { timeout: 20_000, label: 'Cockpit geladen' });
+      const dashboard = await probe(`${name}-dashboard`);
+      console.log(`${name}-cockpit ${JSON.stringify(dashboard.counts)}`);
+      await page.screenshot(join(OUT, `${name}-dashboard.png`));
       // Arbeitsbereich oeffnen, damit dessen Stile mitgemessen werden.
       await page.evaluate("const c = document.querySelector('#villaList .villa-card'); if (c) c.click(); return true;");
       await page.waitFor("document.querySelector('#detailPanel').hidden === false", { timeout: 20_000, label: 'Arbeitsbereich' });

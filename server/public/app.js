@@ -28,6 +28,7 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = fal
 
 function renderRuntime(state) {
   $('#runtimeConsole').dataset.state=state.state;
+  $('.quality-card').dataset.modelState=state.state;
   $('#runtimeState').textContent=({ready:'BESTÄTIGT',busy:'BELEGT',blocked:'BLOCKIERT',unverified:'UNGEPRÜFT',offline:'OFFLINE'})[state.state];
   $('#runtimeTitle').textContent=state.label;$('#runtimeDetail').textContent=state.detail;
   $('#runtimeRequests').textContent=state.active;$('#runtimeWaiting').textContent=state.waiting;
@@ -92,7 +93,7 @@ async function loadAdminMetrics() {
   const revenue = (m.billing?.revenue||[]).map(row=>new Intl.NumberFormat('de-DE',{style:'currency',currency:String(row.currency||'EUR').toUpperCase(),maximumFractionDigits:2}).format(Number(row.amount_minor||0)/100));
   $('#metricRevenue').textContent = revenue.length ? revenue.join(' / ') : '0 €';
   const usage=m.usage||{};
-  $('#metricBudgetState').textContent = usage.killSwitch ? 'Kosten-/Token-Schutz aktiv · bezahlte Routen pausiert; kostenlose Routen bleiben verfügbar.' : `${Number(usage.tokenRemaining||0).toLocaleString('de-DE')} Tokens verbleibend · geschätzt ${Number(usage.costUsd||0).toFixed(2)} / ${Number(usage.costLimitUsd||0).toFixed(2)} USD heute · API p50 ${Number(m.http?.p50LatencyMs||0)} ms · ${Number(m.http?.errors24h||0)} Serverfehler / 24 h`;
+  $('#metricBudgetState').textContent = usage.tokenAllowed === false ? 'Token-Tagesbudget erreicht · alle Modellanfragen pausiert.' : usage.killSwitch ? 'Kostenlimit erreicht · bezahlte Routen pausiert; kostenlose Routen bleiben verfügbar.' : `${Number(usage.tokenRemaining||0).toLocaleString('de-DE')} Tokens verbleibend · geschätzt ${Number(usage.costUsd||0).toFixed(2)} / ${Number(usage.costLimitUsd||0).toFixed(2)} USD heute · API p50 ${Number(m.http?.p50LatencyMs||0)} ms · ${Number(m.http?.errors24h||0)} Serverfehler / 24 h`;
   $('#metricsUpdated').textContent = `LIVE · ${new Date(m.generatedAt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}`;
 }
 
@@ -218,7 +219,7 @@ function renderVillaLists(villas = latestVillas) {
     event.preventDefault(); event.stopPropagation();
     const id=Number(el.dataset.villaControl), active=el.dataset.active==='1'; el.disabled=true;
     try {
-      const out=await api(active?`/api/villas/${id}/stop`:`/api/villas/${id}/orchestrate`,{method:'POST',body:active?{}:{concurrency:4,maxTasks:500,adaptive:true,runToCompletion:true}});
+      const out=await api(active?`/api/villas/${id}/stop`:`/api/villas/${id}/orchestrate`,{method:'POST',body:active?{}:{concurrency:0,runToCompletion:true}});
       if(out.error)throw new Error(out.error);
       toast(active?(out.cancelled?'Villa aus der Warteschlange entfernt':'Villa wird angehalten'):(out.queued?'Villa vorgemerkt':'Entwicklung gestartet'));
       await loadVillas();
@@ -478,7 +479,7 @@ async function startDevelopment() {
   if (!currentVilla) return;
   const btn = $('#startBtn'); btn.disabled = true;
   try {
-    const out = await api(`/api/villas/${currentVilla.villa.id}/orchestrate`, { method: 'POST', body: { concurrency: 4, maxTasks: 500, adaptive: true } });
+    const out = await api(`/api/villas/${currentVilla.villa.id}/orchestrate`, { method: 'POST', body: { concurrency: 0, runToCompletion: true } });
     if (out.error) { toast(out.error); return; }
     await refreshCurrent();
     toast(out.queued ? 'Villa vorgemerkt und startet, sobald ein Slot frei ist' : 'Entwicklung gestartet');
@@ -512,13 +513,14 @@ async function loadRoutes() {
     $('#routeFreePolicy').textContent = `Free-only: ${status.freeOnly ? 'aktiv' : 'aus'}`;
   }
   const available = (status.routes || []).filter(r => r.eligible).length;
-  const verified = routes.filter(r => r.enabled && Number(r.ok) > 0).length;
-  $('#routeHealth').textContent = `${available} aktuell nutzbar · ${verified ? `${verified} Route(n) mit Erfolgsnachweis` : available ? 'noch nicht live geprüft' : 'keine nutzbare Route'}`;
+  const verified = (status.routes || []).filter(r => r.eligible && r.status==='OK').length;
+  $('#routeHealth').textContent = `${available} freigegeben · ${verified ? `${verified} Route(n) mit Erfolgsnachweis` : available ? 'noch nicht live geprüft' : 'keine nutzbare Route'}`;
   $('#routeList').innerHTML = routes.map(r => {
-    const routeStatus = r.ok > 0 ? 'OK' : (r.fail > 0 ? 'ERROR' : 'NEW');
-    const stL = r.ok > 0 ? 'aktiv' : (r.fail > 0 ? 'Fehler' : 'bereit');
-    const keyL = r.provider === 'offline' ? 'lokal' : r.hasKey ? 'Zugang bereit' : 'Zugang fehlt';
-    const eligible = r.provider === 'offline' || (r.enabled && r.hasKey && (status.routes || []).some(x => x.id === r.id && x.eligible));
+    const live=(status.routes || []).find(x=>x.id===r.id);
+    const presentation=VFRuntimeUI.routePresentation(r,live);
+    const routeStatus=presentation.tone.toUpperCase(),stL=presentation.label;
+    const eligible=presentation.eligible;
+    const keyL=live?.configured?(live.local?'Lokales Modell':'Zugang konfiguriert'):'Zugang fehlt';
     return `<div class="row route-row${r.enabled ? '' : ' off'}"><div class="head"><b><i class="rdot rdot-${routeStatus.toLowerCase()}"></i>${esc(r.name)}</b><span class="badge ${eligible ? 'RUNNING' : 'PAUSED'}">${eligible ? 'in Kette' : r.enabled ? keyL : 'deaktiviert'}</span></div><div class="sub">${esc(r.model)} · ${esc(r.provider)} · Prio ${esc(r.priority)} · <span class="okc">ok ${esc(r.ok)}</span> · <span class="failc">Fehler ${esc(r.fail)}</span> ${r.is_free ? '· kostenlos' : ''}</div><div class="row-actions"><span class="badge ${routeStatus}">${stL}</span><button data-toggle="${r.id}" data-enabled="${r.enabled}" class="compact">${r.enabled ? 'Deaktivieren' : 'Aktivieren'}</button></div></div>`;
   }).join('');
   document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', async () => { const result = await api(`/api/routes/${b.dataset.toggle}`, { method: 'PATCH', body: { enabled: b.dataset.enabled !== '1' } }); if (result.error) toast(result.error); loadRoutes(); }));
@@ -649,7 +651,7 @@ $('#activeControlBtn').addEventListener('click', async () => {
   button.disabled = true;
   try {
     const result = await api(wasActive ? `/api/villas/${id}/stop` : `/api/villas/${id}/orchestrate`, {
-      method: 'POST', body: wasActive ? {} : { concurrency: 4, maxTasks: 500, adaptive: true, runToCompletion: true }
+      method: 'POST', body: wasActive ? {} : { concurrency: 0, runToCompletion: true }
     });
     if (result.error) throw new Error(result.error);
     toast(wasActive ? (result.cancelled ? 'Villa aus der Warteschlange entfernt' : 'Villa wird angehalten') : (result.queued ? 'Villa vorgemerkt' : 'Entwicklung gestartet'));

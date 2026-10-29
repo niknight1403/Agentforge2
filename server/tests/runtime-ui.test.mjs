@@ -16,3 +16,12 @@ test('Selected cockpit project remains selected while other villas run',()=>{
  assert.equal(chooseVilla(villas,2,1).id,2);assert.equal(chooseVilla(villas,99,1).id,1);
  assert.equal(chooseVilla([],2,1),null);
 });
+
+test('Historical route successes do not override a cooldown or open circuit',()=>{
+ const route={enabled:1,ok:100,fail:1};
+ assert.equal(globalThis.VFRuntimeUI.routePresentation(route,{configured:true,eligible:true,status:'OK',cooldownUntil:3000},1000).eligible,false);
+ const circuit=globalThis.VFRuntimeUI.routePresentation(route,{configured:true,eligible:false,status:'OK',circuit:{state:'OPEN',retryAt:3000}},1000);
+ assert.match(circuit.label,/Schutzpause/);assert.equal(circuit.tone,'new');
+ assert.equal(globalThis.VFRuntimeUI.routePresentation(route,{configured:false},1000).label,'Zugang fehlt');
+ assert.equal(globalThis.VFRuntimeUI.routePresentation(route,{configured:true,eligible:true,status:'ERROR'},1000).label,'Freigegeben · ungeprüft');
+});

@@ -14,5 +14,13 @@
   function chooseVilla(villas,selectedId,focusId) {
     return villas.find(v=>Number(v.id)===Number(selectedId)) || villas.find(v=>Number(v.id)===Number(focusId)) || villas.find(v=>v.status==='RUNNING') || villas[0] || null;
   }
-  root.VFRuntimeUI = Object.freeze({summarizeHealth,chooseVilla});
+  function routePresentation(route,live,at=Date.now()) {
+    if(!route.enabled)return {eligible:false,tone:'new',label:'Deaktiviert'};
+    if(!live?.configured)return {eligible:false,tone:'error',label:'Zugang fehlt'};
+    const retryAt=Math.max(count(live.cooldownUntil),live.circuit?.state==='OPEN'?count(live.circuit.retryAt):0);
+    if(retryAt>at)return {eligible:false,tone:'new',label:`Schutzpause · ${Math.ceil((retryAt-at)/1000)} s`};
+    const eligible=live.eligible===true;
+    return {eligible,tone:eligible&&live.status==='OK'?'ok':'new',label:eligible?(live.status==='OK'?'Zuletzt erfolgreich':'Freigegeben · ungeprüft'):'Nicht freigegeben'};
+  }
+  root.VFRuntimeUI = Object.freeze({summarizeHealth,chooseVilla,routePresentation});
 })(globalThis);

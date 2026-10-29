@@ -1047,3 +1047,8 @@ small { font-size: 12px; }
 .runtime-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: 1 1 150px; min-height: 46px; padding: 10px 12px; font-size: 13px; }
 .runtime-actions button:disabled { opacity: .6; cursor: wait; }
 @media(min-width:900px) { .runtime-console { padding: 24px; } .runtime-grid { gap: 28px; } }
+#view-home > .runtime-console, #view-home > .project-picker { grid-column: 1 / -1; min-width: 0; }
+.runtime-console h2, .runtime-console .hint { overflow-wrap: anywhere; }
+.quality-card #systemHeadline { min-width: 0; overflow-wrap: anywhere; white-space: normal; line-height: 1.45; }
+.quality-card:not([data-model-state="ready"]) .ok-ico { color: #f7d499; background: rgba(232,190,115,.12); }
+.quality-card[data-model-state="offline"] .ok-ico, .quality-card[data-model-state="blocked"] .ok-ico { color: #ffadba; background: rgba(255,129,148,.12); }
