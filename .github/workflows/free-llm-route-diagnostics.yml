@@ -1,0 +1,50 @@
+name: Free LLM Route Diagnostics
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/free-llm-route-diagnostics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  live-route-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Kostenlose Hub-Kaskade mit kurzem Prompt prüfen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/villaforge
+          node --input-type=module <<'NODE'
+          const { chat } = await import('./server/llm.mjs');
+          try {
+            const result = await chat(
+              [{ role: 'user', content: 'Antworte ausschließlich mit OK.' }],
+              { role: 'CODER', maxTokens: 8, timeoutMs: 8000, totalTimeoutMs: 45000 }
+            );
+            console.log('LIVE_LLM_RESULT', JSON.stringify({
+              ok: true,
+              route: result.route || null,
+              model: result.model || null,
+              answerLength: String(result.content || '').length
+            }));
+          } catch (error) {
+            console.log('LIVE_LLM_RESULT', JSON.stringify({
+              ok: false,
+              code: error.code || 'LLM_ERROR',
+              attempts: Array.isArray(error.attempts) ? error.attempts : []
+            }));
+            process.exitCode = 1;
+          }
+          NODE
+          REMOTE
