@@ -596,6 +596,25 @@ export const TOOL_SPECS = Object.entries(TOOLS).map(([name, t]) => {
   return { name, description: t.description, schema: t.schema, pack: pack?.id || null, packTitle: pack?.title || null };
 });
 
+/* Prompt-Kompaktierung: Das volle Werkzeug-Schema kostete bei JEDEM Aufruf
+   ~10.000 Zeichen System-Prompt. Hier bleibt nur, was das Modell zum Aufrufen
+   braucht: Name, Kurzzweck, Argumente mit Typ und Pflicht-Markierung (*). */
+function compactToolSpecs() {
+  const slim = TOOL_SPECS.map((t) => {
+    const props = t.schema?.properties || {};
+    const req = new Set(t.schema?.required || []);
+    const args = {};
+    for (const [k, v] of Object.entries(props)) {
+      const type = Array.isArray(v?.type) ? v.type[0] : (v?.type || 'any');
+      const hint = v?.description ? ':' + String(v.description).replace(/\s+/g, ' ').slice(0, 50) : '';
+      args[k] = String(type) + (req.has(k) ? '*' : '') + hint;
+    }
+    return { n: t.name, d: String(t.description || '').replace(/\s+/g, ' ').slice(0, 130), a: args };
+  });
+  return JSON.stringify(slim);
+}
+const COMPACT_TOOL_SPECS = (() => { try { return compactToolSpecs(); } catch { return JSON.stringify(TOOL_SPECS); } })();
+
 /** Werkzeugkatalog inklusive aktueller Freigabe — fuer API und Oberflaeche. */
 export function toolSpecs() {
   return TOOL_SPECS.map((t) => ({ ...t, enabled: canUseTool(t.name).allowed }));
@@ -850,12 +869,12 @@ export function insertAgent(villaId, name, role, parentId = null, isRoot = 0) {
   ).run(villaId, name, role, buildSystemPrompt(role), 'IDLE', isRoot, parentId, 127, 3, t, t).lastInsertRowid;
 }
 
-export function memoryContext(villaId, agentId, limit = 12) {
+export function memoryContext(villaId, agentId, limit = 6) {
   const rows = db.prepare(
     'SELECT kind, title, content FROM memories WHERE villa_id = ? ORDER BY importance DESC, id DESC LIMIT ?'
   ).all(villaId, limit);
   if (!rows.length) return '';
-  return '\n\nBekanntes Gedaechtnis:\n' + rows.map((r) => `- [${r.kind}] ${r.title}: ${String(r.content || '').slice(0, 300)}`).join('\n');
+  return '\n\nBekanntes Gedaechtnis:\n' + rows.map((r) => `- [${r.kind}] ${r.title}: ${String(r.content || '').slice(0, 160)}`).join('\n');
 }
 
 function openTasks(villaId) {
@@ -895,7 +914,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 5, maxTokens = 15
   const ctx = { villaId, agentId: agent.id, taskId };
   const context = statusContext(villaId);
   const history = [
-    { role: 'system', content: `${agent.system_prompt}${promptHint ? `\n\nSupervisor-Korrektur (beachte diese Strategie bei diesem Lauf):\n${String(promptHint).slice(0, 2000)}` : ''}\nEigene Skills:\n${skillInstructions()}${memoryContext(villaId, agent.id)}\n\nWerkzeuge: ${JSON.stringify(TOOL_SPECS)}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
+    { role: 'system', content: `${agent.system_prompt}${promptHint ? `\n\nSupervisor-Korrektur (beachte diese Strategie bei diesem Lauf):\n${String(promptHint).slice(0, 2000)}` : ''}\nEigene Skills:\n${skillInstructions()}${memoryContext(villaId, agent.id)}\n\nWerkzeuge (Format je Eintrag: n=Name, d=Zweck, a=Argumente; Sternchen (*) = Pflichtfeld): ${COMPACT_TOOL_SPECS}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
     { role: 'user', content: userPrompt }
   ];
 
