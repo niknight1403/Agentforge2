@@ -7,7 +7,10 @@ export function readLedger(root=defaultRoot){
  const backlog=JSON.parse(readFileSync(resolve(root,'docs/sprints/backlog.json'),'utf8'));
  const state=JSON.parse(readFileSync(resolve(root,'docs/sprints/state.json'),'utf8'));
  if(backlog.schemaVersion!==1||state.schemaVersion!==1||backlog.sprints.length!==500)throw Error('Invalid sprint ledger schema.');
- const ids=new Set();for(const s of backlog.sprints){if(!/^VF-\d{4}$/.test(s.id)||ids.has(s.id))throw Error('Invalid or duplicate sprint ID.');ids.add(s.id);if(s.status==='done'&&(!s.scopeDefined||!s.goal||!s.acceptanceCriteria.length||!s.evidence.length||!/^[a-f0-9]{40}$/.test(s.implementationCommit||'')))throw Error('Completed sprint requires scoped acceptance, commit and evidence.');}
+ const ids=new Set();let index=0;for(const s of backlog.sprints){if(s?.id!=='VF-'+String(++index).padStart(4,'0'))throw Error('Sprint IDs must be ordered VF-0001 through VF-0500.');if(!/^VF-\d{4}$/.test(s.id)||ids.has(s.id))throw Error('Invalid or duplicate sprint ID.');ids.add(s.id);if(s.status==='done'&&(!s.scopeDefined||!s.goal||!s.acceptanceCriteria.length||!s.evidence.length||!/^[a-f0-9]{40}$/.test(s.implementationCommit||'')))throw Error('Completed sprint requires scoped acceptance, commit and evidence.');}
+ state.completed=backlog.sprints.filter(s=>s.status==='done').map(s=>s.id);
+ state.next=backlog.sprints.find(s=>s.status!=='done')?.id||null;
+ if(state.current&&state.completed.includes(state.current))state.current=null;
  return {backlog,state};
 }
 export function completeSprint({root=defaultRoot,id,commit,evidencePath}){
