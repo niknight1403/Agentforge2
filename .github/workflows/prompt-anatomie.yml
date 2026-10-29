@@ -1,0 +1,21 @@
+name: Prompt-Anatomie
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Anatomie
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IHsgZXhlY1N5bmMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgcnVuID0gKGMpID0+IHsgdHJ5IHsgcmV0dXJuIGV4ZWNTeW5jKGMsIHtlbmNvZGluZzondXRmOCd9KS50b1N0cmluZygpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdFUlInOyB9IH07CmNvbnN0IERCPScvb3B0L3ZpbGxhZm9yZ2Uvc2VydmVyL2RhdGEvdmlsbGFmb3JnZS5kYic7CmNvbnN0IHEgPSAoc3FsKSA9PiBydW4oYHN1ZG8gc3FsaXRlMyAtanNvbiAke0RCfSAiJHtzcWx9ImApOwpjb25zdCByb3dzID0gSlNPTi5wYXJzZShxKCJTRUxFQ1Qgcm9sZSwgbGVuZ3RoKHN5c3RlbV9wcm9tcHQpIEwsIHN1YnN0cihzeXN0ZW1fcHJvbXB0LDEsMCkgeCwgQ09VTlQoKikgbiBGUk9NIGFnZW50cyBHUk9VUCBCWSByb2xlIE9SREVSIEJZIEwgREVTQyBMSU1JVCA2IikgfHwgJ1tdJyk7CmNvbnNvbGUubG9nKCc9PSBSb2xsZW4tUHJvbXB0cyAoWmVpY2hlbikgPT0nKTsKZm9yIChjb25zdCByIG9mIHJvd3MpIGNvbnNvbGUubG9nKGAke3Iucm9sZX06ICR7ci5MfSBaZWljaGVuIChuPSR7ci5ufSlgKTsKY29uc3Qgb25lID0gSlNPTi5wYXJzZShxKCJTRUxFQ1Qgc3lzdGVtX3Byb21wdCBGUk9NIGFnZW50cyBXSEVSRSBsZW5ndGgoc3lzdGVtX3Byb21wdCk+MCBPUkRFUiBCWSBpZCBERVNDIExJTUlUIDEiKSB8fCAnW10nKVswXTsKaWYgKG9uZSkgewogIGNvbnN0IHAgPSBvbmUuc3lzdGVtX3Byb21wdDsKICBjb25zb2xlLmxvZygnPT0gQmVpc3BpZWwtUHJvbXB0OiBBYnNjaG5pdHRlID09Jyk7CiAgWydXZXJremV1Z2UnLCdTa2lsbHMnLCdHZWRhZWNodG5pcycsJ0FudHdvcnRlIElNTUVSJywnUGZsaWNodCddLmZvckVhY2goayA9PiB7CiAgICBjb25zdCBpID0gcC5pbmRleE9mKGspOwogICAgY29uc29sZS5sb2coYCR7a306ICR7aT49MCA/ICdhYiBQb3MgJytpIDogJ2ZlaGx0J31gKTsKICB9KTsKICBjb25zb2xlLmxvZygnTGFlbmdlIGdlc2FtdDonLCBwLmxlbmd0aCk7CiAgY29uc29sZS5sb2coJ0tvcGY6JywgcC5zbGljZSgwLDIyMCkucmVwbGFjZSgvXG4vZywnIHwgJykpOwp9Cg==" | base64 -d > /tmp/an.cjs && node /tmp/an.cjs'
