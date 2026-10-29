@@ -37,7 +37,7 @@ export function setVillaRunToCompletion(id, enabled) {
   else db.prepare('DELETE FROM control_settings WHERE key=?').run(key);
   return villaRunToCompletion(id);
 }
-const SLOTS = () => Math.max(1, Math.min(4, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? 3)) || 3));
+const SLOTS = () => Math.max(1, Math.min(10, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? 6)) || 6));
 
 /** Fortschritt und Rang aller Villen in einer einzigen Abfrage. */
 export function villaRanking() {

@@ -37,7 +37,7 @@ export function getSetting(key, fallback = SETTING_RULES[key]?.[2]) {
   const value = row ? JSON.parse(row.value) : fallback;
   // Older installations may have persisted the former 1–2 villa limit.
   // Keep the displayed and effective setting aligned with the supported floor.
-  if (key === 'villaSlots') return Math.max(3, Math.min(4, Number(value) || 3));
+  if (key === 'villaSlots') return Math.max(1, Math.min(10, Number(value) || 6));
   return value;
 }
 export function setSetting(key, value) {

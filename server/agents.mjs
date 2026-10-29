@@ -1255,6 +1255,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
       // Rollenpassende Aufgaben zuerst, damit Agenten nicht fachfremd arbeiten.
       tasks.sort((a, b) => (guessRole(a) === guessRole(b) ? a.priority - b.priority : 0));
 
+      const batchStart = now();
       const batch = tasks.slice(0, job.concurrency);
       for (const task of batch) {
         const startedAt = now();
