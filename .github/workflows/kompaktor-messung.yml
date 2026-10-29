@@ -1,0 +1,21 @@
+name: Kompaktor-Messung
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  v:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Messen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "Cihhc3luYyAoKSA9PiB7CiAgY29uc3QgbSA9IGF3YWl0IGltcG9ydCgnL29wdC92aWxsYWZvcmdlL3NlcnZlci9hZ2VudHMubWpzJyk7CiAgY29uc3QgZnVsbCA9IEpTT04uc3RyaW5naWZ5KG0uVE9PTF9TUEVDUyk7CiAgY29uc3Qgc2xpbSA9IEpTT04uc3RyaW5naWZ5KG0uVE9PTF9TUEVDUy5tYXAodCA9PiB7CiAgICBjb25zdCBwcm9wcyA9IHQuc2NoZW1hPy5wcm9wZXJ0aWVzIHx8IHt9OwogICAgY29uc3QgcmVxID0gbmV3IFNldCh0LnNjaGVtYT8ucmVxdWlyZWQgfHwgW10pOwogICAgY29uc3QgYSA9IE9iamVjdC5mcm9tRW50cmllcyhPYmplY3QuZW50cmllcyhwcm9wcykubWFwKChbayx2XSkgPT4gW2ssIFN0cmluZyh2Py50eXBlIHx8ICdhbnknKSArIChyZXEuaGFzKGspID8gJyonIDogJycpICsgKHY/LmRlc2NyaXB0aW9uID8gJzonICsgU3RyaW5nKHYuZGVzY3JpcHRpb24pLnNsaWNlKDAsNTApIDogJycpXSkpOwogICAgcmV0dXJuIHsgbjogdC5uYW1lLCBkOiBTdHJpbmcodC5kZXNjcmlwdGlvbiB8fCAnJykucmVwbGFjZSgvXHMrL2csJyAnKS5zbGljZSgwLDEzMCksIGEgfTsKICB9KSk7CiAgY29uc29sZS5sb2coJ1ZvbGxlcyBTY2hlbWEgOiAnICsgZnVsbC5sZW5ndGggKyAnIFplaWNoZW4nKTsKICBjb25zb2xlLmxvZygnS29tcGFrdCAgICAgICA6ICcgKyBzbGltLmxlbmd0aCArICcgWmVpY2hlbicpOwogIGNvbnNvbGUubG9nKCdFcnNwYXJuaXMgICAgIDogJyArIE1hdGgucm91bmQoKDEgLSBzbGltLmxlbmd0aC9mdWxsLmxlbmd0aCkqMTAwKSArICcgJScpOwogIGNvbnNvbGUubG9nKCdUb29scyAgICAgICAgIDogJyArIG0uVE9PTF9TUEVDUy5sZW5ndGgpOwp9KSgpOwo=" | base64 -d > /tmp/km.mjs && node /tmp/km.mjs'
