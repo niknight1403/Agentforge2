@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "acceptanceComplete": true,
+  "command": "node --import ./server/tests/_env.mjs --test server/tests/request-limiter.test.mjs server/tests/llm-cascade.test.mjs server/tests/llm-http.test.mjs",
+  "exitCode": 0,
+  "tests": 34,
+  "limitations": [
+    "Local HTTP fixtures; production verification remains VF-0004."
+  ]
+}

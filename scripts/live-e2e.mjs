@@ -313,6 +313,24 @@ async function run() {
     return `kein Ueberlauf, Touch-Ziel ${snap.createBtnHeight}px, ${snap.navCount} Tabs, Live-Ressourcen`;
   });
 
+  await check('Aurora zeigt die primaere Projektaktion oberhalb der Navigation', async () => {
+    const out=await page.evaluate(`const button=document.querySelector('#activeControlBtn'),nav=document.querySelector('.bottomnav');const b=button.getBoundingClientRect(),n=nav.getBoundingClientRect();return {visible:!button.hidden,top:b.top,bottom:b.bottom,navTop:n.top,height:b.height};`);
+    if(!out.visible||out.top<0||out.bottom>out.navTop||out.height<44)throw Error('Projektaktion ist ausserhalb des bedienbaren mobilen Bereichs: '+JSON.stringify(out));
+    return 'Start/Pause sichtbar, mindestens 44px und nicht hinter der Navigation';
+  });
+  await check('Betriebsdetails sind bewusst aufklappbar statt dauernd im Weg', async () => {
+    const out=await page.evaluate(`const details=document.querySelector('#runtimeConsole');const before=details.open;details.querySelector('summary').click();const opened=details.open;details.querySelector('summary').click();return {before,opened,closed:!details.open,activityClosed:!document.querySelector('.activity-card').open};`);
+    if(out.before||!out.opened||!out.closed||!out.activityClosed)throw Error('Aufklappzustand unzuverlaessig');return 'Betrieb und Aktivitaet eingeklappt, Details oeffnen/schliessen';
+  });
+  await check('Neue Projektmeldungen erhalten explizite Cockpit-Auswahl und Tastaturfokus', async () => {
+    await page.evaluate(`const select=document.querySelector('#dashboardProject');select.value='${villaId}';select.dispatchEvent(new Event('change',{bubbles:true}));select.focus();return true;`);
+    const response=await fetch('http://127.0.0.1:'+PORT+'/api/villas',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:'Zweites isoliertes E2E-Projekt',idea:VILLA_IDEA,agentCount:3})});
+    if(!response.ok)throw Error('Zweites Fixture-Projekt konnte nicht angelegt werden');const other=await response.json();
+    await page.waitFor("document.querySelector('#dashboardProject option[value=\""+other.villaId+"\"]')",{timeout:15000,label:'zweite Projektoption'});
+    const state=await page.evaluate(`return {id:Number(document.querySelector('#dashboardProject').value),focus:document.activeElement.id};`);
+    if(state.id!==villaId||state.focus!=='dashboardProject')throw Error('Projekt oder Fokus wurde durch Live-Update ersetzt');return 'Explizite Projektwahl und Fokus bleiben nach SSE/Reload stabil';
+  });
+
   await check('Mobiler Arbeitsbereich nutzt die volle Hoehe', async () => {
     await page.evaluate("document.querySelector('#villaList .villa-card').click(); return true;");
     await page.waitFor("document.querySelector('#detailPanel').hidden === false", { timeout: 30_000, label: 'Arbeitsbereich mobil' });

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "acceptanceComplete": true,
+  "command": "Python existence/reference assertion and manual comparison with selected sixth generated image",
+  "exitCode": 0,
+  "selectedReference": "docs/design/aurora-reference.webp",
+  "decision": "User selected 6; Aurora remains binding."
+}

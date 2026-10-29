@@ -34,3 +34,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Explicit local preview fixture opt-in (never production)
+.vf-preview-fixture

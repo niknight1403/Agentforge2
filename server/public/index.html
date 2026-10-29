@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#080D1E" />
+  <meta name="theme-color" content="#100C24" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>VillaForge · Entwicklungsstudio</title>
@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/aurora.css" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 </head>
 <body>
@@ -19,36 +20,39 @@
 
   <!-- ============ KOPFZEILE (sticky, Handy-optimiert) ============ -->
   <header class="topbar">
-    <div class="brand"><span class="logo-mark material-symbols-rounded" aria-hidden="true">auto_awesome</span><span><strong>VillaForge</strong><small>DEVELOPMENT HUB</small></span></div>
+    <div class="brand"><span class="logo-mark material-symbols-rounded" aria-hidden="true">auto_awesome</span><span><strong>VillaForge</strong><small>AURORA STUDIO</small></span></div>
     <div class="topbar-actions"><div class="topbar-status"><span id="healthDot" class="dot"></span><span id="healthText">verbinde…</span></div><button id="masterOpenBtn" class="master-nav material-symbols-rounded" type="button" aria-label="Master-Agent öffnen" title="Master-Agent öffnen">auto_awesome</button><button id="newVillaBtn" class="topbar-add material-symbols-rounded" type="button" aria-label="Neue Villa erstellen" title="Neue Villa erstellen">add</button></div>
   </header>
 
   <!-- ============ ANSICHT: ÜBERSICHT ============ -->
   <main id="view-home" class="view active" aria-label="Übersicht">
-    <label class="project-picker" for="dashboardProject">Dein Projekt im Cockpit<select id="dashboardProject" aria-label="Projekt im Cockpit wählen"><option value="">Noch kein Projekt</option></select></label>
+    <p id="fixtureBanner" class="fixture-banner" role="status" hidden>VORSCHAU · isolierte Testdaten und lokales Modell-Fixture</p>
+    <label class="project-picker" for="dashboardProject"><span class="visually-hidden">Dein Projekt im Cockpit</span><select id="dashboardProject" aria-label="Projekt im Cockpit wählen"><option value="">Noch kein Projekt</option></select></label>
     <section class="hero-cockpit active-villa" id="activeVillaCard" aria-labelledby="dashboardTitle">
-      <div class="hero-project-head"><div><p class="eyebrow">AKTIVES PROJEKT</p><h2 id="activeName">Keine Villa aktiv</h2></div><span id="activeChip" class="chip">–</span></div>
-      <div class="hero-main">
-        <div class="hero-copy"><h1 id="dashboardTitle">Dein Projekt-Cockpit</h1><p class="dashboard-intro">Hier laufen Idee, Agenten und Build zusammen. Alles im Blick, damit aus Plänen Ergebnisse werden.</p><div class="profile-badges"><span class="badge role">Deep Agent Studio</span><span id="systemBadge" class="badge">Verbinde …</span></div><p id="activeIdea" class="hero-project-idea">Starte deine erste Villa – deine Agenten warten.</p></div>
-        <div class="villa-progress"><div class="ring-wrap"><svg viewBox="0 0 80 80" class="ring" aria-hidden="true"><defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00E5FF"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs><circle class="ring-bg" cx="40" cy="40" r="34" /><circle id="ringFg" class="ring-fg" cx="40" cy="40" r="34" /></svg><b id="ringPct">0%</b><span class="ring-caption">FORTSCHRITT</span></div></div>
+      <div class="hero-copy"><h1 id="dashboardTitle">Dein nächstes Ergebnis.</h1><p class="dashboard-intro">Ideen umsetzen. Mit klaren Schritten und prüfbaren Ergebnissen.</p></div>
+      <div class="aurora-project">
+        <div class="hero-project-head"><div><p class="eyebrow">AKTIVES PROJEKT</p><h2 id="activeName">Keine Villa aktiv</h2></div><span id="activeChip" class="chip">–</span></div>
+        <div class="aurora-project-body"><div><p id="activeIdea" class="hero-project-idea">Starte deine erste Villa.</p><div class="profile-badges"><span class="badge role">Deep Agent Studio</span><span id="systemBadge" class="badge">Verbinde …</span></div></div><img class="aurora-project-art" src="/assets/aurora-studio.webp" alt="" width="1536" height="1024" decoding="async" /></div>
       </div>
-      <div class="active-quality-line"><span id="activeQualityChip" class="chip">–</span><p id="activeQualityHint" class="active-quality-hint">Qualitätsnachweis wird geladen …</p></div>
-      <div class="active-actions"><button id="activeProjectOpen" class="primary" type="button"><span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>Projekt öffnen<span class="material-symbols-rounded action-arrow" aria-hidden="true">arrow_forward</span></button><button id="activeControlBtn" class="active-control" type="button" hidden><span class="material-symbols-rounded" aria-hidden="true">play_arrow</span><span id="activeControlLabel">Villa starten</span></button></div>
+    <section class="dashboard-actions" aria-label="Empfohlene nächste Schritte"><div class="section-head"><div><p class="eyebrow">ENTWICKLUNGSLEITUNG</p><h2>Nächste Schritte</h2><p class="hint">Prioritäten aus Fehlern und offenem Projektbedarf.</p></div><button id="dashboardActionsRefresh" class="icon-button" type="button" aria-label="Vorschläge aktualisieren"><span class="material-symbols-rounded" aria-hidden="true">refresh</span></button></div><div id="dashboardActionList" class="dashboard-action-list"><p class="hint">Vorschläge werden geladen …</p></div></section>
+      <p id="auroraModelEvidence" class="aurora-model-status" role="status">Modell: noch nicht geprüft</p>
+      <div class="active-actions"><button id="activeControlBtn" class="active-control primary" type="button" hidden><span class="material-symbols-rounded" aria-hidden="true">play_arrow</span><span id="activeControlLabel">Projekt starten</span></button><button id="activeProjectOpen" class="ghost" type="button"><span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>Details<span class="material-symbols-rounded action-arrow" aria-hidden="true">arrow_forward</span></button></div>
+      <details class="project-readiness"><summary>Produktabnahme & Reifegrad</summary><div class="active-quality-line"><span id="activeQualityChip" class="chip">–</span><p id="activeQualityHint" class="active-quality-hint">Qualitätsnachweis wird geladen …</p></div><div class="villa-progress"><div class="ring-wrap"><svg viewBox="0 0 80 80" class="ring" aria-hidden="true"><circle class="ring-bg" cx="40" cy="40" r="34"/><circle id="ringFg" class="ring-fg" cx="40" cy="40" r="34"/></svg><b id="ringPct">0%</b><span class="ring-caption">REIFEGRAD</span></div></div></details>
     </section>
 
-    <section class="runtime-console" id="runtimeConsole" data-state="unverified" aria-labelledby="runtimeTitle">
-      <div class="runtime-heading"><p class="eyebrow">ENTWICKLUNGSBETRIEB</p><span class="chip" id="runtimeState">PRÜFT</span></div>
-      <h2 id="runtimeTitle">KI-Verbindung wird geprüft</h2><p id="runtimeDetail" class="hint" role="status">Der Hub-Status wird getrennt von Modellantworten und Produktabnahmen angezeigt.</p>
+    <details class="runtime-console" id="runtimeConsole" data-state="unverified" aria-labelledby="runtimeTitle">
+      <summary><div class="runtime-heading"><p class="eyebrow">ENTWICKLUNGSBETRIEB</p><span class="chip" id="runtimeState">PRÜFT</span></div>
+      <h2 id="runtimeTitle">KI-Verbindung wird geprüft</h2></summary><p id="runtimeDetail" class="hint" role="status">Der Hub-Status wird getrennt von Modellantworten und Produktabnahmen angezeigt.</p>
       <div class="runtime-grid"><div><b id="runtimeRequests">–</b><small>Modellanfragen aktiv</small></div><div><b id="runtimeWaiting">–</b><small>Modellanfragen warten</small></div><div><b id="runtimeVillas">–</b><small>Villen arbeiten</small></div></div>
       <div class="runtime-actions"><button id="runtimeRefresh" class="ghost" type="button"><span class="material-symbols-rounded" aria-hidden="true">refresh</span>Status prüfen</button><button id="runtimeRoutes" class="ghost" type="button">KI-Routen ansehen<span aria-hidden="true">↗</span></button></div>
-    </section>
+    </details>
 
     <section id="focusBanner" class="focus-banner" hidden aria-live="polite">
       <span class="focus-mark" aria-hidden="true">✓</span>
       <div><p class="eyebrow">ENTWICKLUNGSFOKUS</p><h2 id="focusTitle">Test Villa</h2><p id="focusDescription">Nur dieses Projekt wird autonom gestartet. Alle anderen Villen bleiben pausiert.</p></div>
     </section>
 
-    <section class="dashboard-actions" aria-label="Empfohlene nächste Schritte"><div class="section-head"><div><p class="eyebrow">ENTWICKLUNGSLEITUNG</p><h2>Nächste Schritte</h2><p class="hint">Prioritäten aus Fehlern und offenem Projektbedarf.</p></div><button id="dashboardActionsRefresh" class="icon-button" type="button" aria-label="Vorschläge aktualisieren"><span class="material-symbols-rounded" aria-hidden="true">refresh</span></button></div><div id="dashboardActionList" class="dashboard-action-list"><p class="hint">Vorschläge werden geladen …</p></div></section>
+
 
     <section class="resource-panel" aria-labelledby="resourceTitle">
       <div class="resource-head"><h2 id="resourceTitle">Systemauslastung</h2><span id="resourcePressure" class="resource-stability"><span class="dot ok"></span>Stabil</span></div>
@@ -89,12 +93,12 @@
       </section>
     </div>
 
-    <section class="card activity-card" aria-label="Aktivität">
+    <details class="card activity-card" aria-label="Aktivität"><summary>Aktivität & Verlauf</summary>
       <div class="card-head">
         <div><p class="eyebrow">AKTIVITÄT</p><h2 id="activityCount">0</h2><small class="activity-sub">erledigte Aufgaben · <span class="live-dot">● LIVE</span></small></div>
         <svg id="activitySpark" viewBox="0 0 120 40" class="spark" aria-hidden="true"><polyline id="sparkLine" points="0,38 120,38" /></svg>
       </div>
-    </section>
+    </details>
 
     <section class="card superagent-card" aria-label="Superagent">
       <div class="robot-glow" aria-hidden="true">◉</div>
@@ -165,7 +169,7 @@
       <p class="hint">Wähle eine Oberfläche mit klarer Kontrastführung. Die Auswahl wird auf diesem Gerät gespeichert.</p>
       <div class="theme-grid" id="themePicker">
         <button class="theme-card" type="button" data-theme-choice="orbital"><span class="theme-swatch orbital-swatch"><i></i><i></i><i></i></span><b>Orbital</b><small>Cyan · Violett</small><em>Aktiv</em></button>
-        <button class="theme-card" type="button" data-theme-choice="aurora"><span class="theme-swatch aurora-swatch"><i></i><i></i><i></i></span><b>Aurora</b><small>Cyan · Violett</small><em>Aktuell</em></button>
+        <button class="theme-card" type="button" data-theme-choice="aurora"><span class="theme-swatch aurora-swatch"><i></i><i></i><i></i></span><b>Aurora</b><small>Violett · Koralle</small><em>Aktuell</em></button>
         <button class="theme-card" type="button" data-theme-choice="nebula"><span class="theme-swatch nebula-swatch"><i></i><i></i><i></i></span><b>Nebula</b><small>Indigo · Rose</small><em>Anwenden</em></button>
         <button class="theme-card" type="button" data-theme-choice="slate"><span class="theme-swatch slate-swatch"><i></i><i></i><i></i></span><b>Slate</b><small>Graphit · Mint</small><em>Anwenden</em></button>
       </div>
@@ -231,8 +235,8 @@
 
   <!-- ============ BOTTOM-NAVIGATION (Daumen-reichweitentauglich) ============ -->
   <nav class="bottomnav" role="navigation" aria-label="Hauptnavigation">
-    <button class="nav-item active" data-view="home"><span class="material-symbols-rounded nav-ico" aria-hidden="true">home</span>Übersicht</button>
-    <button class="nav-item" data-view="chat"><span class="material-symbols-rounded nav-ico" aria-hidden="true">folder_open</span>Villen</button>
+    <button class="nav-item active" data-view="home"><span class="material-symbols-rounded nav-ico" aria-hidden="true">home</span>Heute</button>
+    <button class="nav-item" data-view="chat"><span class="material-symbols-rounded nav-ico" aria-hidden="true">folder_open</span>Projekte</button>
     <button class="nav-item" data-view="agents"><span class="material-symbols-rounded nav-ico" aria-hidden="true">groups</span>Agenten</button>
     <button class="nav-item" data-view="konto"><span class="material-symbols-rounded nav-ico" aria-hidden="true">person</span>Konto</button>
   </nav>

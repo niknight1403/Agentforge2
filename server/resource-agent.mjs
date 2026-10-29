@@ -7,6 +7,8 @@ import { db, now } from './db.mjs';
 
 const execFileAsync = promisify(execFile);
 const MiB = 1024 * 1024;
+/** Some isolated runtimes do not expose /proc RSS; unavailable is not zero. */
+export function safeProcessRss(read=()=>process.memoryUsage().rss){try{const n=read();return Number.isFinite(n)&&n>=0?n:null;}catch{return null;}}
 let previousCpu = null;
 let latest = null;
 let timer = null;
@@ -87,7 +89,7 @@ export function resourceStatus() {
   const total = os.totalmem(), free = os.freemem(), load = os.loadavg();
   const cpu = cpuTimes();
   const usagePct = total ? Math.round(((total - free) / total) * 1000) / 10 : 0;
-  return buildSnapshot({ cpu, total, free, load, gpu: null, processRss: process.memoryUsage().rss, sampledAt: now(), persist: false });
+  return buildSnapshot({ cpu, total, free, load, gpu: null, processRss: safeProcessRss(), sampledAt: now(), persist: false });
 }
 
 function buildSnapshot({ cpu, total, free, load, gpu, processRss, sampledAt, persist }) {
@@ -133,7 +135,7 @@ export async function sampleResources({ gpuProbe = nvidiaSnapshot, clock = now }
   if (!gpu) gpu = amdSnapshot();
   const cpu = cpuTimes();
   const total = os.totalmem(), free = os.freemem(), load = os.loadavg();
-  latest = buildSnapshot({ cpu, total, free, load, gpu, processRss: process.memoryUsage().rss, sampledAt: clock(), persist: true });
+  latest = buildSnapshot({ cpu, total, free, load, gpu, processRss: safeProcessRss(), sampledAt: clock(), persist: true });
   return latest;
 }
 

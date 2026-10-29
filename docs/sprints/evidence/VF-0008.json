@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "acceptanceComplete": true,
+  "command": "node scripts/design-audit.mjs && node scripts/live-e2e.mjs (GitHub Chrome runner), plus visual reference comparison",
+  "exitCode": 0,
+  "testedCommit": "94781aecec2208ecb874dfb7329cabfb311f72a6",
+  "source": "https://github.com/niknight1403/Agentforge2/actions/runs/40956938478",
+  "auditScopes": [
+    "desktop-dashboard",
+    "desktop",
+    "mobil-360-dashboard",
+    "mobil-360",
+    "mobil-dashboard",
+    "mobil",
+    "mobil-430-dashboard",
+    "mobil-430",
+    "reduzierteBewegung"
+  ],
+  "auditFindings": 0,
+  "e2e": {
+    "total": 19,
+    "passed": 19,
+    "failed": 0,
+    "skipped": 0
+  },
+  "acceptance": "360/390/430px und Desktop, sichtbare Projektaktion und reduzierte Bewegung geprueft",
+  "limitations": [
+    "Fixtures are not real production LLM or product acceptance.",
+    "Native Android layout requires separate screenshot acceptance."
+  ]
+}

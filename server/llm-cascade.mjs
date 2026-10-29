@@ -32,7 +32,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    const remove=()=>{const i=queue.indexOf(waiter);if(i>=0)queue.splice(i,1);if(!queue.length)permitWaiters.delete(base);};
    const abort=()=>{if(finished)return;finished=true;cleanup();remove();reject(signal.reason);};
    const waiter={
-    interactive:priority==='interactive',
+    interactive:priority==='interactive',limit,
     grant(){if(finished)return false;finished=true;cleanup();resolve(true);return true;},
     expire(){if(finished)return;finished=true;cleanup();remove();resolve(false);}
    };
@@ -42,17 +42,19 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
   });
  }
  function release(base) {
+  const remaining=Math.max(0,(inFlight.get(base)||1)-1);
+  if(remaining)inFlight.set(base,remaining);else inFlight.delete(base);
   const queue=permitWaiters.get(base);
   while(queue?.length){
-   const high=queue.findIndex(w=>w.interactive),normal=queue.findIndex(w=>!w.interactive);
+   const high=queue.findIndex(w=>w.interactive&&remaining<w.limit),normal=queue.findIndex(w=>!w.interactive&&remaining<w.limit);
+   if(high<0&&normal<0)return;
    const preferHigh=high>=0&&((interactiveStreak.get(base)||0)<2||normal<0);
-   const [waiter]=queue.splice(preferHigh?high:normal>=0?normal:0,1);
+   const [waiter]=queue.splice(preferHigh?high:normal,1);
    if(!queue.length)permitWaiters.delete(base);
-   if(waiter.grant()){interactiveStreak.set(base,waiter.interactive?(interactiveStreak.get(base)||0)+1:0);return;}
+   if(waiter.grant()){inFlight.set(base,remaining+1);interactiveStreak.set(base,waiter.interactive?(interactiveStreak.get(base)||0)+1:0);return;}
   }
   permitWaiters.delete(base);
-  const remaining=Math.max(0,(inFlight.get(base)||1)-1);
-  if(remaining)inFlight.set(base,remaining);else {inFlight.delete(base);interactiveStreak.delete(base);}
+  if(!remaining)interactiveStreak.delete(base);
  }
  const cascade = async function(messages,opts={}) {
   opts.signal?.throwIfAborted();
@@ -83,9 +85,10 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    // Serialize local work within the request deadline. Queue capacity and
    // cancellation keep concurrent villa starts bounded and stoppable.
    const localQueueWaitMs=Math.max(25,Math.min(Number(process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS)||90000,120000));
-   const cloudQueueWaitMs=Math.max(25,Math.min(Number(process.env.VF_LLM_CLOUD_QUEUE_WAIT_MS)||250,1000));
+   const cloudQueueWaitMs=opts.priority==='interactive'?finiteLimit(process.env.VF_LLM_INTERACTIVE_QUEUE_WAIT_MS,1500,25,3000):finiteLimit(process.env.VF_LLM_CLOUD_QUEUE_WAIT_MS,250,25,1000);
    const slotDeadline=isLocalRoute(r)?Math.min(deadline,clock()+localQueueWaitMs):Math.min(cloudDeadline,clock()+cloudQueueWaitMs);
-   if(!await acquire(endpoint,limit,slotDeadline,opts.signal,opts.priority)){attempted.push({route:r.name,code:'BUSY'});busyEndpoints.add(endpoint);earliestRetryAt=Math.min(earliestRetryAt,clock()+15000);continue;}
+   const admissionLimit=!isLocalRoute(r)&&opts.priority!=='interactive'&&limit>1?limit-1:limit;
+   if(!await acquire(endpoint,admissionLimit,slotDeadline,opts.signal,opts.priority)){attempted.push({route:r.name,code:'BUSY'});busyEndpoints.add(endpoint);earliestRetryAt=Math.min(earliestRetryAt,clock()+15000);continue;}
    if(opts.signal?.aborted){release(endpoint);opts.signal.throwIfAborted();}
    if(clock()>=deadline){release(endpoint);break;}
     const started=clock();
@@ -111,7 +114,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
     return {...out,offline:false,failovers:attempted};
    }catch(e){
     if(opts.signal?.aborted)throw opts.signal.reason;
-    const retryMs=e.status===429?Math.max(120000,Math.min(Number(e.retryAfterMs)||0,600000)):15000;
+    const retryMs=e.busy?Math.max(1000,Math.min(Number(e.retryAfterMs)||15000,60000)):e.status===429?Math.max(120000,Math.min(Number(e.retryAfterMs)||0,600000)):15000;
     earliestRetryAt=Math.min(earliestRetryAt,clock()+retryMs);
     if(credential && [401,403,429].includes(e.status))credentialBlocks.set(credential,clock()+(e.status===429?Math.max(120000,Math.min(Number(e.retryAfterMs)||0,600000)):300000));
     const code=e.busy?'BUSY':e.status ? `HTTP_${e.status}` : /timeout|abort/i.test(e.name||'')?'TIMEOUT':(e.code||'CONNECTION_ERROR');

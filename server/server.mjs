@@ -30,7 +30,7 @@ import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDe
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
 import { studioStatus as routeStudioStatus, eliteRanking as routeEliteRanking, simulateChain as routeSimulateChain, saveChain as routeSaveChain, listChains as routeListChains, buildChainFromGoal as routeChainFromGoal, recordSimulation as routeRecordSim } from './route-studio.mjs';
-import { resourceStatus, resourceHistory, startResourceAgent } from './resource-agent.mjs';
+import { resourceStatus, resourceHistory, startResourceAgent, safeProcessRss } from './resource-agent.mjs';
 import { scanFreeRoutes, freeRouteCycleStatus, freeRouteScanHistory } from './free-route-cycle.mjs';
 import { hunterTick, hunterStatus, weeklyReport, probeRoute, reportPath, monitor } from './free-route-hunter.mjs';
 import {
@@ -366,13 +366,13 @@ async function api(req, res, url) {
     const total = os.totalmem(), free = os.freemem();
     const la = os.loadavg();
     return json(res, 200, {
-      ok: true, capabilities:['llm-cascade-v1','verified-readiness-v1','studio-v1','master-control-v1','resource-agent-v1','free-route-cycle-v1','api-gateway-v1','admin-api-key-management-v1','auth-session-rotation-v1','stripe-billing-v1','redis-task-dlq-v1','cost-kill-switch-v1','admin-observability-v1'],masterControl:1,llm:routingSummary(), ts: now(), version: VERSION, routes: enabledRoutes().length,
+      ok: true, testFixture:process.env.VF_PREVIEW_FIXTURE==='1', capabilities:['llm-cascade-v1','verified-readiness-v1','studio-v1','master-control-v1','resource-agent-v1','free-route-cycle-v1','api-gateway-v1','admin-api-key-management-v1','auth-session-rotation-v1','stripe-billing-v1','redis-task-dlq-v1','cost-kill-switch-v1','admin-observability-v1'],masterControl:1,llm:routingSummary(), ts: now(), version: VERSION, routes: enabledRoutes().length,
       uptime: { processSec: Math.round(process.uptime()), systemSec: Math.round(os.uptime()) },
       cpu: { cores: os.cpus().length, load1: Number(la[0].toFixed(2)), load5: Number(la[1].toFixed(2)), load15: Number(la[2].toFixed(2)) },
       mem: {
         total, free, used: total - free,
         usedPct: Math.round(((total - free) / total) * 100),
-        rss: process.memoryUsage().rss
+        rss: safeProcessRss()
       },
       disk,
       services: {

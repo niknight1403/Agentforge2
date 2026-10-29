@@ -11,6 +11,7 @@ const pickDashboardVilla = villas => VFRuntimeUI.chooseVilla(villas,dashboardPro
 let latestFocusVillaId = null;
 let activityTicks = [];
 let dashboardActionsLoadedAt = 0;
+let dashboardActionsVillaId = null;
 let activeDetailLoadedAt = 0;
 let activeDetailVillaId = null;
 let adminMetricsEnabled = false;
@@ -28,6 +29,7 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = fal
 
 function renderRuntime(state) {
   $('#runtimeConsole').dataset.state=state.state;
+  $('#auroraModelEvidence').textContent='Modell: '+state.label;
   $('.quality-card').dataset.modelState=state.state;
   $('#runtimeState').textContent=({ready:'BESTÄTIGT',busy:'BELEGT',blocked:'BLOCKIERT',unverified:'UNGEPRÜFT',offline:'OFFLINE'})[state.state];
   $('#runtimeTitle').textContent=state.label;$('#runtimeDetail').textContent=state.detail;
@@ -112,6 +114,7 @@ async function checkHealth() {
     const runtime=VFRuntimeUI.summarizeHealth(h);
     renderRuntime(runtime);
     $('#healthDot').className = 'dot ok';
+    $('#fixtureBanner').hidden=h.testFixture!==true;
     $('#healthText').textContent = `Hub online · ${h.routes} Routen · v${h.version || ''}`;
     $('#systemBadge').className = 'badge online'; $('#systemBadge').textContent = '● Hub online';
     $('.quality-card').classList.remove('is-offline');
@@ -229,12 +232,16 @@ function renderVillaLists(villas = latestVillas) {
 
 async function loadDashboardActions(force = false) {
   const list=$('#dashboardActionList');
-  if(!list || (!force && Date.now()-dashboardActionsLoadedAt<20000))return;
-  dashboardActionsLoadedAt=Date.now();
+  const villaId=Number(pickDashboardVilla(latestVillas)?.id)||0;
+  if(!list||(!force&&dashboardActionsVillaId===villaId&&Date.now()-dashboardActionsLoadedAt<20000))return;
+  dashboardActionsVillaId=villaId;dashboardActionsLoadedAt=Date.now();
   try {
-    const rows=await api('/api/master/suggestions');
-    const items=Array.isArray(rows)?rows.filter(row=>row.kind!=='status').slice(0,3):[];
-    list.innerHTML=items.length?items.map(row=>'<button type="button" class="dashboard-action" data-dashboard-prompt="'+esc(row.prompt)+'"><span class="dashboard-action-top"><b>'+esc(row.title)+'</b><i class="priority-tag '+esc(row.priority||'normal')+'">'+esc(row.priority||'normal')+'</i></span><span class="dashboard-action-reason">'+esc(row.reason)+'</span><span class="dashboard-action-footer">'+esc(row.impact||'Projektfortschritt')+' · '+esc(row.acceptance||'Ergebnis mit prüfbarer Abnahme')+'</span></button>').join(''):'<div class="dashboard-clear"><span>✓</span><div><b>Keine akuten Blocker</b><small>Deine Villen laufen ohne gemeldete Fehler.</small></div></div>';
+    const rows=await api('/api/master/suggestions'+(villaId?'?villaId='+villaId:''));
+    if(villaId!==(Number(pickDashboardVilla(latestVillas)?.id)||0))return;
+    const items=Array.isArray(rows)?rows.filter(row=>row.kind!=='status').slice(0,1):[];
+    if(list.contains(document.activeElement))return;
+    const html=items.length?items.map(row=>'<button type="button" class="dashboard-action" data-dashboard-prompt="'+esc(row.prompt)+'"><span class="dashboard-action-top"><b>'+esc(row.title)+'</b><i class="priority-tag '+esc(row.priority||'normal')+'">'+esc(row.priority||'normal')+'</i></span><span class="dashboard-action-reason">'+esc(row.reason)+'</span><span class="dashboard-action-footer">'+esc(row.impact||'Projektfortschritt')+' · '+esc(row.acceptance||'Ergebnis mit prüfbarer Abnahme')+'</span></button>').join(''):'<div class="dashboard-clear"><span>✓</span><div><b>Dein nächster Schritt</b><small>Projekt öffnen, Ziel und Abnahmekriterien prüfen.</small></div></div>';
+    if(!setHtmlIfChanged('#dashboardActionList',html))return;
     list.querySelectorAll('[data-dashboard-prompt]').forEach(button=>button.addEventListener('click',()=>{
       if(typeof window.openVillaForgeMaster!=='function'){toast('Master-Agent ist gerade nicht verfügbar');return;}
       window.openVillaForgeMaster();
@@ -268,14 +275,14 @@ function renderOverview(villas) {
     $('#activeChip').textContent = statusLabel(active.status).toUpperCase();
     $('#activeChip').className = 'chip ' + (active.status === 'RUNNING' ? 'ok' : '');
     $('#activeVillaCard').dataset.id = active.id;
-    $('#activeProjectOpen').innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>Projekt öffnen<span class="material-symbols-rounded action-arrow" aria-hidden="true">arrow_forward</span>';
+    $('#activeProjectOpen').innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>Details<span class="material-symbols-rounded action-arrow" aria-hidden="true">arrow_forward</span>';
     const running = active.status === 'RUNNING' || active.status === 'WAITING_FOR_MODEL' || active.executing || active.queued;
     $('#activeControlBtn').hidden = false;
     $('#activeControlBtn').dataset.id = active.id;
     $('#activeControlBtn').dataset.active = running ? '1' : '0';
     $('#activeControlBtn').classList.toggle('is-running', running);
     $('#activeControlBtn').querySelector('.material-symbols-rounded').textContent = running ? 'pause' : 'play_arrow';
-    $('#activeControlLabel').textContent = running ? 'Villa pausieren' : 'Villa starten';
+    $('#activeControlLabel').textContent = running ? 'Projekt pausieren' : 'Projekt starten';
     if(changedProject){
       $('#activeQualityChip').textContent = 'Prüfung lädt';
       $('#activeQualityChip').className = 'chip';
@@ -565,7 +572,7 @@ async function addControlSkill() {
   if (result.error) { toast(result.error); return; }
   ['skillId','skillTitle','skillInstructions'].forEach(id => { $('#'+id).value = ''; }); toast('Skill gespeichert'); loadControlCatalog();
 }
-const themes = { orbital: { bg:'#080D1E', card:'rgba(17,24,45,.88)', 'card-solid':'#11192E', cyan:'#31D9FF', purple:'#955CFF', pink:'#E26AFF', green:'#46E7B8', blue:'#3477FF' }, aurora: { bg:'#07090E', card:'rgba(18,22,34,.72)', 'card-solid':'#121622', cyan:'#00E5FF', purple:'#8B5CF6', pink:'#EC4899', green:'#00FFA3', blue:'#2EA7FF' }, nebula: { bg:'#0C0916', card:'rgba(27,20,42,.82)', 'card-solid':'#1B142A', cyan:'#A78BFA', purple:'#C084FC', pink:'#F472B6', green:'#86EFAC', blue:'#60A5FA' }, slate: { bg:'#0B1114', card:'rgba(19,31,34,.84)', 'card-solid':'#131F22', cyan:'#5EEAD4', purple:'#2DD4BF', pink:'#A7F3D0', green:'#86EFAC', blue:'#67E8F9' } };
+const themes = { orbital: { bg:'#080D1E', card:'rgba(17,24,45,.88)', 'card-solid':'#11192E', cyan:'#31D9FF', purple:'#955CFF', pink:'#E26AFF', green:'#46E7B8', blue:'#3477FF' }, aurora: { bg:'#100C24', card:'rgba(28,23,48,.92)', 'card-solid':'#1C1730', cyan:'#FFA49B', purple:'#B69AF7', pink:'#FF8FAD', green:'#7DE8C4', blue:'#B6B8FF' }, nebula: { bg:'#0C0916', card:'rgba(27,20,42,.82)', 'card-solid':'#1B142A', cyan:'#A78BFA', purple:'#C084FC', pink:'#F472B6', green:'#86EFAC', blue:'#60A5FA' }, slate: { bg:'#0B1114', card:'rgba(19,31,34,.84)', 'card-solid':'#131F22', cyan:'#5EEAD4', purple:'#2DD4BF', pink:'#A7F3D0', green:'#86EFAC', blue:'#67E8F9' } };
 function applyTheme(name) {
   const key = themes[name] ? name : 'aurora'; const t = themes[key];
   const root = document.documentElement; root.dataset.theme = key;
@@ -673,11 +680,11 @@ $('#addRouteBtn').addEventListener('click', addRoute);
 $('#addConnectorBtn').addEventListener('click', addConnector);
 $('#addSkillBtn').addEventListener('click', addControlSkill);
 document.querySelectorAll('[data-theme-choice]').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.themeChoice)));
-if (localStorage.getItem('vf_design_theme_version') !== 'orbital-1') {
-  localStorage.setItem('vf_design_theme', 'orbital');
-  localStorage.setItem('vf_design_theme_version', 'orbital-1');
+if (localStorage.getItem('vf_design_theme_version') !== 'aurora-6-1') {
+  localStorage.setItem('vf_design_theme', 'aurora');
+  localStorage.setItem('vf_design_theme_version', 'aurora-6-1');
 }
-applyTheme(localStorage.getItem('vf_design_theme') || 'orbital');
+applyTheme(localStorage.getItem('vf_design_theme') || 'aurora');
 $('#addSecretBtn').addEventListener('click', addSecret);
 document.querySelectorAll('.tab-chip').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#detailPanel').hidden) closeWorkspace(); });

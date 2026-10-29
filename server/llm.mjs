@@ -2,6 +2,7 @@ import { forgeLog } from './keyforge.mjs';
 import { db, now } from './db.mjs';
 import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute } from './llm-config.mjs';
 import { createCascade, orderCascadeRoutes } from './llm-cascade.mjs';
+import { createRequestLimiter } from './request-limiter.mjs';
 import { createCircuitBreaker } from './circuit-breaker.mjs';
 import { userStore, quotaLeft, chargeTokens } from './auth.mjs';
 import { emit } from './events.mjs';
@@ -129,7 +130,7 @@ export function ollamaQueueStats() {
  * der Offline-Planer uebernimmt. Ein lokaler Token-Bucket haelt das Volumen
  * VOR dem API-Limit, damit die Kette stabil erreichbar bleibt.
  */
-const routeHits = new Map(); // routeId -> [timestamps der letzten 60 s]
+const requestLimiter=createRequestLimiter();
 function routeRpm(route) {
   const n = String(route.name || '').toLowerCase();
   if (n.includes('gemini')) return Number(process.env.VF_RPM_GEMINI) || 8;   // Free-Tier ~10 RPM
@@ -138,16 +139,6 @@ function routeRpm(route) {
   if (n.includes('mistral')) return Number(process.env.VF_RPM_MISTRAL) || 5;
   if (n.includes('openrouter')) return Number(process.env.VF_RPM_OPENROUTER) || 12;
   return Number(process.env.VF_RPM_DEFAULT) || 30;
-}
-function rateLimited(route) {
-  if (!route.id) return false;
-  const list = routeHits.get(route.id) || [];
-  const cutoff = now() - 60_000;
-  while (list.length && list[0] < cutoff) list.shift();
-  if (list.length >= routeRpm(route)) return true;
-  list.push(now());
-  routeHits.set(route.id, list);
-  return false;
 }
 
 const providerCircuits=createCircuitBreaker({
@@ -164,12 +155,13 @@ function providerCircuitKey(route) {
 }
 
 async function callOpenAiCompatible(route, messages, opts) {
-  if (!isLocalRoute(route) && rateLimited(route)) {
-    const err = new Error('Route lokal gedrosselt (' + routeRpm(route) + ' req/min)');
-    err.busy = true; // Drosselung ist kein Fehler der Route: keine Sperre, kein Zaehler
-    throw err;
-  }
-  return providerCircuits.execute(providerCircuitKey(route),()=>callOpenAiCompatibleRaw(route,messages,opts));
+  return providerCircuits.execute(providerCircuitKey(route),()=>{
+    if(!isLocalRoute(route)){
+      const permit=requestLimiter.admit(providerCircuitKey(route),routeRpm(route),{interactive:opts.priority==='interactive'});
+      if(!permit.ok)throw Object.assign(new Error('Provider request window is busy.'),{busy:true,code:'RATE_WINDOW_BUSY',retryAfterMs:permit.retryAfterMs});
+    }
+    return callOpenAiCompatibleRaw(route,messages,opts);
+  });
 }
 
 const localModels=new Map();

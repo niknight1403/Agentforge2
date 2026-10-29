@@ -243,3 +243,17 @@ test('Infinite concurrency configuration remains bounded',async()=>{
  const prev=process.env.VF_LLM_MAX_QUEUE;process.env.VF_LLM_MAX_QUEUE='Infinity';
  try{const run=makeCascade({routes:()=>[],key:()=>'',call:async()=>answer});assert.equal(run.stats().maxQueuePerEndpoint,64);}finally{if(prev===undefined)delete process.env.VF_LLM_MAX_QUEUE;else process.env.VF_LLM_MAX_QUEUE=prev;}
 });
+
+test('Cloud capacity retains an interactive lane without exceeding the configured total',async()=>{
+ const old=process.env.VF_LLM_ROUTE_CONCURRENCY;process.env.VF_LLM_ROUTE_CONCURRENCY='3';
+ const releases=[],seen=[];
+ const run=makeCascade({routes:()=>[route(1,'groq')],key:()=>'',call:async(_,messages)=>{seen.push(messages[0]);await new Promise(r=>releases.push(r));return answer;}});
+ try{
+  const a=run(['a']),b=run(['b']),c=run(['queued']);await new Promise(r=>setImmediate(r));
+  assert.equal(run.stats().active,2);const chat=run(['interactive'],{priority:'interactive'});await new Promise(r=>setImmediate(r));
+  assert.equal(run.stats().active,3);assert.deepEqual(seen,['a','b','interactive']);
+  releases[2]();await chat;await new Promise(r=>setImmediate(r));assert.equal(run.stats().active,2);assert.equal(seen.length,3);
+  releases[0]();await a;await new Promise(r=>setImmediate(r));assert.equal(seen[3],'queued');
+  releases[1]();releases[3]();await Promise.all([b,c]);assert.equal(run.stats().active,0);assert.equal(run.stats().waiting,0);
+ }finally{for(const release of releases)release();if(old===undefined)delete process.env.VF_LLM_ROUTE_CONCURRENCY;else process.env.VF_LLM_ROUTE_CONCURRENCY=old;}
+});
