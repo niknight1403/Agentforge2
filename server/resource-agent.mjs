@@ -108,7 +108,7 @@ function buildSnapshot({ cpu, total, free, load, gpu, processRss, sampledAt, per
   const pressure = memoryPct >= 92 || sustainedHot || (gpuPct !== null && gpuPct >= 97) ? 'CRITICAL'
     : memoryPct >= 82 || cpuPct >= 90 || loadPerCorePct >= 80 || (gpuPct !== null && gpuPct >= 90) ? 'WARNING' : 'NORMAL';
   const availableBytes = Math.max(0, free);
-  const base = cpu.cores >= 16 ? 8 : cpu.cores >= 8 ? 6 : cpu.cores >= 4 ? 4 : 2;
+  const base = cpu.cores >= 16 ? 12 : cpu.cores >= 8 ? 8 : cpu.cores >= 4 ? 6 : 2;
   const maxConcurrentTasks = pressure === 'CRITICAL' || availableBytes < 2 * 1024 ** 3 ? 1
     : pressure === 'WARNING' || availableBytes < 4 * 1024 ** 3 ? Math.min(2, base) : base;
   const snapshot = {
