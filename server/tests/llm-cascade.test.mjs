@@ -190,3 +190,12 @@ test('Sprint 9: provider backpressure determines retry timing without exposing c
  const cooling=makeCascade({routes:()=>[route(1,'ollama','',{cooldown_until:Date.now()+60000})],key:()=>'',call:async()=>answer});
  await assert.rejects(cooling([]),e=>e.retryAfter>=59&&e.retryAfter<=60);
 });
+
+test('Interactive chats get bounded priority without starving villa jobs',async()=>{
+ let open;const gate=new Promise(r=>open=r);const seen=[];
+ const run=makeCascade({routes:()=>[route(1,'ollama')],key:()=>'',call:async(_,messages)=>{seen.push(messages[0]);if(messages[0]==='active')await gate;return answer;}});
+ const active=run(['active']);const background=run(['villa']);
+ const chats=['chat1','chat2','chat3'].map(id=>run([id],{priority:'interactive'}));
+ await new Promise(r=>setImmediate(r));open();await Promise.all([active,background,...chats]);
+ assert.deepEqual(seen,['active','chat1','chat2','villa','chat3']);
+});

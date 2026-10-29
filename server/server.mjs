@@ -939,7 +939,7 @@ async function api(req, res, url) {
       : db.prepare('SELECT * FROM agents WHERE villa_id = ? AND is_root = 1').get(id);
     if (!agent || Number(agent.villa_id) !== id) return json(res, 404, { error: 'Agent nicht gefunden' });
     db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(id, agent.id, 'user', String(b.message || ''), now());
-    const res2 = await runAgent(agent, String(b.message || ''), { maxSteps: 6, villaId: id });
+    const res2 = await runAgent(agent, String(b.message || ''), { maxSteps: 6, villaId: id, priority: 'interactive' });
     if(res2.code==='LLM_UNAVAILABLE')return json(res,503,{error:res2.error,code:res2.code,retryAfter:15});
     const answer = res2.answer || res2.error || 'Keine Antwort.';
     db.prepare('INSERT INTO messages (villa_id, agent_id, role, content, created_at) VALUES (?,?,?,?,?)').run(id, agent.id, 'assistant', answer, now());
@@ -951,7 +951,7 @@ async function api(req, res, url) {
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(Number(parts[2]));
     if (!agent) return json(res, 404, { error: 'Agent nicht gefunden' });
     const b = await readBody(req);
-    const r = await runAgent(agent, String(b.message || ''), { maxSteps: 6, villaId: agent.villa_id });
+    const r = await runAgent(agent, String(b.message || ''), { maxSteps: 6, villaId: agent.villa_id, priority: 'interactive' });
     if(r.code==='LLM_UNAVAILABLE')return json(res,503,{error:r.error,code:r.code,retryAfter:15});
     return json(res, 200, r);
   }

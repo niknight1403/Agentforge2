@@ -12,8 +12,8 @@ export function orderCascadeRoutes(routes,{role='',strategy='',freeOnlyMode=free
 }
 /** Single pass, no cooldown sleeps and no duplicate endpoint/model attempts. */
 export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clock=Date.now,freeOnly=freeOnlyEnabled}) {
- const inFlight=new Map(),credentialBlocks=new Map(),permitWaiters=new Map();
- async function acquire(base,limit,deadline,signal) {
+ const inFlight=new Map(),credentialBlocks=new Map(),permitWaiters=new Map(),interactiveStreak=new Map();
+ async function acquire(base,limit,deadline,signal,priority) {
   signal?.throwIfAborted();
   const current=inFlight.get(base)||0;
   if(current<limit){inFlight.set(base,current+1);return true;}
@@ -28,6 +28,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    const remove=()=>{const i=queue.indexOf(waiter);if(i>=0)queue.splice(i,1);if(!queue.length)permitWaiters.delete(base);};
    const abort=()=>{if(finished)return;finished=true;cleanup();remove();reject(signal.reason);};
    const waiter={
+    interactive:priority==='interactive',
     grant(){if(finished)return false;finished=true;cleanup();resolve(true);return true;},
     expire(){if(finished)return;finished=true;cleanup();remove();resolve(false);}
    };
@@ -38,10 +39,16 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
  }
  function release(base) {
   const queue=permitWaiters.get(base);
-  while(queue?.length){const waiter=queue.shift();if(!queue.length)permitWaiters.delete(base);if(waiter.grant())return;}
+  while(queue?.length){
+   const high=queue.findIndex(w=>w.interactive),normal=queue.findIndex(w=>!w.interactive);
+   const preferHigh=high>=0&&((interactiveStreak.get(base)||0)<2||normal<0);
+   const [waiter]=queue.splice(preferHigh?high:normal>=0?normal:0,1);
+   if(!queue.length)permitWaiters.delete(base);
+   if(waiter.grant()){interactiveStreak.set(base,waiter.interactive?(interactiveStreak.get(base)||0)+1:0);return;}
+  }
   permitWaiters.delete(base);
   const remaining=Math.max(0,(inFlight.get(base)||1)-1);
-  if(remaining)inFlight.set(base,remaining);else inFlight.delete(base);
+  if(remaining)inFlight.set(base,remaining);else {inFlight.delete(base);interactiveStreak.delete(base);}
  }
  return async function cascade(messages,opts={}) {
   opts.signal?.throwIfAborted();
@@ -66,7 +73,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    // cancellation keep concurrent villa starts bounded and stoppable.
    const localQueueWaitMs=Math.max(25,Math.min(Number(process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS)||90000,120000));
    const slotDeadline=isLocalRoute(r)?Math.min(deadline,clock()+localQueueWaitMs):cloudDeadline;
-   if(!await acquire(r.base_url,limit,slotDeadline,opts.signal)){attempted.push({route:r.name,code:'BUSY'});earliestRetryAt=Math.min(earliestRetryAt,clock()+15000);continue;}
+   if(!await acquire(r.base_url,limit,slotDeadline,opts.signal,opts.priority)){attempted.push({route:r.name,code:'BUSY'});earliestRetryAt=Math.min(earliestRetryAt,clock()+15000);continue;}
    if(clock()>=deadline){release(r.base_url);break;}
     const started=clock();
    try {

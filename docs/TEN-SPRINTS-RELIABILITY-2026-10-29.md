@@ -32,6 +32,10 @@ Produktabschlüsse werden nur durch das vorhandene Produkt-Abnahmegate gemeldet.
 
 ## Verifikation dieses Sprintpakets
 
-Lokales vollständiges Gate: 293 Tests bestanden, 0 fehlgeschlagen; Secret-Scan, JavaScript-Syntaxprüfung und Web-Produktionsbuild erfolgreich. Externe Providerverfügbarkeit und Projektabschlüsse sind davon getrennte Live-Nachweise.
+Lokales vollständiges Gate: 296 Tests bestanden, 0 fehlgeschlagen; Secret-Scan, JavaScript-Syntaxprüfung und Web-Produktionsbuild erfolgreich. Externe Providerverfügbarkeit und Projektabschlüsse sind davon getrennte Live-Nachweise.
 
 Der produktive Master-Chat-Test startet nach einem erfolgreichen Hub-Deploy per workflow_run. Die frühere feste 45-Sekunden-Verzögerung wurde entfernt, damit der Test nicht während eines Neustarts läuft.
+
+### Live-Nachbesserung: interaktiver Master bei ausgelasteten Villen
+
+Interaktive Anfragen werden in der Modellwarteschlange bevorzugt, aber nach zwei interaktiven Freigaben kommt ein wartender Hintergrundjob zum Zug. Der Master plant mit einem strukturierten Zustand von maximal 8000 Zeichen statt abgeschnittenem Vollstatus; Skill-Bodies werden nicht mitgesendet. Vorherige Chatbeiträge sind begrenzt, die aktuelle Nutzernachricht bleibt vollständig. Das reduziert lokale Prefill-Last und verhindert Queue-Verhungern. Providerquoten werden dadurch nicht erhöht.

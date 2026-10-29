@@ -864,7 +864,7 @@ function openTasks(villaId) {
 }
 
 /** Fuehrt einen Agenten in einem begrenzten ReAct-Loop aus. */
-export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 1500, temperature, villaId = agent.villa_id, mode = 'agent', reflect, taskId, promptHint, preferredModel, signal } = {}) {
+export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 1500, temperature, villaId = agent.villa_id, mode = 'agent', reflect, taskId, promptHint, preferredModel, signal, priority } = {}) {
   signal ??= running.get(villaId)?.controller?.signal;
   signal?.throwIfAborted();
   const ctx = { villaId, agentId: agent.id, taskId };
@@ -880,7 +880,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
     let out;
     try {
       out = await chat(history, {
-        json: true, mode, context, signal,
+        json: true, mode, context, signal, priority,
         // Rollen-Qualitaetsrouting: Code-/Fuehrungsrollen bekommen die beste Route
         // (FALLBACK = hoechste Prioritaet zuerst) statt der Rotation.
         role: agent.role,
@@ -940,7 +940,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
           ...history,
           { role: 'assistant', content: String(final) },
           { role: 'user', content: 'REFLEXION: Pruefe deine Antwort strikt gegen die urspruengliche Aufgabe. Vollstaendig? Konkret? Korrekt? Antworte NUR mit JSON: {"verdict":"OK","final":"<deine Antwort, leicht geglaettet>"} oder {"verdict":"IMPROVE","final":"<deutlich verbesserte Antwort>"}.' }
-        ], { json: true, mode, context, signal, role: agent.role, temperature: 0.2, maxTokens, ...(preferredModel ? { preferredModel } : {}) });
+        ], { json: true, mode, context, signal, priority, role: agent.role, temperature: 0.2, maxTokens, ...(preferredModel ? { preferredModel } : {}) });
         const rraw = String(refl.content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
         const rp = JSON.parse(rraw);
         if (rp?.verdict === 'IMPROVE' && rp.final && String(rp.final).trim()) {

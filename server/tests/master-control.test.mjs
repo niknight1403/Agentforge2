@@ -67,6 +67,7 @@ test('Master-Planung priorisiert kostenlose Cloud-Qualitätsrouten und begrenzt 
   const out=await service.turn({message:'Wie kann ich das Projekt verbessern?',requestId:'master-quality-route-1'});
   assert.equal(out.ok,true);
   assert.equal(options.role,'ARCHITECT');
+  assert.equal(options.priority,'interactive');
   assert.equal(options.strategy,'FALLBACK');
   assert.equal(options.totalTimeoutMs,60000);
   assert.equal(options.maxTokens,1200);
@@ -125,4 +126,13 @@ test('Expliziter Start reaktiviert eine zuvor pausierte Villa',async()=>{
  const {service}=control([{type:'start_villa',args:{villaId:id}}]);
  const out=await service.turn({message:'Starte Studio',requestId:'start-villa-resume-1'});
  assert.equal(out.ok,true);assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(id).autonomy,1);
+});
+
+test('Master planning context stays valid JSON, bounds large catalogs and omits skill bodies',async()=>{
+ const {masterPlanningContext}=await import('../master-control.mjs');
+ const rows=Array.from({length:200},(_,i)=>({id:i,name:'Villa '+i+'x'.repeat(100),status:'PAUSED',autonomy:0,title:'Title '+i,instructions:'sensitive skill body'.repeat(500),enabled:true,model:'model'}));
+ const input={villas:rows,tools:rows.map(x=>({...x,name:'tool'+x.id})),routes:rows,skills:rows,connectors:rows,archived:rows,packs:{features:rows}};
+ const out=masterPlanningContext(input,'Bitte LLM Routen analysieren');const json=JSON.stringify(out);
+ assert.ok(json.length<=8000);assert.equal(out.totals.villas,200);assert.ok(!json.includes('sensitive skill body'));assert.deepEqual(JSON.parse(json),out);
+ assert.deepEqual(masterPlanningContext(input,'Erkläre die Bedienung').routes,[]);
 });
