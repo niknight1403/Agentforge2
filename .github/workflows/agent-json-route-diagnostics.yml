@@ -36,7 +36,7 @@ jobs:
           ];
           try {
             const result = await chat(messages, {
-              role: agent.role, json: true, maxTokens: 100,
+              role: agent.role, json: true, maxTokens: 1500,
               timeoutMs: 8000, totalTimeoutMs: 45000
             });
             console.log('AGENT_JSON_RESULT', JSON.stringify({
