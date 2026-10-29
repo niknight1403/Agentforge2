@@ -7,6 +7,7 @@ on:
       - 'server/scheduler.mjs'
       - 'server/server.mjs'
       - 'server/resume.mjs'
+      - 'server/product.mjs'
       - 'server/scripts/focus-test-villa.mjs'
       - 'server/public/**'
       - 'app/src/main/java/dev/villaforge/app/ui/**'
