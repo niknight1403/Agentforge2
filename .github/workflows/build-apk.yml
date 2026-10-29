@@ -103,7 +103,7 @@ jobs:
 
       # Mandatory production LLM gate; missing credentials fail closed.
       # Credentials are supplied through GitHub Secrets and never logged.
-      - name: Produktive kostenlose LLM-Kette prüfen
+      - name: Produktive LLM-Kette und Villa-Produktabnahme prüfen
         env:
           VF_SMOKE_BASE_URL: https://hub.cybersarah-ki.com
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
