@@ -1,0 +1,21 @@
+name: Villa-Abbruch-Diagnose 2
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Diagnose via SSH
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdGRUhMRVInOyB9IH07Cgpjb25zb2xlLmxvZygnPT0gREItRGF0ZWllbiBmaW5kZW4gPT0nKTsKY29uc29sZS5sb2cocnVuKCJzdWRvIGZpbmQgL29wdC92aWxsYWZvcmdlIC9vcHQvaHViIC9yb290IC1tYXhkZXB0aCA0IFxcKCAtbmFtZSAnKi5kYicgLW8gLW5hbWUgJyouc3FsaXRlMycgLW8gLW5hbWUgJyouc3FsaXRlJyBcXCkgMj4vZGV2L251bGwgfCBoZWFkIC02IikpOwoKY29uc29sZS5sb2coJz09IFJvaGUgSHViLUxvZy1TcHVyIChsZXR6dGUgNDAgWmVpbGVuLCBvaG5lIFJvdXRlRm9yZ2UpID09Jyk7CmNvbnNvbGUubG9nKHJ1bigic3VkbyBqb3VybmFsY3RsIC11IHZpbGxhZm9yZ2UtaHViIC0tc2luY2UgJzQ1IG1pbiBhZ28nIC0tbm8tcGFnZXIgMj4vZGV2L251bGwgfCBncmVwIC12IHJvdXRlZm9yZ2UgfCB0YWlsIC00MCIpKTsKCmNvbnNvbGUubG9nKCc9PSBXZXIgc3RhcnRldCBkZW4gSHViIG5ldT8gKHN5c3RlbWQgKyB0aW1lcikgPT0nKTsKY29uc29sZS5sb2cocnVuKCJzdWRvIGpvdXJuYWxjdGwgLXUgdmlsbGFmb3JnZS1odWIgLS1zaW5jZSAnNDUgbWluIGFnbycgLS1uby1wYWdlciAyPi9kZXYvbnVsbCB8IGdyZXAgLWNFICdTdGFydGVkIHZpbGxhZm9yZ2UtaHViJyIpICsgJyBTdGFydHMgaW4gNDUgTWluJyk7CmNvbnNvbGUubG9nKHJ1bigic3lzdGVtY3RsIGxpc3QtdGltZXJzIC0tYWxsIC0tbm8tcGFnZXIgMj4vZGV2L251bGwgfCBncmVwIC1pRSAndmlsbGF8aHVifGhlYWwnIHwgaGVhZCAtNSIpIHx8ICdrZWluZSBUaW1lcicpOwpjb25zb2xlLmxvZygnPT0gSGVhbGVyLURpZW5zdD8gPT0nKTsKY29uc29sZS5sb2cocnVuKCJzeXN0ZW1jdGwgbGlzdC11bml0cyAtLXR5cGU9c2VydmljZSAtLXN0YXRlPXJ1bm5pbmcgLS1uby1wYWdlciAyPi9kZXYvbnVsbCB8IGdyZXAgLWlFICdoZWFsfHZpbGxhfGh1YicgfCBoZWFkIC02IikpOwo=" | base64 -d | node -'
