@@ -818,7 +818,7 @@ const QUALITY_RULES = [
   'Selbstverifikation: Bei Code laeuft vor dem Abschluss project_run; nur gruen gilt als fertig.',
   'Entscheidungen und Lehren mit memory_write sichern.',
   'Offene Punkte und Risiken am Ende ausdruecklich benennen.',
-  'Antwort auf Deutsch, klar gegliedert, kurze Absaetze.',
+  'Antwort auf Deutsch.',
   'Produktstandard: professionell und veroeffentlichungsreif - keine Platzhalter, kein Lorem Ipsum, kein "Coming Soon".',
   'Lauffaehiger Stand nach jedem groesseren Schritt (installierbare APK jederzeit moeglich).',
   'EIN Produkt pro Projekt zu Ende fuehren; Fertigstellung vor Nebenideen.'
@@ -832,7 +832,7 @@ function maxAgents(villaId) {
 }
 
 /** Version der Prompt-Vorlage: Bei Erhoehung frischt der Hub beim Start alle Agenten-Prompts auf. */
-export const PROMPT_VERSION = 6;
+export const PROMPT_VERSION = 7;
 
 /** Zentraler Prompt-Bau: eine Quelle der Wahrheit fuer Neuanlage UND Migration. */
 export function buildSystemPrompt(role) {
