@@ -231,7 +231,7 @@ export function createMasterControl(deps) {
     } catch (error) {
       const code=String(error?.code||'').slice(0,80);
       const routeAttempts=Array.isArray(error?.attempts)?error.attempts.slice(0,30).map(attempt=>({route:String(attempt?.route||'unknown').slice(0,120),code:String(attempt?.code||'ERROR').slice(0,80)})):[];
-      response = {requestId,ok:false,answer:`Nicht abgeschlossen: ${error.message}`,steps,...(code?{code}:{}),...(code==='LLM_UNAVAILABLE'?{routeAttempts}:routeAttempts.length?{routeAttempts}:{})};
+      response = {requestId,ok:false,answer:`Nicht abgeschlossen: ${error.message}`,steps,...(code?{code}:{}),...(Number.isFinite(error?.retryAfter)?{retryAfter:error.retryAfter}:{}),...(Number.isFinite(error?.resetsAt)?{resetsAt:error.resetsAt}:{}),...(code==='LLM_UNAVAILABLE'?{routeAttempts}:routeAttempts.length?{routeAttempts}:{})};
     }
     finally { busy = false; }
     recordControl('assistant',response.answer);
@@ -264,7 +264,7 @@ export function createMasterControl(deps) {
           const out = await turn({...body,requestId:body.requestId || randomUUID()});
           const unavailable = out.code === 'LLM_UNAVAILABLE' || (!out.ok && out.steps.some(step => /LLM_UNAVAILABLE|Kein echtes Modell erreichbar|Kein echtes Sprachmodell erreichbar/i.test(step.error || '')));
           const routeAttempts=Array.isArray(out.routeAttempts)?out.routeAttempts:out.steps.flatMap(step=>Array.isArray(step.routeAttempts)?step.routeAttempts:[]);
-          json(res,out.pending ? 202 : unavailable ? 503 : 200,{...out,...(unavailable ? {code:'LLM_UNAVAILABLE',retryAfter:out.retryAfter||15,routeAttempts} : {}),reply:out.answer});
+          json(res,out.pending ? 202 : out.code==='GLOBAL_TOKEN_BUDGET' ? 429 : unavailable ? 503 : 200,{...out,...(unavailable ? {code:'LLM_UNAVAILABLE',retryAfter:out.retryAfter||15,routeAttempts} : {}),reply:out.answer});
         }
         else if (p === '/api/master/actions' && req.method === 'POST') {
           const body=await readBody(req);

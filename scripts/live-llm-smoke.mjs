@@ -11,7 +11,12 @@ export async function verifyLiveLlm({baseUrl,email,password,expectedVersion=VERS
   const signal=AbortSignal.timeout(Math.max(1000,Math.min(180000,Number(timeoutMs)||120000)));
   async function request(path,body,token) {
     const response=await fetchImpl(url.origin+path,{method:body?'POST':'GET',headers:{'content-type':'application/json',...(token?{authorization:`Bearer ${token}`}:{})},...(body?{body:JSON.stringify(body)}:{}),signal});
-    if(!response.ok){await response.body?.cancel().catch(()=>{});throw Error(`Live LLM smoke ${path}: HTTP ${response.status}`);}
+    if(!response.ok){
+      let detail;try{detail=await response.json();}catch{}
+      const code=String(detail?.code||'').match(/^[A-Z_]{1,60}$/)?.[0];
+      const reset=Number.isSafeInteger(detail?.resetsAt)?` resetsAt=${new Date(detail.resetsAt).toISOString()}`:'';
+      throw Error(`Live LLM smoke ${path}: HTTP ${response.status}${code?' '+code:''}${reset}`);
+    }
     try{return await response.json();}catch{throw Error(`Live LLM smoke ${path}: invalid JSON`);}
   }
   const login=await request('/api/auth/login',{email,password});

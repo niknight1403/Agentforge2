@@ -52,3 +52,10 @@ test('daily token kill switch and bounded HTTP latency telemetry are determinist
   assert.equal(metrics.errors24h,1);
   assert.equal(metrics.p95LatencyMs,45);
 });
+
+test('Budget reset time is explicit and token exhaustion returns a typed retriable block',async()=>{
+ const budget=observability.tokenBudgetStatus();assert.equal(budget.tokenAllowed,false);
+ assert.equal(new Date(budget.resetsAt).getUTCHours(),0);assert.ok(budget.resetsAt>Date.now());
+ const {chat}=await import('../llm.mjs');
+ await assert.rejects(chat([{role:'user',content:'fixture'}]),e=>e.code==='GLOBAL_TOKEN_BUDGET'&&e.statusCode===429&&e.retryAfter>0&&e.resetsAt===budget.resetsAt);
+});

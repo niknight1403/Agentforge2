@@ -296,7 +296,8 @@ const cascade=createCascade({
 export async function chat(messages,opts={}) {
  const user=userStore.getStore();
  if(user && quotaLeft(user)<=0) throw new Error('QUOTA_EXCEEDED: Tageskontingent aufgebraucht.');
- if(!tokenBudgetStatus().tokenAllowed) throw Object.assign(new Error('QUOTA_EXCEEDED: Globales Tages-Tokenbudget erreicht; Kill-Switch aktiv.'),{code:'GLOBAL_TOKEN_BUDGET'});
+ const tokenBudget=tokenBudgetStatus();
+ if(!tokenBudget.tokenAllowed) throw Object.assign(new Error('QUOTA_EXCEEDED: Globales Tages-Tokenbudget erreicht; Kill-Switch aktiv.'),{code:'GLOBAL_TOKEN_BUDGET',statusCode:429,retryAfter:Math.max(1,Math.ceil((tokenBudget.resetsAt-Date.now())/1000)),resetsAt:tokenBudget.resetsAt});
  const started=Date.now();
  try {
   const out=await cascade(messages,opts);
