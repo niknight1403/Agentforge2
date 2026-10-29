@@ -1,0 +1,21 @@
+name: Fehlerbild
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  f:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdFUlInOyB9IH07CmNvbnN0IHEgPSAoc3FsKSA9PiBydW4oYHN1ZG8gc3FsaXRlMyAvb3B0L3ZpbGxhZm9yZ2Uvc2VydmVyL2RhdGEvdmlsbGFmb3JnZS5kYiAiJHtzcWx9ImApOwpjb25zdCBub3cgPSBEYXRlLm5vdygpOwpjb25zb2xlLmxvZygnPT0gRmVobGVyZ3J1ZW5kZSBsZXR6dGUgNjAgTWluID09Jyk7CmNvbnNvbGUubG9nKHEoYFNFTEVDVCBzdWJzdHIoQ09BTEVTQ0UoTlVMTElGKHJlc3VsdCwnJyksJ29obmUgVGV4dCcpLDEsODApIHx8ICcgfCAnIHx8IENPVU5UKCopIEZST00gdGFza3MgV0hFUkUgc3RhdHVzPSdGQUlMRUQnIEFORCB1cGRhdGVkX2F0ID49ICR7bm93IC0gMzYwMDAwMH0gR1JPVVAgQlkgc3Vic3RyKENPQUxFU0NFKE5VTExJRihyZXN1bHQsJycpLCdvaG5lIFRleHQnKSwxLDgwKSBPUkRFUiBCWSBDT1VOVCgqKSBERVNDIExJTUlUIDhgKSk7CmNvbnNvbGUubG9nKCc9PSBHcm9lc3N0ZSBQcm9tcHQtQW50ZWlsZSAobGV0enRlIDUgQ2FsbHMpID09Jyk7CmNvbnNvbGUubG9nKHEoYFNFTEVDVCBtb2RlbCB8fCAnIHwgJyB8fCB0b2tlbnMgfHwgJyBUb2snIEZST00gbGxtX3VzYWdlIFdIRVJFIGhhcHBlbmVkX2F0ID49ICR7bm93IC0gOTAwMDAwfSBPUkRFUiBCWSB0b2tlbnMgREVTQyBMSU1JVCA1YCkpOwo=" | base64 -d | sudo bash -c "node -"'
