@@ -1,0 +1,21 @@
+name: Slots-8
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Slots setzen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdFUlInOyB9IH07CmNvbnN0IERCID0gJy9vcHQvdmlsbGFmb3JnZS9zZXJ2ZXIvZGF0YS92aWxsYWZvcmdlLmRiJzsKcnVuKCJzdWRvIHNxbGl0ZTMgIiArIERCICsgIiBcIlVQREFURSBjb250cm9sX3NldHRpbmdzIFNFVCB2YWx1ZT0nOCcgV0hFUkUga2V5PSd2aWxsYVNsb3RzJztcIiIpOwpjb25zb2xlLmxvZygndmlsbGFTbG90czogJyArIHJ1bigic3VkbyBzcWxpdGUzICIgKyBEQiArICIgXCJTRUxFQ1QgdmFsdWUgRlJPTSBjb250cm9sX3NldHRpbmdzIFdIRVJFIGtleT0ndmlsbGFTbG90cydcIiIpKTsK" | base64 -d | sudo bash -c "node -"'
