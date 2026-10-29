@@ -1,0 +1,27 @@
+name: Villa Progress Check
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  progress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read production Villa statuses
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BASE=https://hub.cybersarah-ki.com
+          TOKEN=$(curl -fsS --max-time 30 -H 'Content-Type: application/json' \
+            -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" \
+            "$BASE/api/auth/login" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))')
+          test -n "$TOKEN"
+          curl -fsS --max-time 30 -H "Authorization: Bearer $TOKEN" "$BASE/api/scheduler" | \
+            python3 -c 'import json,sys; d=json.load(sys.stdin); print("SCHEDULER", json.dumps({"slots":d.get("slots"),"active":d.get("active"),"queued":d.get("queued")}, separators=(",",":")))'
+          curl -fsS --max-time 30 -H "Authorization: Bearer $TOKEN" "$BASE/api/villas" | \
+            python3 -c 'import json,sys; data=json.load(sys.stdin); data=data.get("villas",data) if isinstance(data,dict) else data; [print("VILLA", json.dumps({k:v.get(k) for k in ("id","name","status","autonomy","executing","queued")}, ensure_ascii=False, separators=(",",":"))) for v in data if v.get("id") in (2,3)]'
