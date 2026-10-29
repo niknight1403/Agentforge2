@@ -1,0 +1,21 @@
+name: Kompaktor-Verify
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  v:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IHsgZXhlY1N5bmMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgcnVuID0gKGMpID0+IHsgdHJ5IHsgcmV0dXJuIGV4ZWNTeW5jKGMsIHtlbmNvZGluZzondXRmOCd9KTsgfSBjYXRjaChlKSB7IHJldHVybiAnRVJSOiAnK1N0cmluZyhlLm1lc3NhZ2UpLnNsaWNlKDAsMTIwKTsgfSB9Owpjb25zb2xlLmxvZygnPT0gRGVwbG95dGVyIENvZGUgZW50aGFlbHQgS29tcGFrdG9yPyA9PScpOwpjb25zb2xlLmxvZyhydW4oImdyZXAgLWMgJ0NPTVBBQ1RfVE9PTF9TUEVDUycgL29wdC92aWxsYWZvcmdlL3NlcnZlci9hZ2VudHMubWpzIikudHJpbSgpICsgJyBUcmVmZmVyIGluIGFnZW50cy5tanMnKTsKY29uc29sZS5sb2cocnVuKCJncmVwIC1vICdmdW5jdGlvbiBjb21wYWN0VG9vbFNwZWNzJyAvb3B0L3ZpbGxhZm9yZ2Uvc2VydmVyL2FnZW50cy5tanMiKS50cmltKCkgfHwgJ0ZFSExUJyk7CmNvbnNvbGUubG9nKCc9PSBTeXN0ZW0tUHJvbXB0IHZlcndlbmRldCBrb21wYWt0ZXMgU2NoZW1hPyA9PScpOwpjb25zb2xlLmxvZyhydW4oImdyZXAgLW8gJ1dlcmt6ZXVnZSAoRm9ybWF0IGplIEVpbnRyYWdbXiRdXFx7MCw2MFxcfScgL29wdC92aWxsYWZvcmdlL3NlcnZlci9hZ2VudHMubWpzIikudHJpbSgpLnNsaWNlKDAsOTApIHx8ICdMZWdlbmRlIGZlaGx0Jyk7CmNvbnNvbGUubG9nKCc9PSBWZXJzaW9uID09Jyk7CmNvbnNvbGUubG9nKHJ1bigibm9kZSAtZSBcImltcG9ydCgnL29wdC92aWxsYWZvcmdlL3NlcnZlci92ZXJzaW9uLm1qcycpLnRoZW4obT0+Y29uc29sZS5sb2cobS5WRVJTSU9OKSlcIiIpLnRyaW0oKSk7Cg==" | base64 -d > /tmp/kv.cjs && node /tmp/kv.cjs'
