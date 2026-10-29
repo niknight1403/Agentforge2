@@ -46,7 +46,7 @@ export function createCircuitBreaker({ failureThreshold = 3, resetAfterMs = 30_0
     execute,
     permits,
     reset(key) { states.delete(key); },
-    snapshot(key) { const s=entry(key); return { state:s.state, failures:s.failures, openedAt:s.openedAt }; },
+    snapshot(key) { const s=entry(key); return { state:s.state, failures:s.failures, openedAt:s.openedAt, retryAt:s.state==='OPEN'?s.openedAt+resetAfterMs:0 }; },
     resetAll() { states.clear(); }
   };
 }

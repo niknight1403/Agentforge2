@@ -313,8 +313,15 @@ export async function chat(messages,opts={}) {
 export function routingStatus() {
   const freeOnly=freeOnlyEnabled();
   const enabled=enabledRoutes().filter(r=>r.provider!=='offline');
-  const routes=enabled.map(r=>{const configured=!r.key_env||!!resolveKey(r.key_env),eligible=(!freeOnly||isFreeRoute(r))&&configured&&Number(r.cooldown_until||0)<=Date.now();return {id:r.id,name:r.name,model:r.model,provider:r.provider,priority:r.priority,isFree:isFreeRoute(r),local:isLocalRoute(r),configured,eligible,cooldownUntil:r.cooldown_until||0,status:r.status};});
-  const candidates=enabled.filter(r=>(!r.key_env||!!resolveKey(r.key_env))&&Number(r.cooldown_until||0)<=Date.now());
+  const routes=enabled.map(r=>{
+    let circuitKey;try{circuitKey=new URL(r.base_url).host;}catch{circuitKey=String(r.provider||'unknown');}
+    const circuit=providerCircuits.snapshot(circuitKey);
+    const configured=!r.key_env||!!resolveKey(r.key_env);
+    const eligible=(!freeOnly||isFreeRoute(r))&&configured&&Number(r.cooldown_until||0)<=Date.now()&&(circuit.state!=='OPEN'||circuit.retryAt<=Date.now());
+    return {id:r.id,name:r.name,model:r.model,provider:r.provider,priority:r.priority,isFree:isFreeRoute(r),local:isLocalRoute(r),configured,eligible,cooldownUntil:r.cooldown_until||0,status:r.status,circuit:{state:circuit.state,retryAt:circuit.retryAt}};
+  });
+  const eligibleIds=new Set(routes.filter(r=>r.eligible).map(r=>r.id));
+  const candidates=enabled.filter(r=>eligibleIds.has(r.id));
   const names=(ordered)=>ordered.map((r,index)=>({position:index+1,id:r.id,name:r.name,model:r.model,provider:r.provider,local:isLocalRoute(r),free:isFreeRoute(r)}));
   return {mode:'cascade',ruleBasedFallback:false,freeOnly,policy:{routine:'LOCAL_FIRST',complex:'QUALITY_FALLBACK',offlinePlan:'disabled'},routes,routineChain:names(orderCascadeRoutes(candidates,{strategy:'LOCAL_FIRST',freeOnlyMode:freeOnly})),qualityChain:names(orderCascadeRoutes(candidates,{role:'CODER',freeOnlyMode:freeOnly}))};
 }
@@ -325,5 +332,5 @@ export function routingSummary(){
  const eligible=routes.filter(r=>r.eligible).length;
  const latestRoute=db.prepare("SELECT last_used,name,provider,model,base_url FROM routes WHERE provider!='offline' AND status='OK' ORDER BY last_used DESC").all().find(r=>!status.freeOnly||isFreeRoute(r));
  const latest=latestRoute?.last_used||0;
- return {mode:'cascade',ruleBasedFallback:false,freeOnly:status.freeOnly,configuredRoutes:routes.filter(r=>r.configured).length,eligibleRoutes:eligible,lastSuccessfulReplyAt:latest||null,lastSuccessfulRoute:latestRoute?.name||null,state:latest&&Date.now()-latest<300000?'recently_verified':eligible?'unverified':'unavailable'};
+ return {mode:'cascade',ruleBasedFallback:false,queue:cascade.stats(),freeOnly:status.freeOnly,configuredRoutes:routes.filter(r=>r.configured).length,eligibleRoutes:eligible,lastSuccessfulReplyAt:latest||null,lastSuccessfulRoute:latestRoute?.name||null,state:latest&&Date.now()-latest<300000?'recently_verified':eligible?'unverified':'unavailable'};
 }

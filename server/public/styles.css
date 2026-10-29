@@ -1026,3 +1026,24 @@ small { font-size: 12px; }
 }
 :root[data-theme="orbital"] .bottomnav .nav-item.active { color:var(--cyan); }
 :root[data-theme="orbital"] .topbar-add { color:#07101e; }
+
+/* 1.58: explicit project selection and evidence-based runtime status. */
+.project-picker { display: grid; gap: 8px; margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+.project-picker select { width: 100%; min-height: 48px; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--border); color: var(--text); background: var(--card-solid); font: inherit; font-size: 16px; }
+.project-picker select:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+.runtime-console { margin: 18px 0; padding: 20px; border: 1px solid rgba(157,170,201,.28); border-radius: 20px; background: linear-gradient(125deg,rgba(34,46,76,.55),rgba(15,19,32,.95)); }
+.runtime-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.runtime-console h2 { font-size: 19px; margin-bottom: 8px; }
+.runtime-console .hint { line-height: 1.6; min-height: 42px; }
+.runtime-console[data-state="ready"] { border-color: rgba(0,255,163,.4); }
+.runtime-console[data-state="blocked"],.runtime-console[data-state="offline"] { border-color: #ff8194; }
+.runtime-console[data-state="busy"] { border-color: #e8be73; }
+.runtime-console[data-state="blocked"] .chip,.runtime-console[data-state="offline"] .chip { color: #ffadba; }
+.runtime-console[data-state="busy"] .chip { color: #f7d499; }
+.runtime-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; padding: 18px 0; }
+.runtime-grid b { display: block; font-size: 27px; font-variant-numeric: tabular-nums; color: var(--text); }
+.runtime-grid small { display: block; font-size: 12px; color: #abb8d3; overflow-wrap: anywhere; }
+.runtime-actions { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
+.runtime-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: 1 1 150px; min-height: 46px; padding: 10px 12px; font-size: 13px; }
+.runtime-actions button:disabled { opacity: .6; cursor: wait; }
+@media(min-width:900px) { .runtime-console { padding: 24px; } .runtime-grid { gap: 28px; } }

@@ -6,6 +6,8 @@ let vfToken = localStorage.getItem('vf_token') || '';
 let currentVilla = null;
 let currentAgentId = null;
 let latestVillas = [];
+let dashboardProjectId = Number(localStorage.getItem('vf_dashboard_project')) || null;
+const pickDashboardVilla = villas => VFRuntimeUI.chooseVilla(villas,dashboardProjectId,latestFocusVillaId);
 let latestFocusVillaId = null;
 let activityTicks = [];
 let dashboardActionsLoadedAt = 0;
@@ -23,6 +25,25 @@ const api = async (path, opts = {}) => {
 };
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(window.vfToastT); window.vfToastT = setTimeout(() => { t.hidden = true; }, 2600); }
+
+function renderRuntime(state) {
+  $('#runtimeConsole').dataset.state=state.state;
+  $('#runtimeState').textContent=({ready:'BESTÄTIGT',busy:'BELEGT',blocked:'BLOCKIERT',unverified:'UNGEPRÜFT',offline:'OFFLINE'})[state.state];
+  $('#runtimeTitle').textContent=state.label;$('#runtimeDetail').textContent=state.detail;
+  $('#runtimeRequests').textContent=state.active;$('#runtimeWaiting').textContent=state.waiting;
+  const icon=$('.quality-card .ok-ico');if(icon)icon.textContent=state.state==='ready'?'✓':'!';
+}
+$('#dashboardProject').addEventListener('change',event=>{
+  dashboardProjectId=Number(event.target.value)||null;
+  if(dashboardProjectId)localStorage.setItem('vf_dashboard_project',String(dashboardProjectId));
+  activeDetailLoadedAt=0;renderOverview(latestVillas);loadActiveDetail(true);
+});
+$('#runtimeRefresh').addEventListener('click',async()=>{
+  const button=$('#runtimeRefresh');button.disabled=true;button.setAttribute('aria-busy','true');
+  try{await Promise.all([checkHealth(),loadVillas()]);}catch{toast('Status konnte nicht vollständig geladen werden.');}
+  finally{button.disabled=false;button.removeAttribute('aria-busy');}
+});
+$('#runtimeRoutes').addEventListener('click',()=>{selectView('konto');$('.route-control').scrollIntoView();});
 
 /* ---------- Login ---------- */
 function showLogin(msg = 'Melde dich an, um weiterzuarbeiten.') { const o = $('#loginOverlay'); if (o) { o.hidden = false; $('#loginMsg').textContent = msg; } }
@@ -64,7 +85,7 @@ async function loadAdminMetrics() {
   if (!adminMetricsEnabled) return;
   const m = await api('/api/admin/metrics');
   if (m.error) return;
-  const active = Object.entries(m.tasks || {}).filter(([status]) => ['PENDING','READY','RUNNING'].includes(status)).reduce((n,[,count])=>n+Number(count||0),0);
+  const active = Object.entries(m.tasks || {}).filter(([status]) => status==='RUNNING').reduce((n,[,count])=>n+Number(count||0),0);
   $('#metricTasksActive').textContent = active.toLocaleString('de-DE');
   $('#metricTokens').textContent = Number(m.usage?.tokens||0).toLocaleString('de-DE');
   $('#metricApiP95').textContent = Number(m.http?.p95LatencyMs||0).toLocaleString('de-DE');
@@ -86,12 +107,15 @@ function selectView(name) {
 async function checkHealth() {
   try {
     const h = await api('/api/health');
+    if(h.ok!==true)throw new Error('Health unavailable');
+    const runtime=VFRuntimeUI.summarizeHealth(h);
+    renderRuntime(runtime);
     $('#healthDot').className = 'dot ok';
     $('#healthText').textContent = `Hub online · ${h.routes} Routen · v${h.version || ''}`;
     $('#systemBadge').className = 'badge online'; $('#systemBadge').textContent = '● Hub online';
     $('.quality-card').classList.remove('is-offline');
-    $('#gateChip').className = 'chip ok'; $('#gateChip').textContent = 'VERBUNDEN';
-    $('#systemHeadline').textContent = 'Hub erreichbar';
+    $('#gateChip').className = 'chip '+(runtime.state==='ready'?'ok':''); $('#gateChip').textContent = runtime.state==='ready'?'MODELL GEPRÜFT':'HUB ONLINE';
+    $('#systemHeadline').textContent = runtime.label;
     const llm = h.llm || {};
     const resources = h.resources || {};
     const percent = (value) => Number.isFinite(Number(value)) ? Math.max(0, Math.min(100, Number(value))) : null;
@@ -108,10 +132,10 @@ async function checkHealth() {
     const pressure = resources.pressure || 'NORMAL';
     $('#resourcePressure').className = 'resource-stability ' + pressure.toLowerCase();
     setHtmlIfChanged('#resourcePressure', `<span class="dot ${pressure === 'CRITICAL' ? 'err' : 'ok'}"></span>${pressureLabels[pressure] || 'Status unbekannt'}`);
-    $('#systemDetail').textContent = `${llm.eligibleRoutes ?? 0} nutzbare KI-Routen · ${llm.freeOnly ? 'kostenfreie Routen bevorzugt' : 'Routenmodus aktiv'}`;
+    $('#systemDetail').textContent = runtime.detail;
     $('#metricRoutes').textContent = h.routes ?? '–';
     const up = h.uptime || {};
-    $('#superagentStatus').className = 'chip ok'; $('#superagentStatus').textContent = 'LIVE · AKTIV';
+    $('#superagentStatus').className = 'chip '+(runtime.state==='ready'?'ok':''); $('#superagentStatus').textContent = runtime.state==='ready'?'MODELL GEPRÜFT':runtime.state==='busy'?'ARBEITET · ANTWORT OFFEN':'MODELLPRÜFUNG OFFEN';
     const healthHtml = [
       ['Version', 'v' + (h.version || '–')], ['Routen', h.routes ?? '–'],
       ['System-Uptime', up.systemSec ? Math.round(up.systemSec / 3600) + ' h' : '–'],
@@ -125,6 +149,7 @@ async function checkHealth() {
     setHtmlIfChanged('#healthDetails', healthHtml);
     $('#verNum').textContent = h.version || '–';
   } catch {
+    renderRuntime(VFRuntimeUI.summarizeHealth(null));
     $('#healthDot').className = 'dot err'; $('#healthText').textContent = 'Hub nicht erreichbar';
     $('#systemBadge').className = 'badge status FAILED'; $('#systemBadge').textContent = '● Hub offline';
     $('.quality-card').classList.add('is-offline');
@@ -225,17 +250,18 @@ function domSigChanged(key, val) { const s = JSON.stringify(val); if (_domSig.ge
 function setHtmlIfChanged(sel, html) { const el = document.querySelector(sel); if (!el) return false; if (_domSig.get(sel) === html) return false; _domSig.set(sel, html); el.innerHTML = html; return true; }
 
 function renderOverview(villas) {
-  if (!domSigChanged('overview', [villas, latestFocusVillaId])) return;
+  if (!domSigChanged('overview', [villas, latestFocusVillaId, dashboardProjectId])) return;
   const focus = villas.find(v => Number(v.id) === Number(latestFocusVillaId));
   const banner = $('#focusBanner');
   if (banner) banner.hidden = !latestFocusVillaId;
-  const active = focus || villas.find(v => v.status === 'RUNNING') || villas.find(v => v.status === 'PLANNING') || villas[0] || null;
+  const active = pickDashboardVilla(villas);
   const totalDone = villas.reduce((n, v) => n + Number(v.tasks_done || 0), 0);
   $('#metricAgents').textContent = villas.reduce((n,v)=>n+Number(v.agents_count||0),0);
   $('#metricRunning').textContent = villas.filter(v=>v.status==='RUNNING'||v.status==='WAITING_FOR_MODEL'||v.executing||v.queued).length;
   $('#metricDone').textContent = totalDone;
   $('#villaCount').textContent = villas.length;
   if (active) {
+    const changedProject=Number($('#activeVillaCard').dataset.id)!==Number(active.id);
     $('#activeName').textContent = active.name;
     $('#activeIdea').textContent = (active.idea || '').slice(0, 120);
     $('#activeChip').textContent = statusLabel(active.status).toUpperCase();
@@ -249,9 +275,11 @@ function renderOverview(villas) {
     $('#activeControlBtn').classList.toggle('is-running', running);
     $('#activeControlBtn').querySelector('.material-symbols-rounded').textContent = running ? 'pause' : 'play_arrow';
     $('#activeControlLabel').textContent = running ? 'Villa pausieren' : 'Villa starten';
-    $('#activeQualityChip').textContent = 'Prüfung lädt';
-    $('#activeQualityChip').className = 'chip';
-    $('#activeQualityHint').textContent = 'Lade den belegten Reifegrad und aktuelle Abnahmehindernisse …';
+    if(changedProject){
+      $('#activeQualityChip').textContent = 'Prüfung lädt';
+      $('#activeQualityChip').className = 'chip';
+      $('#activeQualityHint').textContent = 'Lade den belegten Reifegrad und aktuelle Abnahmehindernisse …';
+    }
   } else {
     $('#activeName').textContent = 'Keine Villa aktiv';
     $('#activeIdea').textContent = 'Tippe auf ＋ und starte deine erste Villa.';
@@ -264,6 +292,12 @@ function renderOverview(villas) {
     $('#activeProjectOpen').innerHTML = '<span class="material-symbols-rounded" aria-hidden="true">add</span>Neue Villa erstellen<span class="material-symbols-rounded action-arrow" aria-hidden="true">arrow_forward</span>';
     $('#activeControlBtn').hidden = true;
   }
+  const picker=$('#dashboardProject');
+  const selected=pickDashboardVilla(villas);
+  const options=villas.length?villas.map(v=>`<option value="${Number(v.id)}">${esc(v.name)}</option>`).join(''):'<option value="">Noch kein Projekt</option>';
+  if(picker.innerHTML!==options)picker.innerHTML=options;
+  picker.value=selected?String(selected.id):'';
+  $('#runtimeVillas').textContent=villas.filter(v=>v.executing).length;
   renderVillaLists(villas);
   updateActivity(totalDone);
   loadDashboardActions();
@@ -271,13 +305,13 @@ function renderOverview(villas) {
 
 /* Fortschrittsring + Produktpushes der aktiven Villa nachladen */
 async function loadActiveDetail(force = false) {
-  const active = latestVillas.find(v => Number(v.id) === Number(latestFocusVillaId)) || latestVillas.find(v => v.status === 'RUNNING') || latestVillas[0];
+  const active = pickDashboardVilla(latestVillas);
   if (!active || (!force && Number(activeDetailVillaId)===Number(active.id) && Date.now()-activeDetailLoadedAt<15000)) return;
   activeDetailVillaId=Number(active.id);
   activeDetailLoadedAt=Date.now();
   try {
     const [d, product] = await Promise.all([api(`/api/villas/${active.id}`), api(`/api/villas/${active.id}/product`)]);
-    if (d.error) return;
+    if (d.error || Number(pickDashboardVilla(latestVillas)?.id)!==Number(active.id)) return;
     const pct = Number.isFinite(Number(product.score)) ? Math.max(0,Math.min(100,Math.round(Number(product.score)))) : 0;
     $('#ringPct').textContent = pct + '%';
     $('#ringFg').style.strokeDashoffset = 213.6 * (1 - pct / 100);

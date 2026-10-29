@@ -11,6 +11,9 @@ test('Hub, npm package, and Android app use the same release version', () => {
   const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
   const android = readFileSync(resolve(root, 'app/build.gradle.kts'), 'utf8');
   assert.equal(VERSION, pkg.version);
+  const lock = JSON.parse(readFileSync(resolve(root, 'package-lock.json'), 'utf8'));
+  assert.equal(lock.version, VERSION);
+  assert.equal(lock.packages[''].version, VERSION);
   assert.match(android, new RegExp(`versionName = "${VERSION.replaceAll('.', '\\.') }"`));
   const code = Number(android.match(/versionCode\s*=\s*(\d+)/)?.[1]);
   assert.ok(Number.isInteger(code) && code > 41, 'Android versionCode must advance beyond the previous release');

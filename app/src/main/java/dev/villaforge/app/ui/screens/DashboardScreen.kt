@@ -90,7 +90,10 @@ fun DashboardScreen(
     val waiting = state.villas.count { it.queued }
     val uptimeHours = (s?.optLong("uptimeSec", 0L) ?: 0L) / 3600
     val llmState = s?.optJSONObject("llm")?.optString("state", "unverified") ?: "unverified"
-    val modelLabel = when (llmState) { "recently_verified" -> "Geprüft"; "unavailable" -> "Nicht bereit"; else -> "Ungeprüft" }
+    val modelQueue = s?.optJSONObject("llm")?.optJSONObject("queue")
+    val modelActive = modelQueue?.optInt("active", 0) ?: 0
+    val modelWaiting = modelQueue?.optInt("waiting", 0) ?: 0
+    val modelLabel = if (modelActive + modelWaiting > 0 && llmState != "recently_verified") "Belegt" else when (llmState) { "recently_verified" -> "Geprüft"; "unavailable" -> "Nicht bereit"; else -> "Ungeprüft" }
     val maturityScores = mutableListOf<Float>()
     val maturity = s?.optJSONArray("maturity")
     val villaMaturity = mutableListOf<Triple<String, Int, String>>() // Name, Score, Phase
@@ -181,6 +184,7 @@ fun DashboardScreen(
                     Text(
                         if (!state.online) "Hub offline"
                         else if (llmState == "recently_verified") "Modellantwort kürzlich bestätigt"
+                        else if (modelActive + modelWaiting > 0) "$modelActive Modellanfragen aktiv · $modelWaiting warten"
                         else if (llmState == "unavailable") "Modell aktuell nicht erreichbar"
                         else "Modellverbindung noch ungeprüft",
                         style = MaterialTheme.typography.bodySmall,

@@ -199,3 +199,17 @@ test('Interactive chats get bounded priority without starving villa jobs',async(
  await new Promise(r=>setImmediate(r));open();await Promise.all([active,background,...chats]);
  assert.deepEqual(seen,['active','chat1','chat2','villa','chat3']);
 });
+
+test('Saturated cloud endpoints do not consume the whole failover budget',async()=>{
+ const oldLimit=process.env.VF_LLM_ROUTE_CONCURRENCY,oldWait=process.env.VF_LLM_CLOUD_QUEUE_WAIT_MS;
+ process.env.VF_LLM_ROUTE_CONCURRENCY='1';process.env.VF_LLM_CLOUD_QUEUE_WAIT_MS='25';
+ let release;const gate=new Promise(r=>release=r);const seen=[];
+ const rows=[route(1,'groq'),{...route(2,'groq'),model:'alternative'},route(3,'ollama')];
+ const run=makeCascade({routes:()=>rows,key:()=>'',call:async r=>{seen.push(r.provider);if(r.provider==='groq')await gate;return answer;}});
+ try{
+  const first=run([],{strategy:'FALLBACK'});await new Promise(r=>setImmediate(r));
+  const start=Date.now(),second=await run([],{strategy:'FALLBACK',totalTimeoutMs:1000});
+  assert.equal(second.failovers.length,1);assert.ok(Date.now()-start<500);assert.deepEqual(seen,['groq','ollama']);
+  release();await first;assert.equal(run.stats().active,0);assert.equal(run.stats().waiting,0);assert.equal(run.stats().interactiveWaiting,0);assert.ok(run.stats().maxQueuePerEndpoint>=1);
+ }finally{release();if(oldLimit===undefined)delete process.env.VF_LLM_ROUTE_CONCURRENCY;else process.env.VF_LLM_ROUTE_CONCURRENCY=oldLimit;if(oldWait===undefined)delete process.env.VF_LLM_CLOUD_QUEUE_WAIT_MS;else process.env.VF_LLM_CLOUD_QUEUE_WAIT_MS=oldWait;}
+});

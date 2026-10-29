@@ -25,6 +25,7 @@
 
   <!-- ============ ANSICHT: ÜBERSICHT ============ -->
   <main id="view-home" class="view active" aria-label="Übersicht">
+    <label class="project-picker" for="dashboardProject">Dein Projekt im Cockpit<select id="dashboardProject" aria-label="Projekt im Cockpit wählen"><option value="">Noch kein Projekt</option></select></label>
     <section class="hero-cockpit active-villa" id="activeVillaCard" aria-labelledby="dashboardTitle">
       <div class="hero-project-head"><div><p class="eyebrow">AKTIVES PROJEKT</p><h2 id="activeName">Keine Villa aktiv</h2></div><span id="activeChip" class="chip">–</span></div>
       <div class="hero-main">
@@ -33,6 +34,13 @@
       </div>
       <div class="active-quality-line"><span id="activeQualityChip" class="chip">–</span><p id="activeQualityHint" class="active-quality-hint">Qualitätsnachweis wird geladen …</p></div>
       <div class="active-actions"><button id="activeProjectOpen" class="primary" type="button"><span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>Projekt öffnen<span class="material-symbols-rounded action-arrow" aria-hidden="true">arrow_forward</span></button><button id="activeControlBtn" class="active-control" type="button" hidden><span class="material-symbols-rounded" aria-hidden="true">play_arrow</span><span id="activeControlLabel">Villa starten</span></button></div>
+    </section>
+
+    <section class="runtime-console" id="runtimeConsole" data-state="unverified" aria-labelledby="runtimeTitle">
+      <div class="runtime-heading"><p class="eyebrow">ENTWICKLUNGSBETRIEB</p><span class="chip" id="runtimeState">PRÜFT</span></div>
+      <h2 id="runtimeTitle">KI-Verbindung wird geprüft</h2><p id="runtimeDetail" class="hint" role="status">Der Hub-Status wird getrennt von Modellantworten und Produktabnahmen angezeigt.</p>
+      <div class="runtime-grid"><div><b id="runtimeRequests">–</b><small>Modellanfragen aktiv</small></div><div><b id="runtimeWaiting">–</b><small>Modellanfragen warten</small></div><div><b id="runtimeVillas">–</b><small>Villen arbeiten</small></div></div>
+      <div class="runtime-actions"><button id="runtimeRefresh" class="ghost" type="button"><span class="material-symbols-rounded" aria-hidden="true">refresh</span>Status prüfen</button><button id="runtimeRoutes" class="ghost" type="button">KI-Routen ansehen<span aria-hidden="true">↗</span></button></div>
     </section>
 
     <section id="focusBanner" class="focus-banner" hidden aria-live="polite">
@@ -253,6 +261,7 @@
     </div>
   </dialog>
 
+  <script src="/runtime-ui.js"></script>
   <script src="/app.js"></script>
   <script src="/studio.js"></script>
   <dialog id="masterDialog" class="master-dialog" aria-labelledby="masterTitle">
