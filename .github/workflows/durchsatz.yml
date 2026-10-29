@@ -1,0 +1,21 @@
+name: Durchsatz
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Durchsatz messen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdFUlInOyB9IH07CmNvbnN0IERCID0gJy9vcHQvdmlsbGFmb3JnZS9zZXJ2ZXIvZGF0YS92aWxsYWZvcmdlLmRiJzsKY29uc3QgcSA9IChzcWwpID0+IHJ1bigic3VkbyBzcWxpdGUzICIgKyBEQiArICIgXCIiICsgc3FsICsgIlwiIik7CmNvbnNvbGUubG9nKCc9PSB1cGRhdGVkX2F0LUZvcm1hdCAobGV0enRlIERPTkUpID09Jyk7CmNvbnNvbGUubG9nKHEoIlNFTEVDVCB1cGRhdGVkX2F0IEZST00gdGFza3MgV0hFUkUgc3RhdHVzPSdET05FJyBBTkQgZHVyYXRpb25fbXM+MCBPUkRFUiBCWSBpZCBERVNDIExJTUlUIDIiKSk7CmNvbnNvbGUubG9nKCc9PSBKZXR6dCAoVVRDKSA9PScpOwpjb25zb2xlLmxvZyhxKCJTRUxFQ1QgZGF0ZXRpbWUoJ25vdycpIikpOwpjb25zb2xlLmxvZygnPT0gRE9ORSBqZSBTdHVuZGUgKGxldHp0ZSA2aCwga29ycmVrdCkgPT0nKTsKY29uc29sZS5sb2cocSgiU0VMRUNUIHN1YnN0cih1cGRhdGVkX2F0LDEsMTMpIHx8ICcgfCBuPScgfHwgQ09VTlQoKikgfHwgJyB8IMOYcz0nIHx8IFJPVU5EKEFWRyhkdXJhdGlvbl9tcykvMTAwMC4wLDEpIEZST00gdGFza3MgV0hFUkUgc3RhdHVzPSdET05FJyBBTkQgZHVyYXRpb25fbXM+MCBHUk9VUCBCWSBzdWJzdHIodXBkYXRlZF9hdCwxLDEzKSBPUkRFUiBCWSAxIERFU0MgTElNSVQgNiIpKTsKY29uc29sZS5sb2coJz09IEF1ZmdhYmVuIG1pdCBET05FIGluIGRpZXNlciBTdHVuZGUgPT0nKTsKY29uc29sZS5sb2cocSgiU0VMRUNUIENPVU5UKCopIEZST00gdGFza3MgV0hFUkUgc3RhdHVzPSdET05FJyBBTkQgdXBkYXRlZF9hdCA+PSBzdHJmdGltZSgnJVktJW0tJWRUJUgnLCdub3cnLCctMSBob3VyJykiKSk7Cg==" | base64 -d | sudo bash -c "node -"'
