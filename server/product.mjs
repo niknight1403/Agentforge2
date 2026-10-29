@@ -219,10 +219,10 @@ export function improvementWave(villaId) {
  *   1. fehlende Phasen-Pflichten anlegen  2. falls nichts offen → Welle
  * Rueckgabe: { added, maturity }.
  */
-export function developCycle(villaId) {
+export function developCycle(villaId, { includeImprovementWave = true } = {}) {
   let added = deliveryProfile(villaId).id === 'software' ? ensureVerificationTasks(villaId) : 0;
   added += ensurePhaseTasks(villaId);
   const open = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status IN ('PENDING','READY','RUNNING','REVIEW')").get(villaId).c;
-  if (open + added === 0) added += improvementWave(villaId);
+  if (includeImprovementWave && open + added === 0) added += improvementWave(villaId);
   return { added, maturity: maturity(villaId) };
 }
