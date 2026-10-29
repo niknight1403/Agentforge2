@@ -124,13 +124,13 @@ fun DashboardScreen(
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text("VillaForge", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = TextMain)
-                Text("CONTROL CENTER", style = MaterialTheme.typography.labelSmall, color = TextMuted, letterSpacing = 2.sp)
+                Text("AURORA STUDIO", style = MaterialTheme.typography.labelSmall, color = TextMuted, letterSpacing = 2.sp)
                 Spacer(Modifier.height(4.dp))
                 Text("PROJEKTSTUDIO · DEEP AGENT", style = MaterialTheme.typography.labelSmall, color = TextMuted)
             }
             Box(
                 Modifier
-                    .size(38.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
                     .background(Color(0x14FFFFFF))
                     .border(1.dp, if (state.error == null) NeonCyan.copy(alpha = 0.6f) else Danger.copy(alpha = 0.8f), CircleShape)
