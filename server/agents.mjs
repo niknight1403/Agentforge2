@@ -1327,6 +1327,10 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
         emit('progress', { villaId, processed: job.processed, fastVerification: fast?.skipped ? 'skipped' : (fast?.ok ? 'passed' : 'failed') });
         if (fast && fast.ok === false) continue; // Fix-Aufgabe liegt an -> Pool neu laden
       }
+      // Kurzes Yield nach jedem Batch: der Hub teilt den Event-Loop mit
+      // Scheduler, SSE und API. Ohne Atempause blockiert ein laufender Lauf
+      // einen Kern dauerhaft und das System meldet Ressourcendruck.
+      await new Promise((r) => setTimeout(r, 300));
       // Sanftes Tempo, wenn ein Durchlauf nichts Fertiges brachte (Routen
       // gedrosselt/ohne Key): 60 Sekunden Pause statt endloses Haemmern.
       const freshDone = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status = 'DONE' AND updated_at >= ?").get(villaId, batchStart).c;

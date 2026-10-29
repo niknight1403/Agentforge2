@@ -22,6 +22,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS resource_samples (
 );
 CREATE INDEX IF NOT EXISTS idx_resource_samples_time ON resource_samples(sampled_at);`);
 
+let hotStreak = 0;
+
 function cpuTimes() {
   const cores = os.cpus();
   const totals = cores.map((core) => {
@@ -95,8 +97,16 @@ function buildSnapshot({ cpu, total, free, load, gpu, processRss, sampledAt, per
   const gpuUsed = devices.reduce((sum, item) => sum + item.usedBytes, 0);
   const gpuPct = gpuTotal ? Math.round((gpuUsed / gpuTotal) * 1000) / 10 : null;
   const cpuPct = Number(cpu.usagePct) || 0;
-  const pressure = memoryPct >= 92 || cpuPct >= 95 || (gpuPct !== null && gpuPct >= 97) ? 'CRITICAL'
-    : memoryPct >= 82 || cpuPct >= 85 || (gpuPct !== null && gpuPct >= 90) ? 'WARNING' : 'NORMAL';
+  // Hysterese statt Sofort-Alarm: einzelne CPU-Spitzen (Build, Inferenz-Burst,
+  // Modell-Download) sollen die Parallelitaet nicht auf 1 Slot zusammenziehen.
+  // CRITICAL erst bei anhaltender Saettigung (2+ Messungen in Folge) oder
+  // akutem Speicherdruck; die Verfügbarkeit der Slots bleibt erhalten.
+  const loadPerCorePct = cpu.cores ? (load[0] || 0) / cpu.cores * 100 : 0;
+  const hotSample = cpuPct >= 95 || loadPerCorePct >= 95;
+  hotStreak = hotSample ? Math.min(hotStreak + 1, 9) : 0;
+  const sustainedHot = hotStreak >= 2;
+  const pressure = memoryPct >= 92 || sustainedHot || (gpuPct !== null && gpuPct >= 97) ? 'CRITICAL'
+    : memoryPct >= 82 || cpuPct >= 90 || loadPerCorePct >= 80 || (gpuPct !== null && gpuPct >= 90) ? 'WARNING' : 'NORMAL';
   const availableBytes = Math.max(0, free);
   const base = cpu.cores >= 16 ? 8 : cpu.cores >= 8 ? 6 : cpu.cores >= 4 ? 4 : 2;
   const maxConcurrentTasks = pressure === 'CRITICAL' || availableBytes < 2 * 1024 ** 3 ? 1
