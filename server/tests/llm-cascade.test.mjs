@@ -162,3 +162,31 @@ test('Status und Kaskade zeigen dieselbe lokale Routine- und Qualitätsreihenfol
  assert.notEqual(quality[0].provider,'ollama');
  assert.equal(quality.at(-1).provider,'ollama');
 });
+
+test('Sprint 7: local queue capacity rejects excess requests without leaking slots',async()=>{
+ const old=process.env.VF_LLM_MAX_QUEUE;process.env.VF_LLM_MAX_QUEUE='1';
+ let release;const gate=new Promise(r=>release=r);
+ const run=makeCascade({routes:()=>[route(1,'ollama')],key:()=>'',call:async()=>{await gate;return answer;}});
+ try{
+  const first=run([]),second=run([]);await new Promise(r=>setImmediate(r));
+  await assert.rejects(run([]),e=>e.code==='LLM_UNAVAILABLE'&&e.attempts[0].code==='BUSY');
+  release();await Promise.all([first,second]);assert.equal((await run([])).content,answer.content);
+ }finally{release();if(old===undefined)delete process.env.VF_LLM_MAX_QUEUE;else process.env.VF_LLM_MAX_QUEUE=old;}
+});
+
+test('Sprint 8: cancelling a queued request releases its queue position immediately',async()=>{
+ let release;const gate=new Promise(r=>release=r);let calls=0,failures=0;
+ const run=makeCascade({routes:()=>[route(1,'ollama')],key:()=>'',failure:()=>failures++,call:async()=>{calls++;await gate;return answer;}});
+ const first=run([]);const controller=new AbortController();const second=run([],{signal:controller.signal});
+ await new Promise(r=>setImmediate(r));controller.abort();
+ await assert.rejects(second,e=>e.name==='AbortError');release();await first;
+ assert.equal(calls,1);assert.equal(failures,0);assert.equal((await run([])).content,answer.content);
+});
+
+test('Sprint 9: provider backpressure determines retry timing without exposing credentials',async()=>{
+ const run=makeCascade({routes:()=>[route(1,'groq','TOKEN')],key:()=> 'private-test-key',call:async()=>{throw Object.assign(Error('hidden'),{status:429,retryAfterMs:240000});}});
+ await assert.rejects(run([]),e=>e.code==='LLM_UNAVAILABLE'&&e.retryAfter>=239&&e.retryAfter<=240&&!JSON.stringify(e).includes('private-test-key'));
+ await assert.rejects(run([]),e=>e.retryAfter>=239&&e.retryAfter<=240);
+ const cooling=makeCascade({routes:()=>[route(1,'ollama','',{cooldown_until:Date.now()+60000})],key:()=>'',call:async()=>answer});
+ await assert.rejects(cooling([]),e=>e.retryAfter>=59&&e.retryAfter<=60);
+});

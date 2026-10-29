@@ -864,7 +864,9 @@ function openTasks(villaId) {
 }
 
 /** Fuehrt einen Agenten in einem begrenzten ReAct-Loop aus. */
-export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 1500, temperature, villaId = agent.villa_id, mode = 'agent', reflect, taskId, promptHint, preferredModel } = {}) {
+export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 1500, temperature, villaId = agent.villa_id, mode = 'agent', reflect, taskId, promptHint, preferredModel, signal } = {}) {
+  signal ??= running.get(villaId)?.controller?.signal;
+  signal?.throwIfAborted();
   const ctx = { villaId, agentId: agent.id, taskId };
   const context = statusContext(villaId);
   const history = [
@@ -878,7 +880,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
     let out;
     try {
       out = await chat(history, {
-        json: true, mode, context,
+        json: true, mode, context, signal,
         // Rollen-Qualitaetsrouting: Code-/Fuehrungsrollen bekommen die beste Route
         // (FALLBACK = hoechste Prioritaet zuerst) statt der Rotation.
         role: agent.role,
@@ -886,7 +888,8 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
         maxTokens, ...(preferredModel ? { preferredModel } : {})
       });
     } catch (err) {
-      return { error: String(err.message || err), code:err.code, trace };
+      signal?.throwIfAborted();
+      return { error: String(err.message || err), code:err.code, retryAfter:err.retryAfter, trace };
     }
     let parsed = null;
     // JSON-Reparatur: Modelle antworten gelegentlich mit Code-Fences um das JSON.
@@ -937,7 +940,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
           ...history,
           { role: 'assistant', content: String(final) },
           { role: 'user', content: 'REFLEXION: Pruefe deine Antwort strikt gegen die urspruengliche Aufgabe. Vollstaendig? Konkret? Korrekt? Antworte NUR mit JSON: {"verdict":"OK","final":"<deine Antwort, leicht geglaettet>"} oder {"verdict":"IMPROVE","final":"<deutlich verbesserte Antwort>"}.' }
-        ], { json: true, mode, context, role: agent.role, temperature: 0.2, maxTokens, ...(preferredModel ? { preferredModel } : {}) });
+        ], { json: true, mode, context, signal, role: agent.role, temperature: 0.2, maxTokens, ...(preferredModel ? { preferredModel } : {}) });
         const rraw = String(refl.content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
         const rp = JSON.parse(rraw);
         if (rp?.verdict === 'IMPROVE' && rp.final && String(rp.final).trim()) {
@@ -947,6 +950,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 15
         trace.push({ step, reflection: rp?.verdict === 'OK' ? 'ok' : 'ignored', final: true });
         return { answer: prettify(String(final)), route: out.route, model: out.model, reflection: rp?.verdict === 'OK' ? 'ok' : 'ignored', trace, offline: !!out.offline };
       } catch {
+        signal?.throwIfAborted();
         trace.push({ step, reflection: 'skipped', final: true });
       }
     }
@@ -1140,6 +1144,7 @@ export function stopVilla(villaId) {
   const job = running.get(villaId);
   if (!job) return false;
   job.stop = true;
+  job.controller?.abort();
   emit('villa', { villaId, status: 'STOPPING' });
   return true;
 }
@@ -1157,7 +1162,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
   // concurrency 0 = automatisch je nach Routen (schnelle Cloud-Routen -> mehr parallel)
   const auto = Number(concurrency) > 0 ? Number(concurrency) : pickConcurrency();
   const hardCap = Math.max(1, Number(process.env.VF_MAX_CONCURRENCY) || 3);
-  const job = { stop: false, processed: 0, concurrency: Math.max(1, Math.min(auto, hardCap)), runToCompletion: runToCompletion === true };
+  const job = { stop: false, controller: new AbortController(), processed: 0, concurrency: Math.max(1, Math.min(auto, hardCap)), runToCompletion: runToCompletion === true };
   running.set(villaId, job);
   // Lauf-Budget: Im 24/7-Dauerbetrieb endet die Schleife nie von selbst - ohne
   // Budget belegt eine Villa ihren Slot STUNDENLANG und die restlichen Villen
@@ -1263,6 +1268,11 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
       }
 
       const executeLocally = (task) => executeTaskOnce(villaId, task).catch((e) => {
+        if (job.controller.signal.aborted) {
+          db.prepare("UPDATE tasks SET status='PENDING',updated_at=? WHERE id=?").run(now(),task.id);
+          emit('task',{villaId,taskId:task.id,status:'PENDING',code:'CANCELLED'});
+          return;
+        }
         // Eine Ausnahme in EINER Aufgabe beendet nicht den ganzen Lauf:
         // Aufgabe wird FAILED markiert (Befund im Ergebnis) und automatisch
         // ueber requeueFailed bis zu 3x neu aufgenommen.
@@ -1580,7 +1590,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
     saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:'waiting_for_model',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,errorCode:'LLM_UNAVAILABLE'}});
     db.prepare("UPDATE agents SET status='IDLE',last_active_at=? WHERE id=?").run(now(),agent.id);
     db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run('LLM_UNAVAILABLE: Warte auf echte Modellverbindung.',now(),task.id);
-    throw Object.assign(new Error('Kein echtes Modell erreichbar; Aufgabe bleibt offen.'),{code:'LLM_UNAVAILABLE',statusCode:503});
+    throw Object.assign(new Error('Kein echtes Modell erreichbar; Aufgabe bleibt offen.'),{code:'LLM_UNAVAILABLE',statusCode:503,retryAfter:res.retryAfter});
   }
   let answer = res.answer || res.error || 'Kein Ergebnis.';
 

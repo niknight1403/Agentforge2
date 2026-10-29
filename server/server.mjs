@@ -785,6 +785,7 @@ async function api(req, res, url) {
     // 'queued' = autonomy an, aber kein Slot (Warteschlange). Sonst zeigen alle
     // aktiven Villen pauschal 'RUNNING' und niemand sieht, wer wirklich arbeitet.
     const rows = db.prepare("SELECT * FROM villas WHERE status != 'ARCHIVED' ORDER BY created_at DESC").all();
+    const scheduler = schedulerStatus();
     return json(res, 200, rows.map((v) => {
       const counts = db.prepare("SELECT COUNT(*) AS tasks_total, SUM(CASE WHEN status='DONE' THEN 1 ELSE 0 END) AS tasks_done, SUM(CASE WHEN status IN ('FAILED','BLOCKED') THEN 1 ELSE 0 END) AS tasks_failed FROM tasks WHERE villa_id=?").get(v.id);
       const agents = db.prepare('SELECT COUNT(*) AS agents_count FROM agents WHERE villa_id=?').get(v.id);
@@ -793,7 +794,8 @@ async function api(req, res, url) {
         tasks_total: Number(counts.tasks_total || 0), tasks_done: Number(counts.tasks_done || 0),
         tasks_failed: Number(counts.tasks_failed || 0), agents_count: Number(agents.agents_count || 0),
         executing: isRunning(v.id) ? 1 : 0,
-        queued: ((v.status === 'RUNNING' && v.autonomy === 1 && !isRunning(v.id)) || schedulerStatus().retrying.includes(v.id)) ? 1 : 0,
+        queued: (scheduler.queue.includes(v.id) || scheduler.retrying.includes(v.id)) ? 1 : 0,
+        retry: scheduler.retryDetails[v.id] || null,
         runningTasks: runningTaskTitles(v.id),
         openCount: openCount(v.id),
         ...etaMinutes(v.id)
@@ -908,12 +910,10 @@ async function api(req, res, url) {
     const b = await readBody(req).catch(() => ({}));
     db.prepare('UPDATE villas SET autonomy=1,updated_at=? WHERE id=?').run(now(), id);
     const runToCompletion = b.runToCompletion !== false;
+    const alreadyRunning = isRunning(id);
     const scheduled = scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6, runToCompletion, force: true });
-    if (isRunning(id)) {
-      if (runToCompletion) extendVillaRunToCompletion(id);
-      return json(res, 202, { ok: true, alreadyRunning: true, started: true, runToCompletion });
-    }
-    return json(res, 202, { ok: true, started: scheduled.active.includes(id), queued: scheduled.queue.includes(id), scheduler: scheduled });
+    if (alreadyRunning && runToCompletion) extendVillaRunToCompletion(id);
+    return json(res, 202, { ok: true, alreadyRunning, runToCompletion, started: scheduled.active.includes(id) || isRunning(id), queued: scheduled.queue.includes(id), scheduler: scheduled });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'stop' && m === 'POST') {
     const id = Number(parts[2]);

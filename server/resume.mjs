@@ -28,5 +28,5 @@ export function resumePendingVillas({ concurrency = 0, maxRounds = 6, start = or
 }
 
 export function configureResumeScheduler({ concurrency = 0, maxRounds = 6, start = orchestrate } = {}) {
-  configureScheduler({ start: (id) => start(id, { concurrency, maxRounds, runToCompletion: villaRunToCompletion(id) }) });
+  configureScheduler({ start: (id, options) => start(id, options ?? { concurrency, maxRounds, runToCompletion: villaRunToCompletion(id) }) });
 }

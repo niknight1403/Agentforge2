@@ -173,7 +173,8 @@ async function callOpenAiCompatibleRaw(route, messages, opts) {
     const found=localModels.get(route.base_url);
     if(found && found.until>Date.now()) selectedModel=found.id;
     else {
-      const models=await fetch(`${route.base_url.replace(/\/$/,'')}/models`,{headers,signal:AbortSignal.timeout(Math.min(opts.timeoutMs,1500))});
+      const discoveryTimeout=AbortSignal.timeout(Math.min(opts.timeoutMs,1500));
+      const models=await fetch(`${route.base_url.replace(/\/$/,'')}/models`,{headers,signal:opts.signal?AbortSignal.any([opts.signal,discoveryTimeout]):discoveryTimeout});
       if(!models.ok)throw Object.assign(new Error('Local model discovery failed'),{status:models.status});
       const data=await models.json();
       const list=(data.data||[]).filter(m=>typeof m.id==='string');
@@ -203,7 +204,7 @@ async function callOpenAiCompatibleRaw(route, messages, opts) {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(opts.timeoutMs ?? defaultTimeout)
+    signal: opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(opts.timeoutMs ?? defaultTimeout)]) : AbortSignal.timeout(opts.timeoutMs ?? defaultTimeout)
   });
   if (!res.ok) {
     await res.body?.cancel().catch(()=>{});

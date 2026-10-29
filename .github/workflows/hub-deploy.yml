@@ -4,13 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'server/scheduler.mjs'
-      - 'server/server.mjs'
-      - 'server/resume.mjs'
-      - 'server/llm-cascade.mjs'
-      - 'server/product.mjs'
-      - 'server/scripts/focus-test-villa.mjs'
-      - 'server/public/**'
+      - 'server/**'
       - 'app/src/main/java/dev/villaforge/app/ui/**'
       - 'app/build.gradle.kts'
       - 'docs/releases/**'
@@ -110,15 +104,10 @@ jobs:
           fi
           tail -n 12 "$TEST_LOG"
           rm -f "$TEST_LOG"
-          echo "== Produktionsfokus setzen: CyberSarah Villa + Revenue Engine =="
-          LIVE_DB=$(systemctl show "$UNIT" -p Environment --value 2>/dev/null | grep -oE 'VF_DB=[^ ]+' | cut -d= -f2- || true)
-          [ -n "$LIVE_DB" ] || LIVE_DB="$HUBDIR/data/villaforge.db"
+          echo "== Neustart mit gespeicherten Villen-Entscheidungen =="
           ROLLBACK_REQUIRED=1
-          systemctl stop "$UNIT"
-          VF_DB="$LIVE_DB" node server/scripts/focus-test-villa.mjs
-          echo "== Neustart mit Produktions-Doppel-Fokus =="
           systemctl daemon-reload || true
-          systemctl start "$UNIT"
+          systemctl restart "$UNIT"
           sleep 6
           echo "== Dienststatus =="
           systemctl is-active "$UNIT"

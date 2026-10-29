@@ -171,3 +171,64 @@ test('Modell-wartende Villen werden nach einem Hub-Neustart direkt wieder einger
   assert.equal(started[0].villaId, id);
   _resetScheduler();
 });
+
+test('Sprint 1: queued villas retain independent start options', async () => {
+  _resetScheduler();
+  const ids = Array.from({length:5},(_,i)=>villa(`Options ${i}`,0,1));
+  const seen=[], releases=[];
+  configureScheduler({start:(id,options)=>{seen.push({id,options});return new Promise(r=>releases.push(r));}});
+  ids.forEach((id,i)=>scheduleVilla(id,{concurrency:i+1,maxRounds:i+2,runToCompletion:i%2===0}));
+  releases[0](); await new Promise(r=>setImmediate(r));
+  assert.equal(seen[3].options.concurrency,4);
+  assert.equal(seen[3].options.maxRounds,5);
+  assert.equal(seen[3].options.runToCompletion,false);
+  releases[1](); await new Promise(r=>setImmediate(r));
+  assert.equal(seen[4].options.concurrency,5);
+  for(const release of releases)release();
+  await new Promise(r=>setImmediate(r));_resetScheduler();
+});
+
+test('Sprint 2: explicit finite runs clear the persisted completion mode', async () => {
+  _resetScheduler();const id=villa('Finite',0,1);
+  const {villaRunToCompletion}=await import('../scheduler.mjs');
+  configureScheduler({start:async()=>({status:'PAUSED'})});
+  scheduleVilla(id,{runToCompletion:true});
+  await new Promise(r=>setImmediate(r));
+  scheduleVilla(id,{runToCompletion:false});
+  assert.equal(villaRunToCompletion(id),false);
+  await new Promise(r=>setImmediate(r));_resetScheduler();
+});
+
+test('Sprint 3: late model failure cannot resurrect a stopped villa', async () => {
+ _resetScheduler();const id=villa('Stop race',0,1);
+ db.prepare('UPDATE villas SET autonomy=1 WHERE id=?').run(id);
+ let finish;configureScheduler({start:()=>new Promise(r=>finish=r)});
+ enqueueVillas([id]);cancelScheduledVilla(id);
+ finish({retryAfterMs:15000});await new Promise(r=>setImmediate(r));
+ assert.deepEqual(schedulerStatus().retrying,[]);
+ assert.notEqual(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status,'WAITING_FOR_MODEL');
+ _resetScheduler();
+});
+
+test('Sprint 4: rejected and synchronous transient failures recover without dropping jobs', async () => {
+ for(const sync of [false,true]){
+  _resetScheduler();const id=villa('Transient recovery',0,1);
+  db.prepare('UPDATE villas SET autonomy=1 WHERE id=?').run(id);
+  const error=Object.assign(new Error('do not log credentials'),{status:503});
+  configureScheduler({start:()=>{if(sync)throw error;return Promise.reject(error);}});
+  enqueueVillas([id]);await new Promise(r=>setImmediate(r));
+  assert.deepEqual(schedulerStatus().retrying,[id]);
+  assert.deepEqual(schedulerStatus().active,[]);_resetScheduler();
+ }
+});
+
+test('Sprint 5: retry status exposes bounded timing and a safe reason', async () => {
+ _resetScheduler();const id=villa('Retry timing',0,1);
+ db.prepare('UPDATE villas SET autonomy=1 WHERE id=?').run(id);
+ configureScheduler({start:async()=>({retryAfterMs:90000})});
+ const before=Date.now();enqueueVillas([id]);await new Promise(r=>setImmediate(r));
+ const info=schedulerStatus().retryDetails[id];
+ assert.equal(info.attempt,1);assert.equal(info.reason,'MODEL_UNAVAILABLE');
+ assert.ok(info.nextRetryAt>=before+90000&&info.nextRetryAt<=Date.now()+90000);
+ cancelScheduledVilla(id);assert.equal(schedulerStatus().retryDetails[id],undefined);_resetScheduler();
+});

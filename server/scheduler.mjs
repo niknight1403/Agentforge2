@@ -65,6 +65,9 @@ const active = new Set();  // Villen, die gerade einen Slot halten
 const lastStart = new Map(); // villaId -> Zeitpunkt des letzten Starts (Anti-Streben)
 const retryTimers = new Map(); // Villa mit temporaer nicht erreichbarem Modell
 const retryCounts = new Map();
+const runOptions = new Map(); // options belong to a villa, never to the last caller
+const generations = new Map(); // invalidate late results after an explicit stop
+const retryDetails = new Map();
 let starter = null;        // Funktion (villaId) => Promise, die den Lauf startet
 
 /** Setzt die Startfunktion (orchestrate) - vermeidet zyklische Importe. */
@@ -81,34 +84,41 @@ export function schedulerStatus() {
     queued: queue.length,
     queue: queue.slice(),
     retrying: [...retryTimers.keys()],
+    retryDetails: Object.fromEntries(retryDetails),
     lastStart: Object.fromEntries(lastStart)
   };
 }
 
-function retryVilla(id, requestedDelayMs = 15_000) {
+function retryVilla(id, requestedDelayMs = 15_000, reason = 'MODEL_UNAVAILABLE') {
   const villaId = Number(id);
+  const villa = db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(villaId);
+  if (!villa || villa.autonomy !== 1 || ['ARCHIVED','STOPPING','COMPLETED'].includes(villa.status)) return;
   if (retryTimers.has(villaId)) return;
   const attempt = (retryCounts.get(villaId) || 0) + 1;
   retryCounts.set(villaId, attempt);
-  const delayMs = Math.min(5 * 60_000, Math.max(15_000, requestedDelayMs, 15_000 * (2 ** Math.min(attempt - 1, 5))));
+  const delayMs = Math.min(10 * 60_000, Math.max(15_000, Number(requestedDelayMs) || 15_000, 15_000 * (2 ** Math.min(attempt - 1, 5))));
   const timer = setTimeout(() => {
     retryTimers.delete(villaId);
+    retryDetails.delete(villaId);
     const villa = db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(villaId);
     if (!villa || villa.autonomy !== 1 || villa.status === 'ARCHIVED') return;
     enqueueVillas([villaId]);
   }, delayMs);
   timer.unref?.();
   retryTimers.set(villaId, timer);
+  retryDetails.set(villaId, { attempt, nextRetryAt: Date.now() + delayMs, reason });
   db.prepare("UPDATE villas SET status='WAITING_FOR_MODEL', updated_at=? WHERE id=? AND autonomy=1").run(Date.now(), villaId);
 }
 
 /** Entfernt einen wartenden Lauf ohne andere Villen oder Slots anzuhalten. */
 export function cancelScheduledVilla(id) {
   const villaId = Number(id);
+  generations.set(villaId, (generations.get(villaId) || 0) + 1);
   const timer = retryTimers.get(villaId);
   if (timer) clearTimeout(timer);
   retryTimers.delete(villaId);
   retryCounts.delete(villaId);
+  retryDetails.delete(villaId);
   const index = queue.indexOf(villaId);
   if (index < 0) return !!timer;
   queue.splice(index, 1);
@@ -120,23 +130,32 @@ function pump() {
     const id = queue.shift();
     if (active.has(id) || db.prepare('SELECT status FROM villas WHERE id=?').get(id)?.status === 'ARCHIVED') continue;
     active.add(id);
+    const generation = generations.get(id) || 0;
+    const failed = (err) => {
+      if (generation !== (generations.get(id) || 0)) return;
+      const transient = err?.code === 'LLM_UNAVAILABLE' || err?.busy || Number(err?.status) === 429 || Number(err?.status) >= 500 || ['ECONNRESET','ETIMEDOUT','ECONNREFUSED'].includes(err?.code);
+      if (transient) retryVilla(id, Number(err?.retryAfter) * 1000 || 15000, 'TRANSIENT_FAILURE');
+      else db.prepare("UPDATE villas SET status='FAILED', updated_at=? WHERE id=? AND autonomy=1").run(Date.now(), id);
+      console.error(`[villaforge] Scheduler: Villa ${id}: ${transient ? 'retry scheduled' : 'execution failed'}`);
+    };
     lastStart.set(id, Date.now());
     // Synchron starten: Aufrufer (Tests, Auto-Resume) sehen den Start sofort.
     try {
-      const result = starter(id);
+      const result = starter(id, runOptions.get(id));
       Promise.resolve(result)
         .then((out) => {
+          if (generation !== (generations.get(id) || 0)) return;
           if (out?.retryAfterMs) retryVilla(id, out.retryAfterMs);
           else retryCounts.delete(id);
         })
-        .catch((err) => console.error(`[villaforge] Scheduler: Villa ${id} fehlgeschlagen:`, err?.message || err))
+        .catch(failed)
         .finally(() => {
           active.delete(id);
           pump();
         });
     } catch (err) {
       active.delete(id);
-      console.error(`[villaforge] Scheduler: Villa ${id} fehlgeschlagen:`, err?.message || err);
+      failed(err);
     }
   }
 }
@@ -162,10 +181,16 @@ export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, runToComplet
     if (timer) clearTimeout(timer);
     retryTimers.delete(Number(id));
     retryCounts.delete(Number(id));
+    retryDetails.delete(Number(id));
   }
   if (retryTimers.has(Number(id))) return schedulerStatus();
-  if (runToCompletion) setVillaRunToCompletion(id, true);
-  configureScheduler({ start: (vid) => orchestrate(vid, { concurrency, maxRounds, runToCompletion: villaRunToCompletion(vid) }) });
+  setVillaRunToCompletion(id, runToCompletion);
+  runOptions.set(Number(id), {
+    concurrency: Math.max(0, Math.min(32, Math.floor(Number(concurrency) || 0))),
+    maxRounds: Math.max(1, Math.min(10000, Math.floor(Number(maxRounds) || 6))),
+    runToCompletion: Boolean(runToCompletion)
+  });
+  if (!starter) configureScheduler({ start: orchestrate });
   const status = enqueueVillas([id]);
   return status;
 }
@@ -177,5 +202,8 @@ export function _resetScheduler() {
   for (const timer of retryTimers.values()) clearTimeout(timer);
   retryTimers.clear();
   retryCounts.clear();
+  runOptions.clear();
+  retryDetails.clear();
+  generations.clear();
   starter = null;
 }

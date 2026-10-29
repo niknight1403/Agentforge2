@@ -37,3 +37,16 @@ test('supervisor checkpoints progress, repairs validation failures and detects r
  const loop=await runSupervisedTask({taskId:90003,agentId:77,initialState:{v:1},maxSteps:8,step:async()=>({state:{v:1},toolCall:{name:'same_tool',args:{x:1}}})});
  assert.equal(loop.status,'loop_detected');assert.equal(loop.steps,3);
 });
+
+test('Sprint 6: concurrent responses cannot erase an open circuit',async()=>{
+ const breaker=createCircuitBreaker({failureThreshold:2});
+ let pass,failA,failB;
+ const oldSuccess=breaker.execute('shared',()=>new Promise(r=>pass=r));
+ const a=breaker.execute('shared',()=>new Promise((_,r)=>failA=r));
+ const b=breaker.execute('shared',()=>new Promise((_,r)=>failB=r));
+ failA(Object.assign(Error('down'),{status:503}));await assert.rejects(a);
+ failB(Object.assign(Error('down'),{status:503}));await assert.rejects(b);
+ assert.equal(breaker.snapshot('shared').state,'OPEN');
+ pass('late response');assert.equal(await oldSuccess,'late response');
+ assert.equal(breaker.snapshot('shared').state,'OPEN');
+});

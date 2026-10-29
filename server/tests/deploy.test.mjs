@@ -32,3 +32,10 @@ test('OOM repair changes populated settings once; unknown errors do not claim re
  const r=run(dir,`provision_env; compose(){ echo fixture-id; }; docker_fixture(){ echo true; }; DOCKER=(docker_fixture); heal_service hub 'Container OOM'; [[ $(env_value NODE_OPTIONS) == --max-old-space-size=256 ]]; if heal_service hub 'Heap out of memory'; then exit 8; fi; if heal_service postgres 'password authentication failed'; then exit 9; fi`);
  assert.equal(r.status,0,r.stderr);
 }));
+
+test('Sprint 10: production deploy preserves user villa selection',()=>{
+ const workflow=readFileSync(join(ROOT,'.github/workflows/hub-deploy.yml'),'utf8');
+ assert.ok(!workflow.includes('node server/scripts/focus-test-villa.mjs'));
+ assert.ok(workflow.includes("'server/**'"));
+ assert.ok(workflow.includes('systemctl restart "$UNIT"'));
+});

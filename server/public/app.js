@@ -168,7 +168,8 @@ const statusLabel = (status) => ({ RUNNING: 'läuft', WAITING_FOR_MODEL: 'wartet
 function villaCardHtml(v, controls = false) {
   const active = v.status === 'RUNNING' || v.status === 'WAITING_FOR_MODEL' || v.executing || v.queued;
   const control = controls ? `<button type="button" class="villa-control ${active ? 'stop' : 'start'}" data-villa-control="${Number(v.id)}" data-active="${active ? '1' : '0'}" aria-label="${active ? 'Villa stoppen' : 'Villa starten'}">${active ? '■ Stoppen' : '▶ Starten'}</button>` : '';
-  const state = v.executing ? 'arbeitet' : v.queued ? 'wartet' : statusLabel(v.status);
+  const retrySeconds = Math.max(0, Math.ceil((Number(v.retry?.nextRetryAt || 0) - Date.now()) / 1000));
+  const state = v.retry ? `Modell-Retry in ${retrySeconds}s` : v.executing ? 'arbeitet' : v.queued ? 'wartet' : statusLabel(v.status);
   return `<div class="villa-entry${controls ? ' with-controls' : ''}"><button type="button" class="villa-card" data-id="${Number(v.id)}"><span class="villa-card-copy"><b>${esc(v.name)}</b><small>${esc((v.idea || '').slice(0, 105))}</small></span><span class="villa-card-state"><span class="badge status ${esc(v.status)}">${esc(state)}</span><span class="chev">›</span></span></button>${control}</div>`;
 }
 
