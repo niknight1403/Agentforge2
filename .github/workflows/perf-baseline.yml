@@ -1,0 +1,21 @@
+name: Perf-Baseline
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Baseline messen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IGNwID0gcmVxdWlyZSgnY2hpbGRfcHJvY2VzcycpOwpjb25zdCBydW4gPSAoY21kKSA9PiB7IHRyeSB7IHJldHVybiBjcC5leGVjU3luYyhjbWQsIHtzdGRpbzpbJ3BpcGUnLCdwaXBlJywncGlwZSddLCBzaGVsbDonL2Jpbi9iYXNoJ30pLnRvU3RyaW5nKCkudHJpbSgpOyB9IGNhdGNoKGUpIHsgcmV0dXJuICdFUlInOyB9IH07CmNvbnN0IERCID0gJy9vcHQvdmlsbGFmb3JnZS9zZXJ2ZXIvZGF0YS92aWxsYWZvcmdlLmRiJzsKY29uc29sZS5sb2coJz09IEF1ZmdhYmVuLURhdWVyIChET05FLCBsZXR6dGUgMjRoKSA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gc3FsaXRlMyAiICsgREIgKyAiIFwiU0VMRUNUIENPVU5UKCopLCBST1VORChBVkcoZHVyYXRpb25fbXMpLzEwMDAuMCwxKSwgUk9VTkQoTUlOKGR1cmF0aW9uX21zKS8xMDAwLjAsMSksIFJPVU5EKE1BWChkdXJhdGlvbl9tcykvMTAwMC4wLDEpIEZST00gdGFza3MgV0hFUkUgc3RhdHVzPSdET05FJyBBTkQgZHVyYXRpb25fbXM+MCBBTkQgdXBkYXRlZF9hdCA+PSBkYXRldGltZSgnbm93JywnLTI0IGhvdXJzJylcIiIpKTsKY29uc29sZS5sb2coJz09IExldHp0ZSA1IERPTkUtQXVmZ2FiZW4gKERhdWVyIHMpID09Jyk7CmNvbnNvbGUubG9nKHJ1bigic3VkbyBzcWxpdGUzICIgKyBEQiArICIgXCJTRUxFQ1QgaWQsIFJPVU5EKGR1cmF0aW9uX21zLzEwMDAuMCwxKSBGUk9NIHRhc2tzIFdIRVJFIHN0YXR1cz0nRE9ORScgQU5EIGR1cmF0aW9uX21zPjAgT1JERVIgQlkgdXBkYXRlZF9hdCBERVNDIExJTUlUIDVcIiIpKTsKY29uc29sZS5sb2coJz09IFJvdXRlbi1MYXRlbnplbiAoRU1BIG1zKSA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gc3FsaXRlMyAiICsgREIgKyAiIFwiU0VMRUNUIHByaW9yaXR5LCBDT0FMRVNDRShsYXRfbXMsMCksIHN1YnN0cihuYW1lLDEsNDIpIEZST00gcm91dGVzIFdIRVJFIGVuYWJsZWQ9MSBPUkRFUiBCWSBwcmlvcml0eSBBU0MgTElNSVQgMTRcIiIpKTsK" | base64 -d | sudo bash -c "node -"'
