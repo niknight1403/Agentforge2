@@ -813,15 +813,15 @@ const ROLE_TOOLS = {
 
 /** Gemeinsamer Qualitaetsauftrag fuer alle Agenten. */
 const QUALITY_RULES = [
-  'Ergebnis statt Absicht: Jede Antwort liefert ein verwertbares Artefakt (Code, Bericht oder Plan mit Zahlen).',
-  'Behaupte nur Geprueftes: Pruefe Fakten mit Werkzeugen (project_read, web_search, memory_search), bevor du sie aussprichst. Erfundene Zahlen oder Quellen sind ein Fehler.',
-  'Verifiziere dich selbst: Bei Code und Aenderungen am Projekt laeuft vor dem Abschluss project_run (Build/Tests). Nur gruen gilt als fertig.',
-  'Speichere Entscheidungen und Lehren mit memory_write, damit das Team davon profitiert.',
-  'Ehrlichkeit ueber Vollstaendigkeit: Benenne offen gebliebene Punkte und Risiken am Ende ausdruecklich.',
-  'Antworte auf Deutsch, klar gegliedert, mit kurzen Absaetzen und Aufzaehlungen.',
-  'Produktstandard (Nutzerdirektive): Alles was du lieferst ist professionell und veroeffentlichungsreif - keine Platzhalter, kein Lorem Ipsum, kein "Coming Soon", sondern echte, finale Inhalte, professionelle Formulierungen und ein ansprechendes, konsistentes Erscheinungsbild.',
-  'Lieferbarkeit: Nach jedem groesseren Schritt steht ein lauffaehiger Stand (lauffaehige index.html bzw. lauffaehiges Projekt), damit die APK-Baustrasse jederzeit eine installierbare APK liefern kann.',
-  'Fokus: Die Villa entwickelt EIN Produkt pro Projekt konsequent zu Ende - Vollstaendigkeit und Fertigstellung haben Vorrang vor neuen Nebenideen.'
+  'Ergebnis statt Absicht: liefere ein verwertbares Artefakt (Code, Bericht oder Plan mit Zahlen).',
+  'Nur Geprueftes behaupten: Fakten mit Werkzeugen pruefen (project_read, web_search, memory_search); erfundene Zahlen/Quellen sind ein Fehler.',
+  'Selbstverifikation: Bei Code laeuft vor dem Abschluss project_run; nur gruen gilt als fertig.',
+  'Entscheidungen und Lehren mit memory_write sichern.',
+  'Offene Punkte und Risiken am Ende ausdruecklich benennen.',
+  'Antwort auf Deutsch, klar gegliedert, kurze Absaetze.',
+  'Produktstandard: professionell und veroeffentlichungsreif - keine Platzhalter, kein Lorem Ipsum, kein "Coming Soon".',
+  'Lauffaehiger Stand nach jedem groesseren Schritt (installierbare APK jederzeit moeglich).',
+  'EIN Produkt pro Projekt zu Ende fuehren; Fertigstellung vor Nebenideen.'
 ].join('\n- ');
 
 export function agentCount(villaId) {
@@ -832,7 +832,7 @@ function maxAgents(villaId) {
 }
 
 /** Version der Prompt-Vorlage: Bei Erhoehung frischt der Hub beim Start alle Agenten-Prompts auf. */
-export const PROMPT_VERSION = 5;
+export const PROMPT_VERSION = 6;
 
 /** Zentraler Prompt-Bau: eine Quelle der Wahrheit fuer Neuanlage UND Migration. */
 export function buildSystemPrompt(role) {
@@ -840,7 +840,6 @@ export function buildSystemPrompt(role) {
   return [
     ROLE_BRIEF[role] || ROLE_BRIEF.WORKER,
     `Rolle: ${role}.`,
-    `Bevorzugte Werkzeuge: ${tools}.`,
     `Qualitaetsregeln:\n- ${QUALITY_RULES}`,
     'Schliesse jede Aufgabe mit einem pruefbaren Ergebnis ab.'
   ].join('\n');
