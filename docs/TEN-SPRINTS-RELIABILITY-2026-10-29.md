@@ -33,3 +33,5 @@ Produktabschlüsse werden nur durch das vorhandene Produkt-Abnahmegate gemeldet.
 ## Verifikation dieses Sprintpakets
 
 Lokales vollständiges Gate: 293 Tests bestanden, 0 fehlgeschlagen; Secret-Scan, JavaScript-Syntaxprüfung und Web-Produktionsbuild erfolgreich. Externe Providerverfügbarkeit und Projektabschlüsse sind davon getrennte Live-Nachweise.
+
+Der produktive Master-Chat-Test startet nach einem erfolgreichen Hub-Deploy per workflow_run. Die frühere feste 45-Sekunden-Verzögerung wurde entfernt, damit der Test nicht während eines Neustarts läuft.
