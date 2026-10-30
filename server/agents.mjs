@@ -1174,14 +1174,22 @@ export function isRunning(villaId) { return !!running.get(villaId); }
  * Reaper begraebt sie als FAILED mit ehrlicher Begrundung; die Evolution
  * plant sie in der naechsten Runde neu. Laeuft im 30-Min-Takt + beim Start.
  */
-export function reapZombies(maxMin = 35) {
-  /* Haenger-Erkennung: updated_at wird beim Zuweisen aufgefrischt, deshalb
-     zaehlt started_at (falls vorhanden). Erster Haenger -> zurueck in die
-     Warteschlange (Durchsatz), wiederholter Haenger -> FAILED (Neuplanung). */
+export function reapZombies(maxMin = 35, maxAssignments = 12) {
+  /* Haenger-Erkennung mit drei Kriterien:
+     1. started_at (Sekunden werden auf Millisekunden normalisiert),
+     2. Fallback updated_at, falls started_at fehlt,
+     3. harte Grenze ueber assignments: endlos neu zugewiesene Aufgaben werden
+        verworfen, auch wenn started_at bei jeder Zuweisung frisch gesetzt wird. */
   const cutoff = now() - maxMin * 60_000;
+  const effStart = "CASE WHEN started_at > 0 AND started_at < 100000000000 THEN started_at * 1000 ELSE started_at END";
   const stale = db.prepare(
-    "SELECT id, villa_id, title, result FROM tasks WHERE status IN ('RUNNING','IN_PROGRESS') AND COALESCE(NULLIF(started_at,0), updated_at) < ?"
-  ).all(cutoff);
+    `SELECT id, villa_id, title, result, assignments FROM tasks
+      WHERE status IN ('RUNNING','IN_PROGRESS')
+        AND (
+          COALESCE(NULLIF(${effStart},0), updated_at) < ?
+          OR COALESCE(assignments,0) >= ?
+        )`
+  ).all(cutoff, maxAssignments);
   if (!stale.length) return 0;
   const requeue = db.prepare("UPDATE tasks SET status = 'PENDING', started_at = 0, result = ?, updated_at = ? WHERE id = ?");
   const fail = db.prepare("UPDATE tasks SET status = 'FAILED', result = ?, updated_at = ? WHERE id = ?");
@@ -1189,8 +1197,11 @@ export function reapZombies(maxMin = 35) {
   for (const t of stale) {
     const prior = String(t.result || '');
     const hits = (prior.match(/Zombie-Reaper/g) || []).length;
-    if (hits >= 2) {
-      const msg = 'Automatisch abgebrochen (Zombie-Reaper): wiederholt ohne Fortschritt; Neuplanung durch die Evolution.';
+    const tooMany = Number(t.assignments || 0) >= maxAssignments;
+    if (hits >= 2 || tooMany) {
+      const msg = tooMany
+        ? `Automatisch abgebrochen (Zombie-Reaper): ${t.assignments} Zuweisungen ohne Abschluss; Neuplanung durch die Evolution.`
+        : 'Automatisch abgebrochen (Zombie-Reaper): wiederholt ohne Fortschritt; Neuplanung durch die Evolution.';
       fail.run(msg, now(), t.id);
       emit('task', { villaId: t.villa_id, taskId: t.id, status: 'FAILED', title: t.title, answer: msg });
       failed++;
@@ -1329,7 +1340,9 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
       const batch = tasks.slice(0, job.concurrency);
       for (const task of batch) {
         const startedAt = now();
-        db.prepare("UPDATE tasks SET status = 'RUNNING', started_at = ?, duration_ms = 0, updated_at = ? WHERE id = ?").run(startedAt, startedAt, task.id);
+        /* assignments zaehlt jede Zuweisung. Ein Haenger, der endlos neu
+           zugewiesen wird, faellt so auf, auch wenn started_at immer frisch ist. */
+        db.prepare("UPDATE tasks SET status = 'RUNNING', started_at = ?, duration_ms = 0, assignments = COALESCE(assignments,0)+1, updated_at = ? WHERE id = ?").run(startedAt, startedAt, task.id);
       }
 
       const executeLocally = (task) => executeTaskOnce(villaId, task).catch((e) => {
