@@ -1,0 +1,21 @@
+name: Logcheck2
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  l:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Log
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IHsgZXhlY1N5bmMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgcnVuID0gKGMpID0+IHsgdHJ5IHsgcmV0dXJuIGV4ZWNTeW5jKGMsIHtlbmNvZGluZzondXRmOCcsIHN0ZGlvOlsncGlwZScsJ3BpcGUnLCdwaXBlJ119KS50b1N0cmluZygpLnRyaW0oKTsgfSBjYXRjaChlKSB7IHJldHVybiAnRVJSJzsgfSB9Owpjb25zb2xlLmxvZygnPT0gSm91cm5hbCAyNSBNaW4gdW5nZWZpbHRlcnQgKGxldHp0ZSAzMCkgPT0nKTsKY29uc29sZS5sb2cocnVuKCJzdWRvIGpvdXJuYWxjdGwgLXUgdmlsbGFmb3JnZS1odWIgLS1zaW5jZSAnMjUgbWluIGFnbycgLS1uby1wYWdlciAyPi9kZXYvbnVsbCB8IHRhaWwgLTMwIHwgY3V0IC1jMjgtMjMwIikpOwpjb25zb2xlLmxvZygnPT0gSU5URVJORVIgRkVITEVSIC8gU3RhY2tzID09Jyk7CmNvbnNvbGUubG9nKHJ1bigic3VkbyBqb3VybmFsY3RsIC11IHZpbGxhZm9yZ2UtaHViIC0tc2luY2UgJzQwIG1pbiBhZ28nIC0tbm8tcGFnZXIgMj4vZGV2L251bGwgfCBncmVwIC1pRSAnSU5URVJORVJ8VHlwZUVycm9yfFJlZmVyZW5jZUVycm9yfFN5bnRheEVycm9yfHVuaGFuZGxlZHxyZWplY3Rpb24nIHwgdGFpbCAtOCB8IGN1dCAtYzI4LTIyMCIpIHx8ICdrZWluZScpOwpjb25zb2xlLmxvZygnPT0gTGV0enRlIDUgTExNLUF1ZnJ1ZmUgPT0nKTsKY29uc3QgREI9Jy9vcHQvdmlsbGFmb3JnZS9zZXJ2ZXIvZGF0YS92aWxsYWZvcmdlLmRiJzsKY29uc29sZS5sb2cocnVuKCJzdWRvIHNxbGl0ZTMgLXNlcGFyYXRvciAnIHwgJyAiICsgREIgKyAiIFwiU0VMRUNUIG1vZGVsLCB0b2tlbnMsIGxhdGVuY3lfbXMsIGhhcHBlbmVkX2F0IEZST00gbGxtX3VzYWdlIE9SREVSIEJZIGhhcHBlbmVkX2F0IERFU0MgTElNSVQgNVwiIikpOwpjb25zb2xlLmxvZygnPT0gUlVOTklORy1BdWZnYWJlbiBBbHRlciA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gc3FsaXRlMyAtc2VwYXJhdG9yICcgfCAnICIgKyBEQiArICIgXCJTRUxFQ1QgaWQsIHZpbGxhX2lkLCBDQVNUKChzdHJmdGltZSgnJXMnLCdub3cnKSoxMDAwIC0gc3RhcnRlZF9hdCkvMTAwMCBBUyBJTlQpfHwncycsIHN1YnN0cih0aXRsZSwxLDMwKSBGUk9NIHRhc2tzIFdIRVJFIHN0YXR1cz0nUlVOTklORydcIiIpKTsKY29uc29sZS5sb2coJz09IEh1Yi1Qb3J0ID09Jyk7CmNvbnNvbGUubG9nKHJ1bigic3VkbyBzcyAtbHRucCAyPi9kZXYvbnVsbCB8IGdyZXAgLUUgJzEyMDAwfDMwMDAnIHwgaGVhZCAtMyIpKTsK" | base64 -d > /tmp/lc2.cjs && node /tmp/lc2.cjs'
