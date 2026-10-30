@@ -1175,16 +1175,35 @@ export function isRunning(villaId) { return !!running.get(villaId); }
  * plant sie in der naechsten Runde neu. Laeuft im 30-Min-Takt + beim Start.
  */
 export function reapZombies(maxMin = 35) {
+  /* Haenger-Erkennung: updated_at wird beim Zuweisen aufgefrischt, deshalb
+     zaehlt started_at (falls vorhanden). Erster Haenger -> zurueck in die
+     Warteschlange (Durchsatz), wiederholter Haenger -> FAILED (Neuplanung). */
   const cutoff = now() - maxMin * 60_000;
-  const zombies = db.prepare("SELECT id, villa_id, title FROM tasks WHERE status = 'RUNNING' AND updated_at < ?").all(cutoff);
-  if (!zombies.length) return 0;
-  db.prepare("UPDATE tasks SET status = 'FAILED', result = ?, updated_at = ? WHERE status = 'RUNNING' AND updated_at < ?")
-    .run('Automatisch abgebrochen (Zombie-Reaper): Aufgabe hing ueber 35 Min fest. Wird von der Evolution neu geplant.', now(), cutoff);
-  for (const z of zombies) emit('task', { villaId: z.villa_id, taskId: z.id, status: 'FAILED', title: z.title, answer: '' });
-  console.log(`[villaforge] Zombie-Reaper: ${zombies.length} haengende Aufgabe(n) beendet.`);
-  return zombies.length;
+  const stale = db.prepare(
+    "SELECT id, villa_id, title, result FROM tasks WHERE status IN ('RUNNING','IN_PROGRESS') AND COALESCE(NULLIF(started_at,0), updated_at) < ?"
+  ).all(cutoff);
+  if (!stale.length) return 0;
+  const requeue = db.prepare("UPDATE tasks SET status = 'PENDING', started_at = 0, result = ?, updated_at = ? WHERE id = ?");
+  const fail = db.prepare("UPDATE tasks SET status = 'FAILED', result = ?, updated_at = ? WHERE id = ?");
+  let requeued = 0, failed = 0;
+  for (const t of stale) {
+    const prior = String(t.result || '');
+    const hits = (prior.match(/Zombie-Reaper/g) || []).length;
+    if (hits >= 2) {
+      const msg = 'Automatisch abgebrochen (Zombie-Reaper): wiederholt ohne Fortschritt; Neuplanung durch die Evolution.';
+      fail.run(msg, now(), t.id);
+      emit('task', { villaId: t.villa_id, taskId: t.id, status: 'FAILED', title: t.title, answer: msg });
+      failed++;
+    } else {
+      const msg = `Zurueck in die Warteschlange (Zombie-Reaper): ueber ${maxMin} Min ohne Fortschritt.${prior ? ' | ' + prior.slice(0, 100) : ''}`;
+      requeue.run(msg, now(), t.id);
+      emit('task', { villaId: t.villa_id, taskId: t.id, status: 'PENDING', title: t.title, answer: msg });
+      requeued++;
+    }
+  }
+  console.log(`[villaforge] Zombie-Reaper: ${requeued} erneut eingeplant, ${failed} verworfen.`);
+  return requeued + failed;
 }
-
 export function stopVilla(villaId) {
   const job = running.get(villaId);
   if (!job) return false;
