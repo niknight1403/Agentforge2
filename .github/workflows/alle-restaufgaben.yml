@@ -1,0 +1,21 @@
+name: Alle-Restaufgaben
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  r:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Alle Villen mit Restarbeit aktivieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'DB=/opt/villaforge/server/data/villaforge.db; echo "VVBEQVRFIHZpbGxhcyBTRVQgYXV0b25vbXk9MSwgc3RhdHVzPSdSVU5OSU5HJywgdXBkYXRlZF9hdD1DQVNUKHN0cmZ0aW1lKCclcycsJ25vdycpIEFTIElOVEVHRVIpKjEwMDAKV0hFUkUgc3RhdHVzIE5PVCBJTiAoJ1JVTk5JTkcnKQogIEFORCAoU0VMRUNUIENPVU5UKCopIEZST00gdGFza3MgdCBXSEVSRSB0LnZpbGxhX2lkPXZpbGxhcy5pZCBBTkQgdC5zdGF0dXM9J1BFTkRJTkcnKSA+IDA7" | base64 -d > /tmp/all.sql; sudo sqlite3 -bail $DB < /tmp/all.sql; echo "GEAENDERT rc=$?"; sudo systemctl restart villaforge-hub; sleep 30; echo "== VILLEN =="; sudo sqlite3 -separator " | " $DB "SELECT v.id, v.status, v.autonomy, (SELECT COUNT(*) FROM tasks t WHERE t.villa_id=v.id AND t.status=\"PENDING\") p, (SELECT COUNT(*) FROM tasks t WHERE t.villa_id=v.id AND t.status=\"RUNNING\") r FROM villas v WHERE p>0 OR r>0 ORDER BY p DESC"; echo "== SUM =="; sudo sqlite3 $DB "SELECT \"PENDING=\"||COUNT(*) FROM tasks WHERE status=\"PENDING\""; sudo sqlite3 $DB "SELECT \"RUNNING=\"||COUNT(*) FROM tasks WHERE status=\"RUNNING\""; echo "== LOAD =="; cut -d" " -f1-3 /proc/loadavg'
