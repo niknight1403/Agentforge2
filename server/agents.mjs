@@ -1174,6 +1174,24 @@ export function isRunning(villaId) { return !!running.get(villaId); }
  * Reaper begraebt sie als FAILED mit ehrlicher Begrundung; die Evolution
  * plant sie in der naechsten Runde neu. Laeuft im 30-Min-Takt + beim Start.
  */
+/* Ausfallzaehler: Einzelne Modell-Timeouts sind bei Free-Routen normal
+   (Drosselung, kurzer Cooldown). Erst wenn mehrere Laeufe hintereinander
+   ohne Modell bleiben, ist es ein echter Ausfall. Vorher hat EIN Timeout
+   den ganzen Villen-Lauf gestoppt - die Villa blieb auf RUNNING stehen,
+   ohne zu arbeiten. */
+const llmOutage = { count: 0, windowStart: 0 };
+export function noteLlmOutage() {
+  const t = now();
+  if (!llmOutage.windowStart || t - llmOutage.windowStart > 10 * 60_000) { llmOutage.count = 0; llmOutage.windowStart = t; }
+  llmOutage.count += 1;
+  return llmOutage.count;
+}
+export function noteLlmSuccess() {
+  llmOutage.count = 0;
+  llmOutage.windowStart = now();
+}
+const llmPauseAfter = () => Math.max(1, Number(process.env.VF_LLM_PAUSE_AFTER) || 6);
+
 export function reapZombies(maxMin = 35, maxAssignments = 12) {
   /* Haenger-Erkennung mit drei Kriterien:
      1. started_at (Sekunden werden auf Millisekunden normalisiert),
@@ -1345,7 +1363,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
         db.prepare("UPDATE tasks SET status = 'RUNNING', started_at = ?, duration_ms = 0, assignments = COALESCE(assignments,0)+1, updated_at = ? WHERE id = ?").run(startedAt, startedAt, task.id);
       }
 
-      const executeLocally = (task) => executeTaskOnce(villaId, task).catch((e) => {
+      const executeLocally = (task) => executeTaskOnce(villaId, task).catch(async (e) => {
         if (job.controller.signal.aborted) {
           db.prepare("UPDATE tasks SET status='PENDING',updated_at=? WHERE id=?").run(now(),task.id);
           emit('task',{villaId,taskId:task.id,status:'PENDING',code:'CANCELLED'});
@@ -1356,9 +1374,18 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
         // ueber requeueFailed bis zu 3x neu aufgenommen.
         if(e.code==='LLM_UNAVAILABLE') {
           retryAfterMs = Math.max(retryAfterMs, Number(e.retryAfter) * 1000 || 15_000);
-          job.stop=true;
-          db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run('LLM_UNAVAILABLE: Warte auf echte Modellverbindung.',now(),task.id);
+          const outages = noteLlmOutage();
+          db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?")
+            .run(`LLM_UNAVAILABLE: Warte auf Modell (Ausfall ${outages}/${llmPauseAfter()}); Aufgabe bleibt in der Warteschlange.`,now(),task.id);
           emit('task',{villaId,taskId:task.id,status:'PENDING',code:e.code});
+          if (outages >= llmPauseAfter()) {
+            // Echter Ausfall: Lauf sauber beenden und Villa sichtbar parken.
+            job.stop = true;
+            db.prepare("UPDATE villas SET status='WAITING_FOR_MODEL',updated_at=? WHERE id=?").run(now(),villaId);
+          } else {
+            // Einzelner Timeout: kurz warten, dann laeuft die Schleife weiter.
+            await new Promise((r) => setTimeout(r, Math.min(retryAfterMs, 8000)));
+          }
           return;
         }
         const msg = String(e?.message || e).slice(0, 300);
@@ -1661,8 +1688,8 @@ export async function executeTask(villaId, task, executionOptions = {}) {
   catch(error){
     saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:'interrupted',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,errorCode:String(error.code||'AGENT_ERROR').slice(0,80)}});
     db.prepare("UPDATE agents SET status='IDLE',last_active_at=? WHERE id=?").run(now(),agent.id);
-    db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run(error.code==='LLM_UNAVAILABLE'?'LLM_UNAVAILABLE: Warte auf echte Modellverbindung.':'Agentenlauf unterbrochen.',now(),task.id);
-    if(error.code==='LLM_UNAVAILABLE')db.prepare("UPDATE villas SET status='PAUSED',updated_at=? WHERE id=?").run(now(),villaId);
+    db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run(error.code==='LLM_UNAVAILABLE'?'LLM_UNAVAILABLE: Warte auf Modell; Aufgabe bleibt in der Warteschlange.':'Agentenlauf unterbrochen.',now(),task.id);
+    if(error.code==='LLM_UNAVAILABLE'&&noteLlmOutage()>=llmPauseAfter())db.prepare("UPDATE villas SET status='WAITING_FOR_MODEL',updated_at=? WHERE id=?").run(now(),villaId);
     throw error;
   }
 
@@ -1672,6 +1699,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
     db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run('LLM_UNAVAILABLE: Warte auf echte Modellverbindung.',now(),task.id);
     throw Object.assign(new Error('Kein echtes Modell erreichbar; Aufgabe bleibt offen.'),{code:'LLM_UNAVAILABLE',statusCode:503,retryAfter:res.retryAfter});
   }
+  noteLlmSuccess();
   let answer = res.answer || res.error || 'Kein Ergebnis.';
 
   // Qualitaetstor: Code-Aufgaben muessen den echten Test-Tor passieren.
