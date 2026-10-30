@@ -1,0 +1,21 @@
+name: Log12000
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  l:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Log lesen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IHsgZXhlY1N5bmMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgcnVuID0gKGMpID0+IHsgdHJ5IHsgcmV0dXJuIGV4ZWNTeW5jKGMsIHtlbmNvZGluZzondXRmOCcsIHN0ZGlvOlsncGlwZScsJ3BpcGUnLCdwaXBlJ119KS50b1N0cmluZygpLnRyaW0oKTsgfSBjYXRjaChlKSB7IHJldHVybiAnRVJSJzsgfSB9Owpjb25zb2xlLmxvZygnPT0gTG9nZGF0ZWllbiB2b3JoYW5kZW4/ID09Jyk7CmNvbnNvbGUubG9nKHJ1bigic3VkbyBscyAtbGEgL29wdC92aWxsYWZvcmdlLyoubG9nIC9vcHQvdmlsbGFmb3JnZS9sb2dzIDI+L2Rldi9udWxsIHwgaGVhZCAtOCIpIHx8ICdrZWluZScpOwpjb25zb2xlLmxvZygnPT0gSm91cm5hbCBzZWl0IE5ldXN0YXJ0OiBBdWZnYWJlbi9HYXRlL0ZlaGxlciA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gam91cm5hbGN0bCAtdSB2aWxsYWZvcmdlLWh1YiAtLXNpbmNlICc2MCBtaW4gYWdvJyAtLW5vLXBhZ2VyIDI+L2Rldi9udWxsIHwgZ3JlcCAtaUUgJ2dhdGV8cXVhbGl0YWV0fGFiZ2VsZWhudHxyZXRyeXx0YXNrfGZlaGxlcnxlcnJvcnxleGNlcHRpb258d2FybnxrYXNrYWRlfHVuYXZhaWxhYmxlJyB8IGdyZXAgLXZpRSAnR0VUIC9hcGl8ZmF2aWNvbnxoZWFsdGgnIHwgdGFpbCAtMzAgfCBjdXQgLWMyOC0yMzAiKSk7CmNvbnNvbGUubG9nKCc9PSBBdXNuYWhtZW4vU3RhY2tzID09Jyk7CmNvbnNvbGUubG9nKHJ1bigic3VkbyBqb3VybmFsY3RsIC11IHZpbGxhZm9yZ2UtaHViIC0tc2luY2UgJzYwIG1pbiBhZ28nIC0tbm8tcGFnZXIgMj4vZGV2L251bGwgfCBncmVwIC1BMyAtaUUgJ1R5cGVFcnJvcnxSZWZlcmVuY2VFcnJvcnx1bmhhbmRsZWR8Y3Jhc2h8c3R1ZXJ6dCcgfCB0YWlsIC0yMCB8IGN1dCAtYzI4LTIwMCIpIHx8ICdrZWluZScpOwo=" | base64 -d > /tmp/l12.cjs && node /tmp/l12.cjs'
