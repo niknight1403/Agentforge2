@@ -1,0 +1,21 @@
+name: villa31-Check
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IHsgZXhlY1N5bmMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgcnVuID0gKGMpID0+IHsgdHJ5IHsgcmV0dXJuIGV4ZWNTeW5jKGMsIHtlbmNvZGluZzondXRmOCcsIHN0ZGlvOlsncGlwZScsJ3BpcGUnLCdwaXBlJ119KS50b1N0cmluZygpLnRyaW0oKTsgfSBjYXRjaChlKSB7IHJldHVybiAnRVJSJzsgfSB9Owpjb25zdCBEQj0nL29wdC92aWxsYWZvcmdlL3NlcnZlci9kYXRhL3ZpbGxhZm9yZ2UuZGInOwpjb25zdCBxID0gKHNxbCkgPT4gcnVuKCJzdWRvIHNxbGl0ZTMgLXNlcGFyYXRvciAnfCcgIiArIERCICsgIiBcIiIgKyBzcWwgKyAiXCIiKTsKY29uc29sZS5sb2coJz09IEVpbnN0ZWxsdW5nZW4gPT0nKTsKY29uc29sZS5sb2cocSgiU0VMRUNUIGtleSB8fCAnPScgfHwgdmFsdWUgRlJPTSBjb250cm9sX3NldHRpbmdzIFdIRVJFIGtleSBJTiAoJ3ZpbGxhU2xvdHMnLCdtYXhDb25jdXJyZW50VGFza3MnKSIpLnNwbGl0KCdcbicpLmpvaW4oJyB8ICcpKTsKY29uc29sZS5sb2coJz09IFJVTk5JTkcgamUgVmlsbGEgPT0nKTsKY29uc29sZS5sb2cocSgiU0VMRUNUIHZpbGxhX2lkIHx8ICc6ICcgfHwgQ09VTlQoKikgRlJPTSB0YXNrcyBXSEVSRSBzdGF0dXM9J1JVTk5JTkcnIEdST1VQIEJZIHZpbGxhX2lkIE9SREVSIEJZIENPVU5UKCopIERFU0MgTElNSVQgOCIpLnNwbGl0KCdcbicpLmpvaW4oJyB8ICcpKTsKY29uc29sZS5sb2coJz09IEFnZW50ZW4gVmlsbGEgMzEgPT0nKTsKY29uc29sZS5sb2cocSgiU0VMRUNUIHN0YXR1cyB8fCAnOiAnIHx8IENPVU5UKCopIEZST00gYWdlbnRzIFdIRVJFIHZpbGxhX2lkPTMxIEdST1VQIEJZIHN0YXR1cyIpLnNwbGl0KCdcbicpLmpvaW4oJyB8ICcpKTsKY29uc29sZS5sb2coJz09IEFic2NobHVlc3NlIFZpbGxhIDMxICgzaCkgPT0nKTsKY29uc29sZS5sb2coJ0RPTkU6ICcgKyBxKCJTRUxFQ1QgQ09VTlQoKikgRlJPTSB0YXNrcyBXSEVSRSB2aWxsYV9pZD0zMSBBTkQgc3RhdHVzPSdET05FJyBBTkQgdXBkYXRlZF9hdCA+PSAiICsgKERhdGUubm93KCktMyozNjAwKjEwMDApKSk7CmNvbnNvbGUubG9nKCdSVU5OSU5HLUF1ZmdhYmVuIEFsdGVyIFNwYW5uZTogJyArIHEoIlNFTEVDVCBNSU4oc3RhcnRlZF9hdCkgfHwgJyAuLiAnIHx8IE1BWChzdGFydGVkX2F0KSBGUk9NIHRhc2tzIFdIRVJFIHN0YXR1cz0nUlVOTklORycgQU5EIHZpbGxhX2lkPTMxIikpOwo=" | base64 -d > /tmp/v31.cjs && node /tmp/v31.cjs'
