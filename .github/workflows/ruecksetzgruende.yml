@@ -1,0 +1,21 @@
+name: Ruecksetzgruende
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  r:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Gruende
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IHsgZXhlY1N5bmMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgcnVuID0gKGMpID0+IHsgdHJ5IHsgcmV0dXJuIGV4ZWNTeW5jKGMsIHtlbmNvZGluZzondXRmOCcsIHN0ZGlvOlsncGlwZScsJ3BpcGUnLCdwaXBlJ119KS50b1N0cmluZygpLnRyaW0oKTsgfSBjYXRjaChlKSB7IHJldHVybiAnRVJSJzsgfSB9Owpjb25zdCBEQj0nL29wdC92aWxsYWZvcmdlL3NlcnZlci9kYXRhL3ZpbGxhZm9yZ2UuZGInOwpjb25zdCBxID0gKHNxbCkgPT4gcnVuKCJzdWRvIHNxbGl0ZTMgLXNlcGFyYXRvciAnIHx8ICcgIiArIERCICsgIiBcIiIgKyBzcWwgKyAiXCIiKTsKY29uc3Qgbm93ID0gRGF0ZS5ub3coKTsKY29uc29sZS5sb2coJz09IFp1cnVlY2tnZXNldHp0ZSBBdWZnYWJlbiAoMjAgTWluKTogR3J1bmQgPT0nKTsKY29uc29sZS5sb2cocShgU0VMRUNUIGlkIHx8ICcgdicgfHwgdmlsbGFfaWQgfHwgJyAtPiAnIHx8IHN1YnN0cihDT0FMRVNDRShOVUxMSUYocmVzdWx0LCcobGVlciknKSwnKGxlZXIpJyksMSw5MCkgRlJPTSB0YXNrcyBXSEVSRSBzdGF0dXM9J1BFTkRJTkcnIEFORCB1cGRhdGVkX2F0ID49ICR7bm93LTEyMDAwMDB9IE9SREVSIEJZIHVwZGF0ZWRfYXQgREVTQyBMSU1JVCAxMGApKTsKY29uc29sZS5sb2coJz09IEpvdXJuYWwga29tcGxldHQgKGxldHp0ZSAyMCBaZWlsZW4sIHVuZ2VmaWx0ZXJ0KSA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gam91cm5hbGN0bCAtdSB2aWxsYWZvcmdlLWh1YiAtLXNpbmNlICcyNSBtaW4gYWdvJyAtLW5vLXBhZ2VyIDI+L2Rldi9udWxsIHwgdGFpbCAtMjAgfCBjdXQgLWMyOC0yMTAiKSk7CmNvbnNvbGUubG9nKCc9PSBBZ2VudGVuLVp1c3RhZW5kZSBnZXNhbXQgPT0nKTsKY29uc29sZS5sb2cocSgiU0VMRUNUIHN0YXR1cyB8fCAnOiAnIHx8IENPVU5UKCopIEZST00gYWdlbnRzIEdST1VQIEJZIHN0YXR1cyBPUkRFUiBCWSBDT1VOVCgqKSBERVNDIikpOwpjb25zb2xlLmxvZygnPT0gQXVmZ2FiZW4gbWl0IEFnZW50ID09Jyk7CmNvbnNvbGUubG9nKHEoYFNFTEVDVCBDT1VOVCgqKSBGUk9NIHRhc2tzIFdIRVJFIHN0YXR1cz0nUlVOTklORycgQU5EIGFnZW50X2lkIElTIE5PVCBOVUxMYCkpOwo=" | base64 -d > /tmp/rg.cjs && node /tmp/rg.cjs'
