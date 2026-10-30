@@ -1,0 +1,21 @@
+name: Taskfluss
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Taskfluss
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IHsgZXhlY1N5bmMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgcnVuID0gKGMpID0+IHsgdHJ5IHsgcmV0dXJuIGV4ZWNTeW5jKGMsIHtlbmNvZGluZzondXRmOCcsIHN0ZGlvOlsncGlwZScsJ3BpcGUnLCdwaXBlJ119KS50b1N0cmluZygpLnRyaW0oKTsgfSBjYXRjaChlKSB7IHJldHVybiAnRVJSJzsgfSB9Owpjb25zdCBEQj0nL29wdC92aWxsYWZvcmdlL3NlcnZlci9kYXRhL3ZpbGxhZm9yZ2UuZGInOwpjb25zdCBxID0gKHNxbCkgPT4gcnVuKCJzdWRvIHNxbGl0ZTMgLXNlcGFyYXRvciAnIHwgJyAiICsgREIgKyAiIFwiIiArIHNxbCArICJcIiIpOwpjb25zdCBub3cgPSBEYXRlLm5vdygpOwpjb25zb2xlLmxvZygnPT0gQXVmZ2FiZW4gbWl0IEFrdGl2aXRhZXQgaW4gMTUgTWluLCBuYWNoIFN0YXR1cyA9PScpOwpjb25zb2xlLmxvZyhxKGBTRUxFQ1Qgc3RhdHVzIHx8ICcgfCAnIHx8IENPVU5UKCopIEZST00gdGFza3MgV0hFUkUgdXBkYXRlZF9hdCA+PSAke25vdy05MDAwMDB9IEdST1VQIEJZIHN0YXR1cyBPUkRFUiBCWSBDT1VOVCgqKSBERVNDYCkpOwpjb25zb2xlLmxvZygnPT0gRXJnZWJuaXN0ZXh0ZSAoMTUgTWluKSA9PScpOwpjb25zb2xlLmxvZyhxKGBTRUxFQ1Qgc3Vic3RyKENPQUxFU0NFKE5VTExJRihyZXN1bHQsJycpLCdsZWVyJyksMSw2NCkgfHwgJyB8ICcgfHwgQ09VTlQoKikgRlJPTSB0YXNrcyBXSEVSRSB1cGRhdGVkX2F0ID49ICR7bm93LTkwMDAwMH0gR1JPVVAgQlkgMSBPUkRFUiBCWSAyIERFU0MgTElNSVQgOGApKTsKY29uc29sZS5sb2coJz09IFEtR0FURS1SZXRyaWVzIGluc2dlc2FtdCA9PScpOwpjb25zb2xlLmxvZyhxKCJTRUxFQ1QgQ09VTlQoKikgRlJPTSB0YXNrcyBXSEVSRSB0aXRsZSBMSUtFICclW1EtR0FURV0lJyIpKTsKY29uc29sZS5sb2coJz09IFJldHJ5LVphZWhsZXIgPT0nKTsKY29uc29sZS5sb2cocSgiU0VMRUNUICdyZXRyeV9jb3VudD4wOiAnIHx8IENPVU5UKCopIEZST00gdGFza3MgV0hFUkUgQ09BTEVTQ0UocmV0cnlfY291bnQsMCkgPiAwIikpOwpjb25zb2xlLmxvZygnPT0gQWVsdGVzdGVyIGxhdWZlbmRlciBMYXVmID09Jyk7CmNvbnNvbGUubG9nKHEoYFNFTEVDVCBpZCB8fCAnIHwgJyB8fCB2aWxsYV9pZCB8fCAnIHwgJyB8fCBST1VORCgoJHtub3d9LXN0YXJ0ZWRfYXQpLzEwMDAuMCwwKSB8fCAncyB8ICcgfHwgc3Vic3RyKHRpdGxlLDEsNDApIEZST00gdGFza3MgV0hFUkUgc3RhdHVzPSdSVU5OSU5HJyBPUkRFUiBCWSBzdGFydGVkX2F0IEFTQyBMSU1JVCA1YCkpOwo=" | base64 -d > /tmp/tf.cjs && node /tmp/tf.cjs'
