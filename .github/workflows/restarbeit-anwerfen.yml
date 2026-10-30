@@ -1,0 +1,21 @@
+name: Restarbeit-anwerfen
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  r:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Villen aktivieren und Hub neu starten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'DB=/opt/villaforge/server/data/villaforge.db; echo "== VORHER =="; sudo sqlite3 -separator " | " $DB "SELECT v.id, v.status, v.autonomy, (SELECT COUNT(*) FROM tasks t WHERE t.villa_id=v.id AND t.status=\"PENDING\") p FROM villas v WHERE p>0 ORDER BY p DESC"; echo "VVBEQVRFIHZpbGxhcyBTRVQgc3RhdHVzPSdSVU5OSU5HJywgdXBkYXRlZF9hdD1DQVNUKHN0cmZ0aW1lKCclcycsJ25vdycpIEFTIElOVEVHRVIpKjEwMDAKV0hFUkUgYXV0b25vbXk9MQogIEFORCBzdGF0dXMgTk9UIElOICgnUlVOTklORycpCiAgQU5EIChTRUxFQ1QgQ09VTlQoKikgRlJPTSB0YXNrcyB0IFdIRVJFIHQudmlsbGFfaWQ9dmlsbGFzLmlkIEFORCB0LnN0YXR1cz0nUEVORElORycpID4gMDs=" | base64 -d > /tmp/act.sql; sudo sqlite3 -bail $DB < /tmp/act.sql; echo "== GEAENDERT: $? =="; sudo systemctl restart villaforge-hub; sleep 25; echo "== NACHHER =="; sudo sqlite3 -separator " | " $DB "SELECT v.id, v.status, (SELECT COUNT(*) FROM tasks t WHERE t.villa_id=v.id AND t.status=\"PENDING\") p, (SELECT COUNT(*) FROM tasks t WHERE t.villa_id=v.id AND t.status=\"RUNNING\") r FROM villas v WHERE p>0 ORDER BY p DESC"; echo "== HEALTH =="; curl -s --max-time 8 http://127.0.0.1:3000/api/health | head -c 160'
