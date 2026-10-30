@@ -1,9 +1,13 @@
 {
-  "checked_at": "2026-10-30T01:45:21.325716+00:00",
+  "checked_at": "2026-10-30T23:58:08.502430+00:00",
   "hub": {
-    "state": "DOWN",
-    "error": "Login fehlgeschlagen"
+    "state": "UP",
+    "version": "1.60.2",
+    "routes": 45,
+    "villas": 16,
+    "running": 0,
+    "agents": 0
   },
-  "villa_activity_min": null,
-  "state": "DOWN"
+  "villa_activity_min": 2,
+  "state": "UP"
 }
