@@ -1,0 +1,21 @@
+name: Unavailable-Analyse
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  u:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Analyse
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IHsgZXhlY1N5bmMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgcnVuID0gKGMpID0+IHsgdHJ5IHsgcmV0dXJuIGV4ZWNTeW5jKGMsIHtlbmNvZGluZzondXRmOCcsIHN0ZGlvOlsncGlwZScsJ3BpcGUnLCdwaXBlJ119KS50b1N0cmluZygpLnRyaW0oKTsgfSBjYXRjaChlKSB7IHJldHVybiAnRVJSJzsgfSB9Owpjb25zdCBEQj0nL29wdC92aWxsYWZvcmdlL3NlcnZlci9kYXRhL3ZpbGxhZm9yZ2UuZGInOwpjb25zdCBxID0gKHNxbCkgPT4gcnVuKCJzdWRvIHNxbGl0ZTMgLXNlcGFyYXRvciAnIHwgJyAiICsgREIgKyAiIFwiIiArIHNxbCArICJcIiIpOwpjb25zdCBub3cgPSBEYXRlLm5vdygpOwpjb25zb2xlLmxvZygnPT0gTExNX1VOQVZBSUxBQkxFIGluIDYwIE1pbiBqZSBWaWxsYSA9PScpOwpjb25zb2xlLmxvZyhxKGBTRUxFQ1QgJ3ZpbGxhICcgfHwgdmlsbGFfaWQgfHwgJzogJyB8fCBDT1VOVCgqKSBGUk9NIHRhc2tzIFdIRVJFIHJlc3VsdCBMSUtFICdMTE1fVU5BVkFJTEFCTEUlJyBBTkQgdXBkYXRlZF9hdCA+PSAke25vdy0zNjAwMDAwfSBHUk9VUCBCWSB2aWxsYV9pZCBPUkRFUiBCWSBDT1VOVCgqKSBERVNDYCkpOwpjb25zb2xlLmxvZygnPT0gVmlsbGVuLVN0YXR1cyBqZXR6dCA9PScpOwpjb25zb2xlLmxvZyhxKCJTRUxFQ1Qgc3RhdHVzIHx8ICc6ICcgfHwgQ09VTlQoKikgRlJPTSB2aWxsYXMgR1JPVVAgQlkgc3RhdHVzIikpOwpjb25zb2xlLmxvZygnPT0gTExNLUF1ZnJ1ZmUgNjAgTWluIChFcmZvbGc/KSA9PScpOwpjb25zb2xlLmxvZyhxKGBTRUxFQ1QgcHJvdmlkZXIgfHwgJyB8ICcgfHwgQ09VTlQoKikgfHwgJyBDYWxscycgRlJPTSBsbG1fdXNhZ2UgV0hFUkUgaGFwcGVuZWRfYXQgPj0gJHtub3ctMzYwMDAwMH0gR1JPVVAgQlkgcHJvdmlkZXIgT1JERVIgQlkgQ09VTlQoKikgREVTQyBMSU1JVCA2YCkpOwpjb25zb2xlLmxvZygnPT0gUm91dGVuOiBadXN0YW5kID09Jyk7CmNvbnNvbGUubG9nKHEoYFNFTEVDVCBlbmFibGVkIHx8ICcvJyB8fCBDT0FMRVNDRShjb29sZG93bl91bnRpbCwwKSA+ICR7bm93fSBGUk9NIHJvdXRlcyBMSU1JVCAxYCkgfHwgJycpOwpjb25zb2xlLmxvZyhxKCJTRUxFQ1QgJ2FrdGl2OiAnIHx8IENPVU5UKCopIEZST00gcm91dGVzIFdIRVJFIGVuYWJsZWQ9MSIpKTsKY29uc29sZS5sb2cocShgU0VMRUNUICdpbiBDb29sZG93bjogJyB8fCBDT1VOVCgqKSBGUk9NIHJvdXRlcyBXSEVSRSBlbmFibGVkPTEgQU5EIENPQUxFU0NFKGNvb2xkb3duX3VudGlsLDApID4gJHtub3d9YCkpOwpjb25zb2xlLmxvZygnPT0gUGxhbi1HcmVuemVuICh1c2VycykgPT0nKTsKY29uc29sZS5sb2cocSgiU0VMRUNUIENPQUxFU0NFKHBsYW4sJy0nKSB8fCAnOiAnIHx8IENPVU5UKCopIEZST00gdXNlcnMgR1JPVVAgQlkgcGxhbiIpKTsK" | base64 -d > /tmp/ua.cjs && node /tmp/ua.cjs'
