@@ -1,0 +1,21 @@
+name: Drosselung-vier
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Auf vier Villen drosseln
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'DB=/opt/villaforge/server/data/villaforge.db; echo "VVBEQVRFIHZpbGxhcyBTRVQgc3RhdHVzPSdQQVVTRUQnLCB1cGRhdGVkX2F0PUNBU1Qoc3RyZnRpbWUoJyVzJywnbm93JykgQVMgSU5URUdFUikqMTAwMApXSEVSRSBzdGF0dXM9J1JVTk5JTkcnIEFORCBpZCBOT1QgSU4gKDEsMzQsOSwzMSk7" | base64 -d > /tmp/d4.sql; sudo sqlite3 -bail $DB < /tmp/d4.sql; echo "GEDROSSELT rc=$?"; sudo systemctl restart villaforge-hub; sleep 25; echo "== STATUS =="; sudo sqlite3 -separator " | " $DB "SELECT status, COUNT(*) FROM villas GROUP BY status"; echo "== AKTIV =="; sudo sqlite3 -separator " | " $DB "SELECT id, status, (SELECT COUNT(*) FROM tasks t WHERE t.villa_id=villas.id AND t.status=\"PENDING\") FROM villas WHERE status=\"RUNNING\""; echo "== LOAD =="; cut -d" " -f1-3 /proc/loadavg'
