@@ -1,0 +1,21 @@
+name: villa31-Prompts
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Hub neu starten und Prompts pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo systemctl restart villaforge-hub; sleep 20; echo PROMPTS; sudo sqlite3 /opt/villaforge/server/data/villaforge.db "SELECT role, length(system_prompt) FROM agents WHERE villa_id=31 ORDER BY role"; echo STATUS; sudo sqlite3 /opt/villaforge/server/data/villaforge.db "SELECT status, COUNT(*) FROM tasks WHERE villa_id=31 GROUP BY status"; echo VERSION; curl -s http://127.0.0.1:3000/api/health | head -c 120'
