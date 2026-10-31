@@ -1,0 +1,34 @@
+name: Sechs-Villen
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Sechs Villen aktivieren und Durchsatz messen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'set -e
+            DB=/opt/villaforge/server/data/villaforge.db
+            echo "VVBEQVRFIHZpbGxhcyBTRVQgc3RhdHVzPSdQQVVTRUQnIFdIRVJFIHN0YXR1cz0nUlVOTklORyc7ClVQREFURSB2aWxsYXMgU0VUIHN0YXR1cz0nUlVOTklORycsIGF1dG9ub215PTEsIHVwZGF0ZWRfYXQ9Q0FTVChzdHJmdGltZSgnJXMnLCdub3cnKSBBUyBJTlRFR0VSKSoxMDAwIFdIRVJFIGlkIElOICgxLDM0LDksMzEsNCwyKTs=" | base64 -d > /tmp/s6.sql
+            sudo sqlite3 -bail $DB < /tmp/s6.sql
+            sudo systemctl restart villaforge-hub
+            sleep 400
+            echo "== NACH 7 MINUTEN =="
+            sudo sqlite3 -separator " | " $DB "SELECT \"DONE 10min: \"||COUNT(*) FROM tasks WHERE status=\"DONE\" AND updated_at >= CAST(strftime(\"%s\",\"now\") AS INTEGER)*1000 - 600000"
+            sudo sqlite3 -separator " | " $DB "SELECT \"RUNNING: \"||COUNT(*) FROM tasks WHERE status=\"RUNNING\""
+            sudo sqlite3 -separator " | " $DB "SELECT \"PENDING: \"||COUNT(*) FROM tasks WHERE status=\"PENDING\""
+            sudo sqlite3 -separator " | " $DB "SELECT status || \": \" || COUNT(*) FROM villas GROUP BY status"
+            sudo sqlite3 -separator " | " $DB "SELECT \"LLM 10min: \"||COUNT(*)||\" Calls, Ø\"||CAST(AVG(latency_ms) AS INT)||\"ms\" FROM llm_usage WHERE happened_at >= CAST(strftime(\"%s\",\"now\") AS INTEGER)*1000 - 600000"
+            free -g | awk "NR==2{print \"RAM belegt: \" \$3 \"G\"}"
+            cut -d" " -f1-3 /proc/loadavg'
