@@ -1,0 +1,21 @@
+name: Schneller-Knoten2
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Remote-Knoten priorisieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "VVBEQVRFIHJvdXRlcyBTRVQgcHJpb3JpdHk9MSwgd2VpZ2h0PTUsIGNvb2xkb3duX3VudGlsPTAsIGZhaWw9MCwgZW5hYmxlZD0xIFdIRVJFIGlkPTYzOwpVUERBVEUgcm91dGVzIFNFVCBwcmlvcml0eT00IFdIRVJFIHByb3ZpZGVyPSdvbGxhbWEnIEFORCBpZDw+NjM7ClVQREFURSB2aWxsYXMgU0VUIHN0YXR1cz0nUlVOTklORycsIGF1dG9ub215PTEgV0hFUkUgaWQgSU4gKDEsMzQsOSwzMSw0LDIpOwo=" | base64 -d > /tmp/sk.sql; echo "c2V0IC1lCkRCPS9vcHQvdmlsbGFmb3JnZS9zZXJ2ZXIvZGF0YS92aWxsYWZvcmdlLmRiCnN1ZG8gc3FsaXRlMyAtYmFpbCAiJERCIiA8IC90bXAvc2suc3FsCmVjaG8gIlJPVVRFTiIKc3VkbyBzcWxpdGUzIC1zZXBhcmF0b3IgJyB8ICcgIiREQiIgIlNFTEVDVCBwcmlvcml0eSwgcHJvdmlkZXIsIG1vZGVsIEZST00gcm91dGVzIFdIRVJFIGVuYWJsZWQ9MSBPUkRFUiBCWSBwcmlvcml0eSBBU0MgTElNSVQgNiIKZWNobyAiVklMTEVOIgpzdWRvIHNxbGl0ZTMgLXNlcGFyYXRvciAnIHwgJyAiJERCIiAiU0VMRUNUIHN0YXR1cywgQ09VTlQoKikgRlJPTSB2aWxsYXMgR1JPVVAgQlkgc3RhdHVzIgpub2h1cCBzdWRvIHN5c3RlbWN0bCByZXN0YXJ0IHZpbGxhZm9yZ2UtaHViID4vZGV2L251bGwgMj4mMSAmCnNsZWVwIDQKZWNobyBORVVTVEFSVF9BTkdFU1RPU1NFTgo=" | base64 -d | bash'
