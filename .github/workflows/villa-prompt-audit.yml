@@ -2,10 +2,14 @@ name: Villa-Prompt-Audit (Prompts + Integrationsdaten)
 on:
   workflow_dispatch:
   push:
-    branches: [main, work/villa-configuration-audit]
+    branches: [work/villa-configuration-audit]
     paths:
       - '.github/workflows/villa-prompt-audit.yml'
       - 'scripts/audit-villas.mjs'
+  workflow_run:
+    workflows: [Hub-Deploy]
+    types: [completed]
+    branches: [main]
 permissions:
   contents: read
 concurrency:
@@ -13,6 +17,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   audit:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
