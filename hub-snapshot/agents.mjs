@@ -188,7 +188,7 @@ const TOOLS = {
     }
   },
   github_publish: {
-    description: 'Pusht den fertigen Projektstand der Villa in das passende GitHub-Produkt-Repo (legt es bei Bedarf an). Braucht GITHUB_TOKEN im Secrets-Store.',
+    description: 'Deaktiviert: automatische GitHub-Veröffentlichung wartet auf einen privaten Branch-und-Review-PR-Ablauf.',
     schema: {},
     run: async (ctx) => {
       const r = await publishToGitHub(ctx.villaId, ctx.agentId, { title: 'Manueller Produkt-Push' });
@@ -554,8 +554,14 @@ function audit(villaId, agentId, tool, args, result, allowed = 1) {
 export async function runTool(ctx, name, args) {
   const tool = TOOLS[name];
   if (!tool) { audit(ctx.villaId, ctx.agentId, name, args, 'unbekanntes Werkzeug', 0); return `Unbekanntes Werkzeug: ${name}`; }
-  // Packs sind echte Schalter: ist das Werkzeug-Pack aus, blockiert der Hub
-  // das Werkzeug im Lauf und protokolliert den Versuch im Audit.
+  const role = ctx?.role ? String(ctx.role).toUpperCase() : '';
+  if (role && !roleAllowsTool(role, name)) {
+    const reason = `Rolle ${role} darf ${name} nicht verwenden.`;
+    audit(ctx.villaId, ctx.agentId, name, args, `blockiert: ${reason}`, 0);
+    emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, blocked: true, reason });
+    return `Werkzeug blockiert: ${reason}`;
+  }
+  // Packs bleiben ein zusätzlicher globaler Schalter.
   const gate = canUseTool(name);
   if (!gate.allowed) {
     audit(ctx.villaId, ctx.agentId, name, args, `blockiert: ${gate.reason}`, 0);
@@ -695,7 +701,7 @@ const ROLE_TOOLS = {
   RESEARCHER: 'web_search, web_fetch, memory_write, project_search',
   ARCHITECT: 'memory_write, artifact_write, project_read',
   CODER: 'project_patch, project_write, artifact_write, artifact_patch, artifact_list, project_read, project_search, project_run',
-  REVIEWER: 'memory_search, memory_write, project_read, project_patch, project_run',
+  REVIEWER: 'memory_search, memory_write, project_read, project_run',
   TESTER: 'project_write, project_patch, artifact_write, artifact_patch, memory_write, project_run',
   DOCUMENTER: 'artifact_write, project_read',
   CRITIC: 'memory_search, memory_write, project_read',
@@ -710,6 +716,11 @@ const ROLE_TOOLS = {
   OPTIMIZER: 'project_read, project_search, project_patch, project_run, memory_write, report_write',
   VERIFIER: 'project_read, project_search, project_run, web_search, memory_write, report_write'
 };
+
+export function roleAllowsTool(role, toolName) {
+  const approved = ROLE_TOOLS[String(role || 'WORKER').toUpperCase()] || ROLE_TOOLS.WORKER;
+  return approved.split(',').some((name) => name.trim() === String(toolName));
+}
 
 /** Gemeinsamer Qualitaetsauftrag fuer alle Agenten. */
 const QUALITY_RULES = [
@@ -787,7 +798,7 @@ function openTasks(villaId) {
 
 /** Fuehrt einen Agenten in einem begrenzten ReAct-Loop aus. */
 export async function runAgent(agent, userPrompt, { maxSteps = 8, maxTokens = 1500, temperature, villaId = agent.villa_id, mode = 'agent', reflect } = {}) {
-  const ctx = { villaId, agentId: agent.id };
+  const ctx = { villaId, agentId: agent.id, role: agent.role };
   const context = statusContext(villaId);
   const history = [
     { role: 'system', content: `${agent.system_prompt}\nEigene Skills:\n${skillInstructions()}${memoryContext(villaId, agent.id)}\n\nWerkzeuge: ${JSON.stringify(TOOL_SPECS)}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
@@ -1306,7 +1317,7 @@ export async function runQualityGate(villaId, task, answer) {
     hasPkg = true; hasTest = !!pkg?.scripts?.test;
   } catch { /* kein npm-Projekt */ }
   if (hasPkg && hasTest) {
-    const gate = await runTool({ villaId, agentId: 0 }, 'project_run', { binary: 'npm', args: ['test', '--silent'], timeoutMs: 180000 });
+    const gate = await runTool({ villaId, agentId: 0, role: 'INTEGRATOR' }, 'project_run', { binary: 'npm', args: ['test', '--silent'], timeoutMs: 180000 });
     const passed = /^Exit 0/.test(String(gate));
     return { passed, output: String(gate), annotated: passed ? `${answer}\n\n[Qualitaetstor: npm test gruen.]` : answer };
   }
@@ -1335,38 +1346,11 @@ export async function runQualityGate(villaId, task, answer) {
 /** v1.40.0 — Autonomes Produkt-Repo: Der fertige Projektstand einer Villa
  *  wird in ein passendes GitHub-Repository gepusht (wird bei Bedarf angelegt).
  *  Token: Hub-Secret GITHUB_TOKEN. */
-export async function publishToGitHub(villaId, agentId, task, { exec, fetchFn } = {}) {
-  const run = exec || ((cmd) => { try { execSync(cmd, { stdio: 'pipe', timeout: 60_000 }); return null; } catch (e) { return String(e?.message || e).slice(0, 300); } });
-  const doFetch = fetchFn || ((...a) => fetch(...a));
-  const root = sourceRoot(villaId) || villaProjectDir(villaId);
-  if (!existsSync(root)) return { ok: false, error: 'Projektordner ist leer — nichts zu pushen.' };
-  const token = db.prepare('SELECT value FROM secrets WHERE name = ?').get('GITHUB_TOKEN')?.value;
-  if (!token) return { ok: false, error: 'Kein GITHUB_TOKEN im Secrets-Store hinterlegt.' };
-  const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(villaId) || {};
-  const slug = String(villa.name || 'villa').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'villa';
-  const repo = `villaforge-${slug}`;
-  const hdrs = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' };
-  let me;
-  try { me = await doFetch('https://api.github.com/user', { headers: hdrs, signal: AbortSignal.timeout(15000) }); }
-  catch (e) { return { ok: false, error: 'GitHub nicht erreichbar: ' + String(e?.message || e) }; }
-  if (!me.ok) return { ok: false, error: `GitHub HTTP ${me.status}` };
-  const owner = (await me.json()).login;
-  const create = await doFetch('https://api.github.com/user/repos', {
-    method: 'POST', headers: hdrs,
-    body: JSON.stringify({ name: repo, description: `VillaForge-Produkt: ${String(villa.idea || villa.name || '').slice(0, 120)}`, private: false }),
-    signal: AbortSignal.timeout(20000)
-  });
-  if (!create.ok && create.status !== 422) return { ok: false, error: `Repo-Anlage HTTP ${create.status}` };
-  if (!existsSync(join(root, '.gitignore'))) writeFileSync(join(root, '.gitignore'), 'node_modules/\n__pycache__/\n*.pyc\n.env\n.venv/\ndist/\n', 'utf8');
-  const q = JSON.stringify(root);
-  if (!existsSync(join(root, '.git'))) run(`git -C ${q} init -q -b main`);
-  run(`git -C ${q} add -A`);
-  run(`git -C ${q} -c user.name=VillaForge-Hub -c user.email=hub@villaforge.local commit -q --allow-empty -m ${JSON.stringify(String(task?.title || 'Produktstand').slice(0, 100))}`);
-  run(`git -C ${q} remote remove origin`);
-  const remoteUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
-  const pushErr = run(`git -C ${q} push -q --force ${JSON.stringify(remoteUrl)} main`);
-  if (pushErr) return { ok: false, error: `Git-Push fehlgeschlagen: ${pushErr}` };
-  return { ok: true, url: `https://github.com/${owner}/${repo}`, repo: `${owner}/${repo}` };
+export async function publishToGitHub() {
+  return {
+    ok: false,
+    error: 'Automatic publishing is disabled until a private branch and reviewed pull-request flow is implemented.'
+  };
 }
 
 /** Selbst-Lern-Loop (v1.38.0): Fehlschlaege und Tor-Risse werden als
@@ -1450,17 +1434,7 @@ export async function executeTask(villaId, task) {
       return;
     }
     answer = gate.annotated;
-    // v1.40.0 — Autonomer Produkt-Push: Bei gruenem Tor wandert der fertige
-    // Stand ins GitHub-Produkt-Repo der Villa (fehlertolerant).
-    const pub = await publishToGitHub(villaId, agent.id, task).catch((e) => ({ ok: false, error: String(e?.message || e) }));
-    if (pub?.ok) {
-      answer += `\n\n[Produkt-Push: ${pub.url}]`;
-      db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
-        .run(villaId, agent.id, 'villa', 'ARTIFACT', `Produkt-Push: ${task.title}`, `Fertiger Stand im GitHub-Produkt-Repo: ${pub.url}`, 8, now());
-      emit('task', { villaId, taskId: task.id, agentId: agent.id, status: 'PUSHED', url: pub.url });
-    } else if (pub && !pub.ok && !/leer|GITHUB_TOKEN/.test(pub.error || '')) {
-      recordLesson(villaId, agent.id, `Lehre: Push ${task.title}`, `GitHub-Push schlug fehl: ${String(pub.error).slice(0, 400)}`);
-    }
+    // Veröffentlichungen nur über einen geprüften Pull Request.
   }
 
   db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?').run(res.error ? 'FAILED' : 'DONE', answer.slice(0, 4000), now(), task.id);
