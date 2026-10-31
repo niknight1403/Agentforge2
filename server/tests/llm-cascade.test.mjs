@@ -35,7 +35,7 @@ test('Fehlende Keys, Cooldowns und Offline-Einträge werden ohne Netzwerkaufruf 
 });
 test('Kein Schlaf vor Failover; Timeout, 429, 5xx und leere Antworten fallen durch',async()=>{
  for(const err of [Object.assign(new Error('429'),{status:429}),Object.assign(new Error('500'),{status:503}),Object.assign(new Error('timeout'),{name:'TimeoutError'})]){
-  const seen=[];const run=makeCascade({routes:()=>[route(1,'gemini'),route(2,'ollama')],key:()=>'',call:async(r,_,opts)=>{seen.push(r.id);assert.ok(opts.timeoutMs<=15000);if(r.id===1)throw err;return answer;}});
+  const seen=[];const run=makeCascade({routes:()=>[route(1,'gemini'),route(2,'ollama')],key:()=>'',call:async(r,_,opts)=>{seen.push(r.id);assert.ok(opts.timeoutMs<=180000);if(r.id===1)throw err;return answer;}});
   await run([],{strategy:'FALLBACK'});assert.deepEqual(seen,[1,2]);
  }
  const run=makeCascade({routes:()=>[route(1,'gemini'),route(2,'ollama')],key:()=>'',call:async r=>r.id===1?{content:''}:answer});assert.equal((await run([],{strategy:'FALLBACK'})).offline,false);
@@ -46,9 +46,11 @@ test('Lokale Versuche haben ein schnelles, konfigurierbares Timeout',async()=>{
   delete process.env.VF_LLM_LOCAL_TIMEOUT_MS;
   let timeout;
   const run=makeCascade({routes:()=>[route(1,'ollama')],key:()=>'',call:async(_,__,opts)=>{timeout=opts.timeoutMs;return answer;}});
-  await run([]);assert.equal(timeout,15000);
+  await run([]);assert.equal(timeout,60000);
   process.env.VF_LLM_LOCAL_TIMEOUT_MS='45000';
-  await run([]);assert.equal(timeout,15000);
+  await run([]);assert.equal(timeout,45000);
+  process.env.VF_LLM_LOCAL_TIMEOUT_MS='999999';
+  await run([]);assert.equal(timeout,180000);
  } finally {
   if(previous===undefined)delete process.env.VF_LLM_LOCAL_TIMEOUT_MS;
   else process.env.VF_LLM_LOCAL_TIMEOUT_MS=previous;
