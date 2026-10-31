@@ -1,0 +1,31 @@
+name: Routen-Sortierung
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  r:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Routen sortieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'set -e
+            DB=/opt/villaforge/server/data/villaforge.db
+            echo "LS0gVG90ZSBSb3V0ZW4gKD45NSUgQXVzZmFsbCwgPjUwMCBGZWhsZXIpIGFic2NoYWx0ZW4KVVBEQVRFIHJvdXRlcyBTRVQgZW5hYmxlZD0wCldIRVJFIGVuYWJsZWQ9MSBBTkQgZmFpbCA+IDUwMCBBTkQgKENBU1Qob2sgQVMgUkVBTCkgLyAob2sgKyBmYWlsKSkgPCAwLjA1OwoKLS0gTG9rYWxlIE1vZGVsbGUgdW5kIGdlc3VuZGUgRnJlZS1Sb3V0ZW4gbmFjaCB2b3JuZQpVUERBVEUgcm91dGVzIFNFVCBwcmlvcml0eT0zIFdIRVJFIGVuYWJsZWQ9MSBBTkQgcHJvdmlkZXI9J29sbGFtYSc7ClVQREFURSByb3V0ZXMgU0VUIHByaW9yaXR5PTYgV0hFUkUgZW5hYmxlZD0xIEFORCBwcm92aWRlciBJTiAoJ2dyb3EnLCdjZXJlYnJhcycsJ3BvbGxpbmF0aW9ucycpOwpVUERBVEUgcm91dGVzIFNFVCBwcmlvcml0eT05IFdIRVJFIGVuYWJsZWQ9MSBBTkQgcHJvdmlkZXI9J2xpdGVsbG0nOwo=" | base64 -d > /tmp/rs.sql
+            sudo sqlite3 -bail $DB < /tmp/rs.sql
+            echo "== AKTIVE ROUTEN =="
+            sudo sqlite3 -separator " | " $DB "SELECT COUNT(*) FROM routes WHERE enabled=1"
+            echo "== TOP-PRIORITAETEN =="
+            sudo sqlite3 -separator " | " $DB "SELECT priority, provider, substr(name,1,28), ok||\"/\"||fail FROM routes WHERE enabled=1 ORDER BY priority ASC LIMIT 10"
+            sudo systemctl restart villaforge-hub >/dev/null 2>&1 &
+            sleep 3
+            echo NEUSTART_ANGESTOSSEN'
