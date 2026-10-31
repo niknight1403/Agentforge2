@@ -49,8 +49,9 @@ test('Lokale Versuche haben ein schnelles, konfigurierbares Timeout',async()=>{
   await run([]);assert.equal(timeout,60000);
   process.env.VF_LLM_LOCAL_TIMEOUT_MS='45000';
   await run([]);assert.equal(timeout,45000);
+  // Der Gesamt-Deadline eines Laufs (120 s) begrenzt auch den lokalen Deckel.
   process.env.VF_LLM_LOCAL_TIMEOUT_MS='999999';
-  await run([]);assert.equal(timeout,180000);
+  await run([]);assert.ok(timeout>60000&&timeout<=120000);
  } finally {
   if(previous===undefined)delete process.env.VF_LLM_LOCAL_TIMEOUT_MS;
   else process.env.VF_LLM_LOCAL_TIMEOUT_MS=previous;
