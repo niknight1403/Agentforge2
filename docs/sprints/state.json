@@ -14,29 +14,45 @@
   "current": "VF-0004",
   "next": "VF-0004",
   "blockers": [
-    "Master erneut HTTP 503 LLM_UNAVAILABLE nach 39.9s (Run 40959050138). Zwischenzeitlicher echter Modell-Erfolg im Release-Smoke ist kein stabiler Betriebsnachweis.",
-    "Zehn reale Villa-Kandidaten: alle verified=false und offene Aufgaben/Blocker trotz buildStatus=ready.",
-    "Android-Release verwendet bestehende Debug-Signatur; dauerhafte Produktionssignierung noch nicht nachgewiesen."
+    "Frische Produktions-Master-Probe nach Deploy: HTTP 503 LLM_UNAVAILABLE nach 60.5s; ein begrenzter Retry nach HTTP 409 ist erfolgt.",
+    "Alle 16 Villen vollstaendig gelesen, aber keine bestandene Produktabnahme; Modell- und Artefaktnachweise bleiben getrennt.",
+    "Bild-/Bildbearbeitungs-/Video-/Audio-Rendering benoetigt autorisierte Providerkonfiguration; keine kostenpflichtige Ressource wurde eingerichtet.",
+    "Bestehende Android-Debug-Signatur ist noch keine dauerhaft verwaltete Produktionssignierung."
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
   "executionMode": "foreground-only",
-  "workBranch": "work/vf500-aurora",
-  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/31",
+  "workBranch": "work/capability-autopilot",
+  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/33",
   "qualityBaseline": {
-    "tests": 330,
-    "pass": 330,
+    "tests": 355,
+    "pass": 355,
     "fail": 0,
-    "browserE2E": 19,
+    "browserE2E": 20,
     "browserAuditScopes": 9,
     "findings": 0
   },
   "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden.",
-  "integratedCommit": "29801696136f633c5fc7fed6105e1db077138782",
-  "version": "1.60.0",
+  "integratedCommit": "b7c3a43da5c661a31de7f6f61068ac93d18e74d1",
+  "version": "1.60.5",
   "pullRequestStatus": "merged",
   "backgroundExecution": false,
-  "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/40958119898",
-  "releaseStatus": "blocked: PRODUCT_ACCEPTANCE_MISSING",
+  "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41249802676",
+  "releaseStatus": "blocked: production LLM unavailable and product acceptance open",
   "checkpointParent": "35491d80662d51947fd22e0dcc0d2cba24503557",
-  "nextAction": "VF-0004: einen konfigurierten lokalen Endpoint mit autorisiertem Workflow isoliert auf Erreichbarkeit/Last pruefen; Cloud-Cooldowns respektieren. Keine weiteren blinden Gesamt-Retries."
+  "nextAction": "VF-0004: konkrete Modellkapazitaet/Erreichbarkeit isoliert diagnostizieren, keine weiteren blinden Gesamt-Retries. Danach echte Produktabnahme je Villa; neue Faehigkeiten bleiben bis Test/Review projektlokale Kandidaten.",
+  "lastMaintenance": {
+    "baseCommit": "cdff83ff7f5057c5ef5aba62174fa1da203d4699",
+    "pullRequests": [
+      32,
+      33
+    ],
+    "evidence": "docs/quality/capability-autopilot-evidence.json",
+    "audit": "docs/quality/villa-audit-after-2026-10-31.json",
+    "runtimeAutomation": {
+      "available": true,
+      "mechanism": "extension of existing developCycle, no extra scheduler",
+      "availableForVillas": 16,
+      "eligibleWithActiveVilla": 14
+    }
+  }
 }

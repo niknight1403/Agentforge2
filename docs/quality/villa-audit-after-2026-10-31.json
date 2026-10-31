@@ -1,0 +1,1524 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-31T22:51:31.723Z",
+  "source": {
+    "kind": "production-http",
+    "version": "1.60.5",
+    "testFixture": false,
+    "capabilityAutopilotAvailable": true
+  },
+  "readOnly": true,
+  "complete": true,
+  "summary": {
+    "total": 16,
+    "passed": 0,
+    "needsReview": 0,
+    "blocked": 16,
+    "unavailable": 0
+  },
+  "integrations": {
+    "media": [
+      {
+        "id": "app_development",
+        "status": "ready",
+        "executionVerified": false
+      },
+      {
+        "id": "image_generation",
+        "status": "needs_provider",
+        "executionVerified": false
+      },
+      {
+        "id": "image_editing",
+        "status": "needs_provider",
+        "executionVerified": false
+      },
+      {
+        "id": "video_generation",
+        "status": "needs_provider",
+        "executionVerified": false
+      },
+      {
+        "id": "audio_generation",
+        "status": "needs_provider",
+        "executionVerified": false
+      },
+      {
+        "id": "live_performance",
+        "status": "ready",
+        "executionVerified": false
+      }
+    ],
+    "mediaInspection": "configuration_only",
+    "packs": [
+      {
+        "id": "gedaechtnis",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "planung",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "projekt",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "design",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "ausfuehrung",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "artefakte",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "recherche",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "medien",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "extern",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "github",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "compute-routing",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "open-data",
+        "enabled": true,
+        "effective": true
+      },
+      {
+        "id": "berichte",
+        "enabled": true,
+        "effective": true
+      }
+    ],
+    "skills": [
+      {
+        "id": "compute-routing-orchestrator",
+        "enabled": true
+      },
+      {
+        "id": "creative-production",
+        "enabled": true
+      },
+      {
+        "id": "engineering-quality",
+        "enabled": true
+      },
+      {
+        "id": "product-brief",
+        "enabled": true
+      },
+      {
+        "id": "professional-delivery",
+        "enabled": true
+      },
+      {
+        "id": "safe-connectors-routing",
+        "enabled": true
+      },
+      {
+        "id": "source-grounded-research",
+        "enabled": true
+      },
+      {
+        "id": "visual-design",
+        "enabled": true
+      }
+    ],
+    "connectors": [],
+    "llm": {
+      "configured": 24,
+      "eligible": 9,
+      "freeOnly": true,
+      "realAnswerVerified": false
+    }
+  },
+  "villas": [
+    {
+      "capabilityHints": [
+        "connectors"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 6,
+        "sourceFiles": 0,
+        "checks": {}
+      },
+      "villaId": 31,
+      "runtime": {
+        "status": "WAITING_FOR_MODEL",
+        "autonomy": 1
+      },
+      "agents": 11,
+      "unfinishedTasks": 23,
+      "promptFingerprint": "fd9eba45cb31ee95b062f5073ab9466e76ee49a095ffc71031c3c51717904fee",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "11 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "delivery_team",
+          "status": "pass",
+          "detail": "Implementierung, Test, Review und Integration besetzt.",
+          "nextStep": "Nur benoetigte Rollen innerhalb max_agents ergaenzen; laufende Zuordnungen erhalten."
+        },
+        {
+          "code": "development_tools",
+          "status": "pass",
+          "detail": "Lesen, Schreiben, Patchen und Pruefen freigegeben.",
+          "nextStep": "Pack-/Werkzeugentscheidung im Adminbereich pruefen; Schalter nicht automatisch umgehen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 6,
+        "sourceFiles": 6,
+        "checks": {
+          "build": "missing",
+          "tests": "missing",
+          "smoke": "passed",
+          "quality": "failed"
+        }
+      },
+      "villaId": 34,
+      "runtime": {
+        "status": "RUNNING",
+        "autonomy": 1
+      },
+      "agents": 13,
+      "unfinishedTasks": 38,
+      "promptFingerprint": "a14d08ba76601ba922712934a1830f026afb018cab0a448412c373dc0572cb82",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "13 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "delivery_team",
+          "status": "pass",
+          "detail": "Implementierung, Test, Review und Integration besetzt.",
+          "nextStep": "Nur benoetigte Rollen innerhalb max_agents ergaenzen; laufende Zuordnungen erhalten."
+        },
+        {
+          "code": "development_tools",
+          "status": "pass",
+          "detail": "Lesen, Schreiben, Patchen und Pruefen freigegeben.",
+          "nextStep": "Pack-/Werkzeugentscheidung im Adminbereich pruefen; Schalter nicht automatisch umgehen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 7,
+        "sourceFiles": 7,
+        "checks": {
+          "build": "failed",
+          "tests": "failed",
+          "smoke": "missing"
+        }
+      },
+      "villaId": 29,
+      "runtime": {
+        "status": "WAITING_FOR_MODEL",
+        "autonomy": 1
+      },
+      "agents": 1,
+      "unfinishedTasks": 12,
+      "promptFingerprint": "850d9b3517887e7cdb93e11571f0dcc871a392160397608a012515b2b39dd106",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "1 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "connectors"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 4,
+        "sourceFiles": 3,
+        "checks": {}
+      },
+      "villaId": 25,
+      "runtime": {
+        "status": "COMPLETED",
+        "autonomy": 0
+      },
+      "agents": 13,
+      "unfinishedTasks": 0,
+      "promptFingerprint": "6c9c61c3b10cad53dccdd2c9f7156cd41f5d634018aaf2cb16f225b65e7f3936",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "13 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "delivery_team",
+          "status": "pass",
+          "detail": "Implementierung, Test, Review und Integration besetzt.",
+          "nextStep": "Nur benoetigte Rollen innerhalb max_agents ergaenzen; laufende Zuordnungen erhalten."
+        },
+        {
+          "code": "development_tools",
+          "status": "pass",
+          "detail": "Lesen, Schreiben, Patchen und Pruefen freigegeben.",
+          "nextStep": "Pack-/Werkzeugentscheidung im Adminbereich pruefen; Schalter nicht automatisch umgehen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": false,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "payments"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 5,
+        "sourceFiles": 5,
+        "checks": {}
+      },
+      "villaId": 24,
+      "runtime": {
+        "status": "RUNNING",
+        "autonomy": 1
+      },
+      "agents": 13,
+      "unfinishedTasks": 27,
+      "promptFingerprint": "b0c2a562f7c205ba4d1bc3b27332beb31c59862d4a163e9703d59c1cebaef99c",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "13 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "delivery_team",
+          "status": "pass",
+          "detail": "Implementierung, Test, Review und Integration besetzt.",
+          "nextStep": "Nur benoetigte Rollen innerhalb max_agents ergaenzen; laufende Zuordnungen erhalten."
+        },
+        {
+          "code": "development_tools",
+          "status": "pass",
+          "detail": "Lesen, Schreiben, Patchen und Pruefen freigegeben.",
+          "nextStep": "Pack-/Werkzeugentscheidung im Adminbereich pruefen; Schalter nicht automatisch umgehen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "android",
+        "connectors"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 1,
+        "sourceFiles": 0,
+        "checks": {
+          "artifact": "missing",
+          "review": "passed",
+          "openTasks": "passed"
+        }
+      },
+      "villaId": 18,
+      "runtime": {
+        "status": "RUNNING",
+        "autonomy": 1
+      },
+      "agents": 13,
+      "unfinishedTasks": 0,
+      "promptFingerprint": "9301a7c1805bc7bb8e51e70741346a6aa46221680c2f9ecb654db79c8d328072",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "13 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "delivery_team",
+          "status": "pass",
+          "detail": "Implementierung, Test, Review und Integration besetzt.",
+          "nextStep": "Nur benoetigte Rollen innerhalb max_agents ergaenzen; laufende Zuordnungen erhalten."
+        },
+        {
+          "code": "development_tools",
+          "status": "pass",
+          "detail": "Lesen, Schreiben, Patchen und Pruefen freigegeben.",
+          "nextStep": "Pack-/Werkzeugentscheidung im Adminbereich pruefen; Schalter nicht automatisch umgehen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "connectors"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 4,
+        "sourceFiles": 0,
+        "checks": {
+          "artifact": "missing",
+          "review": "missing",
+          "openTasks": "blocked"
+        }
+      },
+      "villaId": 17,
+      "runtime": {
+        "status": "WAITING_FOR_MODEL",
+        "autonomy": 1
+      },
+      "agents": 31,
+      "unfinishedTasks": 15,
+      "promptFingerprint": "855ab3c0835cdfb4c48cd93307e55dae53ed7426bfd7d6e1c2215ea2ae3b6bcb",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "31 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "delivery_team",
+          "status": "pass",
+          "detail": "Implementierung, Test, Review und Integration besetzt.",
+          "nextStep": "Nur benoetigte Rollen innerhalb max_agents ergaenzen; laufende Zuordnungen erhalten."
+        },
+        {
+          "code": "development_tools",
+          "status": "pass",
+          "detail": "Lesen, Schreiben, Patchen und Pruefen freigegeben.",
+          "nextStep": "Pack-/Werkzeugentscheidung im Adminbereich pruefen; Schalter nicht automatisch umgehen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "payments",
+        "connectors"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 3,
+        "sourceFiles": 5,
+        "checks": {
+          "build": "failed",
+          "tests": "passed",
+          "smoke": "passed"
+        }
+      },
+      "villaId": 12,
+      "runtime": {
+        "status": "RUNNING",
+        "autonomy": 1
+      },
+      "agents": 13,
+      "unfinishedTasks": 1,
+      "promptFingerprint": "01b91741765ecaa1caf4e933af5e5cea287ddecfd20ca2f6f4c8213fa9c084bf",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "13 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "audio"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 5,
+        "sourceFiles": 0,
+        "checks": {
+          "artifact": "missing",
+          "review": "missing",
+          "openTasks": "blocked"
+        }
+      },
+      "villaId": 10,
+      "runtime": {
+        "status": "RUNNING",
+        "autonomy": 1
+      },
+      "agents": 16,
+      "unfinishedTasks": 2,
+      "promptFingerprint": "ad09d83360f381e75719dd37e71860d2cdb4229b58616ef3e6eced24488613d4",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "16 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "delivery_team",
+          "status": "pass",
+          "detail": "Implementierung, Test, Review und Integration besetzt.",
+          "nextStep": "Nur benoetigte Rollen innerhalb max_agents ergaenzen; laufende Zuordnungen erhalten."
+        },
+        {
+          "code": "development_tools",
+          "status": "pass",
+          "detail": "Lesen, Schreiben, Patchen und Pruefen freigegeben.",
+          "nextStep": "Pack-/Werkzeugentscheidung im Adminbereich pruefen; Schalter nicht automatisch umgehen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "android",
+        "audio"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 5,
+        "sourceFiles": 0,
+        "checks": {
+          "artifact": "missing",
+          "review": "missing",
+          "openTasks": "blocked"
+        }
+      },
+      "villaId": 9,
+      "runtime": {
+        "status": "RUNNING",
+        "autonomy": 1
+      },
+      "agents": 49,
+      "unfinishedTasks": 26,
+      "promptFingerprint": "59b4cdc6a015ab044c7f30e700995fbd521fe27a0336f2c99e0746d5eed8dbb6",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "49 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "delivery_team",
+          "status": "pass",
+          "detail": "Implementierung, Test, Review und Integration besetzt.",
+          "nextStep": "Nur benoetigte Rollen innerhalb max_agents ergaenzen; laufende Zuordnungen erhalten."
+        },
+        {
+          "code": "development_tools",
+          "status": "pass",
+          "detail": "Lesen, Schreiben, Patchen und Pruefen freigegeben.",
+          "nextStep": "Pack-/Werkzeugentscheidung im Adminbereich pruefen; Schalter nicht automatisch umgehen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "audio"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 3,
+        "sourceFiles": 0,
+        "checks": {
+          "artifact": "missing",
+          "review": "passed",
+          "openTasks": "blocked"
+        }
+      },
+      "villaId": 8,
+      "runtime": {
+        "status": "RUNNING",
+        "autonomy": 1
+      },
+      "agents": 49,
+      "unfinishedTasks": 1,
+      "promptFingerprint": "1b12c05c78ea9a420be2fafa700fda06c727724c114c432c87aaa1bb6cacf8f3",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "49 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "android",
+        "connectors"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 4,
+        "sourceFiles": 228,
+        "checks": {}
+      },
+      "villaId": 5,
+      "runtime": {
+        "status": "COMPLETED",
+        "autonomy": 0
+      },
+      "agents": 13,
+      "unfinishedTasks": 0,
+      "promptFingerprint": "ab818a58f8bcaaae59cee460b1941014ed6c72338a370ed2c99788097cbadd3d",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "13 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "delivery_team",
+          "status": "pass",
+          "detail": "Implementierung, Test, Review und Integration besetzt.",
+          "nextStep": "Nur benoetigte Rollen innerhalb max_agents ergaenzen; laufende Zuordnungen erhalten."
+        },
+        {
+          "code": "development_tools",
+          "status": "pass",
+          "detail": "Lesen, Schreiben, Patchen und Pruefen freigegeben.",
+          "nextStep": "Pack-/Werkzeugentscheidung im Adminbereich pruefen; Schalter nicht automatisch umgehen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": false,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "android",
+        "audio"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 5,
+        "sourceFiles": 0,
+        "checks": {
+          "artifact": "missing",
+          "review": "missing",
+          "openTasks": "blocked"
+        }
+      },
+      "villaId": 4,
+      "runtime": {
+        "status": "RUNNING",
+        "autonomy": 1
+      },
+      "agents": 13,
+      "unfinishedTasks": 23,
+      "promptFingerprint": "38db2d6e74fc18449b60cb0793a9b10f01caa0287dea0fc1d7def712437c255c",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "13 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "delivery_team",
+          "status": "pass",
+          "detail": "Implementierung, Test, Review und Integration besetzt.",
+          "nextStep": "Nur benoetigte Rollen innerhalb max_agents ergaenzen; laufende Zuordnungen erhalten."
+        },
+        {
+          "code": "development_tools",
+          "status": "pass",
+          "detail": "Lesen, Schreiben, Patchen und Pruefen freigegeben.",
+          "nextStep": "Pack-/Werkzeugentscheidung im Adminbereich pruefen; Schalter nicht automatisch umgehen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "payments",
+        "connectors"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 3,
+        "sourceFiles": 0,
+        "checks": {
+          "artifact": "missing",
+          "review": "passed",
+          "openTasks": "blocked"
+        }
+      },
+      "villaId": 3,
+      "runtime": {
+        "status": "RUNNING",
+        "autonomy": 1
+      },
+      "agents": 13,
+      "unfinishedTasks": 11,
+      "promptFingerprint": "b80f9a5da017345c557b0baa4c2c9c4086646b89479fd4640bcd475455795c92",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "13 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "delivery_team",
+          "status": "pass",
+          "detail": "Implementierung, Test, Review und Integration besetzt.",
+          "nextStep": "Nur benoetigte Rollen innerhalb max_agents ergaenzen; laufende Zuordnungen erhalten."
+        },
+        {
+          "code": "development_tools",
+          "status": "pass",
+          "detail": "Lesen, Schreiben, Patchen und Pruefen freigegeben.",
+          "nextStep": "Pack-/Werkzeugentscheidung im Adminbereich pruefen; Schalter nicht automatisch umgehen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "payments",
+        "connectors"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 5,
+        "sourceFiles": 1066,
+        "checks": {}
+      },
+      "villaId": 2,
+      "runtime": {
+        "status": "RUNNING",
+        "autonomy": 1
+      },
+      "agents": 25,
+      "unfinishedTasks": 22,
+      "promptFingerprint": "2edcbbe44797e3a4dde0d828b57354b4086c8c3ce15629abcfe45a25a1799865",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "25 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    },
+    {
+      "capabilityHints": [
+        "connectors"
+      ],
+      "capabilityHintsAreHeuristic": true,
+      "productEvidence": {
+        "verified": false,
+        "blockerCount": 5,
+        "sourceFiles": 2,
+        "checks": {}
+      },
+      "villaId": 1,
+      "runtime": {
+        "status": "RUNNING",
+        "autonomy": 1
+      },
+      "agents": 25,
+      "unfinishedTasks": 79,
+      "promptFingerprint": "b38ae763c2adabc1f748d9a9d0df707c738572da26f491ccc1bfc5f383769efa",
+      "checks": [
+        {
+          "code": "project_brief",
+          "status": "pass",
+          "detail": "Ein konkreter Produktauftrag muss vorhanden sein.",
+          "nextStep": "Originalidee mit Nutzerfluss und Abnahmekriterien vervollstaendigen."
+        },
+        {
+          "code": "root_agent",
+          "status": "pass",
+          "detail": "ROOT-Anzahl: 1.",
+          "nextStep": "Genau einen leitenden Agenten zuordnen; bestehende Agenten nicht ungeprueft loeschen."
+        },
+        {
+          "code": "agent_prompts",
+          "status": "pass",
+          "detail": "25 Agenten, 0 leere Prompts.",
+          "nextStep": "Leere Prompts anhand der Rolle reparieren; individuelle Vorgaben erhalten."
+        },
+        {
+          "code": "role_catalog",
+          "status": "pass",
+          "detail": "0 Rollen ausserhalb des Standardkatalogs.",
+          "nextStep": "Custom-Rollen und ihre Werkzeuganforderungen gezielt pruefen."
+        },
+        {
+          "code": "prompt_contract",
+          "status": "warning",
+          "detail": "1 Prompts ohne vollstaendigen Vier-Teil-Vertrag.",
+          "nextStep": "Vertrag im Laufzeitkontext ergaenzen, Custom-Prompt nicht ersetzen."
+        },
+        {
+          "code": "project_mission",
+          "status": "warning",
+          "detail": "Noch kein strukturierter Missions-Prompt hinterlegt.",
+          "nextStep": "Originalidee im Laufzeitkontext erhalten; Verfeinerung als Vorschlag mit Abnahmekriterien erstellen."
+        },
+        {
+          "code": "product_acceptance",
+          "status": "blocked",
+          "detail": "Produktabnahme ist noch nicht belegt.",
+          "nextStep": "Echte Projektdateien, Build und Nutzerfluss gegen die Produktkriterien pruefen."
+        }
+      ],
+      "status": "blocked",
+      "limitations": [
+        "Konfiguration ist kein Nachweis einer echten Modellantwort oder Produktfunktion.",
+        "Vorhandene Providerkonfiguration ist kein Ausfuehrungsnachweis."
+      ],
+      "capabilityAutopilot": {
+        "enabled": true,
+        "runsWithVilla": true,
+        "requestCount": 0
+      }
+    }
+  ]
+}

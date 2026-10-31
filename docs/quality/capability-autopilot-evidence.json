@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "implementationCommit": "8c3f6e9f3e1d5f1be96107ce6891233c90c9121c",
+  "integratedCommit": "b7c3a43da5c661a31de7f6f61068ac93d18e74d1",
+  "pullRequests": [
+    32,
+    33
+  ],
+  "version": "1.60.5",
+  "checks": {
+    "unitAndIntegration": {
+      "passed": 355,
+      "failed": 0,
+      "source": "https://github.com/niknight1403/Agentforge2/actions/runs/41249580956"
+    },
+    "browser": {
+      "passed": 20,
+      "failed": 0,
+      "fixture": true,
+      "source": "https://github.com/niknight1403/Agentforge2/actions/runs/41249580962"
+    },
+    "codeQL": {
+      "status": "success",
+      "source": "https://github.com/niknight1403/Agentforge2/actions/runs/41249580911"
+    },
+    "productionDeployment": {
+      "status": "success",
+      "testsPassedOnVM": 355,
+      "externalHealthHttp": 200,
+      "healthLatencySeconds": 0.59131,
+      "source": "https://github.com/niknight1403/Agentforge2/actions/runs/41249802662"
+    }
+  },
+  "productionAudit": {
+    "source": "https://github.com/niknight1403/Agentforge2/actions/runs/41249986244",
+    "complete": true,
+    "testFixture": false,
+    "capabilityAutopilotAvailable": true,
+    "villas": 16,
+    "availableForVillas": 16,
+    "eligibleWithActiveVilla": 14,
+    "verifiedProducts": 0,
+    "report": "docs/quality/villa-audit-after-2026-10-31.json"
+  },
+  "release": {
+    "status": "blocked",
+    "reason": "Live LLM smoke /api/master/chat: HTTP 503 LLM_UNAVAILABLE",
+    "source": "https://github.com/niknight1403/Agentforge2/actions/runs/41249802676"
+  },
+  "limitations": [
+    "No claim that all Villa products are finished.",
+    "Media rendering needs authorized provider configuration; no paid resource was provisioned.",
+    "Browser/model fixtures are separate from production evidence.",
+    "New tools are validated project candidates; no automatic dynamic Hub-code registration."
+  ],
+  "masterProbe": {
+    "status": "blocked",
+    "http": 503,
+    "code": "LLM_UNAVAILABLE",
+    "latencySeconds": 60.5,
+    "attempts": 2,
+    "initialAttempt": "HTTP 409 while another Master message was active",
+    "latestRouteAttempts": [
+      {
+        "route": "Cascade: Ollama CAX41 (32B)",
+        "code": "BUSY"
+      }
+    ],
+    "source": "https://github.com/niknight1403/Agentforge2/actions/runs/41249986255"
+  }
+}

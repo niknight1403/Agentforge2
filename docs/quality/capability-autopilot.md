@@ -51,3 +51,7 @@ Die Tests fuehren unter anderem einen echten kleinen Node-Projekt-Build, Akzepta
 Zusaetzlich wurde der alte Deploy-Testaufruf korrigiert: zentraler `_env`-Preloader, zwei parallele Testdateien und kein Laden von produktiven `.env`-Modellzugangsdateien unter `VF_TEST=1`. Die vorhandenen Assertions und Zeitlimits bleiben erhalten. Der zuvor auf der Produktions-VM fehlgeschlagene Hub-Starttest bleibt Bestandteil des Gates.
 
 Rollback: die zugehoerige PR reversieren, nicht fremde Aenderungen verwerfen. Gespeicherte Anforderungen und Nachweise koennen fuer Diagnose bestehen bleiben. Es werden keine automatisch fortlaufenden Arbeiten ausserhalb der tatsaechlich laufenden Hub-Instanz behauptet.
+
+## Produktionsstand nach Integration
+
+PR #33 ist integriert und der externe Healthcheck meldet 1.60.5 / HTTP 200. Der reale Flottenaudit erkennt capabilityAutopilotAvailable=true fuer 16 Villen; 14 sind mit aktiver Autonomie fuer die Mitarbeit freigegeben, zwei abgeschlossene Villen bleiben unangetastet. Dies bedeutet nicht 14 gleichzeitig laufende Worker. 355 Tests auf der VM und 20 Browserflows sind bestanden. Keine der 16 Produkt-Endabnahmen ist belegt; die frische Master-Modellprobe bleibt mit HTTP 503 LLM_UNAVAILABLE blockiert. Alle Nachweise stehen in capability-autopilot-evidence.json.

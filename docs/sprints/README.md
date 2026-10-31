@@ -27,3 +27,9 @@ Naechster konkreter Schritt nach Laden des aktuellen Heads:
 Dieser Checkpoint startet keinen unbeaufsichtigten Hintergrunddienst.
 
 Abschlussbefund: Release-Smoke Run 40958119898 bestand die echte Modellstufe und scheiterte anschliessend am Produktgate. Die getrennte Master-Probe Run 40959050138 scheiterte danach erneut mit HTTP 503 nach 39.9s. VF-0004 bleibt deshalb blocked; keine weiteren blinden Gesamt-Retries. APK- und Web-Archive sind in evidence/VF-0010-blocked.json mit SHA-256, Groesse und echten GitHub-Artefaktlinks dokumentiert. Es wurde kein v1.60.0-Release publiziert.
+
+## Letzter integrierter Wartungsstand
+
+PR #32 und #33: Konfiguration/Prompts und Faehigkeiten-Autopilot, Version 1.60.5, Runtime-Commit b7c3a43da5c661a31de7f6f61068ac93d18e74d1. 355 Tests auf CI und Produktions-VM bestanden; 20 Browserflows bestanden. Der neue Autopilot ist per realer Hub-API nachgewiesen. Diese Arbeiten werden nicht als 500 abgeschlossene Sprints umgedeutet.
+
+Die letzte Master-Probe (Run 41249986255, zweiter begrenzter Versuch) ist HTTP 503 LLM_UNAVAILABLE nach 60.5s; der vollstaendige Flottenaudit erfasst 16 Villen ohne bestandene Produkt-Endabnahme. Details und Quellen: docs/quality/capability-autopilot-evidence.json. Der Codex-Sprintplan laeuft nicht selbststaendig weiter; ausschliesslich der bereits laufende Hub verarbeitet seine aktivierten Villen innerhalb der dokumentierten Grenzen.
