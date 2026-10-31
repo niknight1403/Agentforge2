@@ -1,0 +1,21 @@
+name: Ollama-Konfig
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  o:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Konfiguration lesen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IHsgZXhlY1N5bmMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgcnVuID0gKGMpID0+IHsgdHJ5IHsgcmV0dXJuIGV4ZWNTeW5jKGMsIHtlbmNvZGluZzondXRmOCcsIHN0ZGlvOlsncGlwZScsJ3BpcGUnLCdwaXBlJ119KS50b1N0cmluZygpLnRyaW0oKTsgfSBjYXRjaChlKSB7IHJldHVybiAnRVJSJzsgfSB9Owpjb25zb2xlLmxvZygnPT0gQWxsZSBLb25maWd1cmF0aW9uc3F1ZWxsZW4gPT0nKTsKY29uc29sZS5sb2cocnVuKCJzdWRvIHN5c3RlbWN0bCBjYXQgb2xsYW1hIDI+L2Rldi9udWxsIHwgZ3JlcCAtbkUgJ14jfEVudmlyb25tZW50fEV4ZWNTdGFydHxFbnZpcm9ubWVudEZpbGUnIikpOwpjb25zb2xlLmxvZygnPT0gL2V0Yy9kZWZhdWx0L29sbGFtYSA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gY2F0IC9ldGMvZGVmYXVsdC9vbGxhbWEgMj4vZGV2L251bGwiKSB8fCAnbmljaHQgdm9yaGFuZGVuJyk7CmNvbnNvbGUubG9nKCc9PSBEcm9wLWlucyA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gbHMgLWxhIC9ldGMvc3lzdGVtZC9zeXN0ZW0vb2xsYW1hLnNlcnZpY2UuZC8gMj4vZGV2L251bGwiKSk7CmNvbnNvbGUubG9nKCc9PSBFZmZla3RpdmUgRW52IChzb3J0aWVydCkgPT0nKTsKY29uc29sZS5sb2cocnVuKCJzdWRvIHN5c3RlbWN0bCBzaG93IG9sbGFtYSAtcCBFbnZpcm9ubWVudCAtLXZhbHVlIHwgdHIgJyAnICdcXG4nIHwgZ3JlcCBPTExBTUEgfCBzb3J0IikpOwo=" | base64 -d > /tmp/ok.cjs && node /tmp/ok.cjs'
