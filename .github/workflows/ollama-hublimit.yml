@@ -1,0 +1,21 @@
+name: Ollama-Hublimit
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  o:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Limits setzen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "c2V0ICtlCkNPTkY9L2V0Yy9zeXN0ZW1kL3N5c3RlbS92aWxsYWZvcmdlLWh1Yi5zZXJ2aWNlLmQvbGxtLmNvbmYKc3VkbyBta2RpciAtcCAvZXRjL3N5c3RlbWQvc3lzdGVtL3ZpbGxhZm9yZ2UtaHViLnNlcnZpY2UuZApzdWRvIHRlZSAkQ09ORiA+IC9kZXYvbnVsbCA8PCdFT0YnCltTZXJ2aWNlXQpFbnZpcm9ubWVudD1PTExBTUFfTUFYX1BBUkFMTEVMPTQKRW52aXJvbm1lbnQ9T0xMQU1BX01BWF9RVUVVRT0xNgpFbnZpcm9ubWVudD1WRl9MTE1fTUFYX0NPTkNVUlJFTlQ9NgpFbnZpcm9ubWVudD1WRl9MTE1fVElNRU9VVF9NUz02MDAwMApFbnZpcm9ubWVudD1WRl9MTE1fQ0lSQ1VJVF9GQUlMVVJFUz0xMApFbnZpcm9ubWVudD1WRl9MTE1fQ0lSQ1VJVF9SRVNFVF9NUz0xNTAwMApFbnZpcm9ubWVudD1WRl9SUE1fREVGQVVMVD0xMjAKRU9GCnN1ZG8gc3lzdGVtY3RsIGRhZW1vbi1yZWxvYWQKbm9odXAgc3VkbyBzeXN0ZW1jdGwgcmVzdGFydCB2aWxsYWZvcmdlLWh1YiA+L2Rldi9udWxsIDI+JjEgJgpzbGVlcCAxMgplY2hvICI9PSBFTlYgRUZGRUtUSVYgPT0iCnN1ZG8gc3lzdGVtY3RsIHNob3cgdmlsbGFmb3JnZS1odWIgLXAgRW52aXJvbm1lbnQgfCB0ciAiICIgIlxuIiB8IGdyZXAgLUUgIk9MTEFNQV9NQVh8VkZfTExNIiB8IHNvcnQgLXUKZWNobyAiPT0gU1RBVFVTID09IgpzeXN0ZW1jdGwgaXMtYWN0aXZlIHZpbGxhZm9yZ2UtaHViCg==" | base64 -d > /tmp/oh.sh && bash /tmp/oh.sh'
