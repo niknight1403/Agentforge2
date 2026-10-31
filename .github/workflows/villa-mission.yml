@@ -1,122 +1,42 @@
-name: Villa-Mission (Start + Auto-Treiber)
-
-# Manuelles Starten konkreter Villen (orchestrate) ODER automatischer
-# Mission-Treiber: haelt das Villen-Portfolio in Bewegung, indem er
-#  1. fehlgeschlagene Aufgaben zurueck in die Warteschlange stellt,
-#  2. wenn gerade keine Villa laeuft, die ranghoechste Villa mit offenen
-#     Aufgaben startet — so werden die naechsten Projekte automatisch
-#     nacheinander fertiggestellt, eine Villa je Slot (Free-Tier-Lastschutz).
+name: Villa-Mission (manueller Start + Scheduler-Beobachtung)
 on:
   workflow_dispatch:
     inputs:
       ids:
-        description: 'Villa-IDs, kommasepariert (leer = Auto-Treiber-Modus)'
+        description: 'Explizit zu startende Villa-IDs, kommasepariert; leer = nur beobachten'
         required: false
         default: ''
       create_name:
-        description: 'Neue Villa anlegen mit diesem Namen (dann automatisch starten)'
+        description: 'Neue Villa anlegen und starten (nur manuell)'
         required: false
         default: ''
       create_idea:
-        description: 'Mission/Idee der neuen Villa (erforderlich mit create_name)'
+        description: 'Originalidee fuer die neue Villa'
         required: false
         default: ''
       create_source:
-        description: 'Quellpfad/GitHub-Repo der neuen Villa (optional)'
+        description: 'Quellpfad der neuen Villa (optional)'
         required: false
         default: ''
   schedule:
     - cron: '7 * * * *'
-
+permissions:
+  contents: read
 concurrency:
   group: villa-mission
   cancel-in-progress: false
-
 jobs:
   mission:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
     steps:
-      - name: Mission ausfuehren
+      - uses: actions/checkout@v4
+      - name: Bewusste Starts erhalten, Scheduler nicht duplizieren
         env:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
           VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          H=https://hub.cybersarah-ki.com
-          TOK=$(curl -s -m 30 -H "Content-Type: application/json" \
-            -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" "$H/api/auth/login" | jq -r '.token // empty')
-          if [ -z "$TOK" ]; then echo "Login fehlgeschlagen"; exit 1; fi
-          AUTH="Authorization: Bearer $TOK"
-
-          start_villa() {
-            ID="$1"
-            echo "== Starte Villa $ID =="
-            curl -fsS -m 60 -X POST -H "$AUTH" -H "Content-Type: application/json" \
-              -d '{"concurrency":4,"maxTasks":200,"adaptive":true,"runToCompletion":true}' \
-              "$H/api/villas/$ID/orchestrate" | head -c 300; echo
-          }
-
-          retry_failed() {
-            ID="$1"
-            echo "   retry-failed fuer Villa $ID:"
-            curl -fsS -m 120 -X POST -H "$AUTH" "$H/api/villas/$ID/retry-failed" | head -c 220; echo
-          }
-
-          IDS='${{ github.event.inputs.ids }}'
-          CNAME='${{ github.event.inputs.create_name }}'
-          CIDEA='${{ github.event.inputs.create_idea }}'
-          CSRC='${{ github.event.inputs.create_source }}'
-          if [ -n "$CNAME" ]; then
-            echo "=== Modus: Neue Villa anlegen ($CNAME) ==="
-            BODY=$(jq -n --arg n "$CNAME" --arg i "$CIDEA" --arg s "$CSRC" \
-              '{name:$n, idea:$i} + (if $s != "" then {sourcePath:$s} else {} end)')
-            RES=$(curl -fsS -m 120 -X POST -H "$AUTH" -H "Content-Type: application/json" -d "$BODY" "$H/api/villas")
-            echo "$RES" | head -c 300; echo
-            NID=$(echo "$RES" | jq -r '.villaId // empty')
-            if [ -z "$NID" ]; then echo "Anlegen fehlgeschlagen"; exit 1; fi
-            IDS="$NID"
-          fi
-          if [ -n "$IDS" ] && [ "$IDS" != "''" ]; then
-            echo "=== Modus: Manueller Start ($IDS) ==="
-            for ID in $(echo "$IDS" | tr ',' ' '); do start_villa "$ID"; done
-          else
-            echo "=== Modus: Auto-Treiber ==="
-            SCHED=$(curl -s -m 30 -H "$AUTH" "$H/api/scheduler")
-            ACTIVE=$(echo "$SCHED" | jq -r '.active | length')
-            echo "Aktive Villen: $ACTIVE | Queue: $(echo "$SCHED" | jq -c '.queue')"
-
-            # 1) Fehlgeschlagene Aufgaben zurueckstellen (Selbstheilung).
-            #    Failed-Zahlen stehen je Villa in scheduler.ranking (done/open/failed).
-            for ID in $(echo "$SCHED" | jq -r '.ranking[]? | select((.failed // 0) > 0) | .id'); do
-              retry_failed "$ID"
-            done || true
-
-            # 2) Freie Slots bis zur konfigurierten Scheduler-Grenze auffuellen.
-            #    Aktive und bereits eingereihte Villen werden nie doppelt gestartet.
-            SCHED=$(curl -fsS -m 30 -H "$AUTH" "$H/api/scheduler")
-            SLOTS=$(echo "$SCHED" | jq -r '.slots // 1')
-            ACTIVE=$(echo "$SCHED" | jq -r '.active | length')
-            AVAILABLE=$((SLOTS - ACTIVE))
-            if [ "$AVAILABLE" -lt 0 ]; then AVAILABLE=0; fi
-            ACTIVE_IDS=$(echo "$SCHED" | jq -r '.active[]?')
-            QUEUED_IDS=$(echo "$SCHED" | jq -r '.queue[]?')
-            STARTED=0
-            while IFS= read -r NEXT; do
-              [ "$STARTED" -ge "$AVAILABLE" ] && break
-              [ -z "$NEXT" ] && continue
-              if printf '%s\n%s\n' "$ACTIVE_IDS" "$QUEUED_IDS" | grep -Fxq "$NEXT"; then
-                continue
-              fi
-              echo "Freier Slot — starte naechstes Projekt: Villa $NEXT"
-              start_villa "$NEXT"
-              STARTED=$((STARTED + 1))
-            done < <(echo "$SCHED" | jq -r '.ranking[]? | select((.open // 0) > 0) | .id')
-            if [ "$STARTED" -eq 0 ]; then
-              echo "Keine freien Slots oder keine ungestarteten Villen mit offenen Aufgaben."
-            fi
-          fi
-
-          echo "== Abschluss-Status =="
-          curl -fsS -m 30 -H "$AUTH" "$H/api/scheduler" | jq -c '{slots, active, queued, queue}'
-          curl -fsS -m 30 -H "$AUTH" "$H/api/health" | jq -ce 'select(.ok == true) | {ok, version}'
+          VF_MISSION_IDS: ${{ github.event.inputs.ids }}
+          VF_MISSION_NAME: ${{ github.event.inputs.create_name }}
+          VF_MISSION_IDEA: ${{ github.event.inputs.create_idea }}
+          VF_MISSION_SOURCE: ${{ github.event.inputs.create_source }}
+        run: bash scripts/villa-mission.sh

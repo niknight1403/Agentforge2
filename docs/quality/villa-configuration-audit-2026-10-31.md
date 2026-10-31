@@ -38,6 +38,8 @@ Aktueller Ausgangs-Head: `cdff83ff7f5057c5ef5aba62174fa1da203d4699`, Hub-Version
 5. Der geplante Prompt-Agent betrieb eine separate IP-/Modellkaskade mit 600-Sekunden-Timeout und legte neue Tasks ohne Abnahme an. Er verwendet nun die bestehende Hub-Kaskade mit begrenztem Gesamtbudget und erzeugt nur schema-validierte, idempotente Missionsvorschlaege. Originalidee, Vision, Start/Stop und Aufgaben bleiben erhalten.
 6. Neuer Admin-Endpunkt `GET /api/admin/villa-diagnostics`: regelbasierte Pruefung fuer alle Villen, Abnahme getrennt vom Laufstatus, ohne Rohprompts und Schluessel. HTTP-Tests sichern 401/403 und Adminzugriff.
 
+7. Der stuendliche Mission-Treiber startete aus dem Ranking auch pausierte Villen und rief einen nicht vorhandenen retry-failed-Endpunkt auf. Planmaessiger Modus beobachtet jetzt nur; bewusste manuelle Starts gehen weiter ueber denselben Hub-Scheduler. Nutzereingaben werden als Umgebungsdaten statt Shell-Code uebergeben. Verhaltenstests simulieren pausierte Villen, explizite Mehrfachstarts und ungueltige Eingaben.
+
 ## Betrieb, Grenzen und Rueckfall
 
 - Vorhandene Architektur, Datenbank, Scheduler und Providerregister bleiben bestehen. Es wird kein zusaetzlicher Autopilot gestartet.
