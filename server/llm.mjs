@@ -310,6 +310,14 @@ export async function chat(messages,opts={}) {
   return out;
  } catch(error) {
   emit('llm.failed',{durationMs:Date.now()-started,code:String(error?.code||error?.status||'LLM_ERROR').slice(0,80)});
+  /* Diagnose: Ohne diese Zeile blieb unklar, WARUM die Kaskade aufgibt.
+     Sie nennt Fehlercode, Kurzmeldung und wie viele Routen bereit waren. */
+  try {
+    const st = routingStatus();
+    const bereit = st.routes.filter((r) => r.eligible).length;
+    const kette = st.routineChain.slice(0, 3).map((r) => `${r.name}:${r.position}`).join(' > ');
+    console.warn(`[llm] Fehlschlag ${String(error?.code||'ERR')} | ${String(error?.message||'').slice(0,180)} | bereit ${bereit}/${st.routes.length} | ${kette}`);
+  } catch { /* Diagnose darf nie stoeren */ }
   throw error;
  }
 }
