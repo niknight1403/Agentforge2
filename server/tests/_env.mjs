@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { FREE_ROUTE_CATALOG } from '../routes.mjs';
 
 export const TMP = mkdtempSync(join(tmpdir(), 'vf-test-'));
+process.env.VF_TEST = '1';
 process.env.VF_DB = join(TMP, 'test.db');
 process.env.VF_WORKSPACE = join(TMP, 'workspace');
 // Hub unit tests must not inherit the runtime integration service connection.

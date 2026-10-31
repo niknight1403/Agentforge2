@@ -1,3 +1,4 @@
+import {capabilityStatus,capabilityBlockers} from './capability-autopilot.mjs';
 import { db, now } from './db.mjs';
 import { deliveryReadiness } from './delivery-quality.mjs';
 
@@ -62,7 +63,8 @@ function metrics(villaId) {
   const done=m.DONE||0, failed=m.FAILED||0, open=(m.PENDING||0)+(m.READY||0)+(m.RUNNING||0)+(m.REVIEW||0);
   const verified=db.prepare("SELECT COUNT(*) c FROM memories WHERE villa_id=? AND kind IN ('LESSON','DECISION','ARTIFACT')").get(villaId).c;
   const rawScore=total ? clamp(Math.round((done/total)*75 + Math.min(15,verified*3) - failed*8 + (open===0&&done>0?10:0))) : 0;
-  const readiness=deliveryReadiness(Number(villaId));
+  const delivery=deliveryReadiness(Number(villaId)),gaps=capabilityBlockers(Number(villaId));
+  const readiness={...delivery,verified:delivery.verified&&!gaps.length,blockers:[...delivery.blockers,...gaps]};
   const score=readiness.verified && open===0 && failed===0 ? Math.max(90,rawScore) : Math.min(84,rawScore);
   return {total,done,failed,open,verified:Number(verified),score,readiness};
 }
@@ -74,7 +76,7 @@ export function ultraStatus(villaId) {
   const routes=db.prepare('SELECT COUNT(*) c FROM routes WHERE enabled=1').get().c;
   const lessons=db.prepare('SELECT COUNT(*) c FROM ultra_lessons WHERE villa_id=?').get(v.id).c;
   return {
-    version:ULTRA_VERSION,villa:v,enabled:!!state?.enabled,cycle:Number(state?.cycle||0),
+    capabilityAutopilot:capabilityStatus(v.id),version:ULTRA_VERSION,villa:v,enabled:!!state?.enabled,cycle:Number(state?.cycle||0),
     qualityScore:m.score,qualityGate:QUALITY_GATE,gatePassed:m.score>=QUALITY_GATE && m.readiness.verified && m.open===0 && m.failed===0,
     delivery:{domain:m.readiness.domain,label:m.readiness.label,verified:m.readiness.verified,blockers:m.readiness.blockers,artifacts:m.readiness.artifacts?.length||0},
     tasks:m,activeRoutes:Number(routes),lessons:Number(lessons),

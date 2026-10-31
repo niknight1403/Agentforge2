@@ -419,6 +419,9 @@ function renderAll(d) {
   $('#progressBar').style.width = pct + '%';
   $('#progressLabel').textContent = `${pct}% abgeschlossen · ${open} nächste Schritte`;
   $('#taskCount').textContent = total; $('#agentCountLabel').textContent = d.agents.length;
+  const cap=d.capabilityAutopilot;
+  $('#capabilitySummary').textContent=cap?`${cap.enabled?'Aktiviert':'Deaktiviert'} · ${cap.runsWithVilla?'arbeitet mit dieser Villa':'wartet auf bewussten Villa-Start'}. Maximal ${cap.limits.newTasksPerCycle} neue Integrationsaufgaben je Zyklus. Keine automatische Kosten- oder Rechtefreigabe. Global im Master-Chat aktivierbar und deaktivierbar.`:'Faehigkeitenstatus noch nicht verfuegbar.';
+  $('#capabilityList').innerHTML=cap?.requests?.length?cap.requests.map(r=>`<div class="row"><div class="head"><b>${esc(r.title)}</b><span class="badge">${esc(r.status)}</span></div><div class="sub">${esc(r.goal)}<br>Abnahme: ${esc(r.acceptance)}${r.taskId?'<br>Aufgabe #'+Number(r.taskId):''}</div></div>`).join(''):'<p class="hint">Noch keine belegten Faehigkeitsluecken gemeldet. Dies ist kein Nachweis vollstaendiger Faehigkeiten.</p>';
   renderTasks(d.tasks); renderAgents(d.agents); renderMemories(d.memories); renderReports(d.reports); renderAudit(d.audit);
 }
 async function renderSuggestions(d) {

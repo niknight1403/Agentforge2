@@ -88,10 +88,10 @@ export const MASTER_PACK = 'werkzeuge';
 /** Werkzeuge nach Aufgabe gebuendelt — genau so, wie Agenten sie brauchen. */
 export const TOOL_PACKS = [
   { id: 'gedaechtnis', title: 'Gedaechtnis', description: 'Wissen sichern und wiederfinden.', tools: ['memory_write', 'memory_search'] },
-  { id: 'planung', title: 'Planung & Aufgaben', description: 'Aufgaben anlegen, fortschreiben und Agenten nachziehen.', tools: ['task_create', 'task_update', 'agent_spawn'] },
+  { id: 'planung', title: 'Planung & Aufgaben', description: 'Aufgaben anlegen, fortschreiben und Agenten nachziehen.', tools: ['task_create', 'task_update', 'agent_spawn', 'capability_status', 'capability_request'] },
   { id: 'projekt', title: 'Projektanalyse', description: 'Quellprojekt lesen, durchsuchen, strukturieren und Remote-Arbeit koordinieren.', tools: ['project_tree', 'project_search', 'project_read', 'remote_worker'] },
   { id: 'design', title: 'Designstudio', description: 'Projektstatus, zwei begründete visuelle Richtungen und Designauswahl je Villa.', tools: ['studio_status', 'studio_designs'] },
-  { id: 'ausfuehrung', title: 'Ausfuehrung', description: 'Builds und Tests im Projekt starten (nur erlaubte Programme).', tools: ['project_run', 'project_write', 'project_patch'] },
+  { id: 'ausfuehrung', title: 'Ausfuehrung', description: 'Builds und Tests im Projekt starten (nur erlaubte Programme).', tools: ['project_run', 'project_write', 'project_patch', 'capability_verify'] },
   { id: 'artefakte', title: 'Artefakte', description: 'Dateien im Villa-Workspace schreiben und auflisten.', tools: ['artifact_write', 'artifact_patch', 'artifact_list'] },
   { id: 'recherche', title: 'Recherche', description: 'Websuche und Seitenabruf mit Jina-Reader-Kaskade.', tools: ['web_search', 'web_fetch'] },
   { id: 'medien', title: 'Medienproduktion', description: 'Fähigkeiten prüfen, Bild-/Video-/Audio-Produktionspakete vorbereiten und Medien über konfigurierte Fal.ai-Routen rendern.', tools: ['media_capabilities', 'media_prepare', 'media_generate'] },

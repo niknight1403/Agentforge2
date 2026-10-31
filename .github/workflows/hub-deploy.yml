@@ -97,7 +97,7 @@ jobs:
           echo "== Vollstaendige Backend-Tests vor Freigabe =="
           cd "$HUBROOT"
           TEST_LOG=$(mktemp)
-          if ! VF_TEST=1 timeout 300 node --test server/tests/*.test.mjs >"$TEST_LOG" 2>&1; then
+          if ! VF_TEST=1 timeout 300 node --import ./server/tests/_env.mjs --test --test-concurrency=2 server/tests/*.test.mjs >"$TEST_LOG" 2>&1; then
             tail -n 80 "$TEST_LOG"
             rm -f "$TEST_LOG"
             echo "Backend-Tests fehlgeschlagen; Deploy wird abgebrochen."

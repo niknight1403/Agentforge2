@@ -1,3 +1,4 @@
+import {capabilityStatus,requestCapability,observeMissingTool,observeProjectFailure,verifyCapability} from './capability-autopilot.mjs';
 import {missionContext,PROMPT_CONTRACT,promptHash} from './villa-configuration.mjs';
 import { studioStatus,proposeDesigns } from './studio.mjs';
 import { executeRemoteWorker } from './remote-worker.mjs';
@@ -39,6 +40,10 @@ export { ROLES } from './agent-roles.mjs';
 /* ------------------------------------------------------------------ */
 
 const TOOLS = {
+  capability_status:{description:'Fehlende Faehigkeiten, Werkzeuge, Feature-Auftraege und deren begrenzte Integration fuer diese Villa. Validierung ist getrennt von Produktabnahme.',schema:{},run:ctx=>JSON.stringify(capabilityStatus(ctx.villaId))},
+  capability_request:{description:'Meldet eine belegte fehlende Projektfaehigkeit mit Ziel und Abnahme. Feature/Tool-Auftraege werden im bestehenden Entwicklungszyklus begrenzt umgesetzt. Integrationen mit fehlenden externen Ressourcen bleiben needs_configuration; keine Kosten oder Rechte werden freigeschaltet.',schema:{id:'string (3-64 Zeichen, a-z, 0-9, _ oder -)',kind:'feature|tool|integration',title:'string',goal:'string (konkretes Ergebnis)',acceptance:'string (ausfuehrbares Abnahmekriterium)'},run:(ctx,a)=>JSON.stringify(requestCapability(ctx.villaId,a))},
+  capability_verify:{description:'Validiert eine projektlokale Erweiterung erst nach unabhaengigem Review, aktuellen Build/Test/Smoke-Nachweisen und existierenden Test-/Produktdateien. Registriert niemals dynamisch Hub-Code.',schema:{id:'string',testPath:'string (relativer Akzeptanztest)',artifactPath:'string (relative Implementierungsdatei)'},run:(ctx,a)=>JSON.stringify(verifyCapability(ctx.villaId,a.id,a,ctx.agentId))},
+
   resource_status: { description:'Liefert gemessene CPU-, GPU- und RAM-Auslastung samt einer sicheren Parallelitaetsempfehlung.', schema:{}, run:() => JSON.stringify(resourceStatus()) },
   free_route_status: { description:'Zeigt ausschließlich lokale oder explizit kostenlose KI-Routen und den letzten offiziellen Discovery-Scan.', schema:{}, run:() => JSON.stringify(freeRouteCycleStatus()) },
   remote_worker:{description:'Einen begrenzten Rechenauftrag an den vom Administrator konfigurierten Remote-Worker senden. Erst nach Konfiguration nutzbar; keine GPU-Buchung.',schema:{task:'string',input:'object|array'},run:async(ctx,a)=>JSON.stringify(await executeRemoteWorker(a.task,a.input))},
@@ -338,6 +343,7 @@ const TOOLS = {
       const root = sourceRoot(ctx.villaId);
       if (!root) return 'Kein Quellprojekt hinterlegt.';
       const r = await runCommand(root, a.binary, a.args, Number(a.timeoutMs) || 120000);
+      if(!r.ok)observeProjectFailure(ctx.villaId,r);
       if (r.error && !r.output) return `Nicht ausgefuehrt: ${r.error}`;
       return `Exit ${r.ok ? 0 : r.code}:\n${r.output || '(keine Ausgabe)'}`;
     }
@@ -549,6 +555,7 @@ const TOOLS = {
         const result = await generateMedia({ villaId: ctx.villaId, type: a.type || 'image', prompt: a.prompt, sourceImageUrl: a.sourceImageUrl, model: a.model, filename: a.filename });
         return `Erstellt und verifiziert gespeichert: ${result.path} (${result.bytes} B, ${result.mime || result.type}, Modell ${result.model}).`;
       } catch (error) {
+        if(db.prepare('SELECT id FROM villas WHERE id=?').get(Number(ctx.villaId))&&mediaCapabilities().some(c=>c.modes.includes(a.type||'image')&&c.status==='needs_provider'))requestCapability(ctx.villaId,{id:'media-'+String(a.type||'image').replaceAll('_','-'),kind:'integration',title:'Medienfaehigkeit '+String(a.type||'image'),goal:'Die konkret angeforderte Medienart mit einer autorisierten konfigurierten Route rendern.',acceptance:'Echter Export laesst sich oeffnen; Format, Qualitaet und Nutzungsrechte sind geprueft. Keine neue kostenpflichtige Route ohne ausdrueckliche Freigabe.'});
         return `Medienroute fehlgeschlagen: ${String(error?.message || error).slice(0, 500)} Capability-Status mit media_capabilities prüfen. Erstelle bei fehlendem Provider stattdessen einen ausführbaren Prompt-/Storyboard-/Asset-Arbeitsauftrag als Projektdatei und markiere das Rendering als ausstehend.`;
       }
     }
@@ -646,7 +653,7 @@ function audit(villaId, agentId, tool, args, result, allowed = 1) {
 
 async function executeTool(ctx, name, args) {
   const tool = TOOLS[name];
-  if (!tool) { audit(ctx.villaId, ctx.agentId, name, args, 'unbekanntes Werkzeug', 0); return `Unbekanntes Werkzeug: ${name}`; }
+  if (!tool) { observeMissingTool(ctx.villaId,name); audit(ctx.villaId, ctx.agentId, name, args, 'unbekanntes Werkzeug', 0); return `Unbekanntes Werkzeug: ${name}`; }
   // Packs sind echte Schalter: ist das Werkzeug-Pack aus, blockiert der Hub
   // das Werkzeug im Lauf und protokolliert den Versuch im Audit.
   const gate = canUseTool(name);
@@ -771,7 +778,7 @@ export async function analyzeProject(villaId, rootId) {
 /* ------------------------------------------------------------------ */
 
 const ROLE_BRIEF = {
-  ROOT: 'Du bist der Deep Agent und leitest die Villa wie ein erfahrener CTO. Vor jeder Planung prufst du studio_status, maturity_check und backlog_review. Bei UI-Ideen nutzt du studio_designs für zwei konkrete Designrichtungen; speichere die Nutzerentscheidung als Vorgabe. Bei Bild-, Video-, Audio- und Live-Performance-Aufträgen triffst du die Formatentscheidung anhand des Ziels, prüfst zuerst media_capabilities und nutzt bei vorhandener Route media_generate. Wenn eine Fähigkeit fehlt, erstelle mit media_prepare ein direkt nutzbares Produktionspaket und einen konkreten nächsten Integrationsschritt; behaupte nie ein gerendertes Medium ohne gespeicherte und geprüfte Datei. Führe externe Medienjobs nur bei konkretem Nutzerauftrag aus. Zeige die vorhandene Vorschau und prüfbare nächste Schritte. Behaupte keine Live-Ansicht, wenn kein Web-Build existiert. Du delegierst klar (Rolle + Akzeptanzkriterium), pruefst Ergebnisse gegen das Kriterium und legst selbst fehlende Aufgaben an. Jeder Abschluss nennt: was konkret geleistet wurde, was als naechstes folgt und welche Risiken bleiben.',
+  ROOT: 'Du bist der Deep Agent und leitest die Villa wie ein erfahrener CTO. Vor jeder Planung prufst du studio_status, maturity_check, capability_status und backlog_review. Leite fehlende Features und Werkzeuge aus der Originalidee und belegten Fehlern ab und melde sie mit capability_request (Goal und ausfuehrbare Abnahme). Baue nur projektlokale Erweiterungen; externe Ressourcen benoetigen ihre Einrichtung. Bestehende Funktionen und das gewaehlte Design erhalten. Bei UI-Ideen nutzt du studio_designs für zwei konkrete Designrichtungen; speichere die Nutzerentscheidung als Vorgabe. Bei Bild-, Video-, Audio- und Live-Performance-Aufträgen triffst du die Formatentscheidung anhand des Ziels, prüfst zuerst media_capabilities und nutzt bei vorhandener Route media_generate. Wenn eine Fähigkeit fehlt, erstelle mit media_prepare ein direkt nutzbares Produktionspaket und einen konkreten nächsten Integrationsschritt; behaupte nie ein gerendertes Medium ohne gespeicherte und geprüfte Datei. Führe externe Medienjobs nur bei konkretem Nutzerauftrag aus. Zeige die vorhandene Vorschau und prüfbare nächste Schritte. Behaupte keine Live-Ansicht, wenn kein Web-Build existiert. Du delegierst klar (Rolle + Akzeptanzkriterium), pruefst Ergebnisse gegen das Kriterium und legst selbst fehlende Aufgaben an. Jeder Abschluss nennt: was konkret geleistet wurde, was als naechstes folgt und welche Risiken bleiben.',
   PLANNER: 'Du zerlegst Ziele in scharf umrissene Teilaufgaben. Jede Aufgabe nennt: das konkrete Artefakt (Datei, Bericht, Code), ein pruefbares Akzeptanzkriterium ("Akzeptanz: ..."), die passende Rolle und einen Aufwandsschaetz. Verboten sind vage Aufgaben wie "verbessern" oder "untersuchen" ohne messbares Ziel.',
   RESEARCHER: 'Du recherchierst belegbar: mindestenens drei Quellen via web_search/web_fetch, Fakten mit Quelle und Datum, Annahmen ausdruecklich als solche markiert, Zahlen mit Spanne statt Scheinpraezision. Am Ende steht eine Quellenliste und eine klare Trennung: belegt / wahrscheinlich / unklar.',
   ARCHITECT: 'Du entwirfst Architektur im ADR-Stil: Komponenten mit Verantwortlichkeiten, Schnittstellen, Datenmodell, Deployment, bewertete Alternativen mit Begrundung und Fehlermodi (was passiert, wenn X ausfaellt). Vor dem Entwurf liest du mit project_tree/project_read die echte Basis, statt im Blauen zu entwerfen.',

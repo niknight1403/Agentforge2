@@ -45,3 +45,12 @@ test('fleet diagnostics require admin auth and never disclose prompts',async()=>
  const result=await api('/api/admin/villa-diagnostics','GET',admin.body.token);
  assert.equal(result.status,200);assert.equal(result.body.readOnly,true);assert.ok(Array.isArray(result.body.villas));assert.ok(Array.isArray(result.body.media));assert.doesNotMatch(JSON.stringify(result.body),/system_prompt|template_hash|secret_env/);
 });
+
+test('capability requests are admin-only and never start or enable a paused Villa',async()=>{
+ const t=now(),villaId=Number(db.prepare('INSERT INTO villas(name,idea,status,autonomy,created_at,updated_at) VALUES (?,?,?,?,?,?)').run('Pause behalten','Export als echte App-Funktion','PAUSED',0,t,t).lastInsertRowid);
+ assert.equal((await api(`/api/villas/${villaId}/capabilities`)).status,401);
+ const admin=await api('/api/auth/login','POST',null,{email:'gateway-admin@example.test',password:'correct-horse-123'});
+ const out=await api(`/api/villas/${villaId}/capabilities`,'POST',admin.body.token,{id:'verified-export',kind:'feature',title:'Dateiexport entwickeln',goal:'Erzeuge einen nutzbaren JSON-Export im existierenden Projekt.',acceptance:'Ein ausfuehrbarer Test prueft die tatsaechlichen exportierten Daten.'});
+ assert.equal(out.status,201);assert.equal(out.body.status,'proposed');assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(villaId).autonomy,0);
+ const status=await api(`/api/villas/${villaId}/capabilities`,'GET',admin.body.token);assert.equal(status.body.runsWithVilla,false);
+});
