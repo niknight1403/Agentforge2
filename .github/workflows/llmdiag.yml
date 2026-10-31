@@ -1,0 +1,21 @@
+name: llmdiag
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Journal
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "c2V0ICtlCmVjaG8gIj09IExMTS1ESUFHTk9TRSAyMCBNSU4gPT0iCnN1ZG8gam91cm5hbGN0bCAtdSB2aWxsYWZvcmdlLWh1YiAtLXNpbmNlICIyMCBtaW4gYWdvIiAtLW5vLXBhZ2VyIDI+L2Rldi9udWxsIHwgZ3JlcCAtbyAiXFtsbG1cXSBGZWhsc2NobGFnLioiIHwgdGFpbCAtMTAKZWNobyAiPT0gQ09ERVMgPT0iCnN1ZG8gam91cm5hbGN0bCAtdSB2aWxsYWZvcmdlLWh1YiAtLXNpbmNlICIyMCBtaW4gYWdvIiAtLW5vLXBhZ2VyIDI+L2Rldi9udWxsIHwgZ3JlcCAtbyAiRmVobHNjaGxhZyBbQS1aX10qIiB8IHNvcnQgfCB1bmlxIC1jIHwgc29ydCAtcm4gfCBoZWFkIC01CmVjaG8gIj09IEFVRkdBQkVOID09IgpEQj0vb3B0L3ZpbGxhZm9yZ2Uvc2VydmVyL2RhdGEvdmlsbGFmb3JnZS5kYgpzdWRvIHNxbGl0ZTMgIiREQiIgIlNFTEVDVCAnRE9ORTEwICd8fENPVU5UKCopIEZST00gdGFza3MgV0hFUkUgc3RhdHVzPSdET05FJyBBTkQgdXBkYXRlZF9hdCA+PSBDQVNUKHN0cmZ0aW1lKCclcycsJ25vdycpIEFTIElOVEVHRVIpKjEwMDAgLSA2MDAwMDAiCnN1ZG8gc3FsaXRlMyAiJERCIiAiU0VMRUNUICdMTE1jYWxsczEwICd8fENPVU5UKCopIEZST00gbGxtX3VzYWdlIFdIRVJFIGhhcHBlbmVkX2F0ID49IENBU1Qoc3RyZnRpbWUoJyVzJywnbm93JykgQVMgSU5URUdFUikqMTAwMCAtIDYwMDAwMCIK" | base64 -d > /tmp/ld.sh && bash /tmp/ld.sh'
