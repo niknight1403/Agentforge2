@@ -52,5 +52,5 @@ test('capability requests are admin-only and never start or enable a paused Vill
  const admin=await api('/api/auth/login','POST',null,{email:'gateway-admin@example.test',password:'correct-horse-123'});
  const out=await api(`/api/villas/${villaId}/capabilities`,'POST',admin.body.token,{id:'verified-export',kind:'feature',title:'Dateiexport entwickeln',goal:'Erzeuge einen nutzbaren JSON-Export im existierenden Projekt.',acceptance:'Ein ausfuehrbarer Test prueft die tatsaechlichen exportierten Daten.'});
  assert.equal(out.status,201);assert.equal(out.body.status,'proposed');assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(villaId).autonomy,0);
- const status=await api(`/api/villas/${villaId}/capabilities`,'GET',admin.body.token);assert.equal(status.body.runsWithVilla,false);
+ const status=await api(`/api/villas/${villaId}/capabilities`,'GET',admin.body.token);assert.equal(status.body.runsWithVilla,false);assert.ok((await api('/api/health')).body.capabilities.includes('capability-autopilot-v1'));
 });
