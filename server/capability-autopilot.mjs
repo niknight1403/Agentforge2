@@ -57,7 +57,11 @@ export function reconcileCapabilities(villaId){
  const state=capabilityStatus(villaId);if(!state.runsWithVilla||!canUseTool('capability_request').allowed||!canUseTool('task_create').allowed)return {added:0};
  let added=0;
  for(const r of db.prepare('SELECT * FROM capability_requests WHERE villa_id=? ORDER BY created_at,capability_id').all(Number(villaId))){
-  if(['validated','dismissed','needs_configuration','observed'].includes(r.status))continue;
+  if(r.status==='validated'){
+   if(state.requests.find(x=>x.id===r.capability_id)?.validated)continue;
+   const stamp=now();db.prepare("UPDATE capability_requests SET status='awaiting_review',review_task_id=NULL,updated_at=? WHERE villa_id=? AND capability_id=?").run(stamp,Number(villaId),r.capability_id);r.status='awaiting_review';r.review_task_id=null;r.updated_at=stamp;
+  }
+  if(['dismissed','needs_configuration','observed'].includes(r.status))continue;
   const work=r.task_id?db.prepare('SELECT * FROM tasks WHERE villa_id=? AND id=?').get(Number(villaId),r.task_id):null;
   if(work){
    if(r.attempts>=3){if(['PENDING','READY'].includes(work.status))db.prepare("UPDATE tasks SET status='CANCELLED',updated_at=? WHERE villa_id=? AND id=?").run(now(),Number(villaId),work.id);db.prepare("UPDATE capability_requests SET status='blocked',updated_at=? WHERE villa_id=? AND capability_id=?").run(now(),Number(villaId),r.capability_id);continue;}
@@ -68,7 +72,7 @@ export function reconcileCapabilities(villaId){
    }
    if(work.status==='DONE'){
     let reviewId=r.review_task_id;
-    if(!reviewId&&added<2){reviewId=task(Number(villaId),`Capability Review [${r.capability_id}]`,'Rolle: REVIEWER\nGoal: Pruefe unabhaengig '+r.title+'.\nAbnahme: '+r.acceptance+'\nConstraints: Nicht selbst implementieren oder einen Textabschluss als Nachweis akzeptieren. Lies Implementierung und Tests, fuehre project_run fuer Build, Tests und Smoke aus.\nFormat: Dateien, Pruefbefehle und belegte Ergebnisse. Danach capability_verify mit id, testPath und artifactPath aufrufen; ein fehlgeschlagenes Gate bleibt offen.\nFailure Handling: Konkreten Befund dokumentieren und sicher stoppen.');added++;}
+    if(!reviewId&&added<2){reviewId=task(Number(villaId),`Capability Review [${r.capability_id}] ${r.updated_at}`,'Rolle: REVIEWER\nGoal: Pruefe unabhaengig '+r.title+'.\nAbnahme: '+r.acceptance+'\nConstraints: Nicht selbst implementieren oder einen Textabschluss als Nachweis akzeptieren. Lies Implementierung und Tests, fuehre project_run fuer Build, Tests und Smoke aus.\nFormat: Dateien, Pruefbefehle und belegte Ergebnisse. Danach capability_verify mit id, testPath und artifactPath aufrufen; ein fehlgeschlagenes Gate bleibt offen.\nFailure Handling: Konkreten Befund dokumentieren und sicher stoppen.');added++;}
     db.prepare("UPDATE capability_requests SET status='awaiting_review',review_task_id=?,last_task_status='DONE',updated_at=? WHERE villa_id=? AND capability_id=?").run(reviewId||null,now(),Number(villaId),r.capability_id);continue;
    }
    db.prepare("UPDATE capability_requests SET status='implementing',last_task_status=?,updated_at=? WHERE villa_id=? AND capability_id=?").run(work.status,now(),Number(villaId),r.capability_id);continue;

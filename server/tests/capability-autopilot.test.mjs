@@ -51,7 +51,7 @@ test('DONE-Text genuegt nicht; unabhängiger Reviewer und echte aktuelle Ausfueh
  const result=await verifyProjectRuntime(v);assert.equal(result.ok,true,JSON.stringify(result));
  assert.throws(()=>verifyCapability(v,r.id,{testPath:'../secret.test.mjs',artifactPath:'index.mjs'},reviewer),/PATH/);
  const accepted=verifyCapability(v,r.id,{testPath:'export.test.mjs',artifactPath:'index.mjs'},reviewer);assert.equal(accepted.scope,'project');assert.equal(capabilityStatus(v).requests[0].validated,true);
- writeFileSync(join(root,'index.mjs'),'export const broken=true;');assert.equal(capabilityStatus(v).requests[0].validated,false);assert.equal(capabilityStatus(v).requests[0].status,'evidence_stale');
+ writeFileSync(join(root,'index.mjs'),'export const broken=true;');assert.equal(capabilityStatus(v).requests[0].validated,false);assert.equal(capabilityStatus(v).requests[0].status,'evidence_stale');assert.equal(reconcileCapabilities(v).added,1);assert.notEqual(capabilityStatus(v).requests[0].reviewTaskId,r.reviewTaskId);assert.equal(reconcileCapabilities(v).added,0);
 });
 test('Gescheiterte Auftraege erzeugen keine neue Retry-Schlange und bleiben begrenzt',()=>{
  const v=villa();requestCapability(v,need());reconcileCapabilities(v);const r=capabilityStatus(v).requests[0];
