@@ -1,0 +1,28 @@
+name: Concurrency-6
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Parallelitaet der LLM-Aufrufe erhoehen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'set -e
+            sudo mkdir -p /etc/systemd/system/villaforge-hub.service.d
+            printf "[Service]\nEnvironment=\"VF_LLM_MAX_CONCURRENT=6\"\n" | sudo tee /etc/systemd/system/villaforge-hub.service.d/concurrency.conf >/dev/null
+            sudo systemctl daemon-reload
+            sudo systemctl restart villaforge-hub
+            sleep 10
+            sudo systemctl show villaforge-hub -p Environment --value | tr " " "\n" | grep -E "MAX_CONCURRENT|TIMEOUT_MS"
+            curl -s --max-time 8 http://127.0.0.1:12000/api/health | head -c 90'
