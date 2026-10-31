@@ -18,7 +18,7 @@ const tmp = mkdtempSync(join(tmpdir(), 'agi-'));
 process.env.VF_DB = join(tmp, 'test.db');
 process.env.VF_WORKSPACE = join(tmp, 'ws');
 
-const { ROLES, buildSystemPrompt, PROMPT_VERSION, refreshAgentPrompts, insertAgent, createVilla } = await import('../agents.mjs');
+const { ROLES, buildSystemPrompt, PROMPT_VERSION, refreshAgentPrompts, insertAgent, createVilla, legacySystemPrompt } = await import('../agents.mjs');
 (await import('../agents.mjs'))._setPlanningChat(async()=>({content:JSON.stringify({summary:'Test plan',tasks:[{title:'Test-App implementieren',description:'Akzeptanz: Tests laufen',role:'CODER'}]})}));
 const { db, now } = await import('../db.mjs');
 
@@ -54,7 +54,7 @@ test('guessRole-Verhalten ueber insertAgent: AGI-Rollen sind anlegbar und suchba
 test('PROMPT_VERSION erhoeht: Migration frischt veraltete Prompts auf (idempotent)', () => {
   assert.ok(PROMPT_VERSION >= 3);
   // Zwei Agenten mit absichtlich veraltetem Prompt simulieren den Live-Bestand.
-  db.prepare("UPDATE agents SET system_prompt = 'alter Prompt v1' WHERE role IN ('STRATEGIST','VERIFIER')").run();
+  for(const role of ['STRATEGIST','VERIFIER'])db.prepare('UPDATE agents SET system_prompt=? WHERE role=?').run(legacySystemPrompt(role),role);
   const first = refreshAgentPrompts();
   assert.ok(first >= 2, 'veraltete Prompts sollten aktualisiert werden');
   const strat = db.prepare("SELECT system_prompt FROM agents WHERE role = 'STRATEGIST' LIMIT 1").get();

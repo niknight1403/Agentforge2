@@ -1,3 +1,4 @@
+import {missionContext,PROMPT_CONTRACT,promptHash} from './villa-configuration.mjs';
 import { studioStatus,proposeDesigns } from './studio.mjs';
 import { executeRemoteWorker } from './remote-worker.mjs';
 import { PROJECT_WORKSPACE,ownProjectDir,verifyProjectRuntime,ensureVerificationTasks } from './project-verification.mjs';
@@ -599,12 +600,13 @@ export const TOOL_SPECS = Object.entries(TOOLS).map(([name, t]) => {
 /* Prompt-Kompaktierung: Das volle Werkzeug-Schema kostete bei JEDEM Aufruf
    ~10.000 Zeichen System-Prompt. Hier bleibt nur, was das Modell zum Aufrufen
    braucht: Name, Kurzzweck, Argumente mit Typ und Pflicht-Markierung (*). */
-function compactToolSpecs() {
-  const slim = TOOL_SPECS.map((t) => {
-    const props = t.schema?.properties || {};
+export function compactToolSpecs(specs=TOOL_SPECS) {
+  const slim = specs.map((t) => {
+    const props = t.schema?.properties || t.schema || {};
     const req = new Set(t.schema?.required || []);
     const args = {};
     for (const [k, v] of Object.entries(props)) {
+      if(typeof v==='string'){args[k]=v.replace(/\s+/g,' ').slice(0,180);continue;}
       const type = Array.isArray(v?.type) ? v.type[0] : (v?.type || 'any');
       const hint = v?.description ? ':' + String(v.description).replace(/\s+/g, ' ').slice(0, 50) : '';
       args[k] = String(type) + (req.has(k) ? '*' : '') + hint;
@@ -613,7 +615,7 @@ function compactToolSpecs() {
   });
   return JSON.stringify(slim);
 }
-const COMPACT_TOOL_SPECS = (() => { try { return compactToolSpecs(); } catch { return JSON.stringify(TOOL_SPECS); } })();
+export function availableToolPrompt(){return compactToolSpecs(TOOL_SPECS.filter(t=>canUseTool(t.name).allowed));}
 
 /** Werkzeugkatalog inklusive aktueller Freigabe — fuer API und Oberflaeche. */
 export function toolSpecs() {
@@ -832,10 +834,10 @@ function maxAgents(villaId) {
 }
 
 /** Version der Prompt-Vorlage: Bei Erhoehung frischt der Hub beim Start alle Agenten-Prompts auf. */
-export const PROMPT_VERSION = 7;
+export const PROMPT_VERSION = 8;
 
 /** Zentraler Prompt-Bau: eine Quelle der Wahrheit fuer Neuanlage UND Migration. */
-export function buildSystemPrompt(role) {
+export function legacySystemPrompt(role) {
   const tools = ROLE_TOOLS[role] || ROLE_TOOLS.WORKER;
   return [
     ROLE_BRIEF[role] || ROLE_BRIEF.WORKER,
@@ -845,27 +847,39 @@ export function buildSystemPrompt(role) {
   ].join('\n');
 }
 
-/**
- * Migration: setzt ALLE Agenten aller Villen auf die aktuelle Prompt-Version.
- * Idempotent - Agenten mit aktuellem Prompt bleiben unberuehrt. So profitieren
- * auch laufende Villen sofort von verbesserten Rollen-Anweisungen.
- */
+export function buildSystemPrompt(role) {return legacySystemPrompt(role)+'\n\n'+PROMPT_CONTRACT;}
+
+db.exec('CREATE TABLE IF NOT EXISTS agent_prompt_templates(agent_id INTEGER PRIMARY KEY, template_hash TEXT NOT NULL)');
+/** Only managed templates migrate. Unknown/custom prompts survive startup unchanged. */
 export function refreshAgentPrompts() {
-  const rows = db.prepare('SELECT id, role, system_prompt FROM agents').all();
-  const upd = db.prepare('UPDATE agents SET system_prompt = ? WHERE id = ?');
-  let n = 0;
-  for (const a of rows) {
-    const fresh = buildSystemPrompt(a.role);
-    if (a.system_prompt !== fresh) { upd.run(fresh, a.id); n++; }
+  const rows=db.prepare('SELECT id,role,system_prompt FROM agents').all();
+  const prior=db.prepare('SELECT template_hash FROM agent_prompt_templates WHERE agent_id=?');
+  const track=db.prepare('INSERT OR REPLACE INTO agent_prompt_templates(agent_id,template_hash) VALUES (?,?)');
+  const update=db.prepare('UPDATE agents SET system_prompt=? WHERE id=? AND system_prompt=?');
+  let count=0;
+  for(const a of rows){
+    const fresh=buildSystemPrompt(a.role),hash=promptHash(a.system_prompt);
+    const managed=prior.get(a.id)?.template_hash===hash||a.system_prompt===legacySystemPrompt(a.role)||a.system_prompt===fresh;
+    if(!managed)continue;
+    if(a.system_prompt!==fresh)count+=Number(update.run(fresh,a.id,a.system_prompt).changes);
+    track.run(a.id,promptHash(fresh));
   }
-  return n;
+  db.exec('DELETE FROM agent_prompt_templates WHERE agent_id NOT IN (SELECT id FROM agents)');
+  return count;
+}
+export function projectMissionContext(villaId){
+  const villa=db.prepare('SELECT id,idea,vision FROM villas WHERE id=?').get(villaId);
+  const proposal=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='villa_proposals'").get()?db.prepare("SELECT items FROM villa_proposals WHERE villa_id=? AND kind='prompt_agent' AND status='ready' ORDER BY id DESC LIMIT 1").get(villaId):null;
+  return missionContext(villa,proposal);
 }
 
 export function insertAgent(villaId, name, role, parentId = null, isRoot = 0) {
   const t = now();
-  return db.prepare(
+  const id=db.prepare(
     'INSERT INTO agents (villa_id, name, role, system_prompt, status, is_root, parent_id, permissions, autonomy_level, created_at, last_active_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
   ).run(villaId, name, role, buildSystemPrompt(role), 'IDLE', isRoot, parentId, 127, 3, t, t).lastInsertRowid;
+  db.prepare('INSERT INTO agent_prompt_templates(agent_id,template_hash) VALUES (?,?)').run(id,promptHash(buildSystemPrompt(role)));
+  return id;
 }
 
 export function memoryContext(villaId, agentId, limit = 6) {
@@ -913,7 +927,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 5, maxTokens = 15
   const ctx = { villaId, agentId: agent.id, taskId };
   const context = statusContext(villaId);
   const history = [
-    { role: 'system', content: `${agent.system_prompt}${promptHint ? `\n\nSupervisor-Korrektur (beachte diese Strategie bei diesem Lauf):\n${String(promptHint).slice(0, 2000)}` : ''}\nEigene Skills:\n${skillInstructions()}${memoryContext(villaId, agent.id)}\n\nWerkzeuge (Format je Eintrag: n=Name, d=Zweck, a=Argumente; Sternchen (*) = Pflichtfeld): ${COMPACT_TOOL_SPECS}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
+    { role: 'system', content: `${agent.system_prompt}\n\n${PROMPT_CONTRACT}${projectMissionContext(villaId)}${promptHint ? `\n\nSupervisor-Korrektur (beachte diese Strategie bei diesem Lauf):\n${String(promptHint).slice(0, 2000)}` : ''}\nEigene Skills:\n${skillInstructions()}${memoryContext(villaId, agent.id)}\n\nWerkzeuge (Format je Eintrag: n=Name, d=Zweck, a=Argumente; Sternchen (*) = Pflichtfeld): ${availableToolPrompt()}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
     { role: 'user', content: userPrompt }
   ];
 
