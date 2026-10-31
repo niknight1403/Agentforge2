@@ -166,7 +166,7 @@ async function callOpenAiCompatible(route, messages, opts) {
 
 const localModels=new Map();
 async function callOpenAiCompatibleRaw(route, messages, opts) {
-  const requestSignal=opts.signal?AbortSignal.any([opts.signal,AbortSignal.timeout(opts.timeoutMs??15000)]):AbortSignal.timeout(opts.timeoutMs??15000);
+  const requestSignal=opts.signal?AbortSignal.any([opts.signal,AbortSignal.timeout(opts.timeoutMs??(Number(process.env.VF_LLM_TIMEOUT_MS)||15000))]):AbortSignal.timeout(opts.timeoutMs??15000);
   const key = resolveKey(route.key_env);
   const headers = { 'Content-Type': 'application/json' };
   // Fal.ai authentifiziert mit "Key" statt "Bearer": provider-abhaengig setzen.

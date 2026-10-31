@@ -1,0 +1,26 @@
+name: Hub-Tuning
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: LLM-Tuning in den Dienst schreiben
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'set -e
+            sudo mkdir -p /etc/systemd/system/villaforge-hub.service.d
+            printf "[Service]\nEnvironment=\"VF_LLM_TIMEOUT_MS=60000\"\nEnvironment=\"VF_LLM_CIRCUIT_FAILURES=10\"\nEnvironment=\"VF_LLM_CIRCUIT_RESET_MS=15000\"\nEnvironment=\"VF_RPM_DEFAULT=120\"\nEnvironment=\"VF_RPM_GROQ=60\"\nEnvironment=\"VF_RPM_GEMINI=120\"\nEnvironment=\"VF_RPM_CEREBRAS=60\"\nEnvironment=\"VF_RPM_OPENROUTER=120\"\nEnvironment=\"VF_RPM_MISTRAL=60\"\n" | sudo tee /etc/systemd/system/villaforge-hub.service.d/llm-tuning.conf >/dev/null
+            sudo systemctl daemon-reload
+            echo "== ENV GESETZT =="
+            sudo systemctl show villaforge-hub -p Environment --value | tr " " "\n" | grep -E "VF_LLM|VF_RPM" | sort'
