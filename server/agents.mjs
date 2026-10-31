@@ -927,7 +927,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 5, maxTokens = 15
   const ctx = { villaId, agentId: agent.id, taskId };
   const context = statusContext(villaId);
   const history = [
-    { role: 'system', content: `${agent.system_prompt}\n\n${PROMPT_CONTRACT}${projectMissionContext(villaId)}${promptHint ? `\n\nSupervisor-Korrektur (beachte diese Strategie bei diesem Lauf):\n${String(promptHint).slice(0, 2000)}` : ''}\nEigene Skills:\n${skillInstructions()}${memoryContext(villaId, agent.id)}\n\nWerkzeuge (Format je Eintrag: n=Name, d=Zweck, a=Argumente; Sternchen (*) = Pflichtfeld): ${availableToolPrompt()}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
+    { role: 'system', content: `${agent.system_prompt}${String(agent.system_prompt).includes(PROMPT_CONTRACT)?'':'\n\n'+PROMPT_CONTRACT}${projectMissionContext(villaId)}${promptHint ? `\n\nSupervisor-Korrektur (beachte diese Strategie bei diesem Lauf):\n${String(promptHint).slice(0, 2000)}` : ''}\nEigene Skills:\n${skillInstructions()}${memoryContext(villaId, agent.id)}\n\nWerkzeuge (Format je Eintrag: n=Name, d=Zweck, a=Argumente; Sternchen (*) = Pflichtfeld): ${availableToolPrompt()}\n\nAntworte IMMER mit genau einem JSON-Objekt: entweder {"tool":"name","args":{...}} um ein Werkzeug zu nutzen, oder {"final":"..."} um abzuschliessen.\n\nVerfasse "final" als gut lesbaren Text mit kurzen Absaetzen und Aufzaehlungen. Kein Markdown-Sternchen, keine rohen JSON-Daten.` },
     { role: 'user', content: userPrompt }
   ];
 
