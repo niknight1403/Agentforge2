@@ -1,0 +1,43 @@
+name: Ressourcen-Ausbau
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  r:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Ollama-Parallelitaet und Swap einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'set -e
+            echo "== VORHER =="
+            sudo systemctl show ollama -p Environment --value | tr " " "\n" | grep -E "NUM_PARALLEL|MAX_LOADED" || true
+            echo "== OVERRIDE SCHREIBEN =="
+            sudo mkdir -p /etc/systemd/system/ollama.service.d
+            printf "[Service]\nEnvironment=OLLAMA_NUM_PARALLEL=4\nEnvironment=OLLAMA_MAX_LOADED_MODELS=2\nEnvironment=OLLAMA_KEEP_ALIVE=-1\nEnvironment=OLLAMA_FLASH_ATTENTION=1\n" | sudo tee /etc/systemd/system/ollama.service.d/parallel.conf >/dev/null
+            sudo systemctl daemon-reload
+            echo "== SWAP 8G =="
+            if ! sudo swapon --show | grep -q swapfile; then sudo fallocate -l 8G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile >/dev/null && sudo swapon /swapfile && echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null; fi
+            free -g | awk "NR==3{print \"Swap: \" \$2 \"G\"}"
+            echo "== OLLAMA NEU STARTEN =="
+            sudo systemctl restart ollama
+            sleep 12
+            sudo systemctl show ollama -p Environment --value | tr " " "\n" | grep -E "NUM_PARALLEL|MAX_LOADED"
+            echo "== PARALLELITAETSTEST (4 gleichzeitige Anfragen) =="
+            start=$(date +%s)
+            for i in 1 2 3 4; do curl -s --max-time 120 http://127.0.0.1:11434/api/generate -d "{\"model\":\"llama3.2:3b\",\"prompt\":\"Antworte mit dem Wort OK\",\"stream\":false,\"options\":{\"num_predict\":5}}" -o /tmp/p$i.json & done
+            wait
+            end=$(date +%s)
+            echo "4 parallele Anfragen in $((end-start)) Sekunden"
+            grep -o "\"response\":\"[^\"]*\"" /tmp/p1.json | head -1
+            echo "== LOAD =="
+            cut -d" " -f1-3 /proc/loadavg'
