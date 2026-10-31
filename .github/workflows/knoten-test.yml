@@ -1,0 +1,21 @@
+name: Knoten-Test
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Testen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "c2V0ICtlCmVjaG8gIj09IENIQVQtVEVTVCBSRU1PVEUgN0IgKHYxKSA9PSIKU1RBUlQ9JChkYXRlICslcyUzTikKY3VybCAtcyAtLW1heC10aW1lIDEyMCBodHRwOi8vMi4zMS43Ny43MjoxMTQzNC92MS9jaGF0L2NvbXBsZXRpb25zIC1IICdDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL2pzb24nIC1kICd7Im1vZGVsIjoicXdlbjIuNS1jb2Rlcjo3YiIsIm1lc3NhZ2VzIjpbeyJyb2xlIjoidXNlciIsImNvbnRlbnQiOiJBbnR3b3J0ZSBudXIgbWl0IE9LIn1dLCJtYXhfdG9rZW5zIjo1LCJzdHJlYW0iOmZhbHNlfScgLW8gL3RtcC9yYy5qc29uIC13ICJIVFRQICV7aHR0cF9jb2RlfVxuIgpFTkQ9JChkYXRlICslcyUzTikKZWNobyAiRGF1ZXI6ICQoKEVORC1TVEFSVCkpIG1zIgpoZWFkIC1jIDIyMCAvdG1wL3JjLmpzb24KZWNobyAiIgplY2hvICI9PSBDSEFULVRFU1QgTE9LQUwgN0IgPT0iClNUQVJUMj0kKGRhdGUgKyVzJTNOKQpjdXJsIC1zIC0tbWF4LXRpbWUgMTgwIGh0dHA6Ly8xMjcuMC4wLjE6MTE0MzQvdjEvY2hhdC9jb21wbGV0aW9ucyAtSCAnQ29udGVudC1UeXBlOiBhcHBsaWNhdGlvbi9qc29uJyAtZCAneyJtb2RlbCI6InF3ZW4yLjUtY29kZXI6N2IiLCJtZXNzYWdlcyI6W3sicm9sZSI6InVzZXIiLCJjb250ZW50IjoiQW50d29ydGUgbnVyIG1pdCBPSyJ9XSwibWF4X3Rva2VucyI6NSwic3RyZWFtIjpmYWxzZX0nIC1vIC90bXAvbGMuanNvbiAtdyAiSFRUUCAle2h0dHBfY29kZX1cbiIKRU5EMj0kKGRhdGUgKyVzJTNOKQplY2hvICJEYXVlcjogJCgoRU5EMi1TVEFSVDIpKSBtcyIKaGVhZCAtYyAyMjAgL3RtcC9sYy5qc29uCg==" | base64 -d > /tmp/kt.sh && bash /tmp/kt.sh'
