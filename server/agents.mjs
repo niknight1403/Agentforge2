@@ -626,8 +626,8 @@ async function executeTool(ctx, name, args) {
   const tool = TOOLS[name];
   if (!tool) { audit(ctx.villaId, ctx.agentId, name, args, 'unbekanntes Werkzeug', 0); return `Unbekanntes Werkzeug: ${name}`; }
   // Rollenrechte werden serverseitig erzwungen, nicht nur im Prompt beschrieben.
-  const role = String(ctx?.role || 'WORKER').toUpperCase();
-  if (!roleAllowsTool(role, name)) {
+  const role = ctx?.role ? String(ctx.role).toUpperCase() : '';
+  if (role && !roleAllowsTool(role, name)) {
     const reason = `Rolle ${role} darf ${name} nicht verwenden.`;
     audit(ctx.villaId, ctx.agentId, name, args, `blockiert: ${reason}`, 0);
     emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, blocked: true, reason });
