@@ -35,3 +35,13 @@ test('gateway JWT and Redis-backed API key enforce scope and immediate revocatio
   assert.equal((await api(`/api/v1/gateway-keys/${created.body.id}`,'DELETE',login.body.token)).status,200);
   assert.equal((await api('/api/v1/gateway/villas','GET',null,null,{'x-api-key':created.body.key})).status,401);
 });
+
+test('fleet diagnostics require admin auth and never disclose prompts',async()=>{
+ assert.equal((await api('/api/admin/villa-diagnostics')).status,401);
+ upsertUser({email:'diagnostic-reader@example.test',password:'correct-horse-123',role:'user',plan:'free'});
+ const reader=await api('/api/auth/login','POST',null,{email:'diagnostic-reader@example.test',password:'correct-horse-123'});
+ assert.equal((await api('/api/admin/villa-diagnostics','GET',reader.body.token)).status,403);
+ const admin=await api('/api/auth/login','POST',null,{email:'gateway-admin@example.test',password:'correct-horse-123'});
+ const result=await api('/api/admin/villa-diagnostics','GET',admin.body.token);
+ assert.equal(result.status,200);assert.equal(result.body.readOnly,true);assert.ok(Array.isArray(result.body.villas));assert.ok(Array.isArray(result.body.media));assert.doesNotMatch(JSON.stringify(result.body),/system_prompt|template_hash|secret_env/);
+});

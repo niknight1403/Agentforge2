@@ -50,3 +50,18 @@ test('Kompakter Werkzeugvertrag erhaelt flache und JSON-Schema-Argumente',()=>{
  const schema=JSON.parse(compactToolSpecs([{name:'demo',schema:{type:'object',properties:{filename:{type:'string',description:'Zieldatei'}},required:['filename']}}]));assert.match(schema[0].a.filename,/string\*/);
  try{setPackEnabled('ausfuehrung',false);assert.ok(!JSON.parse(availableToolPrompt()).some(t=>t.n==='project_write'));}finally{setPackEnabled('ausfuehrung',true);}
 });
+
+test('Prompt-Experte nutzt injizierte Kaskade und erzeugt nur validierte Vorschlaege',async()=>{
+ const {refineVillaPrompts}=await import('../prompt-refinement.mjs');
+ const v=villa(),before=db.prepare('SELECT COUNT(*) n FROM tasks').get().n,original=db.prepare('SELECT idea,vision FROM villas WHERE id=?').get(v);
+ const data={vision:'Eine praezise Vision fuer den sicheren Dateiexport.',mission_prompt:PROMPT_CONTRACT,next_steps:['Export implementieren und mit echter Datei pruefen.','Fehlerfall testen und den Exitcode dokumentieren.','Archiv oeffnen und den Nutzerfluss bestaetigen.']};
+ const result=await refineVillaPrompts({limit:10,chatFn:async(_,opts)=>{assert.ok(opts.totalTimeoutMs<=60000);return {content:JSON.stringify(data)};}});
+ assert.ok(result.some(r=>r.villaId===v&&r.status==='proposal_saved'));assert.equal(db.prepare('SELECT COUNT(*) n FROM tasks').get().n,before);assert.deepEqual(db.prepare('SELECT idea,vision FROM villas WHERE id=?').get(v),original);
+ const again=await refineVillaPrompts({limit:10,chatFn:async()=>{throw Error('must not call for an existing proposal');}});assert.ok(!again.some(r=>r.villaId===v));
+});
+test('Ungueltige Missionsantwort und konkurrierende Bearbeitung ueberschreiben keine Nutzerdaten',async()=>{
+ const {refineVillaPrompts,validateMission}=await import('../prompt-refinement.mjs');assert.throws(()=>validateMission({vision:'x'}),/MISSION_SCHEMA_INVALID/);
+ const v=villa();
+ const report=await refineVillaPrompts({limit:10,chatFn:async()=>{db.prepare('UPDATE villas SET idea=? WHERE id=?').run('Vom Owner gerade aktualisierte Originalidee mit neuen Anforderungen.',v);return {content:JSON.stringify({vision:'Eine praezise Vision fuer den sicheren Dateiexport.',mission_prompt:PROMPT_CONTRACT,next_steps:['Erster Schritt mit echter Pruefung.','Zweiter Schritt mit echter Pruefung.','Dritter Schritt mit echter Pruefung.']})};}});
+ assert.ok(report.some(r=>r.villaId===v&&r.status==='skipped_concurrent_edit'));assert.equal(db.prepare("SELECT COUNT(*) n FROM villa_proposals WHERE villa_id=?").get(v).n,0);
+});
