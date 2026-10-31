@@ -99,8 +99,12 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
     // Große lokale Installationen können den Wert bis 90 s anheben.
     // Hard provider deadline: fail over after 15 seconds instead of allowing
     // one stalled endpoint to hold the task or villa slot.
-    const localTimeoutMs=Math.max(1000,Math.min(Number(process.env.VF_LLM_LOCAL_TIMEOUT_MS)||15000,15000));
-    const defaultMs=isLocalRoute(r)?localTimeoutMs:Math.max(500,Math.min(Number(process.env.VF_LLM_CLOUD_TIMEOUT_MS)||8000,15000));
+    /* Deckel bewusst hoch: Ein 4-5k-Token-Prompt braucht auf einem 3B-Modell
+       mit 43 Tokens/s rund 100 s. Der fruehere Deckel von 15 s (lokal) bzw.
+       8 s (Cloud) liess JEDEN Versuch scheitern - die Kaskade meldete dann
+       LLM_UNAVAILABLE, obwohl Modelle erreichbar waren. */
+    const localTimeoutMs=Math.max(1000,Math.min(Number(process.env.VF_LLM_LOCAL_TIMEOUT_MS)||60000,180000));
+    const defaultMs=isLocalRoute(r)?localTimeoutMs:Math.max(500,Math.min(Number(process.env.VF_LLM_CLOUD_TIMEOUT_MS)||25000,60000));
     const timeoutMs=Math.max(1,Math.min(Number(opts.timeoutMs)||defaultMs,defaultMs,(isLocalRoute(r)?deadline:cloudDeadline)-clock()));
     const out=await withOtelSpan('llm.provider.request',{
      'llm.provider':String(r.provider||'unknown'),

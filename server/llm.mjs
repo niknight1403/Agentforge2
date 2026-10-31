@@ -316,7 +316,8 @@ export async function chat(messages,opts={}) {
     const st = routingStatus();
     const bereit = st.routes.filter((r) => r.eligible).length;
     const kette = st.routineChain.slice(0, 3).map((r) => `${r.name}:${r.position}`).join(' > ');
-    console.warn(`[llm] Fehlschlag ${String(error?.code||'ERR')} | ${String(error?.message||'').slice(0,180)} | bereit ${bereit}/${st.routes.length} | ${kette}`);
+    const versuche = Array.isArray(error?.attempted) ? error.attempted.slice(0, 6).map((a) => `${String(a.route).slice(0, 18)}=${a.code}`).join(', ') : '';
+    console.warn(`[llm] Fehlschlag ${String(error?.code||'ERR')} | bereit ${bereit}/${st.routes.length} | ${kette} | Versuche: ${versuche}`);
   } catch { /* Diagnose darf nie stoeren */ }
   throw error;
  }
