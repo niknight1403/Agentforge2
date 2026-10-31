@@ -1,0 +1,21 @@
+name: keycheck
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  k:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Schluessel
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "c2V0ICtlCmVjaG8gIj09IFZPTExFIEZFSExFUlpFSUxFID09IgpzdWRvIGpvdXJuYWxjdGwgLXUgdmlsbGFmb3JnZS1odWIgLS1zaW5jZSAiMTAgbWluIGFnbyIgLS1uby1wYWdlciAyPi9kZXYvbnVsbCB8IGdyZXAgIkZlaGxzY2hsYWciIHwgdGFpbCAtMiB8IGN1dCAtYzEtNDAwCmVjaG8gIj09IFNDSExVRVNTRUwgSU0gTEFVRkVOREVOIFBST1pFU1MgPT0iClBJRD0kKHBncmVwIC1mICJ2aWxsYWZvcmdlL3NlcnZlci9zZXJ2ZXIubWpzIiB8IGhlYWQgLTEpCmVjaG8gIlBJRDogJFBJRCIKc3VkbyB0ciAnXDAnICdcbicgPCAvcHJvYy8kUElEL2Vudmlyb24gfCBncmVwIC1vRSAiXltBLVpfXStfQVBJX0tFWSIgfCBzb3J0IC11IHwgdHIgJ1xuJyAnICcKZWNobwplY2hvICI9PSBBTlpBSEwgPT0iCnN1ZG8gdHIgJ1wwJyAnXG4nIDwgL3Byb2MvJFBJRC9lbnZpcm9uIHwgZ3JlcCAtYyAiX0FQSV9LRVkiCmVjaG8gIj09IC5lbnYgU0NITFVFU1NFTCAoRGF0ZWkpID09IgpzdWRvIGdyZXAgLW9FICJeW0EtWl9dK19BUElfS0VZIiAvb3B0L3ZpbGxhZm9yZ2UvLmVudiB8IHNvcnQgLXUgfCB0ciAnXG4nICcgJwplY2hvCg==" | base64 -d > /tmp/kc.sh && bash /tmp/kc.sh'
