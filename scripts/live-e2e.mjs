@@ -216,6 +216,18 @@ async function run() {
 
   await safeShot('03-tab-agenten');
 
+  await check('Faehigkeiten-Autopilot ist in der Aufgabenansicht erreichbar und ehrlich',async()=>{
+    await page.evaluate("document.querySelector('.tab-chip[data-tab=\"tasks\"]').click(); return true;");
+    const state=await page.evaluate(`
+      const summary=document.querySelector('#capabilitySummary');
+      const disclosure=summary?.closest('details');
+      if(disclosure)disclosure.open=true;
+      return {visible:!!summary&&summary.getBoundingClientRect().height>0,text:summary?.textContent||'',body:document.querySelector('#capabilityList')?.textContent||''};`);
+    if(!state.visible||!state.text.includes('Keine automatische Kosten- oder Rechtefreigabe')||!state.body.includes('kein Nachweis'))throw Error('Faehigkeitenstatus fehlt oder behauptet ungepruefte Vollstaendigkeit');
+    await page.evaluate("document.querySelector('#capabilitySummary').closest('details').open=false;document.querySelector('.tab-chip[data-tab=\"chat\"]').click();return true;");
+    return 'Ausklappbarer Status, sichtbare Grenzen und keine automatische Freigabe';
+  });
+
   await check('Chat antwortet (Offline-Planer) und schreibt beide Seiten ins Protokoll', async () => {
     const before = await page.evaluate("return document.querySelectorAll('#chatLog .bubble').length;");
     await page.evaluate(`

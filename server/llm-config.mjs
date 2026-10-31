@@ -4,7 +4,7 @@ import { parseEnv } from 'node:util';
 import { db } from './db.mjs';
 // Only provider configuration is loaded. Never print values or override the service environment.
 const allowed=/^(GEMINI_API_KEY|GOOGLE_API_KEY|OPENROUTER_API_KEY|GROQ_API_KEY|CEREBRAS_API_KEY|MISTRAL_API_KEY|XAI_API_KEY|HF_TOKEN|HUGGINGFACE_API_KEY|OLLAMA_API_KEY|FAL_KEY|VF_(?:LLM_.*|LOCAL_LLM_.*|GEMINI_MODEL|GROQ_MODEL|CEREBRAS_MODEL|MISTRAL_MODEL|XAI_MODEL|HF_MODEL|FAL_.*|MEDIA_MAX_BYTES))$/;
-for(const path of [resolve('.env'),resolve('server/.env')]) {
+for(const path of (process.env.VF_TEST==='1'?[]:[resolve('.env'),resolve('server/.env')])) {
   if(!existsSync(path)) continue;
   try { for(const [key,value] of Object.entries(parseEnv(readFileSync(path,'utf8')))) if(allowed.test(key)&&process.env[key]==null) process.env[key]=value; } catch { /* invalid optional file; service configuration still applies */ }
 }

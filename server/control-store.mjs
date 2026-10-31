@@ -31,7 +31,7 @@ export function seedDefaultSkills() {
 }
 seedDefaultSkills();
 
-export const SETTING_RULES = { defaultAgentCount: [3, 1000, 24], villaSlots: [1, 10, 6], suggestionCount: [1, 8, 4] };
+export const SETTING_RULES = { capabilityAutopilot: [0, 1, 1], defaultAgentCount: [3, 1000, 24], villaSlots: [1, 10, 6], suggestionCount: [1, 8, 4] };
 export function getSetting(key, fallback = SETTING_RULES[key]?.[2]) {
   const row = db.prepare('SELECT value FROM control_settings WHERE key=?').get(key);
   const value = row ? JSON.parse(row.value) : fallback;

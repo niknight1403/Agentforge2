@@ -1,3 +1,4 @@
+import {capabilityStatus,requestCapability} from './capability-autopilot.mjs';
 import {villaDiagnostics} from './villa-diagnostics.mjs';
 import { VERSION } from './version.mjs';
 import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStudioPreview } from './studio.mjs';
@@ -367,7 +368,7 @@ async function api(req, res, url) {
     const total = os.totalmem(), free = os.freemem();
     const la = os.loadavg();
     return json(res, 200, {
-      ok: true, testFixture:process.env.VF_PREVIEW_FIXTURE==='1', capabilities:['llm-cascade-v1','verified-readiness-v1','studio-v1','master-control-v1','resource-agent-v1','free-route-cycle-v1','api-gateway-v1','admin-api-key-management-v1','auth-session-rotation-v1','stripe-billing-v1','redis-task-dlq-v1','cost-kill-switch-v1','admin-observability-v1'],masterControl:1,llm:routingSummary(), ts: now(), version: VERSION, routes: enabledRoutes().length,
+      ok: true, testFixture:process.env.VF_PREVIEW_FIXTURE==='1', capabilities:['capability-autopilot-v1','llm-cascade-v1','verified-readiness-v1','studio-v1','master-control-v1','resource-agent-v1','free-route-cycle-v1','api-gateway-v1','admin-api-key-management-v1','auth-session-rotation-v1','stripe-billing-v1','redis-task-dlq-v1','cost-kill-switch-v1','admin-observability-v1'],masterControl:1,llm:routingSummary(), ts: now(), version: VERSION, routes: enabledRoutes().length,
       uptime: { processSec: Math.round(process.uptime()), systemSec: Math.round(os.uptime()) },
       cpu: { cores: os.cpus().length, load1: Number(la[0].toFixed(2)), load5: Number(la[1].toFixed(2)), load15: Number(la[2].toFixed(2)) },
       mem: {
@@ -552,6 +553,13 @@ async function api(req, res, url) {
   if (p === '/api/billing/summary' && m === 'GET') return user ? json(res,200,billingSummary(user.id)) : json(res,401,{error:'Login erforderlich.'});
   if (p === '/api/billing/checkout' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createCheckoutSession(user)); }
   if (p === '/api/billing/portal' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createBillingPortalSession(user.id)); }
+  if(parts[0]==='api'&&parts[1]==='villas'&&/^\d+$/.test(parts[2]||'')&&parts[3]==='capabilities'&&parts.length===4){
+    if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'});
+    try{if(m==='GET')return json(res,200,capabilityStatus(Number(parts[2])));
+      if(m==='POST')return json(res,201,requestCapability(Number(parts[2]),await readBody(req)));
+    }catch(e){return json(res,e.message==='VILLA_NOT_FOUND'?404:400,{error:e.message});}
+    return json(res,405,{error:'Method not allowed.'});
+  }
   if (p === '/api/admin/villa-diagnostics' && m === 'GET') {
     if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'});
     res.setHeader('Cache-Control','no-store');
@@ -843,6 +851,7 @@ async function api(req, res, url) {
     }
     return json(res, 200, {
       villa,
+      capabilityAutopilot: capabilityStatus(id),
       agents: db.prepare('SELECT * FROM agents WHERE villa_id = ? ORDER BY is_root DESC, id ASC').all(id),
       tasks,
       taskCounts,

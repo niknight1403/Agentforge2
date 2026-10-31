@@ -1,3 +1,4 @@
+import {reconcileCapabilities,capabilityBlockers} from './capability-autopilot.mjs';
 import { ensureVerificationTasks } from './project-verification.mjs';
 /**
  * Produkt-Pipeline: von der Idee zum marktreifen Produkt, 24/7.
@@ -111,10 +112,11 @@ export function maturity(villaId) {
     ? (!readiness.sourceFiles?25:readiness.verified?100:passed===2?90:passed===1?75:60)
     : (!readiness.artifacts?.length?25:readiness.verified?100:Math.min(75,45+passed*15));
   const unfinishedTasks=tasks.filter(t=>t.status!=='DONE' && t.status!=='CANCELLED').length;
-  const s=Math.min(planScore,ceiling,unfinishedTasks?95:100);
+  const capabilityFailures=capabilityBlockers(villaId);
+  const s=Math.min(planScore,ceiling,unfinishedTasks||capabilityFailures.length?95:100);
   return {
     score: s,
-    planScore, readiness, verified:readiness.verified && unfinishedTasks===0, unfinishedTasks, blockers:[...readiness.blockers,...(unfinishedTasks?[`${unfinishedTasks} Aufgaben noch nicht abgeschlossen`]:[])],
+    planScore, readiness, verified:readiness.verified && unfinishedTasks===0 && capabilityFailures.length===0, unfinishedTasks, blockers:[...readiness.blockers,...capabilityFailures,...(unfinishedTasks?[`${unfinishedTasks} Aufgaben noch nicht abgeschlossen`]:[])],
     stage: readiness.verified && s===100 ? 'Technisch verifiziert' : s >= 90 ? 'Abnahme offen' : s >= 65 ? 'Beta' : s >= 35 ? 'MVP in Arbeit' : 'Fruehphase',
     domain: profile.id, deliveryLabel: profile.label,
     currentPhase: current || phasePlan.at(-1).id,
@@ -222,6 +224,7 @@ export function improvementWave(villaId) {
 export function developCycle(villaId, { includeImprovementWave = true } = {}) {
   let added = deliveryProfile(villaId).id === 'software' ? ensureVerificationTasks(villaId) : 0;
   added += ensurePhaseTasks(villaId);
+  added += reconcileCapabilities(villaId).added;
   const open = db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id = ? AND status IN ('PENDING','READY','RUNNING','REVIEW')").get(villaId).c;
   if (includeImprovementWave && open + added === 0) added += improvementWave(villaId);
   return { added, maturity: maturity(villaId) };
