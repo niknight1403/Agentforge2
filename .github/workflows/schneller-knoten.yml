@@ -1,0 +1,31 @@
+name: Schneller-Knoten
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Remote-Knoten priorisieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'set -e
+            DB=/opt/villaforge/server/data/villaforge.db
+            echo "VVBEQVRFIHJvdXRlcyBTRVQgcHJpb3JpdHk9MSwgd2VpZ2h0PTUsIGNvb2xkb3duX3VudGlsPTAsIGZhaWw9MCwgZW5hYmxlZD0xIFdIRVJFIGlkPTYzOwpVUERBVEUgcm91dGVzIFNFVCBwcmlvcml0eT00IFdIRVJFIHByb3ZpZGVyPSdvbGxhbWEnIEFORCBpZDw+NjM7ClVQREFURSB2aWxsYXMgU0VUIHN0YXR1cz0nUlVOTklORycsIGF1dG9ub215PTEgV0hFUkUgaWQgSU4gKDEsMzQsOSwzMSw0LDIpOw==" | base64 -d > /tmp/sk.sql
+            sudo sqlite3 -bail $DB < /tmp/sk.sql
+            echo "== ROUTEN ==
+            sudo sqlite3 -separator " | " $DB "SELECT priority, provider, substr(base_url,1,30), substr(model,1,18) FROM routes WHERE enabled=1 ORDER BY priority ASC LIMIT 6"
+            echo "== VILLEN =="
+            sudo sqlite3 -separator " | " $DB "SELECT status, COUNT(*) FROM villas GROUP BY status"
+            sudo systemctl restart villaforge-hub &
+            sleep 4
+            echo NEUSTART'
