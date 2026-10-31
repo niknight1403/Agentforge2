@@ -1,3 +1,4 @@
+import {villaDiagnostics} from './villa-diagnostics.mjs';
 import { VERSION } from './version.mjs';
 import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStudioPreview } from './studio.mjs';
 import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config.mjs';
@@ -551,6 +552,11 @@ async function api(req, res, url) {
   if (p === '/api/billing/summary' && m === 'GET') return user ? json(res,200,billingSummary(user.id)) : json(res,401,{error:'Login erforderlich.'});
   if (p === '/api/billing/checkout' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createCheckoutSession(user)); }
   if (p === '/api/billing/portal' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createBillingPortalSession(user.id)); }
+  if (p === '/api/admin/villa-diagnostics' && m === 'GET') {
+    if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'});
+    res.setHeader('Cache-Control','no-store');
+    return json(res,200,villaDiagnostics());
+  }
   if (p === '/api/admin/metrics' && m === 'GET') { if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'}); return json(res,200,await collectAdminMetrics()); }
   // Live-Dashboard (Stufe 1): statisches Geruest ohne Daten, Daten nur mit Token.
   if (p === '/api/dlq/dashboard' && m === 'GET') {
