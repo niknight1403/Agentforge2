@@ -1,0 +1,43 @@
+name: Ollama-Parallel-Fix
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  f:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Paralleles Drop-in anlegen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'set -e
+            printf "[Service]\nEnvironment=\"OLLAMA_NUM_PARALLEL=4\"\nEnvironment=\"OLLAMA_MAX_LOADED_MODELS=2\"\nEnvironment=\"OLLAMA_KEEP_ALIVE=-1\"\nEnvironment=\"OLLAMA_FLASH_ATTENTION=1\"\n" | sudo tee /etc/systemd/system/ollama.service.d/zzz-parallel.conf >/dev/null
+            sudo systemctl daemon-reload
+            sudo systemctl restart ollama
+            sleep 15
+            echo "== EFFEKTIVE ENV =="
+            sudo systemctl show ollama -p Environment --value | tr " " "\n" | grep -E "NUM_PARALLEL|MAX_LOADED|KEEP_ALIVE" | tail -4
+            echo "== MODELL LADEN =="
+            curl -s --max-time 180 http://127.0.0.1:11434/api/generate -d "{\"model\":\"llama3.2:3b\",\"prompt\":\"OK\",\"stream\":false,\"options\":{\"num_predict\":3}}" -o /dev/null
+            echo "== 4 PARALLELE ANFRAGEN =="
+            start=$(date +%s)
+            for i in 1 2 3 4; do curl -s --max-time 180 http://127.0.0.1:11434/api/generate -d "{\"model\":\"llama3.2:3b\",\"prompt\":\"Nenne eine Zahl\",\"stream\":false,\"options\":{\"num_predict\":8}}" -o /tmp/q$i.json & done
+            wait
+            end=$(date +%s)
+            echo "4 Anfragen parallel: $((end-start))s"
+            echo "== 1 ANFRAGE ALLEIN =="
+            start=$(date +%s)
+            curl -s --max-time 180 http://127.0.0.1:11434/api/generate -d "{\"model\":\"llama3.2:3b\",\"prompt\":\"Nenne eine Zahl\",\"stream\":false,\"options\":{\"num_predict\":8}}" -o /dev/null
+            end=$(date +%s)
+            echo "1 Anfrage: $((end-start))s"
+            echo "== RAM/LOAD =="
+            free -g | awk "NR==2{print \"RAM belegt: \" \$3 \"G, verfuegbar: \" \$7 \"G\"}"
+            cut -d" " -f1-3 /proc/loadavg'
