@@ -1,0 +1,21 @@
+name: Knotenvergleich
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  k:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Vergleich
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IHsgZXhlY1N5bmMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgcnVuID0gKGMpID0+IHsgdHJ5IHsgcmV0dXJuIGV4ZWNTeW5jKGMsIHtlbmNvZGluZzondXRmOCcsIHN0ZGlvOlsncGlwZScsJ3BpcGUnLCdwaXBlJ10sIHRpbWVvdXQ6MTUwMDAwfSkudG9TdHJpbmcoKS50cmltKCk7IH0gY2F0Y2goZSkgeyByZXR1cm4gJ0VSUjonK1N0cmluZyhlLnN0ZGVycnx8ZS5tZXNzYWdlKS5zbGljZSgwLDkwKTsgfSB9Owpjb25zb2xlLmxvZygnPT0gUmVtb3RlLUtub3RlbiAyLjMxLjc3LjcyID09Jyk7CmNvbnNvbGUubG9nKCdQaW5nOiAnICsgcnVuKCJjdXJsIC1zIC1tIDggaHR0cDovLzIuMzEuNzcuNzI6MTE0MzQvYXBpL3ZlcnNpb24iKSApOwpjb25zdCB0MCA9IERhdGUubm93KCk7CmNvbnN0IHIgPSBydW4oImN1cmwgLXMgLW0gOTAgaHR0cDovLzIuMzEuNzcuNzI6MTE0MzQvYXBpL2dlbmVyYXRlIC1kICd7XCJtb2RlbFwiOlwicXdlbjIuNS1jb2Rlcjo3YlwiLFwicHJvbXB0XCI6XCJBbnR3b3J0ZSBtaXQgT0tcIixcInN0cmVhbVwiOmZhbHNlLFwib3B0aW9uc1wiOntcIm51bV9wcmVkaWN0XCI6NH19JyIpOwpjb25zdCBkdCA9IE1hdGgucm91bmQoKERhdGUubm93KCktdDApLzEwMDApOwpjb25zb2xlLmxvZyhgQW50d29ydCBpbiAke2R0fXM6ICR7ci5pbmNsdWRlcygnInJlc3BvbnNlIicpID8gJ09LJyA6IHIuc2xpY2UoMCw3MCl9YCk7CmNvbnNvbGUubG9nKCc9PSBMb2thbGUgTGF0ZW56IG1pdCAyMDAwLVRva2VuLVByb21wdCA9PScpOwpjb25zdCBiaWcgPSAneCcucmVwZWF0KDgwMDApOwpjb25zdCB0MSA9IERhdGUubm93KCk7CnJ1bihgY3VybCAtcyAtbSAxMjAgaHR0cDovLzEyNy4wLjAuMToxMTQzNC9hcGkvZ2VuZXJhdGUgLWQgJ3sibW9kZWwiOiJsbGFtYTMuMjozYiIsInByb21wdCI6IiR7YmlnfSIsInN0cmVhbSI6ZmFsc2UsIm9wdGlvbnMiOnsibnVtX3ByZWRpY3QiOjR9fSdgKTsKY29uc29sZS5sb2coYGxva2FsZXIgTGF1ZjogJHtNYXRoLnJvdW5kKChEYXRlLm5vdygpLXQxKS8xMDAwKX1zYCk7Cg==" | base64 -d > /tmp/kv2.cjs && node /tmp/kv2.cjs'
