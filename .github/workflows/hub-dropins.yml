@@ -1,0 +1,21 @@
+name: Hub-Dropins
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Anzeigen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "c2V0ICtlCkQ9L2V0Yy9zeXN0ZW1kL3N5c3RlbS92aWxsYWZvcmdlLWh1Yi5zZXJ2aWNlLmQKZWNobyAiPT0gRFJPUC1JTlMgPT0iCnN1ZG8gbHMgLTEgJEQKZWNobyAiPT0gV0VSVEUgSkUgREFURUkgPT0iCnN1ZG8gZ3JlcCAtSCAtRSAiT0xMQU1BX01BWHxWRl9MTE1fTUFYIiAkRC8qLmNvbmYK" | base64 -d > /tmp/di.sh && bash /tmp/di.sh'
