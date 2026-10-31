@@ -1,0 +1,21 @@
+name: Ollama-Check
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  o:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Ollama pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'echo "CmNvbnN0IHsgZXhlY1N5bmMgfSA9IHJlcXVpcmUoJ2NoaWxkX3Byb2Nlc3MnKTsKY29uc3QgcnVuID0gKGMpID0+IHsgdHJ5IHsgcmV0dXJuIGV4ZWNTeW5jKGMsIHtlbmNvZGluZzondXRmOCcsIHN0ZGlvOlsncGlwZScsJ3BpcGUnLCdwaXBlJ10sIHRpbWVvdXQ6MTUwMDAwfSkudG9TdHJpbmcoKS50cmltKCk7IH0gY2F0Y2goZSkgeyByZXR1cm4gJ0VSUjonK1N0cmluZyhlLnN0ZGVycnx8ZS5tZXNzYWdlKS5zbGljZSgwLDEwMCk7IH0gfTsKY29uc29sZS5sb2coJz09IE9sbGFtYS1EaWVuc3QgPT0nKTsKY29uc29sZS5sb2cocnVuKCJzeXN0ZW1jdGwgaXMtYWN0aXZlIG9sbGFtYSIpICsgJyAvICcgKyBydW4oInN1ZG8gc3lzdGVtY3RsIHNob3cgb2xsYW1hIC1wIE5SZXN0YXJ0cyAtLXZhbHVlIikpOwpjb25zb2xlLmxvZygnPT0gUG9ydCAxMTQzNCA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gc3MgLWx0biB8IGdyZXAgMTE0MzQiKSB8fCAnbmljaHQgb2ZmZW4nKTsKY29uc29sZS5sb2coJz09IEFQSS1QaW5nID09Jyk7CmNvbnNvbGUubG9nKHJ1bigiY3VybCAtcyAtbSAxMCBodHRwOi8vMTI3LjAuMC4xOjExNDM0L2FwaS92ZXJzaW9uIikgfHwgJ2tlaW5lIEFudHdvcnQnKTsKY29uc29sZS5sb2coJz09IE1vZGVsbCBsYWRlbiAobGxhbWEzLjI6M2IpID09Jyk7CmNvbnNvbGUubG9nKHJ1bigiY3VybCAtcyAtbSAxMjAgaHR0cDovLzEyNy4wLjAuMToxMTQzNC9hcGkvZ2VuZXJhdGUgLWQgJ3tcIm1vZGVsXCI6XCJsbGFtYTMuMjozYlwiLFwicHJvbXB0XCI6XCJwaW5nXCIsXCJzdHJlYW1cIjpmYWxzZSxcIm9wdGlvbnNcIjp7XCJudW1fcHJlZGljdFwiOjJ9LFwia2VlcF9hbGl2ZVwiOi0xfScgfCBoZWFkIC1jIDEyMCIpKTsKY29uc29sZS5sb2coJz09IEdlbGFkZW5lIE1vZGVsbGUgPT0nKTsKY29uc29sZS5sb2cocnVuKCJjdXJsIC1zIC1tIDEwIGh0dHA6Ly8xMjcuMC4wLjE6MTE0MzQvYXBpL3BzIHwgaGVhZCAtYyAyMjAiKSk7CmNvbnNvbGUubG9nKCc9PSBMZXR6dGUgT2xsYW1hLUxvZ3plaWxlbiA9PScpOwpjb25zb2xlLmxvZyhydW4oInN1ZG8gam91cm5hbGN0bCAtdSBvbGxhbWEgLS1zaW5jZSAnMTAgbWluIGFnbycgLS1uby1wYWdlciAyPi9kZXYvbnVsbCB8IHRhaWwgLTYgfCBjdXQgLWMyOC0xOTAiKSk7Cg==" | base64 -d > /tmp/oc.cjs && node /tmp/oc.cjs'
