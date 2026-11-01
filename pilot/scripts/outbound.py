@@ -16,6 +16,7 @@ Aufruf: python3 scripts/outbound.py leads_*.csv --out outbound/
 """
 import argparse
 import csv
+import os
 import glob
 import re
 import sys
@@ -26,7 +27,7 @@ from pathlib import Path
 
 ABSENDER_NAME = "Nik"
 ABSENDER_FIRMA = "AnfragePilot"
-ABSENDER_MAIL = "kontakt@anfragepilot.de"
+ABSENDER_MAIL = os.environ.get("ABSENDER_MAIL", "").strip()
 ABSENDER_TEL = ""
 DEMO = "https://hub.cybersarah-ki.com/pilot/check"
 SEITE = "https://hub.cybersarah-ki.com/pilot/"
@@ -98,6 +99,8 @@ Bei Betrieben Ihrer Größe sind das 20 bis 60 Anfragen pro Woche, jede kostet z
 
 Wenn es passt, richte ich Ihnen das in 15 Minuten für Ihr Postfach ein. Ein kurzer Anruf genügt: {ABSENDER_TEL}
 
+Falls Sie kein Interesse haben: eine kurze Antwort genügt, dann lösche ich Ihre Daten und melde mich nicht wieder.
+
 Mit freundlichen Grüßen
 {ABSENDER_NAME} · {ABSENDER_FIRMA}
 {SEITE}""",
@@ -116,6 +119,8 @@ Antwortentwurf nach 0,9 Sekunden: Kategorie Reklamation, Dringlichkeit hoch, nä
 
 Test mit Ihrer eigenen Anfrage: {DEMO}
 
+Falls kein Interesse: kurze Antwort genügt, dann lösche ich Ihre Daten.
+
 Mit freundlichen Grüßen
 {ABSENDER_NAME} · {ABSENDER_FIRMA}""",
         },
@@ -129,7 +134,7 @@ ein Auftrag liegt bei Ihnen im Schnitt im vierstelligen Bereich. Bleibt pro Mona
 
 Starter: 49 Euro im Monat, 200 Anfragen. Pro: 99 Euro, 1.000 Anfragen. Monatlich kündbar, keine Einrichtungsgebühr, keine Mindestlaufzeit.
 
-Soll ich Ihnen das zwei Wochen zum Testen einrichten?
+Soll ich Ihnen das zwei Wochen zum Testen einrichten? Falls nicht: kurze Antwort genügt, dann lösche ich Ihre Daten.
 
 Mit freundlichen Grüßen
 {ABSENDER_NAME} · {ABSENDER_FIRMA}""",
@@ -185,9 +190,13 @@ def telefonkarte(lead, seg):
 """
 
 
-def baue_eml(lead, mail, absender=ABSENDER_MAIL):
+def baue_eml(lead, mail, absender=None):
+    """Ohne Absenderadresse wird kein From-Header gesetzt; Gmail fuellt dann das
+    authentifizierte Konto ein (wir haben nur Senderecht, kein Profilrecht)."""
     msg = EmailMessage()
-    msg["From"] = f"{ABSENDER_NAME} · {ABSENDER_FIRMA} <{absender}>"
+    absender = (absender if absender is not None else ABSENDER_MAIL).strip()
+    if absender:
+        msg["From"] = f"{ABSENDER_NAME} · {ABSENDER_FIRMA} <{absender}>"
     msg["To"] = lead["email"]
     msg["Subject"] = mail["betreff"]
     msg["Date"] = formatdate(localtime=True)
