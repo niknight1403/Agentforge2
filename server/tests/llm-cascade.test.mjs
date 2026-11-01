@@ -273,3 +273,33 @@ test('Interactive local failover reaches an idle alternative before a busy endpo
   release();await background;assert.deepEqual(run.stats().active,0);assert.equal(run.stats().waiting,0);
  }finally{release?.();if(previous===undefined)delete process.env.VF_LLM_INTERACTIVE_LOCAL_QUEUE_WAIT_MS;else process.env.VF_LLM_INTERACTIVE_LOCAL_QUEUE_WAIT_MS=previous;}
 });
+
+test('Interaktive Anfrage bekommt freie Spur, auch wenn Villen alle Ollama-Plaetze belegen wollen',async()=>{
+ const previousParallel=process.env.OLLAMA_MAX_PARALLEL;
+ process.env.OLLAMA_MAX_PARALLEL='2';
+ try {
+  let release;const hold=new Promise(resolve=>{release=resolve;});
+  const seen=[];
+  const rows=[route(1,'ollama')];
+  const run=makeCascade({routes:()=>rows,key:()=>'',call:async r=>{seen.push(r.provider);await hold;return answer;}});
+
+  const villager=run([],{priority:'background',totalTimeoutMs:4000});
+  await new Promise(resolve=>setImmediate(resolve));
+
+  // Eine zweite Villen-Anfrage darf den letzten Platz nicht nehmen und muss ausweichen.
+  await assert.rejects(run([],{priority:'background',totalTimeoutMs:300}),error=>error.code==='LLM_UNAVAILABLE');
+
+  // Die interaktive Anfrage bekommt die freie Spur, obwohl Hintergrundarbeit laeuft.
+  const interactivePromise=run([],{priority:'interactive',totalTimeoutMs:4000});
+  await new Promise(resolve=>setTimeout(resolve,50));
+  release();
+
+  const interactive=await interactivePromise;
+  await villager;
+  assert.equal(interactive.content,answer.content);
+  assert.equal(seen.length,2,'genau eine Villen- und eine interaktive Anfrage am Modell');
+ } finally {
+  if(previousParallel===undefined)delete process.env.OLLAMA_MAX_PARALLEL;
+  else process.env.OLLAMA_MAX_PARALLEL=previousParallel;
+ }
+});

@@ -87,7 +87,10 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    const localQueueWaitMs=opts.priority==='interactive'?finiteLimit(process.env.VF_LLM_INTERACTIVE_LOCAL_QUEUE_WAIT_MS,1500,25,3000):Math.max(25,Math.min(Number(process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS)||90000,120000));
    const cloudQueueWaitMs=opts.priority==='interactive'?finiteLimit(process.env.VF_LLM_INTERACTIVE_QUEUE_WAIT_MS,1500,25,3000):finiteLimit(process.env.VF_LLM_CLOUD_QUEUE_WAIT_MS,250,25,1000);
    const slotDeadline=isLocalRoute(r)?Math.min(deadline,clock()+localQueueWaitMs):Math.min(cloudDeadline,clock()+cloudQueueWaitMs);
-   const admissionLimit=!isLocalRoute(r)&&opts.priority!=='interactive'&&limit>1?limit-1:limit;
+  // Hintergrundarbeit (Villen) laesst auf jedem Endpunkt eine Spur frei, egal ob
+ // lokal oder entfernt. Sonst belegt sie bei Ollama-Knoten alle Plaetze und die
+ // interaktive Anfrage bekommt nur BUSY, obwohl das Modell warm ist.
+ const admissionLimit=opts.priority!=='interactive'&&limit>1?limit-1:limit;
    if(!await acquire(endpoint,admissionLimit,slotDeadline,opts.signal,opts.priority)){attempted.push({route:r.name,code:'BUSY'});busyEndpoints.add(endpoint);earliestRetryAt=Math.min(earliestRetryAt,clock()+15000);continue;}
    if(opts.signal?.aborted){release(endpoint);opts.signal.throwIfAborted();}
    if(clock()>=deadline){release(endpoint);break;}
