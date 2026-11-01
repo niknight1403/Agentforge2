@@ -18,18 +18,21 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-      - name: Ollama-Dienste und Speicher pruefen
+      - name: Live-Smoketest auf dem Server
         run: |
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
-          echo "== Ollama-Dienste =="
-          systemctl list-units --type=service --all --no-legend 2>/dev/null | grep -i ollama
-          echo "== ollama-Prozesse =="
-          ps -eo pid,etime,rss,cmd | grep -E 'ollama serve' | grep -v grep
-          echo "== Modelle im Speicher =="
-          curl -s --max-time 10 http://127.0.0.1:11434/api/ps | python3 -c "
-          import json,sys
-          for m in json.load(sys.stdin).get('models',[]): print('  ',m['name'],round(m.get('size',0)/1e9,1),'GB')
-          "
+          set -uo pipefail
+          PID=$(ss -ltnp 2>/dev/null | grep ':12000' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+          EMAIL=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_EMAIL=' | cut -d= -f2-)
+          PASS=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_PASSWORD=' | cut -d= -f2-)
+          VILLA=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_RELEASE_VILLA_ID=' | cut -d= -f2-)
+          cd /opt/villaforge || exit 1
+          echo "== Smoke ohne Produktabnahme =="
+          VF_SMOKE_BASE_URL=http://127.0.0.1:12000 VF_ADMIN_EMAIL="$EMAIL" VF_ADMIN_PASSWORD="$PASS" timeout 240 node -e '
+            const {verifyLiveLlm}=await import("/opt/villaforge/scripts/live-llm-smoke.mjs");
+            try{const out=await verifyLiveLlm({baseUrl:process.env.VF_SMOKE_BASE_URL,email:process.env.VF_ADMIN_EMAIL,password:process.env.VF_ADMIN_PASSWORD});console.log("SMOKE_OK",JSON.stringify(out));}
+            catch(e){console.log("SMOKE_FAIL",String(e.message||e));}
+          ' 2>&1 | tail -5
           echo "== Speicher =="
           free -m | head -3
           DIAG
