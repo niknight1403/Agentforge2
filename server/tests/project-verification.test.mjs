@@ -66,3 +66,14 @@ test('Konstante Erfolgsausgabe ersetzt weder Build noch expliziten Prüfbefehl',
  writeFileSync(join(root,'villaforge.verify.json'),JSON.stringify({build:{binary:'node',args:['-e',"require('node:assert/strict').equal(1,1)"]}}));
  out=await verifyProjectRuntime(id,{runner});assert.equal(out.checks.build.status,'passed');
 });
+test('Abgelehnter Platzhalter wird als Platzhalter benannt, nicht als fehlender Befehl',async()=>{
+ const id=villa();project(id,{build:'python3 -c "print(\'Build erfolgreich\')"',test:'node test.mjs',smoke:'node smoke.mjs'});
+ const out=await verifyProjectRuntime(id,{runner:async()=>({ok:true})});
+ assert.equal(out.ok,false);
+ assert.equal(out.checks.build.status,'missing');
+ assert.match(out.checks.build.reason,/Platzhalter/);
+ assert.match(out.checks.build.reason,/python3 -c/);
+ assert.equal(out.checks.tests.status,'passed');
+ const gate=projectReadiness(id);
+ assert.ok(gate.blockers.some(b=>/build: .*Platzhalter/.test(b)),'Blocker nennt den abgelehnten Platzhalter');
+});

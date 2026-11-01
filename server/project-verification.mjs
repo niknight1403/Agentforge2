@@ -69,11 +69,21 @@ export function verificationPlan(root){
  let custom;
  try{custom=JSON.parse(readFileSync(join(root,'villaforge.verify.json'),'utf8'));}catch{}
  let pkg;try{pkg=JSON.parse(readFileSync(join(root,'package.json'),'utf8'));}catch{}
+ // Ein abgelehnter Platzhalter wird als solcher zurueckgemeldet, nicht als
+ // fehlender Befehl: der Agent muss sonst raten, warum sein Skript nicht zaehlt,
+ // und schreibt immer wieder neue Platzhalter (Villa 8 kam so auf 34 Versuche).
  return Object.fromEntries(['build','tests','smoke'].map(kind=>{
   const explicit=custom?.[kind];
-  if(explicit && typeof explicit.binary==='string'&&Array.isArray(explicit.args)&&explicit.args.length<=20&&explicit.args.every(a=>typeof a==='string'&&a.length<=1000))return [kind,isNoOp(explicit.binary,explicit.args)?null:explicit];
+  if(explicit && typeof explicit.binary==='string'&&Array.isArray(explicit.args)&&explicit.args.length<=20&&explicit.args.every(a=>typeof a==='string'&&a.length<=1000)){
+   if(!isNoOp(explicit.binary,explicit.args))return [kind,explicit];
+   return [kind,{invalid:`villaforge.verify.json: "${[explicit.binary,...explicit.args].join(' ').slice(0,90)}" ist ein Platzhalter und zaehlt nicht als Nachweis`}];
+  }
   const script=kind==='tests'?'test':kind;
-  if(pkg?.scripts?.[script]&&!isNoOpScript(pkg.scripts[script]))return [kind,{binary:'npm',args:['run',script]}];
+  const befehl=pkg?.scripts?.[script];
+  if(typeof befehl==='string'){
+   if(!isNoOpScript(befehl))return [kind,{binary:'npm',args:['run',script]}];
+   return [kind,{invalid:`package.json: "${script}" ist ein Platzhalter ("${befehl.slice(0,90)}") und zaehlt nicht als Nachweis`}];
+  }
   return [kind,null];
  }));
 }
@@ -90,7 +100,8 @@ export async function verifyProjectRuntime(id,{runner=runCommand}={}){
   if(project.error||!project.sourceFiles){blockers.push(project.error||'Keine ausführbare Implementierung');return saveVerification(id,project,checks,blockers);}
   const plan=verificationPlan(project.root);
   for(const kind of ['build','tests','smoke']){
-   if(!plan[kind]){checks[kind]={status:'missing',reason:'Prüfbefehl fehlt (package.json oder villaforge.verify.json)'};blockers.push(`${kind}: Prüfbefehl fehlt`);continue;}
+   if(plan[kind]?.invalid){checks[kind]={status:'missing',reason:plan[kind].invalid};blockers.push(`${kind}: ${plan[kind].invalid}`);continue;}
+   if(!plan[kind]){checks[kind]={status:'missing',reason:'Prüfbefehl fehlt (package.json oder villaforge.verify.json)'};blockers.push(`${kind}: Prüfbefehl fehlt (package.json oder villaforge.verify.json)`);continue;}
    const {binary,args}=plan[kind];let result;
    try{result=await runner(project.root,binary,args,180000);}catch{result={ok:false,error:'Prüfprozess nicht ausführbar'};}
    checks[kind]={status:result.ok?'passed':'failed',command:[binary,...args],output:String(result.output||result.error||'').slice(-2000)};
