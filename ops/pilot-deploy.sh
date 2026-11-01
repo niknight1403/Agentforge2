@@ -14,12 +14,17 @@ mkdir -p "$ZIEL"
 tar -xzf /tmp/pilot.tgz -C "$ZIEL" --overwrite
 mkdir -p "$ZIEL/data"
 chown -R ubuntu:ubuntu "$ZIEL"
+chmod 750 "$ZIEL/data"
 echo "Dateien: $(find "$ZIEL" -maxdepth 2 -type f -not -path '*/node_modules/*' | wc -l)"
 
 echo "== [2/6] Abhaengigkeiten installieren =="
 cd "$ZIEL"
-su - ubuntu -c "cd $ZIEL && npm ci --omit=dev --no-audit --no-fund" >/tmp/pilot-npm.log 2>&1 \
-  || su - ubuntu -c "cd $ZIEL && npm install --omit=dev --no-audit --no-fund" >>/tmp/pilot-npm.log 2>&1
+NPM_LOG="$ZIEL/.deploy-npm.log"
+: > "$NPM_LOG"
+if ! su - ubuntu -c "cd $ZIEL && npm ci --omit=dev --no-audit --no-fund" >>"$NPM_LOG" 2>&1; then
+  echo "npm ci fehlgeschlagen, versuche npm install"
+  su - ubuntu -c "cd $ZIEL && npm install --omit=dev --no-audit --no-fund" >>"$NPM_LOG" 2>&1 || { tail -20 "$NPM_LOG"; exit 1; }
+fi
 echo "Pakete: $(ls node_modules | wc -l)"
 
 echo "== [3/6] Umgebung vorbereiten =="
@@ -35,6 +40,16 @@ grep -qE '^DB_FILE=' "$ENV_DATEI"   || echo "DB_FILE=$ZIEL/data/anfragepilot.db"
 grep -qE '^BASIS_URL=' "$ENV_DATEI" || echo 'BASIS_URL=https://hub.cybersarah-ki.com/pilot' >> "$ENV_DATEI"
 chown ubuntu:ubuntu "$ENV_DATEI"
 echo "Variablen: $(grep -c '=' "$ENV_DATEI"), Schluessel: $(grep -cE '^(GROQ|OPENAI|GEMINI)_API_KEY=' "$ENV_DATEI" || true)"
+
+echo "== [3b/6] Schreibrecht data/ pruefen =="
+echo "Eigentuemer: $(stat -c '%U:%G %a' "$ZIEL/data")"
+DB_PROBE="$ZIEL/data/.schreibprobe.db"
+if su - ubuntu -c "node -e \"const D=require('$ZIEL/node_modules/better-sqlite3');const d=new D('$DB_PROBE');d.exec('CREATE TABLE probe(a)');d.prepare('INSERT INTO probe VALUES (1)').run();console.log('SQLite-Schreibtest:', d.prepare('SELECT COUNT(*) c FROM probe').get().c === 1 ? 'OK' : 'FEHLER');d.close()\"" 2>&1 | tail -2; then
+  rm -f "$DB_PROBE" "$DB_PROBE-shm" "$DB_PROBE-wal"
+else
+  echo "SQLite kann in $ZIEL/data nicht schreiben - Berechtigungen:"
+  ls -ld "$ZIEL/data"; exit 1
+fi
 
 echo "== [4/6] systemd-Dienst =="
 cat > /etc/systemd/system/$DIENST <<UNIT
