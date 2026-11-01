@@ -20,7 +20,7 @@ echo "== auth.me =="
 curl -s -m 10 -H "$H" http://127.0.0.1:13000/api/trpc/auth.me | jq -r '.result.data.json | "role=\(.role) email=\(.email)"' 2>/dev/null
 echo "== initialisieren =="; call initialisieren '{"json":{}}' 20 | head -c 300; echo
 echo "== Aufgabe anlegen: marktanalyse =="
-ANL=$(call aufgabeAnlegen '{"json":{"aufgabeTyp":"marktanalyse","eingabe":{"nische":"KI-Marketing fuer Handwerksbetriebe im DACH-Raum","zielgruppe":"Inhaber mit 5 bis 50 Mitarbeitern"}}}' 20)
+ANL=$(call aufgabeAnlegen '{"json":{"aufgabeTyp":"marktanalyse","eingabe":{"nische":"KI-Marketing fuer Handwerksbetriebe im DACH-Raum (Lauf '$(date +%s)')","zielgruppe":"Inhaber mit 5 bis 50 Mitarbeitern"}}}' 20)
 echo "$ANL" | head -c 300; echo
 AID=$(echo "$ANL" | jq -r '.result.data.json.aufgabeId // .result.data.json.id // empty')
 echo "Aufgaben-ID: ${AID:-KEINE}"
@@ -32,7 +32,7 @@ if [ -n "${AID:-}" ]; then
   jq -r '.result.data.json.ergebnis // "" | tostring' /tmp/exec.json 2>/dev/null | head -c 600; echo
 fi
 echo "== Quelle des LLM-Aufrufs (Ereignislog) =="
-sudo -u postgres psql -d cybersarah -At -c "SELECT aufgabeId||' | '||nachricht FROM \"aiAufgabenEreignisse\" ORDER BY id DESC LIMIT 2"
+sudo -u postgres psql -d cybersarah -At -c "SELECT aufgabe_id||' | '||nachricht FROM \"aiAufgabenEreignisse\" ORDER BY id DESC LIMIT 2"
 echo "== DB-Beleg =="
 sudo -u postgres psql -d cybersarah -At -c "SELECT 'aufgaben: '||status||' = '||count(*) FROM \"aiAufgaben\" GROUP BY status"
 sudo -u postgres psql -d cybersarah -At -c "SELECT 'ereignisse: '||count(*) FROM \"aiAufgabenEreignisse\""
