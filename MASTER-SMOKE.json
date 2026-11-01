@@ -1,12 +1,12 @@
 {
-  "checked_at": "2026-10-22T12:39:04.045246+00:00",
+  "checked_at": "2026-11-01T05:08:08.585413+00:00",
   "master_reply_ok": false,
   "villa_created": false,
   "villa_deleted": false,
   "created_villa_id": null,
-  "master_reply": "Nicht abgeschlossen: Kein echtes Sprachmodell erreichbar. Cloud-Zug\u00e4nge, Modellstatus und lokale LLM-Verbindung pr\u00fcfen; die Anfrage wurde nicht durch einen regelbasierten Planer ersetzt.",
+  "master_reply": "Keine Einstellungen ge\u00e4ndert.\nUm eine vorhandene Villa im Dashboard zu starten, klicken Sie auf den Start-Button in der Projektansicht der Villa. Dieser Button befindet sich normalerweise in der oberen rechten Ecke des Bildschirms. Nach dem Klicken wird die Villa gestartet und der Status im Dashboard aktualisiert.",
   "errors": [
-    "Master-History hat keinen verifizierten Reply oder Villa-ID. Text: Nicht abgeschlossen: Kein echtes Sprachmodell erreichbar. Cloud-Zug\u00e4nge, Modellstatus und lokale LLM-Verbindung pr\u00fcfen; die Anfrage wurde nicht durch einen regelbasierten Planer ersetzt.",
-    "4) keine Villa deren Name 'Master-Rauchtest' enthaelt gefunden."
+    "Master-History hat keinen verifizierten Reply oder Villa-ID > 0. Text: Keine Einstellungen ge\u00e4ndert.\nUm eine vorhandene Villa im Dashboard zu starten, klicken Sie auf den Start-Button in der Projektansicht der Villa. Dieser Button befindet sich normalerweise in der obere",
+    "4) Keine Villa deren Name 'Master-Rauchtest' enthaelt gefunden."
   ]
 }
