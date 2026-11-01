@@ -44,7 +44,7 @@ jobs:
                   cmd = [
                       'ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=20',
                       '-i', key_path, 'ubuntu@92.5.177.159',
-                      'sudo journalctl -u villaforge-hub -n 80 --no-pager'
+                      'sudo journalctl -u villaforge-hub -n 120 --no-pager'
                   ]
                   log_out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
                   print("== JOURNALCTL LOG (HUB) ==")
@@ -122,16 +122,23 @@ jobs:
                       master_reply = reply_text
                       print("Letzte Assistant-Nachricht:", reply_text[:300])
 
-                      # Pruefe ID > 0 in reply_text
-                      match = re.search(r'#(\d+)', reply_text)
-                      if match:
-                          created_villa_id = int(match.group(1))
-                          print(f"Gefundene Villa-ID aus Reply: {created_villa_id}")
+                      msg_villa_id = last_msg.get('villaId') or last_msg.get('villa_id') or 0
+                      if msg_villa_id and int(msg_villa_id) > 0:
+                          created_villa_id = int(msg_villa_id)
+                          print(f"Gefundene Villa-ID aus Message Field: {created_villa_id}")
+                      else:
+                          match = re.search(r'#(\d+)', reply_text)
+                          if match:
+                              created_villa_id = int(match.group(1))
+                              print(f"Gefundene Villa-ID aus Reply Text: {created_villa_id}")
 
-                      if len(reply_text) > 0 and (created_villa_id or (chat_response and chat_response.get('ok'))):
+                      if len(reply_text) > 0 and created_villa_id and created_villa_id > 0:
+                          master_reply_ok = True
+                      elif len(reply_text) > 0 and chat_response and chat_response.get('villaId', 0) > 0:
+                          created_villa_id = chat_response.get('villaId')
                           master_reply_ok = True
                       else:
-                          errors.append(f"Master-History hat keinen verifizierten Reply oder Villa-ID. Text: {reply_text}")
+                          errors.append(f"Master-History hat keinen verifizierten Reply oder Villa-ID > 0. Text: {reply_text[:200]}")
                   else:
                       errors.append("Keine Assistant-Nachricht in /api/master/history gefunden.")
               except Exception as e:
@@ -156,16 +163,17 @@ jobs:
 
                   if target_villa:
                       villa_created = True
-                      created_villa_id = target_villa.get('id')
+                      if not created_villa_id:
+                          created_villa_id = target_villa.get('id')
                       print(f"4) Testvilla 'Master-Rauchtest' gefunden: ID {created_villa_id}, Name: '{target_villa.get('name')}'")
                   else:
-                      errors.append("4) keine Villa deren Name 'Master-Rauchtest' enthaelt gefunden.")
+                      errors.append("4) Keine Villa deren Name 'Master-Rauchtest' enthaelt gefunden.")
               except Exception as e:
                   err_msg = f"4) GET /api/villas Fehler: {e}"
                   errors.append(err_msg)
                   print(err_msg)
 
-          # Wenn Schritt 3/4 fehlschlaegt: Log-Ausschnitt aus dem Workflow (journalctl oder hub-log)
+          # Wenn Schritt 3 oder 4 fehlschlaegt: Log-Ausschnitt aus dem Workflow (journalctl oder hub-log)
           if not master_reply_ok or not villa_created:
               print("Schritt 3 oder 4 fehlgeschlagen. Hole Hub Journalctl Logs...")
               fetch_hub_logs()
@@ -219,12 +227,15 @@ jobs:
           except Exception:
               pass
 
-          body = json.dumps({
+          body_data = {
               'message': f'master-smoke: reply_ok={master_reply_ok}, created={villa_created}, deleted={villa_deleted}',
               'branch': 'main',
-              'sha': sha,
               'content': base64.b64encode(json.dumps(smoke_data, indent=2).encode('utf-8')).decode('utf-8')
-          }).encode('utf-8')
+          }
+          if sha:
+              body_data['sha'] = sha
+
+          body = json.dumps(body_data).encode('utf-8')
 
           req = urllib.request.Request(contents_url, data=body, method='PUT', headers=ghauth)
           try:
