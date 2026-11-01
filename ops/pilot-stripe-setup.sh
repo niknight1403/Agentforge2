@@ -13,6 +13,14 @@ set -a; . "$ENV_DATEI"; set +a
 
 # Stripe-Schluessel: bevorzugt aus der eigenen Umgebung, sonst aus einer bereits
 # vorhandenen Produktions-Umgebung auf dieser VM uebernehmen (kein Duplikat anlegen).
+if [ -z "${STRIPE_SECRET_KEY:-}" ] && [ -f /run/pilot-stripe.key ]; then
+  STRIPE_SECRET_KEY=$(tr -d '\r\n' < /run/pilot-stripe.key)
+  export STRIPE_SECRET_KEY
+  rm -f /run/pilot-stripe.key
+  echo "Stripe-Schluessel aus Uebergabedatei uebernommen"
+  grep -qE '^STRIPE_SECRET_KEY=' "$ENV_DATEI" || echo "STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY" >> "$ENV_DATEI"
+fi
+
 if [ -z "${STRIPE_SECRET_KEY:-}" ]; then
   echo "== Stripe-Schluessel suchen =="
   KANDIDATEN=""

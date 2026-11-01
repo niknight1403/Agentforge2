@@ -23,8 +23,12 @@ jobs:
           chmod +x /tmp/scpcmd
 
       - name: Stripe-Objekte anlegen
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
         run: |
           /tmp/scpcmd ops/pilot-stripe-setup.sh ubuntu@92.5.177.159:/tmp/pilot-stripe-setup.sh
+          # Schluessel ueber stdin uebergeben, nicht ueber die Kommandozeile.
+          printf '%s' "$STRIPE_SECRET_KEY" | /tmp/sshcmd "sudo tee /run/pilot-stripe.key >/dev/null && sudo chmod 600 /run/pilot-stripe.key && echo Schluessel-uebergeben"
           /tmp/sshcmd "sudo bash /tmp/pilot-stripe-setup.sh"
 
       - name: Tarife oeffentlich pruefen
