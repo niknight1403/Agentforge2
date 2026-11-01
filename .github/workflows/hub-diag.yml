@@ -9,8 +9,9 @@ permissions:
 jobs:
   diag:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v4
       - name: SSH-Schluessel ablegen
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
@@ -18,61 +19,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-      - name: Routen reparieren und Inferenz entkoppeln
+      - name: Worker-Knoten messen
         run: |
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
-          set -uo pipefail
-          DB=/opt/villaforge/server/data/villaforge.db
-          echo "== LiteLLM-Route zuruecksetzen =="
-          python3 - "$DB" <<'PY'
-          import sqlite3,sys
-          c=sqlite3.connect(sys.argv[1])
-          c.execute("update routes set model='villa-kaskade' where name like 'LiteLLM Kaskade%'")
-          c.commit()
-          for rid,name,model in c.execute("select id,name,model from routes where enabled=1 and (name like 'LiteLLM%' or name like 'Ollama lokal%' or name like '%CAX%')"):
-              print(f"  #{rid} {name[:34]:34s} {model}")
-          PY
-          echo "== Ollama-Kapazitaet (Drop-in) =="
-          mkdir -p /etc/systemd/system/ollama.service.d
-          cat > /etc/systemd/system/ollama.service.d/zz-throughput.conf <<'CONF'
-          [Service]
-          Environment=OLLAMA_NUM_PARALLEL=4
-          Environment=OLLAMA_MAX_LOADED_MODELS=1
-          Environment=OLLAMA_KEEP_ALIVE=30m
-          Environment=OLLAMA_MAX_QUEUE=32
-          CONF
-          systemctl daemon-reload
-          systemctl restart ollama
-          for i in $(seq 1 20); do sleep 2; curl -sf --max-time 4 http://127.0.0.1:11434/api/tags >/dev/null && { echo "  ollama bereit ($i)"; break; }; done
-          echo "== Modelle vorwaermen =="
-          for m in llama3.2:3b qwen2.5-coder:7b; do
-            curl -s --max-time 90 http://127.0.0.1:11434/api/generate -d "{\"model\":\"$m\",\"prompt\":\"ok\",\"stream\":false,\"options\":{\"num_predict\":4}}" -o /dev/null -w "  $m http=%{http_code} %{time_total}s\n"
-          done
-          echo "== geladene Modelle =="
-          curl -s --max-time 10 http://127.0.0.1:11434/api/ps | python3 -c "
-          import json,sys
-          for m in json.load(sys.stdin).get('models',[]): print('  ',m['name'],round(m.get('size',0)/1e9,1),'GB')
-          "
-          echo "== LiteLLM-Konfiguration (Modelle) =="
-          grep -E "model:|model_name" /home/ubuntu/litellm.yaml 2>/dev/null | head -8
-          echo "== Villen-Slots auf 1 =="
-          sed -i 's/^Environment=VF_VILLA_SLOTS=.*/Environment=VF_VILLA_SLOTS=1/' /etc/systemd/system/villaforge-hub.service.d/zz-interactive.conf
-          systemctl daemon-reload; systemctl restart villaforge-hub
-          for i in $(seq 1 20); do sleep 2; curl -sf --max-time 5 http://127.0.0.1:12000/api/health >/dev/null && break; done
-          PID=$(ss -ltnp 2>/dev/null | grep ':12000' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
-          EMAIL=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_EMAIL=' | cut -d= -f2-)
-          PASS=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_PASSWORD=' | cut -d= -f2-)
-          TOK=$(curl -s --max-time 20 -X POST http://127.0.0.1:12000/api/auth/login -H 'content-type: application/json' -d "{\"email\":\"$EMAIL\",\"password\":\"$PASS\"}" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
-          echo "== Master-Chat viermal =="
-          for n in 1 2 3 4; do
-            START=$(date +%s%N)
-            curl -s --max-time 120 -X POST http://127.0.0.1:12000/api/master/chat -H 'content-type: application/json' -H "authorization: Bearer $TOK" -d '{"message":"Antworte ausschliesslich mit einem kurzen Satz, dass die Modellverbindung geprueft ist.","requestId":"diag-'"$(date +%s)-$n"'"}' > /tmp/chat.json
-            END=$(date +%s%N)
-            python3 -c "
-          import json
-          d=json.load(open('/tmp/chat.json')); att=d.get('routeAttempts') or []
-          print(f\"  $n: ok={d.get('ok')} $(( (END-START)/1000000 ))ms code={d.get('code','-')} {[ (a['route'][:20], a['code']) for a in att[:2] ]}\")
-          "
-          done
-          free -m | head -2
-          DIAG
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key scripts/ops/worker-bench.sh ubuntu@92.5.177.159:/tmp/worker-bench.sh
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash /tmp/worker-bench.sh'
