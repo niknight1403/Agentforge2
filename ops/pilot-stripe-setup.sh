@@ -11,7 +11,35 @@ DIENST=anfragepilot.service
 # shellcheck disable=SC1090
 set -a; . "$ENV_DATEI"; set +a
 
-[ -n "${STRIPE_SECRET_KEY:-}" ] || { echo "FEHLER: STRIPE_SECRET_KEY fehlt in $ENV_DATEI"; exit 1; }
+# Stripe-Schluessel: bevorzugt aus der eigenen Umgebung, sonst aus einer bereits
+# vorhandenen Produktions-Umgebung auf dieser VM uebernehmen (kein Duplikat anlegen).
+if [ -z "${STRIPE_SECRET_KEY:-}" ]; then
+  echo "== Stripe-Schluessel suchen =="
+  KANDIDATEN=""
+  for f in /opt/villaforge/hub.env /opt/villaforge/.env /opt/ccc/.env /opt/cybersarah/.env \
+           /opt/revenue-os/.env /home/ubuntu/.env /opt/*/.env /opt/*/hub.env; do
+    [ -f "$f" ] || continue
+    if grep -qE '^(export )?STRIPE_SECRET_KEY=' "$f" 2>/dev/null; then KANDIDATEN="$KANDIDATEN $f"; fi
+  done
+  # Auch systemd-EnvironmentFiles pruefen
+  for u in /etc/systemd/system/*.service; do
+    EF=$(grep -oP '^EnvironmentFile=-?\K.*' "$u" 2>/dev/null | head -1 || true)
+    [ -n "${EF:-}" ] && [ -f "$EF" ] && grep -qE '^(export )?STRIPE_SECRET_KEY=' "$EF" && KANDIDATEN="$KANDIDATEN $EF"
+  done
+  echo "Fundstellen:${KANDIDATEN:- keine}"
+  for f in $KANDIDATEN; do
+    ZEILE=$(grep -hE '^(export )?STRIPE_SECRET_KEY=' "$f" | head -1 | sed 's/^export //')
+    if [ -n "$ZEILE" ]; then
+      echo "Uebernehme Schluessel aus: $f"
+      grep -qE '^STRIPE_SECRET_KEY=' "$ENV_DATEI" || echo "$ZEILE" >> "$ENV_DATEI"
+      STRIPE_SECRET_KEY=$(printf '%s' "$ZEILE" | cut -d= -f2-)
+      export STRIPE_SECRET_KEY
+      break
+    fi
+  done
+fi
+
+[ -n "${STRIPE_SECRET_KEY:-}" ] || { echo "FEHLER: STRIPE_SECRET_KEY nirgends gefunden - bitte im Secret-Store hinterlegen"; exit 1; }
 
 API="https://api.stripe.com/v1"
 setze() {  # setze KEY WERT  -> ergaenzt/ersetzt eine Zeile in pilot.env
