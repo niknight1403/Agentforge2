@@ -67,6 +67,7 @@ KEEP_ALIVE = "30m"           # Modelle bleiben warm, kein Kaltstart
 TAGS_TIMEOUT = 8
 GENERATE_TIMEOUT = 60
 MAX_CONSECUTIVE_TIMEOUTS = 3
+PREWARM_SETTLE_SECONDS = 6
 
 
 # --------------------------------------------------------------------------- #
@@ -336,8 +337,8 @@ def plan(measurements: list[Measurement], routes: list[Route]) -> list[Change]:
             continue
         target = priority_by_id.get(route.id)
         if target is None:
-            if route.priority != DEFAULT_PRIORITY:
-                changes.append(Change(route.id, route.name, "priority", route.priority, DEFAULT_PRIORITY, "nicht gemessen"))
+            # Nicht gemessen heisst nicht schlecht: ein Knoten, der gerade nur
+            # langsam antwortet, soll seine bisherige Position behalten.
             continue
         priority, reason = target
         if route.priority != priority:
@@ -529,6 +530,10 @@ def main() -> int:
         else:
             print(f"  {written} Aenderungen geschrieben")
             prewarm([item for item in measurements if item.usable])
+            # Die Knoten laden ihre Modelle erst beim Vorwaermen. Ohne kurze
+            # Pause trifft die erste Chat-Anfrage genau in diesen Ladevorgang.
+            print(f"  {PREWARM_SETTLE_SECONDS}s warten, bis die Modelle geladen sind")
+            time.sleep(PREWARM_SETTLE_SECONDS)
 
     if args.task in ("verify", "all"):
         report["verification"] = verify(args.hub_url, args.runs)
