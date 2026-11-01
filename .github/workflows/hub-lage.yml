@@ -1,0 +1,76 @@
+name: Hub-Lage
+
+# Read-only Gesamtbild des Produktions-Hubs: Version, Auslastung, LLM-Fehler,
+# Dead-Letter-Queue und OpenHands-Bruecke. Aendert nichts.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Lage abrufen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          set -uo pipefail
+          BASE=https://hub.cybersarah-ki.com
+
+          echo "--- Health"
+          curl -fsS --max-time 25 "$BASE/api/health" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(json.dumps({k:d.get(k) for k in ("name","version","ok","database") if k in d}, ensure_ascii=False))
+mem=d.get("memory") or d.get("ram") or {}
+print("LAST", json.dumps({k:mem.get(k) for k in list(mem)[:4]} if isinstance(mem,dict) else mem, ensure_ascii=False))
+' || echo "Health nicht erreichbar"
+
+          TOKEN=$(curl -fsS --max-time 25 -H 'Content-Type: application/json' \
+            -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" \
+            "$BASE/api/auth/login" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))')
+          if [ -z "$TOKEN" ]; then echo "LOGIN fehlgeschlagen"; exit 0; fi
+          AUTH="Authorization: Bearer $TOKEN"
+
+          echo "--- Scheduler"
+          curl -fsS --max-time 25 -H "$AUTH" "$BASE/api/scheduler" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(json.dumps({k:d.get(k) for k in ("slots","active","queued")}, ensure_ascii=False))'
+
+          echo "--- LLM"
+          curl -fsS --max-time 25 -H "$AUTH" "$BASE/api/llm/status" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+def kurz(v):
+    if isinstance(v,list): return {"anzahl":len(v),"bereit":sum(1 for x in v if isinstance(x,dict) and (x.get("ready") or x.get("ok")))}
+    return v
+print(json.dumps({k:kurz(v) for k,v in list(d.items())[:8]}, ensure_ascii=False)[:600])' || echo "LLM-Status nicht abrufbar"
+
+          echo "--- DLQ"
+          curl -fsS --max-time 25 -H "$AUTH" "$BASE/api/dlq/dashboard" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(json.dumps({k:d.get(k) for k in list(d)[:8]}, ensure_ascii=False)[:500])' || echo "DLQ nicht abrufbar"
+
+          echo "--- Villen"
+          curl -fsS --max-time 25 -H "$AUTH" "$BASE/api/admin/villa-diagnostics" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+rows=d.get("villas") if isinstance(d,dict) else d
+if isinstance(rows,list):
+    for v in rows[:12]:
+        print("VILLA", json.dumps({k:v.get(k) for k in ("id","name","status","executing","queued","failed") if k in v}, ensure_ascii=False))
+else:
+    print(json.dumps(d, ensure_ascii=False)[:600])' || echo "Villen-Diagnose nicht abrufbar"
+
+          echo "--- OpenHands"
+          curl -fsS --max-time 25 -H "$AUTH" "$BASE/api/integrations/openhands" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(json.dumps(d, ensure_ascii=False)[:500])' || echo "OpenHands-Status nicht abrufbar"
