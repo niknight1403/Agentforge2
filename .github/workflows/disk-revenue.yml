@@ -1,0 +1,45 @@
+name: Disk-Cleanup + Revenue-Oberflaeche
+on:
+  workflow_dispatch: {}
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Platte aufraeumen, CCC-Revenue-Routen und Payments-Tabellen finden
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "===== A) GROESSTE VERBRAUCHER ====="
+          du -x -h --max-depth=1 / 2>/dev/null | sort -rh | head -8
+          du -x -h --max-depth=2 /var /opt /root /home 2>/dev/null | sort -rh | head -12
+          echo "-- Einzeldateien > 500MB --"
+          find / -xdev -type f -size +500M 2>/dev/null -exec ls -lh {} \; | awk '{print $5, $9}' | head -10
+          echo "===== B) SICHER AUFRAEUMEN ====="
+          journalctl --vacuum-size=200M >/dev/null 2>&1 && echo "journald auf 200M"
+          apt-get clean >/dev/null 2>&1 && echo "apt-cache geleert"
+          rm -rf /root/.npm/_cacache /home/ubuntu/.npm/_cacache 2>/dev/null && echo "npm-Cache weg"
+          find /var/log -name "*.gz" -delete 2>/dev/null; find /var/log -name "*.1" -size +100M -exec truncate -s 0 {} \; 2>/dev/null; echo "Log-Rotation geputzt"
+          docker system prune -af >/dev/null 2>&1 && echo "docker gepruned" || true
+          echo "-- Platte nach Cleanup --"
+          df -h / | tail -1
+          echo "===== C) CCC-REVENUE-ROUTEN (Code) ====="
+          cd /opt/ccc/repo
+          grep -rhoE '"/api/(hara|expansion|revenue|payment|stripe|digistore|checkout|lead)[a-z0-9/_-]*"' server lib 2>/dev/null | sort -u | head -20
+          echo "-- Router-Dateien --"
+          ls server/*.ts 2>/dev/null | head; grep -rln "hara\|expansion" server --include="*.ts" 2>/dev/null | head -6
+          echo "===== D) PAYMENTS im cybersarah-Schema ====="
+          sudo -u postgres psql -d cybersarah -At -c "SELECT tablename FROM pg_tables WHERE schemaname='public' AND (tablename ILIKE '%pay%' OR tablename ILIKE '%invoice%' OR tablename ILIKE '%order%' OR tablename ILIKE '%lead%' OR tablename ILIKE '%revenue%' OR tablename ILIKE '%subscription%')" | tr '\n' ' '; echo
+          echo "===== E) HARA/EXPANSION via CCC-Port ====="
+          PORT=$(systemctl show cybersarah-ccc -p Environment --value | grep -oE 'PORT=[0-9]+' | cut -d= -f2); PORT=${PORT:-3000}
+          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:$PORT/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
+          for P in /api/hara/scan /api/expansion/scan /api/revenue/summary /api/metrics; do
+            echo "  $P -> $(curl -s -m 8 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOK" http://127.0.0.1:$PORT$P)"
+          done
+          EOS
