@@ -125,9 +125,13 @@ jobs:
               exit 0
             fi
           fi
+          # gh gibt bei 404/422 den Fehler-Body auf stdout aus; ohne Pruefung
+          # gilt "No commit found for SHA: v1.60.6" faelschlich als Tag-SHA und
+          # jede frische Version wird verweigert. Nur echte SHAs zaehlen.
           TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq '.sha' 2>/dev/null || true)
+          printf '%s' "$TAG_SHA" | grep -Eq '^[0-9a-f]{40}$' || TAG_SHA=""
           if [ -n "$TAG_SHA" ] && [ "$TAG_SHA" != "$VF_BUILD_SHA" ]; then
-            echo "Release tag belongs to another commit; refusing to replace its artifacts."
+            echo "Release tag $TAG gehoert zu $TAG_SHA, dieser Build ist $VF_BUILD_SHA; Artefakte des anderen Commits bleiben unangetastet."
             exit 1
           fi
           NOTES="docs/releases/${TAG}.md"
