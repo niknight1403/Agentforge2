@@ -20,7 +20,7 @@ jobs:
           printf '%s\n' "$ORACLE_SSH_KEY" > "$keyfile"
           chmod 600 "$keyfile"
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$keyfile" ubuntu@92.5.177.159 'sudo python3 -' <<'PY'
-          import subprocess,json,pathlib
+          import subprocess,json,pathlib,os
           def run(args):
               return subprocess.run(args,capture_output=True,text=True,timeout=20)
           version=run(['docker','version','--format','{{.Server.Version}}'])
@@ -36,5 +36,14 @@ jobs:
           print('EXISTING_NODE_IMAGES',json.dumps(images))
           p=pathlib.Path('/opt/villaforge/server/data/workspace/villa-18/project')
           print('WORKSPACE_ACCESS',json.dumps({'exists':p.exists(),'uid':p.stat().st_uid if p.exists() else None,'mode':oct(p.stat().st_mode&511) if p.exists() else None}))
-          print('NO_CHANGES: no image download, permissions change, service restart or project execution')
+          root='/opt/villaforge'
+          head=subprocess.run(['git','-C',root,'rev-parse','HEAD'],capture_output=True,text=True,check=True).stdout.strip()
+          if head!='fc1a138f1a2d863544e22943b0f6a54b25e819db':raise SystemExit('Deployed source changed; inspect before executing trusted test')
+          subprocess.run(['git','-C',root,'diff','--quiet','--','scripts/test-project-sandbox.mjs','server/project-execution.mjs','server/project-process.mjs'],check=True)
+          image='node@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c'
+          subprocess.run(['docker','pull',image],check=True,timeout=120)
+          env=dict(os.environ,VF_SANDBOX_TEST_IMAGE=image)
+          subprocess.run(['node',root+'/scripts/test-project-sandbox.mjs'],cwd=root,env=env,check=True,timeout=60)
+          print('HOST_SANDBOX_VALIDATED: existing project permissions and Villa states unchanged')
+
           PY
