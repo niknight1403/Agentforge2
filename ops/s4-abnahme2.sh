@@ -53,10 +53,17 @@ kunde_id, angebot_id = sys.argv[1], sys.argv[2]
 META = {"metadata[source]": "cybersarah-ai-influenza", "metadata[paket]": "starter", "metadata[kundeId]": kunde_id, "metadata[angebotId]": angebot_id, "metadata[modus]": "test"}
 prices = call("GET", "/prices?" + urllib.parse.urlencode({"lookup_keys[]": "ai_influenza_starter_monthly_test", "limit": 1}))
 price = prices["data"][0]; assert price["livemode"] is False and price["unit_amount"] == 29900
-cust = call("POST", "/customers", {"email": "abnahme-test@example.invalid", "name": "Abnahme Test", "payment_method": "pm_card_visa", "invoice_settings[default_payment_method]": "pm_card_visa", **META})
+cust = call("POST", "/customers", {"email": "abnahme-test@example.invalid", "name": "Abnahme Test", **META})
 assert cust.get("livemode") is False, cust
 print("Kunde:", cust["id"], "livemode=", cust["livemode"])
-sub = call("POST", "/subscriptions", {"customer": cust["id"], "items[0][price]": price["id"], "default_payment_method": "pm_card_visa", **{k2.replace("metadata", "metadata"): v for k2, v in META.items()}})
+# Testkarte 4242 4242 4242 4242 ueber das dokumentierte Test-Token anlegen und am Kunden hinterlegen
+pm = call("POST", "/payment_methods", {"type": "card", "card[token]": "tok_visa"})
+if "error" in pm: print("PM-Fehler:", pm["error"]["message"]); sys.exit(1)
+att = call("POST", f"/payment_methods/{pm['id']}/attach", {"customer": cust["id"]})
+if "error" in att: print("Attach-Fehler:", att["error"]["message"]); sys.exit(1)
+call("POST", f"/customers/{cust['id']}", {"invoice_settings[default_payment_method]": pm["id"]})
+print("Testkarte:", att["card"]["brand"], "endet auf", att["card"]["last4"], "livemode=", att["livemode"])
+sub = call("POST", "/subscriptions", {"customer": cust["id"], "items[0][price]": price["id"], "default_payment_method": pm["id"], **META})
 if "error" in sub: print("Subscription-Fehler:", sub["error"]["message"]); sys.exit(1)
 print("Subscription:", sub["id"], "status=", sub["status"], "livemode=", sub["livemode"])
 open("/tmp/abnahme_sub.txt", "w").write(sub["id"])
