@@ -36,4 +36,4 @@ jobs:
           ZUSATZ=""
           if [ "$DRY" = "true" ]; then ZUSATZ="--dry-run"; fi
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
-            "cd /opt/villaforge && git log -1 --format='Code %h' && sudo node scripts/ops/villa-sweep.mjs --limit=$LIMIT $ZUSATZ"
+            "NODE=\$(command -v node || echo /usr/bin/node); cd /opt/villaforge && git log -1 --format='Code %h' && sudo \"\$NODE\" scripts/ops/villa-sweep.mjs --limit=$LIMIT $ZUSATZ"
