@@ -60,7 +60,13 @@ jobs:
             const text=String(v.idea).replace(/https?:\/\/\S+/g,'URL').replace(/[A-Za-z0-9_-]{28,}/g,'REDACTED');
             const terms=[...text.matchAll(/\b(app|software|android|apk|video|audio|musik|bild|bilder|erfindung|pitch|webseite|website)\b/gi)].slice(0,12).map(x=>({term:x[0],position:x.index}));
             const plan=verificationPlan(p.root);
-            console.log('VILLA_PRODUCT',JSON.stringify({id:v.id,status:v.status,sourceRoot:p.root,sourceFiles:p.sourceFiles,sourceError:p.error||null,domain:m.domain,verified:m.verified,unfinishedTasks:m.unfinishedTasks,blockers:m.blockers,deliveryTerms:terms,checks:Object.fromEntries(Object.entries(plan).map(([k,c])=>[k,c?{binary:c.binary,args:c.args.map(a=>/secret|password|token|https?:/i.test(a)?'REDACTED':a)}:null]))}));
+            if([5,25,12].includes(v.id)){try{
+              const {readFileSync}=await import('node:fs');const {join}=await import('node:path');
+              const pkg=JSON.parse(readFileSync(join(p.root,'package.json'),'utf8'));
+              console.log('BUILD_MANIFEST',JSON.stringify({id:v.id,name:pkg.name,scripts:Object.fromEntries(Object.entries(pkg.scripts||{}).map(([k,c])=>[k,/password|token|secret|_key|https?:/i.test(String(c))?'REDACTED':c])),dependencies:Object.keys(pkg.dependencies||{})}));
+            }catch{}}
+
+            console.log('VILLA_PRODUCT',JSON.stringify({id:v.id,status:v.status,sourceRoot:p.root,sourceFiles:p.sourceFiles,files:p.files.slice(0,24),sourceError:p.error||null,domain:m.domain,verified:m.verified,unfinishedTasks:m.unfinishedTasks,blockers:m.blockers,deliveryTerms:terms,checks:Object.fromEntries(Object.entries(plan).map(([k,c])=>[k,c?{binary:c.binary,args:c.args.map(a=>/secret|password|token|https?:/i.test(a)?'REDACTED':a)}:null]))}));
           }
 
           const health=await fetch('http://127.0.0.1:12000/api/health',{signal:AbortSignal.timeout(5000)}).then(r=>r.json());
