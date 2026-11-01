@@ -105,7 +105,11 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
        LLM_UNAVAILABLE, obwohl Modelle erreichbar waren. */
     const localTimeoutMs=Math.max(1000,Math.min(Number(process.env.VF_LLM_LOCAL_TIMEOUT_MS)||60000,180000));
     const defaultMs=isLocalRoute(r)?localTimeoutMs:Math.max(500,Math.min(Number(process.env.VF_LLM_CLOUD_TIMEOUT_MS)||25000,60000));
-    const timeoutMs=Math.max(1,Math.min(Number(opts.timeoutMs)||defaultMs,defaultMs,(isLocalRoute(r)?deadline:cloudDeadline)-clock()));
+    // Preserve time for a different local endpoint during interactive requests.
+    // Background generation and the final available endpoint keep their budget.
+    const hasLocalAlternative=opts.priority==='interactive'&&isLocalRoute(r)&&ordered.slice(ordered.indexOf(r)+1).some(next=>isLocalRoute(next)&&normalizeEndpoint(next.base_url)!==endpoint&&!busyEndpoints.has(normalizeEndpoint(next.base_url)));
+    const attemptBudget=hasLocalAlternative?Math.max(1,Math.floor((deadline-clock())/2)):Infinity;
+    const timeoutMs=Math.max(1,Math.min(Number(opts.timeoutMs)||defaultMs,defaultMs,attemptBudget,(isLocalRoute(r)?deadline:cloudDeadline)-clock()));
     const out=await withOtelSpan('llm.provider.request',{
      'llm.provider':String(r.provider||'unknown'),
      'llm.route':String(r.name||'unknown'),
