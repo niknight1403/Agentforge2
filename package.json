@@ -6,6 +6,7 @@
   "description": "VillaForge Hub – Deep-Agent-Villa mit 1000 Agenten, kostenlosem LLM-Routen-Rotator und Gedaechtnis",
   "scripts": {
     "check": "node scripts/check.mjs",
+    "check:syntax": "node scripts/check-syntax.mjs",
     "start": "node server/server.mjs",
     "dev": "node --watch scripts/dev.mjs",
     "daemon": "bash scripts/daemon.sh start",
