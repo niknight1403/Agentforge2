@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "status": "memory-relief-verified",
+  "workflow": "https://github.com/niknight1403/Agentforge2/actions/runs/41271724456",
+  "before": {
+    "availableBytes": 6408826880,
+    "swapUsedBytes": 3485990912
+  },
+  "after": {
+    "availableBytes": 12209549312,
+    "swapUsedBytes": 3485990912
+  },
+  "availableDeltaBytes": 5800722432,
+  "action": {
+    "endpoint": "local Ollama",
+    "model": "qwen2.5-coder:7b",
+    "method": "native empty-prompt keep_alive=0",
+    "doneReason": "unload"
+  },
+  "remainingWarmModel": "llama3.2:3b",
+  "health": {
+    "ok": true,
+    "version": "1.60.5"
+  },
+  "limits": [
+    "One-time memory relief; later requests can reload model",
+    "No task-throughput or latency improvement measured yet",
+    "No hardware upgrade, process kill, service restart or Villa state change"
+  ]
+}
