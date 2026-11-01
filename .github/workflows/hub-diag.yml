@@ -18,51 +18,28 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-      - name: Routen pruefen und Ollama-Speicher freigeben
+      - name: Prozesse, Ports und Routen sauber lesen
         run: |
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
           set -uo pipefail
-          DB=$(grep -oE 'VF_DB=[^ ]+' /proc/$(ss -ltnp 2>/dev/null | grep ':12000' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)/environ 2>/dev/null | head -1 | cut -d= -f2)
-          [ -n "${DB:-}" ] || DB=/opt/villaforge/data/hub.db
-          echo "DB=$DB"
-          echo "== aktivierte Routen mit lokalem Endpunkt =="
+          PID=$(ss -ltnp 2>/dev/null | grep ':12000' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+          DB=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_DB=' | cut -d= -f2-)
+          echo "DB=${DB:-unbekannt}"
+          echo "== llama-server / ollama Prozesse =="
+          ps -eo pid,etime,rss,cmd --sort=-rss | grep -E 'llama-server|ollama|litellm' | grep -v grep | head -8
+          echo "== hoerende LLM-Ports =="
+          ss -ltnp 2>/dev/null | grep -E ':(11434|4000|8080|8000|12000)' | head -8
+          echo "== aktive lokale Routen =="
+          if [ -n "${DB:-}" ] && [ -f "$DB" ]; then
           python3 - "$DB" <<'PY'
           import sqlite3,sys
           c=sqlite3.connect(sys.argv[1]); c.row_factory=sqlite3.Row
-          rows=c.execute("select name,provider,base_url,model,enabled,cooldown_until from routes order by enabled desc, id").fetchall()
-          local=[r for r in rows if r['enabled'] and ('127.0.0.1' in (r['base_url'] or '') or 'localhost' in (r['base_url'] or ''))]
-          print(f"  gesamt={len(rows)} aktiviert={sum(1 for r in rows if r['enabled'])} lokal_aktiv={len(local)}")
-          for r in local[:12]: print(f"  LOKAL  {r['name'][:38]:38s} {r['model'][:24]:24s} {r['base_url']}")
-          cloud=[r for r in rows if r['enabled'] and r not in local]
-          print(f"  Cloud aktiviert: {len(cloud)}")
-          for r in cloud[:8]: print(f"  CLOUD  {r['name'][:38]:38s} {r['model'][:24]}")
-          models=sorted({r['model'] for r in local if r['model']})
-          print("  benoetigte lokale Modelle:", ",".join(models))
+          rows=c.execute("select name,provider,base_url,model,enabled from routes").fetchall()
+          loc=[r for r in rows if r['enabled'] and ('127.0.0.1' in (r['base_url'] or '') or 'localhost' in (r['base_url'] or ''))]
+          print(f"  gesamt={len(rows)} aktiv={sum(1 for r in rows if r['enabled'])} lokal_aktiv={len(loc)}")
+          for r in loc: print(f"  {r['name'][:40]:40s} {r['model'][:22]:22s} {r['base_url']}")
           PY
-          echo "== geladene Modelle (vorher) =="
-          curl -s --max-time 10 http://127.0.0.1:11434/api/ps | python3 -c "
-          import json,sys
-          try:
-              for m in json.load(sys.stdin).get('models',[]): print(f\"  {m['name']:26s} {round(m.get('size',0)/1e9,1)} GB expires={m.get('expires_at','')[:19]}\")
-          except Exception as e: print('  keine Daten', e)
-          "
-          echo "== Speicher (vorher) =="
-          free -m | head -2
-          echo "== Modelle entladen, die keine aktive Route braucht =="
-          for m in $(curl -s --max-time 10 http://127.0.0.1:11434/api/ps | python3 -c "
-          import json,sys
-          try: print(' '.join(x['name'] for x in json.load(sys.stdin).get('models',[])))
-          except Exception: pass
-          "); do
-            case " llama3.2:3b qwen2.5-coder:7b " in *" $m "*) echo "  behalte $m";; *) echo "  entlade $m"; curl -s --max-time 60 http://127.0.0.1:11434/api/generate -d "{\"model\":\"$m\",\"keep_alive\":0}" > /dev/null;; esac
-          done
-          sleep 5
-          echo "== geladene Modelle (nachher) =="
-          curl -s --max-time 10 http://127.0.0.1:11434/api/ps | python3 -c "
-          import json,sys
-          try:
-              for m in json.load(sys.stdin).get('models',[]): print(f\"  {m['name']:26s} {round(m.get('size',0)/1e9,1)} GB\")
-          except Exception: print('  keine Daten')
-          "
+          else echo "  DB nicht lesbar"; fi
+          echo "== Speicher =="
           free -m | head -3
           DIAG
