@@ -1,0 +1,42 @@
+name: Release-Probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - name: Release-Entscheidung nachvollziehen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "event=$GITHUB_EVENT_NAME"
+          echo "GITHUB_REF=<$GITHUB_REF>"
+          echo "GITHUB_REF_NAME=<$GITHUB_REF_NAME>"
+          echo "github.sha=${{ github.sha }}"
+          echo "HEAD=$(git rev-parse HEAD)"
+          TAG="$GITHUB_REF_NAME"
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then TAG="v$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)"; fi
+          echo "TAG=<$TAG>"
+          LATEST_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          echo "LATEST_SHA=<$LATEST_SHA>"
+          set +e
+          OUT=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq '.sha' 2>/dev/null)
+          CODE=$?
+          set -e
+          echo "gh exit=$CODE"
+          echo "TAG_SHA_Ausgabe=<$OUT> laenge=${#OUT}"
+          TAG_SHA="$OUT"
+          if [ -n "$TAG_SHA" ] && [ "$TAG_SHA" != "${{ github.sha }}" ]; then
+            echo "ERGEBNIS: verweigert (TAG_SHA gesetzt und != Build-SHA)"
+          else
+            echo "ERGEBNIS: durchgelassen"
+          fi
