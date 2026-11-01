@@ -1,0 +1,108 @@
+name: Villa-Prompt ausrollen (Hub-DB)
+
+on:
+  workflow_dispatch:
+    inputs:
+      villa_id:
+        description: 'Villa-ID'
+        required: true
+        default: '3'
+      prompt_path:
+        description: 'Pfad zur Prompt-Datei im Repo'
+        required: true
+        default: 'villa-prompts/villa-3-revenue-engine-v2.md'
+      idea_summary:
+        description: 'Kurzfassung fuer das idea-Feld (leer = erste Zeile der Datei)'
+        required: false
+        default: ''
+      start:
+        description: 'Villa nach dem Setzen starten (true/false)'
+        required: true
+        default: 'true'
+
+jobs:
+  ausrollen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Repo auschecken
+        uses: actions/checkout@v4
+
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+          printf '%s\n' 'exec scp -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key "$@"' > /tmp/scpcmd
+          chmod +x /tmp/scpcmd
+
+      - name: Prompt-Datei auf die VM uebertragen
+        run: |
+          /tmp/scpcmd "${{ github.event.inputs.prompt_path }}" ubuntu@92.5.177.159:/tmp/villa-prompt.md
+          /tmp/sshcmd "wc -c /tmp/villa-prompt.md"
+
+      - name: Prompt in die Hub-DB schreiben
+        env:
+          VILLA_ID: ${{ github.event.inputs.villa_id }}
+          IDEA_SUMMARY: ${{ github.event.inputs.idea_summary }}
+          START_NOW: ${{ github.event.inputs.start }}
+        run: |
+          /tmp/sshcmd 'bash -s' << 'EOS'
+          set -euo pipefail
+          cat > /tmp/villa-prompt-apply.mjs << 'NODEJS'
+          import { DatabaseSync } from 'node:sqlite';
+          import { readFileSync } from 'node:fs';
+
+          const villaId = Number(process.env.VILLA_ID);
+          const startNow = String(process.env.START_NOW).toLowerCase() === 'true';
+          const prompt = readFileSync('/tmp/villa-prompt.md', 'utf8').trim();
+          if (!villaId || !prompt) { console.error('Villa-ID oder Prompt fehlt'); process.exit(1); }
+
+          const summary = (process.env.IDEA_SUMMARY || '').trim()
+            || prompt.split('\n').filter(Boolean)[0].replace(/^#\s*/, '').slice(0, 300);
+
+          const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
+          const now = Date.now();
+
+          const before = db.prepare('SELECT id,name,status,autonomy,length(idea) AS ideaLen FROM villas WHERE id=?').get(villaId);
+          if (!before) { console.error('Villa nicht gefunden: ' + villaId); process.exit(2); }
+
+          db.prepare('UPDATE villas SET idea=?, updated_at=? WHERE id=?').run(summary, now, villaId);
+          db.prepare("DELETE FROM memories WHERE villa_id=? AND kind='CONSTRAINT' AND title='Master-Agent: Projektauftrag'").run(villaId);
+          const root = db.prepare('SELECT id FROM agents WHERE villa_id=? AND is_root=1').get(villaId);
+          db.prepare('INSERT INTO memories(villa_id,agent_id,scope,kind,title,content,importance,created_at) VALUES (?,?,?,?,?,?,?,?)')
+            .run(villaId, root?.id ?? null, 'villa', 'CONSTRAINT', 'Master-Agent: Projektauftrag', prompt, 10, now);
+
+          if (startNow) {
+            db.prepare("UPDATE villas SET autonomy=1, status='RUNNING', updated_at=? WHERE id=?").run(now, villaId);
+          }
+
+          const after = db.prepare('SELECT id,name,status,autonomy,length(idea) AS ideaLen FROM villas WHERE id=?').get(villaId);
+          const mem = db.prepare("SELECT length(content) AS len, created_at FROM memories WHERE villa_id=? AND kind='CONSTRAINT' AND title='Master-Agent: Projektauftrag' ORDER BY id DESC LIMIT 1").get(villaId);
+          console.log('VORHER : ' + JSON.stringify(before));
+          console.log('NACHHER: ' + JSON.stringify(after));
+          console.log('PROMPT : ' + (mem ? mem.len + ' Zeichen gespeichert' : 'FEHLT'));
+          console.log('START  : ' + (startNow ? 'autonomy=1, status=RUNNING gesetzt' : 'nicht gestartet'));
+          db.close();
+          NODEJS
+          cd /opt/villaforge
+          node /tmp/villa-prompt-apply.mjs
+          EOS
+
+      - name: Verifikation ueber die Hub-API
+        run: |
+          TOKEN=$(curl -s -m 25 -X POST "https://hub.cybersarah-ki.com/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"${{ secrets.VF_ADMIN_EMAIL }}\",\"password\":\"${{ secrets.VF_ADMIN_PASSWORD }}\"}" \
+            | head -c 4000)
+          if [ -z "$TOKEN" ]; then echo "Login ohne Antwort - Verifikation uebersprungen"; exit 0; fi
+          BEARER=$(printf '%s' "$TOKEN" | sed -n 's/.*"\(accessToken\|token\)":"\([^"]*\)".*/\2/p' | head -1)
+          if [ -z "$BEARER" ]; then echo "Kein Token in der Login-Antwort"; exit 0; fi
+          echo "--- Villa-Status laut API ---"
+          curl -s -m 25 -H "Authorization: Bearer $BEARER" "https://hub.cybersarah-ki.com/api/villas/${{ github.event.inputs.villa_id }}" \
+            | head -c 700
+          echo ""
