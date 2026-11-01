@@ -105,10 +105,27 @@ location /pilot/ {
 }
 NGINX
 
-SITE=$(grep -rl "server_name hub.cybersarah-ki.com" /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | head -1 || true)
-echo "nginx-Site: ${SITE:-nicht gefunden}"
+# Nur echte, aktive Site-Dateien beruecksichtigen (keine Backups!).
+# nginx laedt in sites-enabled auch *.bak-Dateien; ein Include dort wirkt nicht zuverlaessig
+# oder doppelt. Deshalb: Fehlplatzierungen entfernen, dann genau eine aktive Datei patchen.
+for datei in $(grep -rl "snippets/anfragepilot.conf" /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null || true); do
+  case "$datei" in
+    *.bak*|*.save*|*.disabled)
+      echo "Entferne Include aus Backup-Datei: $datei"
+      sed -i '/snippets\/anfragepilot.conf/d' "$datei"
+      ;;
+  esac
+done
+
+SITE=$(grep -rl "server_name hub.cybersarah-ki.com" /etc/nginx/sites-enabled 2>/dev/null | grep -vE '\.(bak|save|disabled|orig)' | head -1 || true)
+if [ -z "$SITE" ]; then
+  SITE=$(nginx -T 2>/dev/null | grep -B40 "server_name hub.cybersarah-ki.com" | grep -oE '/etc/nginx/[^:]+' | tail -1 || true)
+fi
+echo "nginx-Site (aktiv): ${SITE:-nicht gefunden}"
+
 if [ -n "$SITE" ] && ! grep -q "snippets/anfragepilot.conf" "$SITE"; then
-  cp "$SITE" "$SITE.bak.$(date +%s)"
+  SICHERUNG="$SITE.vor-pilot.$(date +%s)"
+  cp "$SITE" "$SICHERUNG"
   python3 - "$SITE" <<'PY'
 import sys
 pfad = sys.argv[1]
@@ -116,11 +133,24 @@ text = open(pfad).read()
 stelle = text.rfind('}')
 open(pfad, 'w').write(text[:stelle] + "    include snippets/anfragepilot.conf;\n" + text[stelle:])
 PY
-  echo "include ergaenzt"
+  echo "include ergaenzt in $SITE"
 fi
-nginx -t
+
+if ! nginx -t; then
+  echo "nginx-Konfiguration ungueltig - Include wird zurueckgenommen"
+  [ -n "${SICHERUNG:-}" ] && cp "$SICHERUNG" "$SITE"
+  nginx -t && systemctl reload nginx
+  exit 1
+fi
 systemctl reload nginx
 echo "nginx neu geladen"
+
+echo "== [5b/6] Durchgang durch nginx pruefen =="
+sleep 1
+for PFAD in /pilot/api/health /ccc/api/health; do
+  CODE=$(curl -s -o /dev/null -m 10 -w "%{http_code}" -H "Host: hub.cybersarah-ki.com" "http://127.0.0.1${PFAD}" || echo "000")
+  echo "127.0.0.1${PFAD} -> HTTP $CODE"
+done
 
 echo "== [6/6] Lokale Probe =="
 sleep 1
