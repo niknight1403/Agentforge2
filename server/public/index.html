@@ -149,7 +149,7 @@
 
   <section id="detailPanel" class="workspace-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="dName">
     <div class="workspace-shell">
-      <header class="workspace-header">
+          <header class="workspace-header">
         <div class="workspace-title">
           <button id="closeDetail" class="icon-button" type="button" aria-label="Entwicklungsfenster schließen">←</button>
           <div><p class="eyebrow">AKTIVER ENTWICKLUNGSRAUM</p><h2 id="dName">—</h2><p id="dIdea" class="workspace-idea"></p></div>
@@ -161,9 +161,10 @@
           <button id="startBtn" class="primary" type="button">Entwicklung starten</button>
           <button id="stopBtn" class="danger" type="button" hidden>Stoppen</button>
           <button id="deleteBtn" class="danger compact" type="button" hidden>Löschen</button>
-        </div>
-      </header>
-      <div class="workspace-body">
+            </div>
+          </header>
+          <p id="workspaceMsg" class="msg workspace-msg" role="status" aria-live="polite"></p>
+          <div class="workspace-body">
         <aside class="workspace-sidebar">
           <div class="sidebar-section">
             <p class="eyebrow">FORTSCHRITT</p>

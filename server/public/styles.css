@@ -1057,3 +1057,7 @@ html[data-theme] .theme-panel { background: color-mix(in srgb, var(--surface) 94
 .theme-swatch-arctic { background: linear-gradient(135deg, #143246, #79dcff 55%, #b6a8ff); }
 @media (max-width: 1050px) { .theme-picker { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .theme-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); } .theme-option { min-height: 62px; } .theme-option small { display: none; } }
+
+.workspace-msg { margin: 0; padding: 8px 20px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface-2) 72%, transparent); font-size: 12px; }
+.workspace-msg:empty { display: none; }
+@media (max-width: 640px) { .workspace-msg { padding: 8px 14px; font-size: 11px; } }

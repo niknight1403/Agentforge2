@@ -477,6 +477,16 @@ async function refreshCurrent() {
 async function startDevelopment() {
   if (!currentVilla) return;
   $('#startBtn').disabled = true;
+  const gate = await api('/api/scheduler', { timeoutMs: 8000 });
+  if (!gate.error && gate.llm) {
+    if (gate.llm.offlineOnly) {
+      setMsg('#workspaceMsg', 'Offline-Planer aktiv: Der Aufgabenplan läuft lokal, aber echte Code-/Dateiänderungen benötigen einen erreichbaren LLM-Key oder Ollama.', true);
+    } else if (gate.llm.ready === 0) {
+      setMsg('#workspaceMsg', `Alle ${gate.llm.configured} KI-Routen sind gerade im Cooldown oder nicht erreichbar. Der Lauf startet, Ergebnisse werden nicht als erledigt vorgetäuscht.`, true);
+    } else {
+      setMsg('#workspaceMsg', `${gate.llm.ready} echte KI-Route(n) bereit · Werkzeuge und Projektprüfung sind aktiv.`);
+    }
+  }
   const out = await api(`/api/villas/${currentVilla.villa.id}/orchestrate`, { method: 'POST', body: { concurrency: 4, maxTasks: 500, adaptive: true } });
   if (out.error) toast(out.error, 'err'); else toast('Entwicklung gestartet');
   await refreshCurrent();

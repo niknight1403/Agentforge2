@@ -158,7 +158,15 @@ function releaseSlot() {
 
 /** Momentaufnahme fuer Health/Diagnose. */
 export function llmGateStatus() {
-  return { max: MAX_CONCURRENT, active: activeCalls, queued: waiting.length };
+  const configured = enabledRoutes().filter((r) => r.provider !== 'offline' && r.key_env && resolveKey(r.key_env));
+  return {
+    max: MAX_CONCURRENT,
+    active: activeCalls,
+    queued: waiting.length,
+    configured: configured.length,
+    ready: configured.filter(isUsable).length,
+    offlineOnly: configured.length === 0
+  };
 }
 
 /** Fuehrt fn aus, sobald ein Slot frei ist (immer wieder freigegeben). */
@@ -211,7 +219,7 @@ async function fetchOnce(route, k, messages, opts) {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 60000)
+      signal: AbortSignal.timeout(opts.timeoutMs ?? Math.max(5000, Math.min(Number(process.env.VF_LLM_TIMEOUT_MS ?? 15000) || 15000, 60000)))
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
