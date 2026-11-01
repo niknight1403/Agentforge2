@@ -2,6 +2,10 @@ name: Hub-Diagnose
 
 on:
   workflow_dispatch:
+    inputs:
+      task:
+        description: "bench | tune | both"
+        default: "both"
 
 permissions:
   contents: read
@@ -9,7 +13,7 @@ permissions:
 jobs:
   diag:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: SSH-Schluessel ablegen
@@ -19,7 +23,31 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-      - name: Worker-Knoten messen
+      - name: Skripte hochladen
         run: |
-          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key scripts/ops/worker-bench.py ubuntu@92.5.177.159:/tmp/worker-bench.py
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo python3 /tmp/worker-bench.py'
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key scripts/ops/inference-tune.py scripts/ops/chat-bench.py ubuntu@92.5.177.159:/tmp/
+      - name: Inferenz auf entfernte Knoten legen
+        if: ${{ inputs.task == 'both' || inputs.task == 'tune' }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
+          set -uo pipefail
+          python3 /tmp/inference-tune.py
+          echo "== Ollama lokal auf 2 parallele Anfragen zuruecknehmen =="
+          sed -i 's/^Environment=OLLAMA_NUM_PARALLEL=.*/Environment=OLLAMA_NUM_PARALLEL=2/' /etc/systemd/system/ollama.service.d/zz-throughput.conf
+          systemctl daemon-reload
+          systemctl restart ollama
+          for i in $(seq 1 20); do sleep 2; curl -sf --max-time 4 http://127.0.0.1:11434/api/tags >/dev/null && break; done
+          systemctl restart villaforge-hub
+          for i in $(seq 1 25); do sleep 2; curl -sf --max-time 5 http://127.0.0.1:12000/api/health >/dev/null && { echo "  Hub bereit"; break; }; done
+          DIAG
+      - name: Master-Chat messen
+        if: ${{ inputs.task == 'both' || inputs.task == 'bench' }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
+          set -uo pipefail
+          PID=$(ss -ltnp 2>/dev/null | grep ':12000' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+          EMAIL=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_EMAIL=' | cut -d= -f2-)
+          PASS=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_PASSWORD=' | cut -d= -f2-)
+          VF_ADMIN_EMAIL="$EMAIL" VF_ADMIN_PASSWORD="$PASS" python3 /tmp/chat-bench.py
+          free -m | head -2
+          DIAG
