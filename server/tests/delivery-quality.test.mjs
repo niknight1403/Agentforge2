@@ -46,3 +46,26 @@ test('Creative-Villen erhalten passende Meilensteine statt Software-Verifikation
  assert.equal(db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id=? AND title LIKE '[VERIFICATION]%'").get(id).c,0);
  assert.ok(db.prepare("SELECT COUNT(*) c FROM tasks WHERE villa_id=? AND title LIKE '[BRIEF]%'").get(id).c>0);
 });
+
+test('Medienfunktionen einer App ersetzen keine Software-Abnahme',()=>{
+ for(const idea of ['Entwickle eine Android-App mit Audio, Video und Bildern.','Baue eine Software fuer Live-Performance und Musik.','Erstelle eine Audio-App mit MIDI und Export.']){
+  const id=villa(idea);assert.equal(deliveryProfile(id).id,'software',idea);assert.ok(Object.hasOwn(deliveryReadiness(id).checks,'build')||deliveryReadiness(id).blockers.some(b=>b.startsWith('build:')));
+ }
+});
+test('Medien ueber eine App bleiben Medien statt versehentlich als Software zu gelten',()=>{
+ assert.equal(deliveryProfile(villa('Erstelle ein Video ueber unsere App fuer den Launch')).id,'video');
+ assert.equal(deliveryProfile(villa('Erstelle ein Bild fuer die Software-Website')).id,'image');
+ assert.equal(deliveryProfile(villa('Produziere einen Song fuer unsere App')).id,'audio');
+});
+
+test('Software-Auftraege mit langen Rollen-Headern werden nicht nach spaeteren Medien-Features eingestuft',()=>{
+ assert.equal(deliveryProfile(villa('ROLLE: LIVE PERFORMANCE APP ANDROID. Audio, Musik und Video sind Features.')).id,'software');
+ assert.equal(deliveryProfile(villa('AUTONOME SOFTWARE. MIDI und Videos sind Ausgabeoptionen.')).id,'software');
+ assert.equal(deliveryProfile(villa('Build an application with audio and video editing')).id,'software');
+ assert.equal(deliveryProfile(villa('Du bist ein Softwareentwickler. Produziere ein Video fuer den App-Launch.')).id,'video');
+});
+
+test('Programme, Tools und Mediengeneratoren benoetigen Software-Abnahme',()=>{
+ for(const idea of ['Build a logo generator','Erstelle ein Programm, das ein Logo erzeugt','Create a tool that renders a video','Baue einen Bildgenerator','Build an audio editor','Erstelle einen Generator fuer Bilder'])assert.equal(deliveryProfile(villa(idea)).id,'software',idea);
+ assert.equal(deliveryProfile(villa('Erstelle ein Video ueber unser Programm')).id,'video');
+});

@@ -2,49 +2,116 @@ name: Free LLM Route Diagnostics
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - '.github/workflows/free-llm-route-diagnostics.yml'
-
+    branches: [main, work/green-gates]
+    paths: ['.github/workflows/free-llm-route-diagnostics.yml']
 permissions:
   contents: read
-
 jobs:
   live-route-probe:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Kostenlose Hub-Kaskade mit kurzem Prompt prüfen
+      - name: Konfigurierte lokale Knoten lesend messen
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
-          chmod 600 ~/.ssh/oracle_key
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'REMOTE'
+          keyfile=$(mktemp)
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$ORACLE_SSH_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$keyfile" ubuntu@92.5.177.159 "sudo bash -s" <<'REMOTE' | tee /tmp/vf-local-probes.log
           set -euo pipefail
           cd /opt/villaforge
           node --input-type=module <<'NODE'
-          const { chat } = await import('./server/llm.mjs');
-          try {
-            const result = await chat(
-              [{ role: 'user', content: 'Antworte ausschließlich mit OK.' }],
-              { role: 'CODER', maxTokens: 8, timeoutMs: 8000, totalTimeoutMs: 45000 }
-            );
-            console.log('LIVE_LLM_RESULT', JSON.stringify({
-              ok: true,
-              route: result.route || null,
-              model: result.model || null,
-              answerLength: String(result.content || '').length
-            }));
-          } catch (error) {
-            console.log('LIVE_LLM_RESULT', JSON.stringify({
-              ok: false,
-              code: error.code || 'LLM_ERROR',
-              attempts: Array.isArray(error.attempts) ? error.attempts : []
-            }));
-            process.exitCode = 1;
+          const { db } = await import('./server/db.mjs');
+          const { resolveKey } = await import('./server/llm.mjs');
+          const rows=db.prepare("SELECT id,name,base_url,model,key_env,enabled,status,ok,fail FROM routes WHERE provider='ollama' ORDER BY priority,id").all();
+          const seen=new Set();
+          for(const row of rows){
+            const url=new URL(row.base_url);url.pathname=url.pathname.replace(/\/v1\/?$/,'')+'/api/tags';
+            const identity=url.origin+url.pathname;if(seen.has(identity))continue;seen.add(identity);
+            const started=Date.now();
+            try{
+              const key=row.key_env?resolveKey(row.key_env):'';
+              const response=await fetch(url,{headers:key?{authorization:'Bearer '+key}:{},signal:AbortSignal.timeout(4000),redirect:'error'});
+              const data=await response.json().catch(()=>({}));
+              console.log('LOCAL_NODE',JSON.stringify({routeId:row.id,name:row.name,enabled:!!row.enabled,status:row.status,http:response.status,latencyMs:Date.now()-started,models:Array.isArray(data.models)?data.models.map(m=>m.name):[],historicalSuccesses:row.ok,historicalFailures:row.fail}));
+            }catch{console.log('LOCAL_NODE',JSON.stringify({routeId:row.id,name:row.name,enabled:!!row.enabled,status:row.status,error:'CONNECTION_OR_TIMEOUT',latencyMs:Date.now()-started}));}
           }
+
+          const candidates=rows.filter(r=>!r.enabled&&/qwen2\.5-coder:(3b|7b)$/i.test(r.model));
+          for(const row of candidates){
+            const started=Date.now();
+            try{
+              const key=row.key_env?resolveKey(row.key_env):'';
+              const url=row.base_url.replace(/\/$/,'')+'/chat/completions';
+              const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json',...(key?{authorization:'Bearer '+key}:{})},body:JSON.stringify({model:row.model,messages:[{role:'user',content:'Antworte ausschliesslich mit dem kurzen Satz: Modellverbindung erfolgreich geprueft.'}],max_tokens:24,temperature:0,stream:false}),signal:AbortSignal.timeout(15000),redirect:'error'});
+              const data=await response.json().catch(()=>({})),answer=String(data.choices?.[0]?.message?.content||'');
+              console.log('LOCAL_INFERENCE',JSON.stringify({routeId:row.id,name:row.name,http:response.status,ok:response.ok&&answer.length>12,answerLength:answer.length,latencyMs:Date.now()-started}));
+            }catch{console.log('LOCAL_INFERENCE',JSON.stringify({routeId:row.id,name:row.name,ok:false,error:'CONNECTION_OR_TIMEOUT',latencyMs:Date.now()-started}));}
+          }
+
+
+          const { inspectProject,verificationPlan }=await import('./server/project-verification.mjs');
+          const { maturity }=await import('./server/product.mjs');
+          for(const v of db.prepare("SELECT id,name,idea,status,source_path FROM villas ORDER BY id").all()){
+            const p=inspectProject(v.id),m=maturity(v.id);
+            const text=String(v.idea).replace(/https?:\/\/\S+/g,'URL').replace(/[A-Za-z0-9_-]{28,}/g,'REDACTED');
+            const terms=[...text.matchAll(/\b(app|software|android|apk|video|audio|musik|bild|bilder|erfindung|pitch|webseite|website)\b/gi)].slice(0,12).map(x=>({term:x[0],position:x.index}));
+            const plan=verificationPlan(p.root);
+            if([5,25,12].includes(v.id)){try{
+              const {readFileSync}=await import('node:fs');const {join}=await import('node:path');
+              const pkg=JSON.parse(readFileSync(join(p.root,'package.json'),'utf8'));
+              console.log('BUILD_MANIFEST',JSON.stringify({id:v.id,name:pkg.name,scripts:Object.fromEntries(Object.entries(pkg.scripts||{}).map(([k,c])=>[k,/password|token|secret|_key|https?:/i.test(String(c))?'REDACTED':c])),dependencies:Object.keys(pkg.dependencies||{})}));
+            }catch{}}
+
+            console.log('VILLA_PRODUCT',JSON.stringify({id:v.id,status:v.status,sourceRoot:p.root,sourceFiles:p.sourceFiles,files:p.files.slice(0,24),sourceError:p.error||null,domain:m.domain,verified:m.verified,unfinishedTasks:m.unfinishedTasks,blockers:m.blockers,deliveryTerms:terms,checks:Object.fromEntries(Object.entries(plan).map(([k,c])=>[k,c?{binary:c.binary,args:c.args.map(a=>/secret|password|token|https?:/i.test(a)?'REDACTED':a)}:null]))}));
+          }
+
+          const health=await fetch('http://127.0.0.1:12000/api/health',{signal:AbortSignal.timeout(5000)}).then(r=>r.json());
+          console.log('HUB_MODEL_STATE',JSON.stringify(health.llm));
           NODE
           REMOTE
+
+      - name: Nur erfolgreich getestete kostenlose Knoten wieder aktivieren
+        if: github.ref == 'refs/heads/work/green-gates'
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request,datetime
+          base='https://hub.cybersarah-ki.com'
+          def call(path,method='GET',data=None,token=None):
+              req=urllib.request.Request(base+path,method=method,data=json.dumps(data).encode() if data is not None else None,headers={'Content-Type':'application/json',**({'Authorization':'Bearer '+token} if token else {})})
+              with urllib.request.urlopen(req,timeout=15) as r:return json.load(r)
+          verified=set()
+          for line in open('/tmp/vf-local-probes.log'):
+              if line.startswith('LOCAL_INFERENCE '):
+                  row=json.loads(line.split(' ',1)[1])
+                  if row.get('ok') is True and row.get('http')==200:verified.add(row['routeId'])
+          token=call('/api/auth/login','POST',{'email':os.environ['VF_ADMIN_EMAIL'],'password':os.environ['VF_ADMIN_PASSWORD']}).get('token')
+          if not token:raise SystemExit('Login did not return a session')
+          rows=call('/api/routes',token=token)
+          targets=[r for r in rows if r['id'] in verified and r['provider']=='ollama' and r['model'] in ['qwen2.5-coder:3b','qwen2.5-coder:7b'] and not r['enabled']]
+          rollback=[{'id':r['id'],'enabled':False} for r in targets]
+          open('/tmp/vf-route-rollback.json','w').write(json.dumps({'createdAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'routes':rollback},indent=2))
+          changed=[]
+          try:
+              for row in targets:
+                  call('/api/routes/'+str(row['id']),'PATCH',{'enabled':True},token)
+                  changed.append(row['id'])
+          except Exception:
+              for route_id in changed:call('/api/routes/'+str(route_id),'PATCH',{'enabled':False},token)
+              raise SystemExit('Route recovery failed; previous enable flags restored')
+          print('VERIFIED_LOCAL_ROUTES_ENABLED',json.dumps(changed))
+          PY
+      - name: Rueckrollbare Routeneinstellungen sichern
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-route-recovery
+          path: /tmp/vf-route-rollback.json
+          if-no-files-found: warn
+          retention-days: 30

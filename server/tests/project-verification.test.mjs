@@ -56,3 +56,13 @@ test('Eigenständige Web-Artefakte passieren den produktiven 90-Punkte-Q-Gate er
  const unsafe=await verifyProjectRuntime(id,{runner:async()=>({ok:true})});assert.equal(unsafe.checks.quality.status,'failed');assert.ok(unsafe.checks.quality.score<90);assert.equal(projectReadiness(id).verified,false);
 });
 
+
+test('Konstante Erfolgsausgabe ersetzt weder Build noch expliziten Prüfbefehl',async()=>{
+ const id=villa(),root=project(id,{build:`node -e "console.log('Build successful')"`,test:'node test.mjs',smoke:'node smoke.mjs'});
+ let commands=[];const runner=async(_,binary,args)=>{commands.push([binary,...args]);return {ok:true};};
+ let out=await verifyProjectRuntime(id,{runner});assert.equal(out.ok,false);assert.equal(out.checks.build.status,'missing');assert.equal(commands.length,2);
+ writeFileSync(join(root,'villaforge.verify.json'),JSON.stringify({build:{binary:'node',args:['-e',"console.log('Build successful')"]}}));
+ commands=[];out=await verifyProjectRuntime(id,{runner});assert.equal(out.ok,false);assert.equal(out.checks.build.status,'missing');assert.equal(commands.length,2);
+ writeFileSync(join(root,'villaforge.verify.json'),JSON.stringify({build:{binary:'node',args:['-e',"require('node:assert/strict').equal(1,1)"]}}));
+ out=await verifyProjectRuntime(id,{runner});assert.equal(out.checks.build.status,'passed');
+});

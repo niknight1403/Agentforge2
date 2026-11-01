@@ -105,12 +105,12 @@
       "risks": [
         "Externe Modelle koennen trotz korrekter Software nicht verfuegbar sein"
       ],
-      "status": "blocked",
+      "status": "done",
       "scopeDefined": true,
       "evidence": [
-        "docs/sprints/evidence/VF-0004-blocked.json"
+        "docs/sprints/evidence/VF-0004.json"
       ],
-      "implementationCommit": null
+      "implementationCommit": "b7c3a43da5c661a31de7f6f61068ac93d18e74d1"
     },
     {
       "id": "VF-0005",
