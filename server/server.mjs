@@ -368,7 +368,7 @@ async function api(req, res, url) {
     const total = os.totalmem(), free = os.freemem();
     const la = os.loadavg();
     return json(res, 200, {
-      ok: true, testFixture:process.env.VF_PREVIEW_FIXTURE==='1', capabilities:['capability-autopilot-v1','llm-cascade-v1','verified-readiness-v1','studio-v1','master-control-v1','resource-agent-v1','free-route-cycle-v1','api-gateway-v1','admin-api-key-management-v1','auth-session-rotation-v1','stripe-billing-v1','redis-task-dlq-v1','cost-kill-switch-v1','admin-observability-v1'],masterControl:1,llm:routingSummary(), ts: now(), version: VERSION, routes: enabledRoutes().length,
+      ok: true, testFixture:process.env.VF_PREVIEW_FIXTURE==='1', capabilities:['capability-autopilot-v1','llm-cascade-v1','mcp-gateway-v1','verified-readiness-v1','studio-v1','master-control-v1','resource-agent-v1','free-route-cycle-v1','api-gateway-v1','admin-api-key-management-v1','auth-session-rotation-v1','stripe-billing-v1','redis-task-dlq-v1','cost-kill-switch-v1','admin-observability-v1'],masterControl:1,llm:routingSummary(), ts: now(), version: VERSION, routes: enabledRoutes().length,
       uptime: { processSec: Math.round(process.uptime()), systemSec: Math.round(os.uptime()) },
       cpu: { cores: os.cpus().length, load1: Number(la[0].toFixed(2)), load5: Number(la[1].toFixed(2)), load15: Number(la[2].toFixed(2)) },
       mem: {
