@@ -1,3 +1,4 @@
+import {executeInvocation} from './project-process.mjs';
 import {projectExecution} from './project-execution.mjs';
 import { execFile } from 'node:child_process';
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
@@ -212,13 +213,13 @@ export function runCommand(root, binary, args = [], timeoutMs = 120_000) {
 
     // Das Zeitlimit zaehlt ab dem tatsaechlichen Start, nicht ab dem Warten.
     cmdAcquire().then(() => {
-      execFile(invocation.binary, invocation.args, {
+      executeInvocation(invocation, {
         cwd,
         timeout: timeoutMs,
         maxBuffer: 2_000_000,
         env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV, CI: '1' }
       }, (err, stdout, stderr) => {
-        const finish=()=>{
+
         cmdRelease();
         const out = `${stdout || ''}${stderr || ''}`.trim();
         resolvePromise({
@@ -227,9 +228,6 @@ export function runCommand(root, binary, args = [], timeoutMs = 120_000) {
           output: out.slice(-6000),
           error: err ? String(err.message || err).slice(0, 400) : null
         });
-        };
-        if(invocation.cleanup)execFile(invocation.cleanup.binary,invocation.cleanup.args,{timeout:10000,maxBuffer:100000,env:{PATH:process.env.PATH,HOME:process.env.HOME}},()=>finish());
-        else finish();
       });
     });
   });
