@@ -1,0 +1,53 @@
+name: Memory Relief
+on:
+  workflow_dispatch:
+  push:
+    branches: [work/memory-relief]
+    paths: ['.github/workflows/memory-relief.yml']
+permissions:
+  contents: read
+concurrency:
+  group: villaforge-memory-maintenance
+  cancel-in-progress: false
+jobs:
+  relieve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Entladen ueber Ollama, ohne Prozessabbruch
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          keyfile=$(mktemp)
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$ORACLE_SSH_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$keyfile" ubuntu@92.5.177.159 'python3 -' <<'PY'
+          import json,urllib.request,time
+          def memory():
+              values={}
+              for line in open('/proc/meminfo'):
+                  k,v=line.split(':',1);values[k]=int(v.strip().split()[0])*1024
+              return {'availableBytes':values['MemAvailable'],'swapUsedBytes':values['SwapTotal']-values['SwapFree']}
+          def call(path,data=None):
+              req=urllib.request.Request('http://127.0.0.1:11434'+path,data=json.dumps(data).encode() if data is not None else None,headers={'Content-Type':'application/json'})
+              with urllib.request.urlopen(req,timeout=120) as response:return json.load(response)
+          before=memory()
+          models=call('/api/ps').get('models',[])
+          print('BEFORE',json.dumps({'memory':before,'models':[{'name':m.get('name'),'bytes':m.get('size')} for m in models]}))
+          if len(models)<2:
+              print('NO_CHANGE: no redundant loaded model on this endpoint')
+          else:
+              target=max(models,key=lambda m:int(m.get('size') or 0))
+              result=call('/api/generate',{'model':target['name'],'prompt':'','stream':False,'keep_alive':0})
+              print('UNLOAD',json.dumps({'model':target['name'],'done':result.get('done'),'reason':result.get('done_reason')}))
+              if result.get('done') is not True:raise SystemExit('Unload not confirmed')
+          time.sleep(3)
+          remaining=call('/api/ps').get('models',[])
+          after=memory()
+          print('AFTER',json.dumps({'memory':after,'availableDeltaBytes':after['availableBytes']-before['availableBytes'],'models':[{'name':m.get('name'),'bytes':m.get('size')} for m in remaining]}))
+          with urllib.request.urlopen('http://127.0.0.1:12000/api/health',timeout=15) as response:health=json.load(response)
+          print('HEALTH',json.dumps({'ok':health.get('ok'),'version':health.get('version')}))
+          if health.get('ok') is not True:raise SystemExit('Hub health failed')
+          PY
