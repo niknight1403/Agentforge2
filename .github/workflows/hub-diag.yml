@@ -1,0 +1,47 @@
+name: Hub-Diagnose
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH-Schluessel ablegen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+      - name: Zustand des Hubs lesen
+        run: |
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
+          set -uo pipefail
+          UNIT=$(systemctl list-units --type=service --all --no-legend | grep -oE '^[a-z0-9@_.-]*villa[a-z0-9@_.-]*\.service' | head -1)
+          [ -n "${UNIT:-}" ] || UNIT=villaforge.service
+          PORT=$(systemctl show "$UNIT" -p Environment --value 2>/dev/null | grep -oE 'PORT=[0-9]+' | cut -d= -f2)
+          [ -n "${PORT:-}" ] || PORT=12000
+          echo "UNIT=$UNIT PORT=$PORT"
+          echo "== systemctl =="
+          systemctl is-active "$UNIT"; systemctl is-enabled "$UNIT"
+          echo "== health =="
+          curl -s --max-time 15 "http://127.0.0.1:${PORT}/api/health" | head -c 900; echo
+          echo "== llm/status =="
+          curl -s --max-time 15 "http://127.0.0.1:${PORT}/api/llm/status" | head -c 900; echo
+          echo "== free-routes report =="
+          curl -s --max-time 20 "http://127.0.0.1:${PORT}/api/free-routes/report" | head -c 900; echo
+          echo "== Ollama =="
+          systemctl is-active ollama 2>/dev/null || echo "kein ollama-Dienst"
+          curl -s --max-time 10 http://127.0.0.1:11434/api/tags | head -c 300; echo
+          echo "== freier Speicher =="
+          free -m | head -3
+          echo "== letzte Logzeilen =="
+          journalctl -u "$UNIT" -n 40 --no-pager 2>/dev/null | tail -40
+          echo "== Env vorhanden (nur Namen) =="
+          systemctl show "$UNIT" -p Environment --value | tr ' ' '\n' | grep -oE '^[A-Z_]+(?==)' | sort -u | head -40
+          DIAG
