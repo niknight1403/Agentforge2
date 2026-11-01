@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {verifyProductAcceptance} from './lib/product-release-gate.mjs';
 import {VERSION} from '../server/version.mjs';
 
-export async function verifyLiveLlm({baseUrl,email,password,expectedVersion=VERSION,fetchImpl=fetch,clock=Date.now,timeoutMs=120000,requireProductAcceptance=false,preferredVillaId}={}) {
+export async function verifyLiveLlm({baseUrl,email,password,expectedVersion=VERSION,fetchImpl=fetch,clock=Date.now,timeoutMs=120000,requireProductAcceptance=false,preferredVillaId,retryDelaysMs=[2000,4000,8000,15000]}={}) {
   const url=new URL(baseUrl);
   if(url.username||url.password||url.search||url.hash||url.pathname!=='/'||!['https:','http:'].includes(url.protocol)||url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw Error('Smoke endpoint must be an HTTPS origin or loopback fixture.');
   if(!email||!password)throw Error('Production smoke credentials are not configured.');
@@ -20,12 +20,25 @@ export async function verifyLiveLlm({baseUrl,email,password,expectedVersion=VERS
     }
     try{return await response.json();}catch{throw Error(`Live LLM smoke ${path}: invalid JSON`);}
   }
+  // 409 heisst "Master bearbeitet gerade eine andere Nachricht", 429/503 heisst
+  // "gerade kein Modell frei". Beides ist voruebergehend und darf ein Release-Gate
+  // nicht rot machen; ein dauerhafter Fehler scheitert weiterhin.
+  async function requestWithRetry(path,body,token){
+    for(let attempt=0;;attempt+=1){
+      try{return await request(path,body,token);}
+      catch(error){
+        const transient=/HTTP (409|429|503)\b/.test(String(error?.message||''));
+        if(!transient||attempt>=retryDelaysMs.length||signal.aborted)throw error;
+        await new Promise(resolve=>setTimeout(resolve,Math.max(0,retryDelaysMs[attempt])));
+      }
+    }
+  }
   const login=await request('/api/auth/login',{email,password});
   if(typeof login.token!=='string'||!login.token)throw Error('Live LLM smoke: login returned no session.');
   const before=await request('/api/health',null,login.token);
   if(before.ok!==true||before.version!==expectedVersion||before.llm?.freeOnly!==true)throw Error('Live LLM smoke: production version or free-only policy mismatch.');
   const started=clock();
-  const out=await request('/api/master/chat',{message:'Antworte ausschließlich mit einem kurzen Satz, dass die Modellverbindung geprüft ist. Ändere keine Einstellungen und führe keine Aktionen aus.',requestId:randomUUID()},login.token);
+  const out=await requestWithRetry('/api/master/chat',{message:'Antworte ausschließlich mit einem kurzen Satz, dass die Modellverbindung geprüft ist. Ändere keine Einstellungen und führe keine Aktionen aus.',requestId:randomUUID()},login.token);
   if(out.ok!==true||out.offline===true||typeof out.answer!=='string'||out.answer.trim().length<12||!Array.isArray(out.steps)||out.steps.length)throw Error('Live LLM smoke: no verified answer without side effects.');
   const after=await request('/api/health',null,login.token);
   const replyAt=Number(after.llm?.lastSuccessfulReplyAt)||0;
