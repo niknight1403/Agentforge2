@@ -20,7 +20,7 @@ jobs:
           trap 'rm -f "$keyfile"' EXIT
           printf '%s\n' "$ORACLE_SSH_KEY" > "$keyfile"
           chmod 600 "$keyfile"
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$keyfile" ubuntu@92.5.177.159 "sudo bash -s" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$keyfile" ubuntu@92.5.177.159 "sudo bash -s" <<'REMOTE' | tee /tmp/vf-local-probes.log
           set -euo pipefail
           cd /opt/villaforge
           node --input-type=module <<'NODE'
@@ -56,3 +56,45 @@ jobs:
           console.log('HUB_MODEL_STATE',JSON.stringify(health.llm));
           NODE
           REMOTE
+
+      - name: Nur erfolgreich getestete kostenlose Knoten wieder aktivieren
+        if: github.ref == 'refs/heads/work/green-gates'
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request,datetime
+          base='https://hub.cybersarah-ki.com'
+          def call(path,method='GET',data=None,token=None):
+              req=urllib.request.Request(base+path,method=method,data=json.dumps(data).encode() if data is not None else None,headers={'Content-Type':'application/json',**({'Authorization':'Bearer '+token} if token else {})})
+              with urllib.request.urlopen(req,timeout=15) as r:return json.load(r)
+          verified=set()
+          for line in open('/tmp/vf-local-probes.log'):
+              if line.startswith('LOCAL_INFERENCE '):
+                  row=json.loads(line.split(' ',1)[1])
+                  if row.get('ok') is True and row.get('http')==200:verified.add(row['routeId'])
+          token=call('/api/auth/login','POST',{'email':os.environ['VF_ADMIN_EMAIL'],'password':os.environ['VF_ADMIN_PASSWORD']}).get('token')
+          if not token:raise SystemExit('Login did not return a session')
+          rows=call('/api/routes',token=token)
+          targets=[r for r in rows if r['id'] in verified and r['provider']=='ollama' and r['model'] in ['qwen2.5-coder:3b','qwen2.5-coder:7b'] and not r['enabled']]
+          rollback=[{'id':r['id'],'enabled':False} for r in targets]
+          open('/tmp/vf-route-rollback.json','w').write(json.dumps({'createdAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'routes':rollback},indent=2))
+          changed=[]
+          try:
+              for row in targets:
+                  call('/api/routes/'+str(row['id']),'PATCH',{'enabled':True},token)
+                  changed.append(row['id'])
+          except Exception:
+              for route_id in changed:call('/api/routes/'+str(route_id),'PATCH',{'enabled':False},token)
+              raise SystemExit('Route recovery failed; previous enable flags restored')
+          print('VERIFIED_LOCAL_ROUTES_ENABLED',json.dumps(changed))
+          PY
+      - name: Rueckrollbare Routeneinstellungen sichern
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-route-recovery
+          path: /tmp/vf-route-rollback.json
+          if-no-files-found: warn
+          retention-days: 30
