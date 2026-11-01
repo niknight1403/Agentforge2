@@ -1,0 +1,99 @@
+name: Produkt-Gate-Diagnose
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Archiv und Villa-Befunde lesen
+        env:
+          VF_SMOKE_BASE_URL: https://hub.cybersarah-ki.com
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          cat > /tmp/diag.mjs <<'JS'
+          const base=process.env.VF_SMOKE_BASE_URL.replace(/\/$/,'');
+          const signal=AbortSignal.timeout(120000);
+          let token='';
+
+          async function call(path,body){
+            const response=await fetch(base+path,{method:body?'POST':'GET',
+              headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},
+              ...(body?{body:JSON.stringify(body)}:{}),signal});
+            if(!response.ok)throw Error(`${path} HTTP ${response.status}`);
+            return response.json();
+          }
+          async function download(path){
+            const response=await fetch(base+path,{headers:{authorization:'Bearer '+token},signal,redirect:'error'});
+            if(!response.ok)throw Error(`${path} HTTP ${response.status}`);
+            const type=response.headers.get('content-type')||'';
+            const bytes=Buffer.from(await response.arrayBuffer());
+            return {bytes,type};
+          }
+          function listZip(b){
+            if(b.subarray(0,4).toString('latin1')!=='PK\u0003\u0004')return {zip:false,head:b.subarray(0,160).toString('utf8').replace(/\s+/g,' ')};
+            let eocd=-1;
+            for(let i=b.length-22;i>=0&&i>b.length-66000;i--)if(b.readUInt32LE(i)===0x06054b50){eocd=i;break;}
+            if(eocd<0)return {zip:false,head:'kein EOCD'};
+            const count=b.readUInt16LE(eocd+10),start=b.readUInt32LE(eocd+16),entries=[];
+            let offset=start;
+            for(let n=0;n<count;n++){
+              if(b.readUInt32LE(offset)!==0x02014b50)break;
+              const unpacked=b.readUInt32LE(offset+24),packed=b.readUInt32LE(offset+20);
+              const nameLen=b.readUInt16LE(offset+28),extraLen=b.readUInt16LE(offset+30),commentLen=b.readUInt16LE(offset+32);
+              entries.push({name:b.subarray(offset+46,offset+46+nameLen).toString('utf8'),size:unpacked,packed});
+              offset+=46+nameLen+extraLen+commentLen;
+            }
+            return {zip:true,count,bytes:b.length,entries};
+          }
+          const required=/^(?:.*\/)?(?:index\.html|package\.json|AndroidManifest\.xml)$/;
+
+          const login=await call('/api/auth/login',{email:process.env.VF_ADMIN_EMAIL,password:process.env.VF_ADMIN_PASSWORD});
+          token=login.token;
+          const all=await call('/api/villas');
+          const rows=Array.isArray(all)?all:all.villas;
+          console.log('Villen gesamt:',rows.length);
+          console.log('ID  | TASKS | VERIFIZIERT | OFFEN | BLOCKER | BUILD | NAME');
+          const sorted=[...rows].sort((a,b)=>Number(b.tasks_done||0)-Number(a.tasks_done||0));
+          for(const villa of sorted.slice(0,20)){
+            const id=Number(villa.id);
+            let product={},build={};
+            try{product=await call(`/api/villas/${id}/product`);}catch(error){product={error:String(error.message)};}
+            try{build=await call(`/api/villas/${id}/build`);}catch(error){build={error:String(error.message)};}
+            console.log(
+              `${String(id).padEnd(3)} | ${String(villa.tasks_done??'-').padEnd(5)} | ${String(product.verified).padEnd(11)} | `+
+              `${String(product.unfinishedTasks??'-').padEnd(5)} | ${String(Array.isArray(product.blockers)?product.blockers.length:'-').padEnd(7)} | `+
+              `${String(build.status??product.error??'-').padEnd(5)} | ${String(villa.name||'').slice(0,34)}`
+            );
+          }
+
+          console.log('');
+          console.log('== Archive der bereitstehenden Villen ==');
+          let checked=0;
+          for(const villa of sorted.slice(0,10)){
+            const id=Number(villa.id);
+            let build={};
+            try{build=await call(`/api/villas/${id}/build`);}catch{continue;}
+            if(build.status!=='ready')continue;
+            checked++;
+            try{
+              const {bytes,type}=await download(`/api/villas/${id}/build/download`);
+              const info=listZip(bytes);
+              console.log(`Villa ${id}: ${bytes.length} Bytes, Typ "${type}"`);
+              if(!info.zip){console.log('  KEIN ZIP, Anfang:',info.head.slice(0,120));continue;}
+              console.log(`  Einträge: ${info.count}, entpackt ${info.entries.reduce((sum,e)=>sum+e.size,0)} Bytes`);
+              for(const entry of info.entries.slice(0,25))console.log(`    ${String(entry.size).padStart(8)}  ${entry.name}`);
+              if(info.entries.length>25)console.log(`    ... ${info.entries.length-25} weitere`);
+              const hits=info.entries.filter(e=>required.test(e.name)).map(e=>e.name);
+              console.log(`  Pflichtdateien gefunden: ${hits.length?hits.join(', '):'KEINE'}`);
+            }catch(error){console.log(`Villa ${id}: Download-Fehler ${error.message}`);}
+          }
+          if(!checked)console.log('Keine Villa hat build.status "ready".');
+          JS
+          node /tmp/diag.mjs
