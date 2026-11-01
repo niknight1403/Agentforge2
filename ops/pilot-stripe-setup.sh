@@ -13,13 +13,14 @@ set -a; . "$ENV_DATEI"; set +a
 
 # Stripe-Schluessel: bevorzugt aus der eigenen Umgebung, sonst aus einer bereits
 # vorhandenen Produktions-Umgebung auf dieser VM uebernehmen (kein Duplikat anlegen).
-if [ -z "${STRIPE_SECRET_KEY:-}" ] && [ -f /run/pilot-stripe.key ]; then
-  STRIPE_SECRET_KEY=$(tr -d '\r\n' < /run/pilot-stripe.key)
-  export STRIPE_SECRET_KEY
+# Einrichtungs-Schluessel (volle Rechte, nur fuer Produkte/Preise/Webhooks).
+# Der Laufzeit-Schluessel in der Umgebung bleibt unveraendert (Least Privilege).
+if [ -f /run/pilot-stripe.key ]; then
+  SETUP_KEY=$(tr -d '\r\n' < /run/pilot-stripe.key)
   rm -f /run/pilot-stripe.key
-  echo "Stripe-Schluessel aus Uebergabedatei uebernommen"
-  grep -qE '^STRIPE_SECRET_KEY=' "$ENV_DATEI" || echo "STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY" >> "$ENV_DATEI"
+  echo "Einrichtungs-Schluessel uebernommen (Praefix: $(printf '%s' "$SETUP_KEY" | cut -c1-7)…)"
 fi
+SETUP_KEY="${SETUP_KEY:-${STRIPE_SECRET_KEY:-}}"
 
 if [ -z "${STRIPE_SECRET_KEY:-}" ]; then
   echo "== Stripe-Schluessel suchen =="
@@ -47,7 +48,7 @@ if [ -z "${STRIPE_SECRET_KEY:-}" ]; then
   done
 fi
 
-[ -n "${STRIPE_SECRET_KEY:-}" ] || { echo "FEHLER: STRIPE_SECRET_KEY nirgends gefunden - bitte im Secret-Store hinterlegen"; exit 1; }
+[ -n "${SETUP_KEY:-}" ] || { echo "FEHLER: kein Stripe-Schluessel fuer die Einrichtung verfuegbar"; exit 1; }
 
 API="https://api.stripe.com/v1"
 setze() {  # setze KEY WERT  -> ergaenzt/ersetzt eine Zeile in pilot.env
@@ -61,7 +62,7 @@ setze() {  # setze KEY WERT  -> ergaenzt/ersetzt eine Zeile in pilot.env
 }
 
 echo "== Stripe-Modus pruefen =="
-MODUS=$(curl -s -m 20 "$API/balance" -u "$STRIPE_SECRET_KEY:" | python3 -c "import json,sys; d=json.load(sys.stdin); print('LIVE' if d.get('livemode') else 'TEST')" 2>/dev/null || echo "UNBEKANNT")
+MODUS=$(curl -s -m 20 "$API/balance" -u "$SETUP_KEY:" | python3 -c "import json,sys; d=json.load(sys.stdin); print('LIVE' if d.get('livemode') else 'TEST')" 2>/dev/null || echo "UNBEKANNT")
 echo "Stripe-Modus: $MODUS"
 
 produkt_und_preis() {  # produkt_und_preis PLAN NAME CENT_BETRAG ENVKEY
@@ -71,13 +72,13 @@ produkt_und_preis() {  # produkt_und_preis PLAN NAME CENT_BETRAG ENVKEY
     return 0
   fi
   local prod preis
-  prod=$(curl -s -m 25 "$API/products" -u "$STRIPE_SECRET_KEY:" \
+  prod=$(curl -s -m 25 "$API/products" -u "$SETUP_KEY:" \
     -d "name=AnfragePilot $name" \
     -d "description=KI-Antwortassistent fuer Kundenanfragen - Tarif $name" \
     | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))")
   [ -n "$prod" ] || { echo "  FEHLER: Produkt $name nicht angelegt"; return 1; }
 
-  preis=$(curl -s -m 25 "$API/prices" -u "$STRIPE_SECRET_KEY:" \
+  preis=$(curl -s -m 25 "$API/prices" -u "$SETUP_KEY:" \
     -d "product=$prod" -d "unit_amount=$cent" -d "currency=eur" -d "recurring[interval]=month" \
     -d "nickname=$name monatlich" \
     | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))")
@@ -95,7 +96,7 @@ echo "== Webhook-Endpunkt =="
 if [ -n "$(grep -E '^STRIPE_WEBHOOK_SECRET=.+' "$ENV_DATEI" || true)" ]; then
   echo "  bereits konfiguriert (Secret vorhanden)"
 else
-  ANDWORT=$(curl -s -m 30 "$API/webhook_endpoints" -u "$STRIPE_SECRET_KEY:" \
+  ANDWORT=$(curl -s -m 30 "$API/webhook_endpoints" -u "$SETUP_KEY:" \
     --data-urlencode "url=https://hub.cybersarah-ki.com/pilot/api/billing/webhook" \
     -d "enabled_events[]=checkout.session.completed" \
     -d "enabled_events[]=customer.subscription.created" \
@@ -115,6 +116,10 @@ fi
 
 chown ubuntu:ubuntu "$ENV_DATEI"
 chmod 600 "$ENV_DATEI"
+
+if ! grep -qE '^STRIPE_SECRET_KEY=' "$ENV_DATEI"; then
+  echo "WARNUNG: Laufzeit-Schluessel STRIPE_SECRET_KEY fehlt in der Dienst-Umgebung"
+fi
 
 echo "== Dienst neu starten =="
 systemctl restart "$DIENST"
