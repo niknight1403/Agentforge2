@@ -10,3 +10,7 @@ test('explicit no-action requests use bounded context and preserve the current q
 test('normal execution and planning never enter the compact answer path',()=>{
  for(const message of ['Starte Villa 2','Erstelle eine App','Erkläre meine Route','Keine Fehler ignorieren'])assert.equal(masterAnswerMessages(message),null);
 });
+
+test('a settings restriction does not cancel an explicitly requested execution',()=>{
+ for(const text of ['Starte Villa 2, aber ändere keine Einstellungen.','Stoppe Villa 18 und ändere keine Einstellungen.'])assert.equal(masterAnswerMessages(text),null);
+});

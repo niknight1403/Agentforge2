@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "baselineMain": "46238dea7bc5057ac7291ab8fafb03eef84f7819",
+  "pr": 37,
+  "fix": "Settings-only restrictions retain normal action planning; explicit no-action requests retain compact context.",
+  "verification": {
+    "command": "node --test server/tests/master-answer-context.test.mjs",
+    "exitCode": 0,
+    "pass": 3,
+    "fail": 0,
+    "kind": "local regression, not production"
+  },
+  "remaining": [
+    "PR browser gate failed; diagnose fresh failure before merge",
+    "Production Master/model response unverified",
+    "Villa product acceptance, sandbox and signing unresolved"
+  ],
+  "resume": "Read PR #37 current head, CI and browser logs; no competing deployment. Keep Aurora 6 and all Villa states."
+}
