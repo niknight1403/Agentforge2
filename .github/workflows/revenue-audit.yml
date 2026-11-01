@@ -1,0 +1,56 @@
+name: Revenue-Audit (Funnel + IPN + MRR-Basis)
+on:
+  workflow_dispatch: {}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Revenue-OS-Zustand erfassen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "===== A) REVENUE_OS-DB ====="
+          sudo -u postgres psql -d revenue_os -At -c "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" | tr '\n' ' '; echo
+          for T in $(sudo -u postgres psql -d revenue_os -At -c "SELECT tablename FROM pg_tables WHERE schemaname='public'"); do
+            C=$(sudo -u postgres psql -d revenue_os -At -c "SELECT count(*) FROM \"$T\"" 2>/dev/null || echo "?")
+            echo "  $T: $C Zeilen"
+          done
+          echo "===== B) PAYMENT/LEAD-Kennzahlen ====="
+          sudo -u postgres psql -d revenue_os -At -c "
+            SELECT 'status', status, count(*), coalesce(sum(amount_cents),0)/100.0
+            FROM payments GROUP BY status ORDER BY 1" 2>/dev/null | head -12 || echo "keine payments-Tabelle"
+          sudo -u postgres psql -d revenue_os -At -c "
+            SELECT 'lead_status', status, count(*) FROM proposals GROUP BY status" 2>/dev/null | head -10 || true
+          echo "===== C) ENV-PRESENZ (nur Namen) ====="
+          for U in cybersarah-ccc villaforge-hub; do
+            echo "-- $U --"
+            systemctl cat $U 2>/dev/null | grep -oE "(STRIPE|DIGISTORE|PAYPAL|REVENUE|OPENROUTER|GROQ|OLLAMA|HARA)[A-Z_0-9]*" | sort -u | tr '\n' ' '; echo
+          done
+          echo "===== D) Lokale Revenue-Endpunkte ====="
+          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
+          for P in /api/hara/scan /api/expansion/scan /api/revenue/status /api/revenue/summary; do
+            CODE=$(curl -s -m 8 -o /tmp/rp.json -w "%{http_code}" -H "Authorization: Bearer $TOK" "http://127.0.0.1:12000$P")
+            echo "  $P -> HTTP $CODE $(head -c 120 /tmp/rp.json 2>/dev/null)"
+          done
+          echo "===== E) CCC lokal + Hub-Health ====="
+          PORT=$(systemctl show cybersarah-ccc -p Environment --value | grep -oE 'PORT=[0-9]+' | cut -d= -f2); PORT=${PORT:-3000}
+          curl -s -m 8 http://127.0.0.1:$PORT/api/ready | head -c 140; echo
+          curl -s -m 8 http://127.0.0.1:12000/api/health | python3 -c "import json,sys; d=json.load(sys.stdin); print('hub llm:', d.get('llm',{}).get('eligibleRoutes'), '/', d.get('llm',{}).get('configuredRoutes'), '| state:', d.get('llm',{}).get('state'))"
+          echo "===== F) Platte/Syslog ====="
+          df -h / | tail -1
+          S1=$(stat -c %s /var/log/syslog); sleep 10; S2=$(stat -c %s /var/log/syslog); echo "Syslog-Delta/10s: $(( S2 - S1 ))B"
+          EOS
+      - name: Externe Erreichbarkeit (Render)
+        run: |
+          set -uo pipefail
+          for U in "https://app.cybersarah-ki.com/api/health" "https://app.cybersarah-ki.com/api/ready"; do
+            CODE=$(curl -s -m 20 -o /tmp/ext.json -w "%{http_code}" "$U" || echo "ERR")
+            echo "$U -> $CODE $(head -c 160 /tmp/ext.json 2>/dev/null)"
+          done
