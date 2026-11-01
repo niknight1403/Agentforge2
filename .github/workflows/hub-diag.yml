@@ -18,42 +18,18 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-      - name: Speicher freigeben und Master-Chat testen
+      - name: Ollama-Dienste und Speicher pruefen
         run: |
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
-          set -uo pipefail
-          echo "== Datenbank finden =="
-          ls -1 /opt/villaforge/data 2>/dev/null | head -5
-          DB=$(ls -S /opt/villaforge/data/*.db 2>/dev/null | head -1)
-          echo "DB=$DB"
-          echo "== aktivierte Routen (lokal) =="
-          if [ -n "${DB:-}" ]; then python3 - "$DB" <<'PY'
-          import sqlite3,sys
-          c=sqlite3.connect(sys.argv[1]); c.row_factory=sqlite3.Row
-          rows=c.execute("select name,base_url,model,enabled from routes").fetchall()
-          loc=[r for r in rows if r['enabled'] and ('127.0.0.1' in (r['base_url'] or '') or 'localhost' in (r['base_url'] or ''))]
-          print(f"  aktiv={sum(1 for r in rows if r['enabled'])}/{len(rows)} lokal_aktiv={len(loc)}")
-          for r in loc: print(f"  {r['name'][:36]:36s} {r['model'][:26]:26s} {r['base_url']}")
-          PY
-          fi
-          echo "== alte zweite Ollama-Instanz beenden =="
-          OLD=$(ps -eo pid,etime,cmd | grep 'ollama serve' | grep -v grep | awk '$2 ~ /-/ {print $1}')
-          for pid in $OLD; do echo "  beende ollama $pid"; kill "$pid" 2>/dev/null || true; done
-          sleep 3
-          echo "== grosses Modell entladen =="
-          for m in $(curl -s --max-time 10 http://127.0.0.1:11434/api/ps | python3 -c "
+          echo "== Ollama-Dienste =="
+          systemctl list-units --type=service --all --no-legend 2>/dev/null | grep -i ollama
+          echo "== ollama-Prozesse =="
+          ps -eo pid,etime,rss,cmd | grep -E 'ollama serve' | grep -v grep
+          echo "== Modelle im Speicher =="
+          curl -s --max-time 10 http://127.0.0.1:11434/api/ps | python3 -c "
           import json,sys
-          try: print(' '.join(x['name'] for x in json.load(sys.stdin).get('models',[])))
-          except Exception: pass"); do
-            case "$m" in *27b*|*24b*|*32b*) echo "  entlade $m"; curl -s --max-time 90 http://127.0.0.1:11434/api/generate -d "{\"model\":\"$m\",\"keep_alive\":0}" >/dev/null;; *) echo "  behalte $m";; esac
-          done
-          sleep 5
-          echo "== Speicher nachher =="
+          for m in json.load(sys.stdin).get('models',[]): print('  ',m['name'],round(m.get('size',0)/1e9,1),'GB')
+          "
+          echo "== Speicher =="
           free -m | head -3
-          echo "== Master-Chat-Test =="
-          PID=$(ss -ltnp 2>/dev/null | grep ':12000' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
-          EMAIL=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_EMAIL=' | cut -d= -f2-)
-          PASS=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_PASSWORD=' | cut -d= -f2-)
-          TOK=$(curl -s --max-time 20 -X POST http://127.0.0.1:12000/api/auth/login -H 'content-type: application/json' -d "{\"email\":\"$EMAIL\",\"password\":\"$PASS\"}" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
-          curl -s --max-time 180 -X POST http://127.0.0.1:12000/api/master/chat -H 'content-type: application/json' -H "authorization: Bearer $TOK" -d '{"message":"Antworte ausschliesslich mit einem kurzen Satz, dass die Modellverbindung geprueft ist.","requestId":"diag-'"$(date +%s)"'"}' | head -c 700; echo
           DIAG
