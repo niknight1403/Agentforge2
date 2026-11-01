@@ -19,7 +19,12 @@ echo "Dateien: $(find "$ZIEL" -maxdepth 2 -type f -not -path '*/node_modules/*' 
 
 echo "== [2/6] Abhaengigkeiten installieren =="
 cd "$ZIEL"
-NPM_LOG="$ZIEL/.deploy-npm.log"
+LOG_DIR=/var/log/anfragepilot
+mkdir -p "$LOG_DIR"
+chown ubuntu:ubuntu "$LOG_DIR"
+chmod 750 "$LOG_DIR"
+NPM_LOG="$LOG_DIR/deploy-npm.log"
+install -o ubuntu -g ubuntu -m 640 /dev/null "$NPM_LOG"
 : > "$NPM_LOG"
 if ! su - ubuntu -c "cd $ZIEL && npm ci --omit=dev --no-audit --no-fund" >>"$NPM_LOG" 2>&1; then
   echo "npm ci fehlgeschlagen, versuche npm install"
@@ -51,6 +56,15 @@ else
   ls -ld "$ZIEL/data"; exit 1
 fi
 
+echo "== [3c/6] Logfile vorbereiten =="
+APP_LOG="$LOG_DIR/app.log"
+install -o ubuntu -g ubuntu -m 640 /dev/null "$APP_LOG"
+if su - ubuntu -c "printf 'Logtest %s\n' \"$(date -Is)\" >> '$APP_LOG'" 2>/dev/null; then
+  echo "Logfile beschreibbar: $(stat -c '%U:%G %a' "$APP_LOG") ($(stat -c %s "$APP_LOG") Bytes)"
+else
+  echo "FEHLER: $APP_LOG ist fuer ubuntu nicht beschreibbar"; ls -l "$APP_LOG"; exit 1
+fi
+
 echo "== [4/6] systemd-Dienst =="
 cat > /etc/systemd/system/$DIENST <<UNIT
 [Unit]
@@ -63,6 +77,8 @@ User=ubuntu
 WorkingDirectory=$ZIEL
 EnvironmentFile=$ENV_DATEI
 ExecStart=/usr/bin/node src/server.js
+StandardOutput=append:$LOG_DIR/app.log
+StandardError=append:$LOG_DIR/app.log
 Restart=always
 RestartSec=5
 
@@ -104,6 +120,19 @@ location /pilot/ {
   client_max_body_size 1m;
 }
 NGINX
+
+# Backup-Dateien in sites-enabled werden von nginx mitgeladen und erzeugen
+# "conflicting server name"-Warnungen; der eigene Block wird dann ignoriert.
+SICHER_DIR=/root/nginx-backups
+mkdir -p "$SICHER_DIR"
+for datei in /etc/nginx/sites-enabled/*; do
+  case "$(basename "$datei")" in
+    *.bak*|*.save*|*.orig|*.disabled)
+      echo "Verschiebe Backup aus sites-enabled: $(basename "$datei")"
+      mv "$datei" "$SICHER_DIR/$(basename "$datei").$(date +%s)"
+      ;;
+  esac
+done
 
 # Nur echte, aktive Site-Dateien beruecksichtigen (keine Backups!).
 # nginx laedt in sites-enabled auch *.bak-Dateien; ein Include dort wirkt nicht zuverlaessig
@@ -191,6 +220,9 @@ if ! nginx -t; then
 fi
 systemctl reload nginx
 echo "nginx neu geladen"
+
+echo "--- nginx-Warnungen (Konflikte) ---"
+nginx -t 2>&1 | grep -c "conflicting server name" || echo "0 Konflikte"
 
 echo "== [5b/6] Durchgang durch nginx pruefen =="
 sleep 1
