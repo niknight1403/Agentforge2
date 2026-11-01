@@ -1,0 +1,18 @@
+name: Sprint4 Stripe-Abnahme (Testmodus)
+on:
+  workflow_dispatch: {}
+jobs:
+  abnahme:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Abnahme-Teil 1 (Deploy, Checkout)
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          STRIPE_TEST_KEY: ${{ secrets.AI_INFLUENZA_STRIPE_SECRET_KEY }}
+          STRIPE_TEST_WHSEC: ${{ secrets.AI_INFLUENZA_STRIPE_WEBHOOK_SECRET }}
+        run: |
+          install -m 600 /dev/null /tmp/k
+          printf '%s\n' "$ORACLE_SSH_KEY" > /tmp/k
+          { printf 'export STRIPE_TEST_KEY=%q\n' "$STRIPE_TEST_KEY"; printf 'export STRIPE_TEST_WHSEC=%q\n' "$STRIPE_TEST_WHSEC"; cat ops/s4-abnahme.sh; } | ssh -i /tmp/k -o StrictHostKeyChecking=accept-new ubuntu@92.5.177.159 'sudo bash -s'
