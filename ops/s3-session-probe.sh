@@ -1,26 +1,13 @@
 set -u
+echo "== Journal: users-Query-Fehler des laufenden Dienstes (letzte 30 Min) =="
+journalctl -u cybersarah-ccc --since "-30 min" --no-pager 2>/dev/null | grep -iE 'Failed query|from "users"|column .* does not exist|relation .* does not exist|cause' | tail -6 | cut -c1-420
+echo "== Spalten der Tabelle users =="
+sudo -u postgres psql -d cybersarah -At -c "SELECT string_agg(column_name, ', ' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_name='users' AND table_schema='public'"
+echo "== Spalten, die der Code selektiert (drizzle/schema.ts users) =="
 cd /opt/ccc/repo
-UNITENV=$(systemctl show cybersarah-ccc -p Environment --value)
-EFILE=$(systemctl show cybersarah-ccc -p EnvironmentFiles --value | awk '{print $1}')
-echo "EnvironmentFile: ${EFILE:-keins}"
-echo "== JWT_SECRET: Unit vs. EnvironmentFile (nur Laenge + Hash-Praefix) =="
-U=$(echo "$UNITENV" | tr ' ' '\n' | grep '^JWT_SECRET=' | cut -d= -f2-)
-F=""; [ -n "${EFILE:-}" ] && [ -r "$EFILE" ] && F=$(grep '^JWT_SECRET=' "$EFILE" | cut -d= -f2- | tr -d '"')
-P=$(tr '\0' '\n' < /proc/$(systemctl show cybersarah-ccc -p MainPID --value)/environ | grep '^JWT_SECRET=' | cut -d= -f2-)
-for N in U F P; do V="${!N}"; printf "%s: len=%s sha=%s\n" "$N" "${#V}" "$(printf %s "$V" | sha256sum | cut -c1-8)"; done
-echo "== VITE_APP_ID im Prozess =="
-tr '\0' '\n' < /proc/$(systemctl show cybersarah-ccc -p MainPID --value)/environ | grep -c '^VITE_APP_ID=' 
-echo "== getUserByOpenId im laufenden Code =="
-grep -n "export async function getUserByOpenId" -A 8 server/db.ts | head -12
-echo "== Token minten mit Prozess-Secret und pruefen =="
-OID=$(sudo -u postgres psql -d cybersarah -At -c "SELECT \"openId\" FROM users WHERE email='niko.oeben@gmail.com' LIMIT 1")
-cat > /tmp/probe.mts <<'TS'
-import { sdk } from "/opt/ccc/repo/server/_core/sdk";
-const t = await sdk.createSessionToken(process.env.OID!, { name: "probe" });
-const v = await sdk.verifySession(t);
-console.error("verifySession lokal:", v ? "OK openId-len=" + v.openId.length : "NULL");
-const u = await sdk.authenticateRequest({ headers: { authorization: "Bearer " + t } } as any).catch((e: any) => "FEHLER: " + e.message);
-console.error("authenticateRequest lokal:", typeof u === "string" ? u : "OK role=" + u.role);
-TS
-OID="$OID" JWT_SECRET="$P" DATABASE_URL="$(tr '\0' '\n' < /proc/$(systemctl show cybersarah-ccc -p MainPID --value)/environ | grep '^DATABASE_URL=' | cut -d= -f2-)" npx --yes tsx /tmp/probe.mts 2>&1 | grep -E "lokal|Error" | cut -c1-200
-rm -f /tmp/probe.mts
+awk '/export const users = pgTable/,/^\}\);/' drizzle/schema.ts | grep -oE '(varchar|text|integer|timestamp|serial|boolean|pgEnum|[a-zA-Z]+Role)\("[A-Za-z_]+"' | sed -E 's/.*\("//; s/"//' | paste -sd, | cut -c1-300
+echo "== Migrationsstand (drizzle) =="
+sudo -u postgres psql -d cybersarah -At -c "SELECT count(*), max(id) FROM drizzle.__drizzle_migrations" 2>&1 | head -2
+ls drizzle/*.sql | tail -3
+echo "== Login-Test ueber echte Route (Statuscode) =="
+curl -s -m 10 -o /dev/null -w "account.login (falsches PW) -> HTTP %{http_code}\n" -H 'Content-Type: application/json' -d '{"json":{"email":"niko.oeben@gmail.com","password":"falsch-falsch-123"}}' http://127.0.0.1:13000/api/trpc/account.login
