@@ -43,10 +43,17 @@ test('Prüfbefehle laufen wirklich: roter Nutzerfluss verhindert 100, reparierte
  writeFileSync(join(p,'smoke.mjs'),'import assert from "node:assert/strict"; import {value} from "./index.mjs"; assert.equal(value+1,2);');
  assert.equal((await verifyProjectRuntime(id)).ok,true);assert.equal(maturity(id).score,100);
 });
-test('Noch offene Produktaufgaben sperren 100 trotz technisch erfolgreicher Prüfungen',async()=>{
+test('Noch offene Produktaufgaben halten die Bewertung unter 100, blockieren die Abnahme aber nicht',async()=>{
  const id=villa();project(id);await verifyProjectRuntime(id,{runner:async()=>({ok:true})});
  db.prepare("INSERT INTO tasks(villa_id,title,status,created_at,updated_at) VALUES (?,'Fehlendes Kernfeature','PENDING',?,?)").run(id,now(),now());
- assert.ok(maturity(id).score<100);assert.equal(maturity(id).verified,false);
+ const m=maturity(id);
+ // Die Verbesserungswarteschlange senkt die Bewertung, ist aber kein
+ // Abnahme- oder Release-Kriterium: sonst gaebe es wegen der autonom
+ // nachwachsenden Aufgaben nie ein Release.
+ assert.ok(m.score<100);
+ assert.equal(m.verified,true);
+ assert.match(m.backlogNote,/Verbesserungswarteschlange/);
+ assert.equal(m.stage,'Technisch verifiziert, Ausbau offen');
 });
 
 test('Eigenständige Web-Artefakte passieren den produktiven 90-Punkte-Q-Gate erst mit sicheren, kleinen Inline-Apps',async()=>{

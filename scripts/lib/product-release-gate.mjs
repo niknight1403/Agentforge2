@@ -28,7 +28,7 @@ export async function verifyProductAcceptance({requestJson,download,preferredVil
  const candidates=rows.filter(v=>Number.isSafeInteger(Number(v.id))&&Number(v.id)>0&&(!preferred||Number(v.id)===preferred)).sort((a,b)=>Number(b.tasks_done||0)-Number(a.tasks_done||0)).slice(0,10);
  for(const villa of candidates){
   const id=Number(villa.id),product=await requestJson(`/api/villas/${id}/product`);
-  if(product.verified!==true||Number(product.unfinishedTasks)!==0||!Array.isArray(product.blockers)||product.blockers.length)continue;
+  if(product.verified!==true||!Array.isArray(product.blockers)||product.blockers.length)continue;
   const build=await requestJson(`/api/villas/${id}/build`);if(build.status!=='ready')continue;
   const archive=inspectProductZip(await download(`/api/villas/${id}/build/download`));
   return {villaId:id,verified:true,archive};

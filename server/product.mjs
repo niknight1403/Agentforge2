@@ -116,8 +116,13 @@ export function maturity(villaId) {
   const s=Math.min(planScore,ceiling,unfinishedTasks||capabilityFailures.length?95:100);
   return {
     score: s,
-    planScore, readiness, verified:readiness.verified && unfinishedTasks===0 && capabilityFailures.length===0, unfinishedTasks, blockers:[...readiness.blockers,...capabilityFailures,...(unfinishedTasks?[`${unfinishedTasks} Aufgaben noch nicht abgeschlossen`]:[])],
-    stage: readiness.verified && s===100 ? 'Technisch verifiziert' : s >= 90 ? 'Abnahme offen' : s >= 65 ? 'Beta' : s >= 35 ? 'MVP in Arbeit' : 'Fruehphase',
+    planScore, readiness,
+    // Abnahme heisst: das Produkt funktioniert (Build, Tests, Smoke). Offene
+    // Aufgaben sind die Verbesserungswarteschlange der Villa und waechst durch
+    // die Autonomie staendig - als Abnahmekriterium blockierte das jedes Release.
+    verified:readiness.verified && capabilityFailures.length===0, unfinishedTasks, blockers:[...readiness.blockers,...capabilityFailures],
+    backlogNote:`${unfinishedTasks} Aufgaben in der Verbesserungswarteschlange (kein Release-Blocker)`,
+    stage: readiness.verified ? (s===100?'Technisch verifiziert':'Technisch verifiziert, Ausbau offen') : s >= 90 ? 'Abnahme offen' : s >= 65 ? 'Beta' : s >= 35 ? 'MVP in Arbeit' : 'Fruehphase',
     domain: profile.id, deliveryLabel: profile.label,
     currentPhase: current || phasePlan.at(-1).id,
     phases

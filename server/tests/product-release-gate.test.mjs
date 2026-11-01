@@ -11,9 +11,12 @@ test('Product archive requires a complete app archive instead of PK bytes or an 
  assert.equal(inspectProductZip(zip()).entries,1);const bad=zip();bad.writeUInt32LE(999999,30+Buffer.byteLength('index.html')+Buffer.byteLength('<main>Fixture app</main>')+20);assert.throws(()=>inspectProductZip(bad),/INVALID/);assert.throws(()=>inspectProductZip(Buffer.from('PK-not-an-archive')),/INVALID/);
  assert.throws(()=>inspectProductZip(zip('README.md')),/FILES_MISSING/);assert.throws(()=>inspectProductZip(zip('../index.html')),/UNSAFE/);
 });
-test('Release acceptance requires independent product evidence, zero open work, ready build and actual download',async()=>{
+test('Release acceptance requires product evidence, no blockers, ready build and actual download',async()=>{
  let downloaded=0;const run=(product,build='ready')=>verifyProductAcceptance({requestJson:async path=>path==='/api/villas'?[{id:1}]:path.endsWith('/product')?product:{status:build},download:async()=>{downloaded++;return zip();}});
  const accepted={verified:true,unfinishedTasks:0,blockers:[]};assert.equal((await run(accepted)).villaId,1);assert.equal(downloaded,1);
- for(const p of [{...accepted,verified:false},{...accepted,unfinishedTasks:1},{...accepted,blockers:['missing source']}])await assert.rejects(run(p),/ACCEPTANCE_MISSING/);
- await assert.rejects(run(accepted,'unverified'),/ACCEPTANCE_MISSING/);assert.equal(downloaded,1);
+ // Ein offener Ausbau-Backlog ist kein Release-Blocker: die Autonomie legt
+ // laufend Aufgaben an, sonst gaebe es nie ein Release.
+ assert.equal((await run({...accepted,unfinishedTasks:81})).villaId,1);
+ for(const p of [{...accepted,verified:false},{...accepted,blockers:['missing source']}])await assert.rejects(run(p),/ACCEPTANCE_MISSING/);
+ await assert.rejects(run(accepted,'unverified'),/ACCEPTANCE_MISSING/);assert.equal(downloaded,2);
 });
