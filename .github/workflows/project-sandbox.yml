@@ -1,7 +1,7 @@
 name: Project Sandbox Integration
 on:
   pull_request:
-    paths: ['server/project-execution.mjs','server/project-process.mjs','server/fs-tools.mjs','scripts/test-project-sandbox.mjs','.github/workflows/project-sandbox.yml']
+    paths: ['server/project-execution.mjs','server/project-process.mjs','server/project-stage.mjs','server/fs-tools.mjs','scripts/test-project-sandbox.mjs','.github/workflows/project-sandbox.yml']
 permissions:
   contents: read
 jobs:
@@ -22,3 +22,5 @@ jobs:
           echo "VF_SANDBOX_TEST_IMAGE=$image" >> "$GITHUB_ENV"
       - name: Execute isolation and timeout tests in real Docker
         run: node scripts/test-project-sandbox.mjs
+      - name: Verify root host still uses an unprivileged writable isolated copy
+        run: sudo env VF_SANDBOX_TEST_IMAGE="$VF_SANDBOX_TEST_IMAGE" "$(command -v node)" scripts/test-project-sandbox.mjs

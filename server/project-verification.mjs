@@ -1,3 +1,4 @@
+import {validStageArtifacts} from './project-stage.mjs';
 import {existsSync,readdirSync,readFileSync,lstatSync,realpathSync} from 'node:fs';
 import {resolve,join,extname} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -15,7 +16,7 @@ export function projectDirectory(id){
  return own;
 }
 db.exec(`CREATE TABLE IF NOT EXISTS project_verifications(villa_id INTEGER PRIMARY KEY,fingerprint TEXT NOT NULL,status TEXT NOT NULL,checks TEXT NOT NULL,blockers TEXT NOT NULL,verified_at INTEGER NOT NULL)`);
-const ignored=new Set(['node_modules','.git','.gradle','.next','.venv','venv','__pycache__','dist','build','out','coverage','backups']);
+const ignored=new Set(['.vf-builds','node_modules','.git','.gradle','.next','.venv','venv','__pycache__','dist','build','out','coverage','backups']);
 const textExtensions=/\.(?:[cm]?js|jsx|tsx?|py|kt|kts|java|dart|go|rs|html|css|json|md|ya?ml|toml|txt|lock|xml|properties|gradle)$/i;
 export function inspectProject(id){
  const root=projectDirectory(id),hash=createHash('sha256'),files=[];let bytes=0,sourceFiles=0;
@@ -46,6 +47,7 @@ export function projectReadiness(id){
  let checks={};if(fresh){try{checks=JSON.parse(row.checks);if(row.status!=='passed')blockers.push(...JSON.parse(row.blockers));}catch{blockers.push('Prüfnachweis ungültig');}}
  if(row&&!fresh)blockers.push('Prüfnachweis veraltet oder Quellstand geändert');
  for(const kind of ['build','tests','smoke'])if(checks[kind]?.status!=='passed')blockers.push(`${kind}: ${checks[kind]?.reason||'kein aktueller erfolgreicher Nachweis'}`);
+ if(checks.build?.artifacts&&!validStageArtifacts(project.root,checks.build.artifacts))blockers.push('build: Sandbox-Artefakt oder Quellstand veraendert; erneut pruefen');
  const verified=blockers.length===0;
  return {verified,status:verified?'verified':fresh?'blocked':'unverified',blockers,checks,verifiedAt:fresh?row.verified_at:null,fingerprint:project.fingerprint,sourceFiles:project.sourceFiles};
 }
@@ -108,7 +110,7 @@ export async function verifyProjectRuntime(id,{runner=runCommand}={}){
    if(!plan[kind]){checks[kind]={status:'missing',reason:'Prüfbefehl fehlt (package.json oder villaforge.verify.json)'};blockers.push(`${kind}: Prüfbefehl fehlt (package.json oder villaforge.verify.json)`);continue;}
    const {binary,args}=plan[kind];let result;
    try{result=await runner(project.root,binary,args,180000);}catch{result={ok:false,error:'Prüfprozess nicht ausführbar'};}
-   checks[kind]={status:result.ok?'passed':'failed',command:[binary,...args],output:String(result.output||result.error||'').slice(-2000)};
+   checks[kind]={status:result.ok?'passed':'failed',command:[binary,...args],...(result.artifacts?{artifacts:result.artifacts}:{}),output:String(result.output||result.error||'').slice(-2000)};
    if(!result.ok)blockers.push(`${kind}: fehlgeschlagen`);
   }
   const htmlPath=join(project.root,'index.html');

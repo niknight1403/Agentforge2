@@ -1,3 +1,4 @@
+import {prepareProjectStage,collectProjectStage,disposeProjectStage} from './project-stage.mjs';
 import {executeInvocation} from './project-process.mjs';
 import {projectExecution} from './project-execution.mjs';
 import { execFile } from 'node:child_process';
@@ -213,17 +214,27 @@ export function runCommand(root, binary, args = [], timeoutMs = 120_000) {
 
     // Das Zeitlimit zaehlt ab dem tatsaechlichen Start, nicht ab dem Warten.
     cmdAcquire().then(() => {
+      let stage=null;
+      try{
+        if(process.env.VF_PROJECT_SANDBOX==='docker'){
+          stage=prepareProjectStage(cwd);
+          invocation=projectExecution(stage.work,bin,list);
+        }
+      }catch(error){if(stage)disposeProjectStage(stage);cmdRelease();return resolvePromise({ok:false,error:error.message});}
       executeInvocation(invocation, {
-        cwd,
+        cwd:stage?.work||cwd,
         timeout: timeoutMs,
         maxBuffer: 2_000_000,
         env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV, CI: '1' }
       }, (err, stdout, stderr) => {
 
-        cmdRelease();
+        let artifacts=null;
+        try{if(stage&&!err)artifacts=collectProjectStage(stage);}catch(error){err=error;}
+        finally{try{if(stage)disposeProjectStage(stage);}catch(error){err=err||error;}cmdRelease();}
         const out = `${stdout || ''}${stderr || ''}`.trim();
         resolvePromise({
           ok: !err,
+          ...(artifacts&&!err?{artifacts}:{}),
           code: err?.code ?? 0,
           output: out.slice(-6000),
           error: err ? String(err.message || err).slice(0, 400) : null
