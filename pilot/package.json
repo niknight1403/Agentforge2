@@ -1,0 +1,22 @@
+{
+  "name": "anfragepilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "KI-Anfragebeantwortung als API und Dashboard fuer deutsche KMU",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test tests/",
+    "check": "node --check src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.10.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.22.3",
+    "stripe": "^17.7.0"
+  }
+}

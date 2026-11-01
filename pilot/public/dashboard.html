@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AnfragePilot — Dashboard</title>
+<style>
+  :root { --bg:#0b0f14; --card:#121a23; --linie:#20303f; --text:#e8eef5; --mute:#93a5b8; --akzent:#25d0a5; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; line-height:1.55; }
+  .wrap { max-width:1000px; margin:0 auto; padding:22px; }
+  header { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--linie); padding-bottom:16px; margin-bottom:24px; }
+  .logo { font-weight:700; } .logo span { color:var(--akzent); }
+  .rechts { display:flex; gap:14px; align-items:center; font-size:14px; color:var(--mute); }
+  a { color:var(--akzent); text-decoration:none; }
+  .karten { display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); margin-bottom:26px; }
+  .karte { background:var(--card); border:1px solid var(--linie); border-radius:12px; padding:18px; }
+  .karte .t { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--mute); }
+  .karte .gross { font-size:26px; font-weight:700; margin-top:6px; }
+  .balken { height:8px; background:#0a1219; border-radius:99px; overflow:hidden; margin-top:12px; }
+  .balken i { display:block; height:100%; background:var(--akzent); width:0%; }
+  h2 { font-size:17px; margin:26px 0 12px; }
+  textarea, input { width:100%; background:#0a1219; color:var(--text); border:1px solid var(--linie); border-radius:9px; padding:11px; font-size:14px; font-family:inherit; }
+  button { background:var(--akzent); color:#04211a; border:0; border-radius:9px; padding:11px 18px; font-weight:700; cursor:pointer; font-size:14px; }
+  button.leise { background:transparent; color:var(--mute); border:1px solid var(--linie); font-weight:500; }
+  button:disabled { opacity:.6; cursor:progress; }
+  pre { background:#0a1219; border:1px solid var(--linie); border-radius:10px; padding:14px; font-size:13px; overflow:auto; margin:0; }
+  code { font-family:ui-monospace,Menlo,monospace; }
+  .key { display:flex; justify-content:space-between; align-items:center; gap:10px; border:1px solid var(--linie); border-radius:9px; padding:10px 12px; margin-bottom:8px; font-size:14px; }
+  .key code { color:var(--akzent); }
+  .liste { display:grid; gap:8px; }
+  .eintrag { border:1px solid var(--linie); border-radius:10px; padding:12px; background:var(--card); font-size:14px; }
+  .eintrag .meta { color:var(--mute); font-size:12px; margin-top:6px; }
+  .msg { margin-top:10px; font-size:14px; min-height:20px; }
+  .msg.fehler { color:#ff8f8f; } .msg.ok { color:var(--akzent); }
+  .neu { background:#0a1219; border:1px dashed var(--akzent); border-radius:10px; padding:12px; margin-bottom:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">Anfrage<span>Pilot</span></div>
+    <div class="rechts">
+      <span id="wer">…</span>
+      <a href="./preise">Tarife</a>
+      <button class="leise" id="logout" type="button">Abmelden</button>
+    </div>
+  </header>
+
+  <div class="karten">
+    <div class="karte">
+      <div class="t">Tarif</div>
+      <div class="gross" id="tarif">…</div>
+      <div class="balken"><i id="balken"></i></div>
+      <div class="t" style="margin-top:8px" id="verbrauch">…</div>
+    </div>
+    <div class="karte">
+      <div class="t">Verbraucht diesen Monat</div>
+      <div class="gross" id="anzahl">…</div>
+    </div>
+    <div class="karte">
+      <div class="t">Frei</div>
+      <div class="gross" id="frei">…</div>
+    </div>
+  </div>
+
+  <h2>Testkonsole</h2>
+  <textarea id="nachricht" rows="4" placeholder="Kundenanfrage hier einfuegen …">Wir brauchen kurzfristig ein Angebot fuer 12 Telefonarbeitsplaetze. Was kostet das und wann koennen Sie installieren?</textarea>
+  <div style="display:flex; gap:10px; margin-top:10px; align-items:center">
+    <button id="testen" type="button">Antwort erzeugen</button>
+    <span class="msg" id="msg"></span>
+  </div>
+  <pre id="ergebnis" style="margin-top:14px; display:none"></pre>
+
+  <h2>API-Schluessel</h2>
+  <div id="keys" class="liste"></div>
+  <div id="neuerKey"></div>
+  <button class="leise" id="keyAnlegen" type="button" style="margin-top:10px">Neuen Schluessel anlegen</button>
+
+  <h2>Letzte Anfragen</h2>
+  <div id="verlauf" class="liste"></div>
+</div>
+
+<script>
+const msg = document.getElementById('msg');
+
+async function lade() {
+  const res = await fetch('./api/dashboard');
+  if (res.status === 401) { location.href = './login'; return; }
+  const d = await res.json();
+  document.getElementById('wer').textContent = d.nutzer.firma || d.nutzer.email;
+  document.getElementById('tarif').textContent = d.plan.label + (d.plan.preis ? ' · ' + d.plan.preis + ' €' : '');
+  document.getElementById('anzahl').textContent = d.verbrauch.verbraucht;
+  document.getElementById('frei').textContent = d.verbrauch.frei;
+  const anteil = d.plan.quota ? Math.min(100, Math.round((d.verbrauch.verbraucht / d.plan.quota) * 100)) : 0;
+  document.getElementById('balken').style.width = anteil + '%';
+  document.getElementById('verbrauch').textContent = d.verbrauch.verbraucht + ' von ' + d.plan.quota + ' Anfragen';
+
+  const keys = document.getElementById('keys');
+  keys.innerHTML = d.keys.length ? '' : '<div class="eintrag">Noch kein Schluessel angelegt.</div>';
+  for (const k of d.keys) {
+    const el = document.createElement('div');
+    el.className = 'key';
+    const zuletzt = k.last_used_at ? new Date(k.last_used_at).toLocaleDateString('de-DE') : 'nie';
+    el.innerHTML = '<span><code>' + k.prefix + '…</code> <span style="color:var(--mute)">zuletzt genutzt: ' + zuletzt + '</span></span>';
+    const b = document.createElement('button');
+    b.className = 'leise'; b.textContent = 'Widerrufen';
+    b.onclick = async () => { await fetch('./api/dashboard/key/' + k.id + '/revoke', { method:'POST' }); lade(); };
+    el.appendChild(b);
+    keys.appendChild(el);
+  }
+
+  const verlauf = document.getElementById('verlauf');
+  verlauf.innerHTML = d.letzte.length ? '' : '<div class="eintrag">Noch keine Anfragen verarbeitet.</div>';
+  for (const v of d.letzte) {
+    const el = document.createElement('div');
+    el.className = 'eintrag';
+    const kurz = (v.eingang || '').replace(/\s+/g, ' ').slice(0, 140);
+    el.innerHTML = '<div>' + escapeHtml(kurz) + '</div><div class="meta">' +
+      escapeHtml(v.kategorie || '') + ' · ' + escapeHtml(v.dringlichkeit || '') + ' · ' + (v.latenz_ms || 0) + ' ms · ' +
+      new Date(v.created_at).toLocaleString('de-DE') + '</div>';
+    verlauf.appendChild(el);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+document.getElementById('testen').onclick = async () => {
+  const knopf = document.getElementById('testen');
+  const ausgabe = document.getElementById('ergebnis');
+  knopf.disabled = true; msg.textContent = ''; msg.className = 'msg';
+  try {
+    const res = await fetch('./api/dashboard/test', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ nachricht: document.getElementById('nachricht').value }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Fehler bei der Verarbeitung');
+    ausgabe.style.display = 'block';
+    ausgabe.textContent = 'Antwort:\n' + d.reply + '\n\nKategorie: ' + d.kategorie +
+      '\nDringlichkeit: ' + d.dringlichkeit + '\nNaechster Schritt: ' + d.naechster_schritt +
+      '\n\n(' + d.meta.provider + ', ' + d.meta.latenz_ms + ' ms, ' + d.meta.frei + ' Anfragen frei)';
+    msg.className = 'msg ok'; msg.textContent = 'Antwort erzeugt.';
+    lade();
+  } catch (e) {
+    msg.className = 'msg fehler'; msg.textContent = e.message;
+  } finally {
+    knopf.disabled = false;
+  }
+};
+
+document.getElementById('keyAnlegen').onclick = async () => {
+  const res = await fetch('./api/dashboard/key', { method:'POST' });
+  const d = await res.json();
+  if (!res.ok) { msg.className = 'msg fehler'; msg.textContent = d.error || 'Schluessel konnte nicht angelegt werden'; return; }
+  document.getElementById('neuerKey').innerHTML =
+    '<div class="neu"><strong>Neuer Schluessel:</strong> <code>' + d.key + '</code><br><span style="color:var(--mute);font-size:13px">' + d.hinweis + '</span></div>';
+  lade();
+};
+
+document.getElementById('logout').onclick = async () => {
+  await fetch('./api/auth/logout', { method:'POST' });
+  location.href = './';
+};
+
+lade();
+</script>
+</body>
+</html>

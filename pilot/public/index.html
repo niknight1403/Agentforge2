@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AnfragePilot — Kundenanfragen in Sekunden beantwortet</title>
+<meta name="description" content="AnfragePilot beantwortet Kundenanfragen automatisch auf Deutsch, sortiert sie und liefert Ihnen den naechsten Schritt. Als API und Dashboard.">
+<style>
+  :root { --bg:#0b0f14; --card:#121a23; --linie:#20303f; --text:#e8eef5; --mute:#93a5b8; --akzent:#25d0a5; --akzent2:#0e8f75; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); line-height:1.6; }
+  a { color:var(--akzent); text-decoration:none; }
+  .wrap { max-width:1080px; margin:0 auto; padding:0 22px; }
+  header { border-bottom:1px solid var(--linie); padding:18px 0; }
+  header .wrap { display:flex; align-items:center; justify-content:space-between; }
+  .logo { font-weight:700; letter-spacing:.3px; font-size:18px; }
+  .logo span { color:var(--akzent); }
+  nav a { color:var(--mute); margin-left:18px; font-size:15px; }
+  nav a:hover { color:var(--text); }
+  .hero { padding:76px 0 40px; }
+  .hero h1 { font-size:clamp(30px,5vw,52px); line-height:1.15; margin:0 0 18px; letter-spacing:-.5px; }
+  .hero p.lead { font-size:19px; color:var(--mute); max-width:660px; margin:0 0 28px; }
+  .cta { display:inline-block; background:var(--akzent); color:#04211a; font-weight:700; padding:14px 26px; border-radius:10px; }
+  .cta.leise { background:transparent; color:var(--text); border:1px solid var(--linie); margin-left:10px; font-weight:500; }
+  .beispiel { background:var(--card); border:1px solid var(--linie); border-radius:14px; padding:20px; margin-top:34px; }
+  .beispiel .label { font-size:12px; text-transform:uppercase; letter-spacing:1.2px; color:var(--mute); margin-bottom:8px; }
+  .beispiel .frage { color:var(--mute); font-size:14px; margin-bottom:14px; }
+  .beispiel .antwort { font-size:15px; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+  .chip { font-size:12px; border:1px solid var(--linie); color:var(--mute); padding:4px 10px; border-radius:999px; }
+  section { padding:56px 0; border-top:1px solid var(--linie); }
+  h2 { font-size:28px; margin:0 0 12px; letter-spacing:-.3px; }
+  .unter { color:var(--mute); margin:0 0 30px; max-width:640px; }
+  .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
+  .karte { background:var(--card); border:1px solid var(--linie); border-radius:12px; padding:20px; }
+  .karte h3 { margin:0 0 8px; font-size:17px; }
+  .karte p { margin:0; color:var(--mute); font-size:14px; }
+  .preise .karte.aktiv { border-color:var(--akzent); }
+  .preis { font-size:34px; font-weight:700; margin:10px 0 2px; }
+  .preis small { font-size:14px; font-weight:400; color:var(--mute); }
+  ul.inkl { list-style:none; padding:0; margin:14px 0 0; font-size:14px; color:var(--mute); }
+  ul.inkl li { padding:3px 0; }
+  ul.inkl li::before { content:"✓"; color:var(--akzent); margin-right:8px; }
+  code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  pre { background:#0a1219; border:1px solid var(--linie); border-radius:10px; padding:16px; overflow:auto; font-size:13px; color:#c7d7e6; }
+  footer { border-top:1px solid var(--linie); padding:26px 0; color:var(--mute); font-size:13px; }
+  .hinweis { font-size:13px; color:var(--mute); margin-top:14px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="logo">Anfrage<span>Pilot</span></div>
+    <nav>
+      <a href="#funktion">Funktion</a>
+      <a href="#api">API</a>
+      <a href="#preise">Preise</a>
+      <a href="./login">Anmelden</a>
+    </nav>
+  </div>
+</header>
+
+<div class="hero wrap">
+  <h1>Jede Kundenanfrage in Sekunden<br>beantwortet — auf Deutsch.</h1>
+  <p class="lead">AnfragePilot liest eingehende Anfragen, erkennt worum es geht, schreibt eine versandfertige Antwort und sagt Ihrem Team, was als Naechstes zu tun ist. Per Dashboard oder API.</p>
+  <a class="cta" href="./registrieren">Kostenlos testen — 20 Anfragen</a>
+  <a class="cta leise" href="#api">API ansehen</a>
+
+  <div class="beispiel">
+    <div class="label">Beispiel</div>
+    <div class="frage">Anfrage: „Hallo, wir brauchen fuer unsere Kanzlei dringend eine neue Telefonanlage fuer 12 Arbeitsplaetze. Was kostet das und wann koennten Sie kommen?"</div>
+    <div class="antwort">„Guten Tag, fuer 12 Arbeitsplaetze empfehle ich unsere Standardloesung mit zentraler Rufnummer. Fuer ein verbindliches Angebot brauche ich nur die Anzahl der Nebenstellen und den gewuenschten Termin. Fuer die Installation planen wir einen Tag ein — nennen Sie mir bitte zwei Terminvorschlaege, dann bestaetige ich den ersten."</div>
+    <div class="chips">
+      <span class="chip">Kategorie: Angebotsanfrage</span>
+      <span class="chip">Dringlichkeit: hoch</span>
+      <span class="chip">Naechster Schritt: Terminvorschlaege anfordern</span>
+    </div>
+  </div>
+</div>
+
+<section id="funktion">
+  <div class="wrap">
+    <h2>Was AnfragePilot fuer Sie tut</h2>
+    <p class="unter">Gebaut fuer Betriebe, die Anfragen per E-Mail, Formular oder Marktplatz bekommen und keine Zeit fuer Routineantworten haben.</p>
+    <div class="grid">
+      <div class="karte"><h3>Antwort vorschreiben</h3><p>Eine Antwort, die Sie so absenden koennen — Stil und Ton passen zur Anfrage.</p></div>
+      <div class="karte"><h3>Anfragen sortieren</h3><p>Angebot, Termin, Reklamation, Preisfrage oder Support: jede Anfrage bekommt eine Kategorie.</p></div>
+      <div class="karte"><h3>Dringlichkeit erkennen</h3><p>Reklamationen und Fristen landen oben statt im Stapel.</p></div>
+      <div class="karte"><h3>Nichts erfinden</h3><p>Fehlen Preise oder Termine, fragt der Entwurf gezielt nach — statt Zahlen zu raten.</p></div>
+      <div class="karte"><h3>Per API anbinden</h3><p>Formular, Postfach oder CRM: ein POST-Request, Antwort als JSON.</p></div>
+      <div class="karte"><h3>Kontrolle bleibt bei Ihnen</h3><p>Jeder Entwurf wird geprueft. Gesendet wird nur, was Ihr Team freigibt.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="api">
+  <div class="wrap">
+    <h2>Eine Anfrage, eine Antwort</h2>
+    <p class="unter">Der Endpunkt nimmt eine Nachricht und liefert eine versandfertige Antwort mit Einordnung.</p>
+    <pre>curl -X POST https://IHR-HOST/api/v1/reply \
+  -H "X-API-Key: ap_..." \
+  -H "Content-Type: application/json" \
+  -d '{"nachricht":"Wir brauchen ein Angebot fuer 12 Telefone. Wann koennen Sie kommen?"}'
+
+{
+  "reply": "Guten Tag, ...",
+  "kategorie": "angebotsanfrage",
+  "dringlichkeit": "hoch",
+  "naechster_schritt": "Anzahl Nebenstellen und zwei Termine erfragen",
+  "meta": { "provider": "groq", "latenz_ms": 940, "frei": 187 }
+}</pre>
+    <p class="hinweis">Jeder Aufruf zaehlt eine Anfrage aus Ihrem Monatskontingent. Fehlerhafte Anfragen zaehlen nicht.</p>
+  </div>
+</section>
+
+<section class="preise" id="preise">
+  <div class="wrap">
+    <h2>Preise</h2>
+    <p class="unter">Monatlich kuendbar. Alle Preise netto pro Monat.</p>
+    <div class="grid">
+      <div class="karte">
+        <h3>Testphase</h3>
+        <div class="preis">0 €</div>
+        <ul class="inkl"><li>20 Anfragen</li><li>Dashboard + API</li><li>1 API-Schluessel</li></ul>
+        <p style="margin-top:16px"><a class="cta" href="./registrieren">Kostenlos starten</a></p>
+      </div>
+      <div class="karte aktiv">
+        <h3>Starter</h3>
+        <div class="preis">49 € <small>/ Monat</small></div>
+        <ul class="inkl"><li>200 Anfragen pro Monat</li><li>Kategorien &amp; Dringlichkeit</li><li>E-Mail-Support</li></ul>
+        <p style="margin-top:16px"><a class="cta" href="./registrieren">Starter waehlen</a></p>
+      </div>
+      <div class="karte">
+        <h3>Pro</h3>
+        <div class="preis">99 € <small>/ Monat</small></div>
+        <ul class="inkl"><li>1.000 Anfragen pro Monat</li><li>5 API-Schluessel</li><li>Priorisierte Verarbeitung</li></ul>
+        <p style="margin-top:16px"><a class="cta" href="./registrieren">Pro waehlen</a></p>
+      </div>
+      <div class="karte">
+        <h3>Business</h3>
+        <div class="preis">199 € <small>/ Monat</small></div>
+        <ul class="inkl"><li>5.000 Anfragen pro Monat</li><li>Mehrere Teams</li><li>Rechnung auf Anfrage</li></ul>
+        <p style="margin-top:16px"><a class="cta" href="./registrieren">Business waehlen</a></p>
+      </div>
+    </div>
+    <p class="hinweis">Zielrechnung: 70 Kunden im Pro-Plan = 6.930 € MRR.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    AnfragePilot · KI-Antwortassistent fuer Kundenanfragen · <a href="./login">Anmelden</a> · <a href="./api/health">Status</a>
+  </div>
+</footer>
+</body>
+</html>
