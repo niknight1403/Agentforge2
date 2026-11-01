@@ -43,6 +43,7 @@ jobs:
           MODE="$1"; IDS="$2"; IDEA_B64="$3"
           F=/tmp/villa-control-$$.mjs; tee $F >/dev/null << 'NODEJS'
           import { DatabaseSync } from 'node:sqlite';
+          import { readFileSync, existsSync, readdirSync } from 'node:fs';
           const [mode, idsArg, ideaB64] = process.argv.slice(2);
           const idea = ideaB64 ? Buffer.from(ideaB64, 'base64').toString('utf8') : '';
           const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
@@ -62,11 +63,10 @@ jobs:
               if (!v) { console.log(`PROJEKT [${id}] Villa fehlt`); continue; }
               const basis = v.source_path || `/opt/villaforge/server/data/workspace/villa-${id}/project`;
               console.log(`PROJEKT [${id}] ${v.name} -> ${basis}`);
-              const fs = require('node:fs');
               for (const datei of ['package.json', 'villaforge.verify.json', 'index.html']) {
                 const pfad = basis + '/' + datei;
-                if (!fs.existsSync(pfad)) { console.log(`  ${datei}: fehlt`); continue; }
-                const inhalt = fs.readFileSync(pfad, 'utf8');
+                if (!existsSync(pfad)) { console.log(`  ${datei}: fehlt`); continue; }
+                const inhalt = readFileSync(pfad, 'utf8');
                 if (datei === 'package.json') {
                   let scripts = {};
                   try { scripts = JSON.parse(inhalt).scripts || {}; } catch (e) { console.log('  package.json: ungueltig - ' + e.message); continue; }
@@ -76,7 +76,7 @@ jobs:
                 }
               }
               try {
-                const dateien = fs.readdirSync(basis).slice(0, 14);
+                const dateien = readdirSync(basis).slice(0, 14);
                 console.log('  dateien: ' + dateien.join(', '));
               } catch (e) { console.log('  dateien: ' + e.message); }
             }
