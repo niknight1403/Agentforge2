@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'server/**'
+      - 'scripts/**'
       - '!server/tests/**'
       - 'package.json'
       - 'package-lock.json'
@@ -12,6 +13,7 @@ on:
       - 'app/build.gradle.kts'
       - 'docs/releases/**'
       - '.github/workflows/hub-deploy.yml'
+      - '.github/workflows/build-apk.yml'
 
 concurrency:
   group: villaforge-production-hub

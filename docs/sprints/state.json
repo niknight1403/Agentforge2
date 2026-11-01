@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceCommit": "135e4ed8fdbd5b2708c0b79a4ad858df710c9658",
+  "sourceCommit": "6064f2f158a947e7a77e578cbd6c67a91a680d0b",
   "design": "Aurora / sichtbare Variante 6",
   "completed": [
     "VF-0001",
@@ -15,39 +15,40 @@
   "current": "VF-0009",
   "next": "VF-0009",
   "blockers": [
+    "Frische Masterprobe: zuerst HTTP 200 ohne auftragsbezogene Antwort; ein begrenzter Kontrolllauf nach Deploy scheitert mit HTTP 503, BUSY am 32B-Knoten und Timeout am Oracle-Knoten. Kein weiterer blinder Gesamt-Retry.",
     "Alle 16 Villen vollstaendig gelesen, aber keine bestandene Produktabnahme; Modell- und Artefaktnachweise bleiben getrennt.",
     "Bild-/Bildbearbeitungs-/Video-/Audio-Rendering benoetigt autorisierte Providerkonfiguration; keine kostenpflichtige Ressource wurde eingerichtet.",
-    "Bestehende Android-Debug-Signatur ist noch keine dauerhaft verwaltete Produktionssignierung."
+    "Bestehende Android-Debug-Signatur ist noch keine dauerhaft verwaltete Produktionssignierung.",
+    "Projektbefehle laufen laut fs-tools direkt via execFile; isolierte Laufzeit generierten Codes ist nicht nachgewiesen."
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
-  "executionMode": "foreground-only",
-  "workBranch": "work/green-gates",
-  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/33",
+  "executionMode": "foreground-and-scheduled-iterations",
+  "workBranch": "work/release-after-deploy",
+  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/34",
   "qualityBaseline": {
-    "tests": 359,
-    "pass": 359,
+    "tests": 361,
+    "pass": 361,
     "fail": 0,
     "browserE2E": 20,
     "browserAuditScopes": 9,
     "findings": 0
   },
   "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden.",
-  "integratedCommit": "b7c3a43da5c661a31de7f6f61068ac93d18e74d1",
+  "integratedCommit": "6064f2f158a947e7a77e578cbd6c67a91a680d0b",
   "version": "1.60.5",
   "pullRequestStatus": "merged",
   "backgroundExecution": false,
-  "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41249802676",
-  "releaseStatus": "blocked: product acceptance and production signing open",
+  "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
+  "releaseStatus": "blocked: live probe raced deployment; current semantic Master probe failed; product acceptance open",
   "checkpointParent": "35491d80662d51947fd22e0dcc0d2cba24503557",
-  "nextAction": "Produktabnahme und Auslieferung je Villa; falsche Medienklassifikation und No-op-Builds beheben. Bestehende Start/Stop-Entscheidungen erhalten.",
+  "nextAction": "PR #35 Release-Reihenfolge integrieren. Interaktive Kaskade anhand des realen 60s-Fehlers reparieren: eine Oracle-Inferenz verbraucht das Restbudget, gepruefte Alternativen werden nicht erreicht. Danach echte auftragsbezogene Masterprobe und isolierte Produktabnahme.",
   "lastMaintenance": {
-    "baseCommit": "cdff83ff7f5057c5ef5aba62174fa1da203d4699",
+    "baseCommit": "16bee853539d071c6f9f7bb3b1ca56d5039f8b70",
     "pullRequests": [
-      32,
-      33
+      34
     ],
-    "evidence": "docs/quality/capability-autopilot-evidence.json",
-    "audit": "docs/quality/villa-audit-after-2026-10-31.json",
+    "evidence": "docs/quality/green-recovery-evidence-2026-11-01.json",
+    "audit": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970917",
     "runtimeAutomation": {
       "available": true,
       "mechanism": "extension of existing developCycle, no extra scheduler",
@@ -76,5 +77,13 @@
       32
     ],
     "scope": "Echte Master-Modellantwort; keine Produktabnahme der Villen."
-  }
+  },
+  "scheduledContinuation": {
+    "enabled": true,
+    "cadence": "hourly",
+    "boundedChangesPerRun": 1,
+    "notifyOnlyWhenAllRequiredEvidencePasses": true,
+    "continuousExecution": false
+  },
+  "followUpPullRequest": "https://github.com/niknight1403/Agentforge2/pull/35"
 }
