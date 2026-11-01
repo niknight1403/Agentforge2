@@ -1,0 +1,33 @@
+name: AnfragePilot Stripe einrichten
+
+on:
+  workflow_dispatch:
+
+jobs:
+  stripe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+          printf '%s\n' 'exec scp -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key "$@"' > /tmp/scpcmd
+          chmod +x /tmp/scpcmd
+
+      - name: Stripe-Objekte anlegen
+        run: |
+          /tmp/scpcmd ops/pilot-stripe-setup.sh ubuntu@92.5.177.159:/tmp/pilot-stripe-setup.sh
+          /tmp/sshcmd "sudo bash /tmp/pilot-stripe-setup.sh"
+
+      - name: Tarife oeffentlich pruefen
+        run: |
+          sleep 2
+          curl -s -m 20 https://hub.cybersarah-ki.com/pilot/api/plans | head -c 500; echo ""
