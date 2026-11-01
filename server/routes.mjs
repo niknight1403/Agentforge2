@@ -56,6 +56,16 @@ export const FREE_ROUTE_CATALOG = [
     priority: 3
   },
   {
+    // xAI Grok: OpenAI-kompatibel, Auth per Bearer (XAI_API_KEY). Ohne Key
+    // bleibt die Route inaktiv und wird von der Kaskade uebersprungen.
+    name: 'xAI Grok (XAI_API_KEY)',
+    provider: 'xai',
+    baseUrl: 'https://api.x.ai/v1',
+    model: process.env.VF_XAI_MODEL || 'grok-4-fast',
+    keyEnv: 'XAI_API_KEY',
+    priority: 4
+  },
+  {
     name: 'OpenRouter (freie Modelle)',
     provider: 'openrouter',
     baseUrl: 'https://openrouter.ai/api/v1',
