@@ -72,18 +72,22 @@ export function verificationPlan(root){
  // Ein abgelehnter Platzhalter wird als solcher zurueckgemeldet, nicht als
  // fehlender Befehl: der Agent muss sonst raten, warum sein Skript nicht zaehlt,
  // und schreibt immer wieder neue Platzhalter (Villa 8 kam so auf 34 Versuche).
+ // Vorrang: ein echter Befehl im package.json des Projekts gewinnt gegen die
+ // ops-seitige villaforge.verify.json. Sonst wuerde der Agent seinen eigenen,
+ // korrekten Build setzen und die Abnahme weiter den alten Befehl fahren -
+ // genau dieser Widerspruch hat Reparaturrunden blockiert.
  return Object.fromEntries(['build','tests','smoke'].map(kind=>{
-  const explicit=custom?.[kind];
-  if(explicit && typeof explicit.binary==='string'&&Array.isArray(explicit.args)&&explicit.args.length<=20&&explicit.args.every(a=>typeof a==='string'&&a.length<=1000)){
-   if(!isNoOp(explicit.binary,explicit.args))return [kind,explicit];
-   return [kind,{invalid:`villaforge.verify.json: "${[explicit.binary,...explicit.args].join(' ').slice(0,90)}" ist ein Platzhalter und zaehlt nicht als Nachweis`}];
-  }
   const script=kind==='tests'?'test':kind;
   const befehl=pkg?.scripts?.[script];
-  if(typeof befehl==='string'){
-   if(!isNoOpScript(befehl))return [kind,{binary:'npm',args:['run',script]}];
-   return [kind,{invalid:`package.json: "${script}" ist ein Platzhalter ("${befehl.slice(0,90)}") und zaehlt nicht als Nachweis`}];
-  }
+  const ausPkg=typeof befehl==='string'?(isNoOpScript(befehl)?{invalid:`package.json: "${script}" ist ein Platzhalter ("${befehl.slice(0,90)}") und zaehlt nicht als Nachweis`}:{binary:'npm',args:['run',script]}):null;
+  const explicit=custom?.[kind];
+  const ausExplicit=explicit&&typeof explicit.binary==='string'&&Array.isArray(explicit.args)&&explicit.args.length<=20&&explicit.args.every(a=>typeof a==='string'&&a.length<=1000)
+   ?(isNoOp(explicit.binary,explicit.args)?{invalid:`villaforge.verify.json: "${[explicit.binary,...explicit.args].join(' ').slice(0,90)}" ist ein Platzhalter und zaehlt nicht als Nachweis`}:explicit)
+   :null;
+  const gueltig=[ausPkg,ausExplicit].find(k=>k&&!k.invalid);
+  if(gueltig)return [kind,gueltig];
+  const abgelehnt=[ausPkg,ausExplicit].find(k=>k&&k.invalid);
+  if(abgelehnt)return [kind,abgelehnt];
   return [kind,null];
  }));
 }
