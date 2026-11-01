@@ -117,16 +117,18 @@ CREATE TABLE IF NOT EXISTS sources (
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
+  password_hash TEXT,
+  pwhash TEXT,
   role TEXT NOT NULL DEFAULT 'user',
   plan TEXT NOT NULL DEFAULT 'free',
   tokens_used INTEGER NOT NULL DEFAULT 0,
   tokens_reset_at INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
+  updated_at INTEGER,
   /* v1.44.0 — Dauerhaft-Unlimited (Nutzerdirektive): 1 = keine Quotas,
      keine Token-Drosselung. token_budget='UNLIMITED' dokumentiert das im Datensatz. */
   is_unlimited INTEGER NOT NULL DEFAULT 0,
-  token_budget TEXT
+  token_budget TEXT DEFAULT 'DEFAULT'
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -154,35 +156,21 @@ function ensureColumn(table, column, definition) {
 }
 ensureColumn('villas', 'source_path', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('villas', 'mode', "TEXT NOT NULL DEFAULT 'BUILD'");
-// Zaehlt die selbstheilenden Runden eines Laufs. Wird beim Start eines Laufs
-// zurueckgesetzt, damit die Begrenzung pro Lauf gilt und nicht pro Datenbank.
 ensureColumn('villas', 'auto_rounds', 'INTEGER NOT NULL DEFAULT 0');
-// v1.44.0 — Unlimited-Anker fuer BESTEHENDE Datenbanken nachtragen.
+ensureColumn('users', 'pwhash', 'TEXT');
+ensureColumn('users', 'updated_at', 'INTEGER');
 ensureColumn('users', 'is_unlimited', 'INTEGER NOT NULL DEFAULT 0');
-ensureColumn('users', 'token_budget', 'TEXT');
-// Endprodukt-Vision: WAS genau am Ende verkauft wird (aus dem Umsatz-Plan).
+ensureColumn('users', 'token_budget', "TEXT DEFAULT 'DEFAULT'");
 ensureColumn('villas', 'vision', "TEXT NOT NULL DEFAULT ''");
-// Sperrzeit einer Route nach einem Fehler (Zeitstempel). Verhindert, dass jeder
-// Aufruf erneut in dieselbe tote Route laeuft.
 ensureColumn('routes', 'cooldown_until', 'INTEGER NOT NULL DEFAULT 0');
-// v1.57.5 — Routen-Messspalten zentral anlegen, damit jede Datenbank
-// (auch die temporaere Test-DB) sie von Anfang an hat. Bisher entstanden
-// lat_ms/tokens/dead nur beim Import von llm.mjs per ALTER TABLE; Tests, die
-// nur db.mjs laden, liefen deshalb in "no such column: lat_ms".
 ensureColumn('routes', 'lat_ms', 'INTEGER');
 ensureColumn('routes', 'tokens', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('routes', 'dead', 'INTEGER NOT NULL DEFAULT 0');
-// Automatische Wiederholung fehlgeschlagener Aufgaben (max. 3 Versuche).
 ensureColumn('tasks', 'retry_count', 'INTEGER NOT NULL DEFAULT 0');
-// ETA uses measured execution time, not the time tasks waited in the queue.
 ensureColumn('tasks', 'started_at', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('tasks', 'assignments', 'INTEGER NOT NULL DEFAULT 0');
 
-// Indizes: ohne sie scannt jede "WHERE villa_id = ?"-Abfrage die komplette
-// Tabelle - bei ~38.000 Zeilen synchron im Event-Loop. Das liess den Hub
-// haengen (selbst /api/health antwortete nicht mehr). IF NOT EXISTS macht
-// die Migration idempotent; bestehende Datenbanken bekommen sie beim Start.
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_tasks_villa_status ON tasks(villa_id, status, priority, id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -198,7 +186,6 @@ CREATE INDEX IF NOT EXISTS idx_villas_status ON villas(status, autonomy);
 
 export const now = () => Date.now();
 
-// Rat der Agenten (Superintelligenz-Loop): dokumentierte Rat-Runden je Villa.
 db.exec(`
 CREATE TABLE IF NOT EXISTS council (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

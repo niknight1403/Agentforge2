@@ -14,7 +14,7 @@ import { FREE_ROUTE_CATALOG } from './routes.mjs';
 import { chat, routingStatus, routingSummary, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
 import { masterChat, masterHistory } from './master.mjs';
 import { reapZombies } from './agents.mjs';
-import { userStore, usersExist, userForRequest, userForToken, verifyPassword, createSession, destroyToken, upsertUser, publicUser, quotaLeft, FREE_DAILY_TOKENS, loginBlockedFor, recordLoginFailure, clearLoginFailures } from './auth.mjs';
+import { userStore, usersExist, userForRequest, userForToken, verifyPassword, createSession, destroyToken, upsertUser, publicUser, quotaLeft, FREE_DAILY_TOKENS, loginBlockedFor, recordLoginFailure, clearLoginFailures, ensureSuperadmin, isAdmin as checkIsAdmin } from './auth.mjs';
 import { createVilla, runAgent, orchestrate, stopVilla, isRunning, extendVillaRunToCompletion, executeTaskOnce, TOOL_SPECS, toolSpecs, memoryContext, setSource, analyzeProject, refreshAgentPrompts, PROMPT_VERSION, ROLES, runTool } from './agents.mjs';
 import { packState, packSummary, setPackEnabled } from './packs.mjs';
 import { resumePendingVillas } from './resume.mjs';
@@ -109,6 +109,7 @@ initWebhookStore();
 initBillingStore();
 initGatewayStore();
 initObservabilityStore();
+ensureSuperadmin();
 
 /* v1.44.0 — SUPERADMIN-Anker (Nutzerdirektive 2026-10-19): Der Administrator
  * aus VF_ADMIN_EMAIL wird bei JEDEM Start idempotent gesichert — Rolle
@@ -202,7 +203,7 @@ async function api(req, res, url) {
   // ohne Lockout) oder dauerhaft via VF_OPEN_MODE=1.
   const openMode = process.env.VF_OPEN_MODE === '1' || !usersExist();
   const needAuth = !openMode && !user;
-  const isAdmin = !!user && (user.role === 'admin' || user.role === 'superadmin');
+  const isAdmin = checkIsAdmin(req) || (!!user && (user.role === 'admin' || user.role === 'superadmin' || user.role === 'SUPERADMIN' || Number(user.is_unlimited) === 1));
   // Sicherheitsalarm: offener Modus ist ein stiller Auth-Ausfall (leere users-Tabelle
   // oder bewusst gesetzter Open-Mode-Schalter). Einmal pro Prozess laut protokollieren.
   if (openMode && !globalThis.__vfOpenModeWarned) {
@@ -488,7 +489,7 @@ async function api(req, res, url) {
   }
 
   /* --------------------------- Auth --------------------------- */
-  if (p === '/api/auth/login' && m === 'POST') {
+  if ((p === '/api/login' || p === '/api/auth/login') && m === 'POST') {
     const b = await readBody(req);
     const loginEmail = String(b.email || '').toLowerCase();
     const loginIp = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
@@ -500,14 +501,16 @@ async function api(req, res, url) {
       return json(res, 429, { error: 'Zu viele Fehlversuche. Bitte spaeter erneut versuchen.', retryAfterSeconds: retryAfter });
     }
     const row = db.prepare('SELECT * FROM users WHERE email = ?').get(loginEmail);
-    if (!row || !verifyPassword(String(b.password || ''), row.password_hash)) {
+    const storedHash = row ? (row.pwhash || row.password_hash) : null;
+    if (!row || !verifyPassword(String(b.password || ''), storedHash)) {
       const state = recordLoginFailure(throttleKey);
       log(`Login fehlgeschlagen: ${loginEmail} von ${loginIp} (Versuch ${state.count})`);
       return json(res, 401, { error: 'E-Mail oder Passwort falsch.' });
     }
     clearLoginFailures(throttleKey);
-    const token = createSession(row.id);
-    return json(res, 200, { token, user: publicUser(row), quotaLeft: quotaLeft(row) });
+    const token = createSession(row.id, 24 * 3600 * 1000);
+    const expires_at = now() + 24 * 3600 * 1000;
+    return json(res, 200, { token, user: publicUser(row), quotaLeft: quotaLeft(row), expires_at });
   }
   if (p === '/api/auth/me' && m === 'GET') {
     if (!user) return json(res, 200, { open: true, user: null });
