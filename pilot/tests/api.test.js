@@ -242,3 +242,48 @@ test("Billing: Preis-ID wird dem richtigen Plan zugeordnet", () => {
   assert.equal(planAusPrice("price_pro_123"), "pro");
   assert.equal(planAusPrice("price_unbekannt"), null);
 });
+
+test("Demo: oeffentlicher Sofort-Test liefert eine Antwort ohne Konto", async () => {
+  const { basis, db, server } = await starteApp();
+  const res = await fetch(`${basis}/api/public/demo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nachricht: "Wir brauchen ein Angebot fuer 12 Telefonarbeitsplaetze im Buero." }),
+  });
+  const d = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(d.kategorie, "angebotsanfrage");
+  assert.equal(d.meta.limit, 3);
+  assert.equal(d.meta.frei, 2);
+  // Der Test darf kein Kontingent eines Kontos verbrauchen.
+  assert.equal(db.prepare("SELECT COUNT(*) AS c FROM usage_events").get().c, 0);
+  server.close();
+});
+
+test("Demo: nach drei Anfragen ist Schluss am selben Tag", async () => {
+  const { basis, server } = await starteApp();
+  const schicken = () => fetch(`${basis}/api/public/demo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nachricht: "Wir brauchen ein Angebot fuer 12 Telefonarbeitsplaetze im Buero." }),
+  });
+  for (let i = 0; i < 3; i++) assert.equal((await schicken()).status, 200);
+  const vierte = await schicken();
+  const d = await vierte.json();
+  assert.equal(vierte.status, 429);
+  assert.equal(d.registrieren, "./registrieren");
+  server.close();
+});
+
+test("Demo: zu kurze Eingabe wird abgewiesen und zaehlt nicht", async () => {
+  const { basis, server } = await starteApp();
+  const res = await fetch(`${basis}/api/public/demo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nachricht: "Hi" }),
+  });
+  assert.equal(res.status, 400);
+  const status = await (await fetch(`${basis}/api/public/demo/status`)).json();
+  assert.equal(status.frei, 3);
+  server.close();
+});

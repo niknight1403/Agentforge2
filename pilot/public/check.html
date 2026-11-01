@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AnfragePilot — Kundenanfrage jetzt kostenlos beantworten lassen</title>
+<meta name="description" content="Fuegen Sie eine Kundenanfrage ein und erhalten Sie sofort eine versandfertige deutsche Antwort. Kostenlos testen, ohne Anmeldung.">
+<style>
+  :root { --bg:#0b0f14; --card:#121a23; --linie:#20303f; --text:#e8eef5; --mute:#93a5b8; --akzent:#25d0a5; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; line-height:1.6; }
+  .wrap { max-width:760px; margin:0 auto; padding:28px 22px 60px; }
+  .kopf { display:flex; justify-content:space-between; align-items:center; margin-bottom:26px; }
+  .logo { font-weight:700; font-size:18px; } .logo span { color:var(--akzent); }
+  a { color:var(--akzent); text-decoration:none; }
+  h1 { font-size:clamp(24px,4vw,36px); line-height:1.2; margin:0 0 10px; letter-spacing:-.4px; }
+  p.sub { color:var(--mute); margin:0 0 22px; font-size:17px; }
+  label { display:block; font-size:14px; color:var(--mute); margin-bottom:6px; }
+  textarea { width:100%; min-height:130px; background:#0a1219; color:var(--text); border:1px solid var(--linie);
+             border-radius:10px; padding:13px; font-size:15px; font-family:inherit; resize:vertical; }
+  textarea:focus { outline:2px solid var(--akzent); outline-offset:1px; }
+  .zeile { display:flex; gap:12px; align-items:center; margin-top:14px; flex-wrap:wrap; }
+  button { background:var(--akzent); color:#04211a; border:0; border-radius:10px; padding:13px 22px;
+           font-weight:700; font-size:15px; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:progress; }
+  .rest { color:var(--mute); font-size:13px; }
+  .karte { background:var(--card); border:1px solid var(--linie); border-radius:14px; padding:20px; margin-top:22px; display:none; }
+  .karte.zeigen { display:block; }
+  .karte .titel { font-size:13px; text-transform:uppercase; letter-spacing:1px; color:var(--mute); margin-bottom:10px; }
+  .antwort { font-size:16px; white-space:pre-wrap; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+  .chip { font-size:12px; border:1px solid var(--linie); color:var(--mute); padding:4px 10px; border-radius:999px; }
+  .fehler { color:#ff8f8f; margin-top:14px; font-size:15px; }
+  .cta-box { margin-top:24px; background:linear-gradient(180deg,#0f1a22,#0c141b); border:1px solid var(--linie);
+             border-radius:14px; padding:20px; }
+  .cta-box h2 { font-size:18px; margin:0 0 8px; }
+  .cta-box p { color:var(--mute); font-size:14px; margin:0 0 14px; }
+  .cta { display:inline-block; background:var(--akzent); color:#04211a; padding:12px 20px; border-radius:9px; font-weight:700; }
+  .fuss { margin-top:26px; font-size:13px; color:var(--mute); }
+  .beispiele { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .beispiele button { background:transparent; border:1px solid var(--linie); color:var(--mute); font-weight:500; font-size:12px; padding:6px 11px; border-radius:999px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kopf">
+    <div class="logo">Anfrage<span>Pilot</span></div>
+    <a href="./registrieren">Kostenloses Konto</a>
+  </div>
+
+  <h1>Kundenanfrage einfügen – Antwort in Sekunden.</h1>
+  <p class="sub">Der Test ist kostenlos und ohne Anmeldung. Sie erhalten eine versandfertige Antwort, die Einordnung der Anfrage und den nächsten Schritt.</p>
+
+  <label for="nachricht">Kundenanfrage</label>
+  <textarea id="nachricht" placeholder="Zum Beispiel: Guten Tag, wir brauchen für unser Büro ein Angebot für 12 Telefonarbeitsplätze. Wann könnten Sie installieren?"></textarea>
+  <div class="beispiele">
+    <button type="button" data-bsp="Guten Tag, wir haben gestern eine Wallbox installieren lassen. Die Rechnung ist doppelt so hoch wie im Angebot. Ich erwarte bis Freitag eine Erklärung.">Reklamation</button>
+    <button type="button" data-bsp="Hallo, wir interessieren uns für Ihre Wartung. Was kostet ein Jahresvertrag für 3 Anlagen? Wir bräuchten ein Angebot bis Ende des Monats.">Angebotsanfrage</button>
+    <button type="button" data-bsp="Können Sie am Dienstag zwischen 8 und 10 Uhr kommen? Unsere Anlage macht Geräusche und wir haben kein warmes Wasser.">Termin & Störung</button>
+  </div>
+
+  <div class="zeile">
+    <button id="absenden" type="button">Antwort erzeugen</button>
+    <span class="rest" id="rest"></span>
+  </div>
+  <div class="fehler" id="fehler"></div>
+
+  <div class="karte" id="karte">
+    <div class="titel">Versandfertige Antwort</div>
+    <div class="antwort" id="antwort"></div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="cta-box" id="cta" style="display:none">
+    <h2>Diese Antwort direkt im Postfach erzeugen?</h2>
+    <p>Mit einem kostenlosen Konto bekommen Sie 20 Anfragen, einen API-Schlüssel für Ihr Formular oder Postfach und die Übersicht aller Vorgänge. Keine Kreditkarte nötig.</p>
+    <a class="cta" href="./registrieren">Kostenloses Konto anlegen</a>
+  </div>
+
+  <div class="fuss">
+    Der Test ist auf drei Anfragen pro Tag begrenzt. Antworten werden nicht gespeichert, solange Sie kein Konto anlegen.
+  </div>
+</div>
+
+<script>
+const knopf = document.getElementById('absenden');
+const feld = document.getElementById('nachricht');
+const fehler = document.getElementById('fehler');
+const rest = document.getElementById('rest');
+
+async function statusLaden() {
+  try {
+    const r = await fetch('./api/public/demo/status');
+    const d = await r.json();
+    rest.textContent = d.frei > 0 ? d.frei + ' von ' + d.limit + ' Testanfragen heute frei' : 'Test für heute aufgebraucht';
+  } catch { rest.textContent = ''; }
+}
+
+document.querySelectorAll('[data-bsp]').forEach((b) => {
+  b.onclick = () => { feld.value = b.dataset.bsp; feld.focus(); };
+});
+
+knopf.onclick = async () => {
+  fehler.textContent = '';
+  knopf.disabled = true;
+  document.getElementById('karte').classList.remove('zeigen');
+  try {
+    const r = await fetch('./api/public/demo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nachricht: feld.value }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      fehler.textContent = d.hinweis ? d.error + ' — ' + d.hinweis : (d.error || 'Das hat nicht funktioniert.');
+      if (d.frei === 0) document.getElementById('cta').style.display = 'block';
+      return;
+    }
+    document.getElementById('antwort').textContent = d.reply;
+    document.getElementById('chips').innerHTML =
+      '<span class="chip">Kategorie: ' + d.kategorie + '</span>' +
+      '<span class="chip">Dringlichkeit: ' + d.dringlichkeit + '</span>' +
+      '<span class="chip">' + d.meta.latenz_ms + ' ms</span>';
+    document.getElementById('karte').classList.add('zeigen');
+    document.getElementById('cta').style.display = 'block';
+    rest.textContent = d.meta.frei > 0 ? d.meta.frei + ' von ' + d.meta.limit + ' Testanfragen heute frei' : 'Test für heute aufgebraucht';
+  } catch (e) {
+    fehler.textContent = 'Verbindung fehlgeschlagen. Bitte erneut versuchen.';
+  } finally {
+    knopf.disabled = false;
+  }
+};
+
+statusLaden();
+</script>
+</body>
+</html>

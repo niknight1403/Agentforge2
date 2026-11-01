@@ -190,6 +190,56 @@ export function createApp({ db = openDatabase(), llm = (m, o) => llmChat(m, o) }
     await frageBeantworten(req, res, req.nutzer.id, req.body);
   });
 
+  // ---------- Oeffentlicher Sofort-Test (Lead-Magnet, ohne Anmeldung) ----------
+  // Bewusst begrenzt: 3 Versuche pro IP und Tag, damit der Test nicht als
+  // kostenloser Dauerzugang missbraucht wird und die Registrierung attraktiv bleibt.
+  const demoZaehler = new Map();
+  const DEMO_LIMIT = Number(process.env.DEMO_LIMIT || 3);
+
+  function demoFrei(ip) {
+    const heute = new Date().toISOString().slice(0, 10);
+    const eintrag = demoZaehler.get(ip);
+    if (!eintrag || eintrag.tag !== heute) return DEMO_LIMIT;
+    return Math.max(0, DEMO_LIMIT - eintrag.anzahl);
+  }
+
+  app.get("/api/public/demo/status", (req, res) => {
+    res.json({ frei: demoFrei(req.ip || "unbekannt"), limit: DEMO_LIMIT });
+  });
+
+  app.post("/api/public/demo", begrenze(6, 60000), async (req, res) => {
+    const ip = req.ip || "unbekannt";
+    const frei = demoFrei(ip);
+    if (frei <= 0) {
+      return res.status(429).json({
+        error: "Der kostenlose Test ist fuer heute aufgebraucht",
+        frei: 0,
+        hinweis: "Mit einem kostenlosen Konto erhalten Sie 20 Anfragen.",
+        registrieren: "./registrieren",
+      });
+    }
+    try {
+      const ergebnis = await beantworteAnfrage(req.body, { llm });
+      const heute = new Date().toISOString().slice(0, 10);
+      const eintrag = demoZaehler.get(ip);
+      const anzahl = !eintrag || eintrag.tag !== heute ? 1 : eintrag.anzahl + 1;
+      demoZaehler.set(ip, { tag: heute, anzahl });
+      res.json({
+        reply: ergebnis.reply,
+        kategorie: ergebnis.kategorie,
+        dringlichkeit: ergebnis.dringlichkeit,
+        naechster_schritt: ergebnis.naechsterSchritt,
+        meta: { frei: Math.max(0, DEMO_LIMIT - anzahl), limit: DEMO_LIMIT, latenz_ms: ergebnis.latenzMs },
+      });
+    } catch (e) {
+      if (e instanceof AnfrageFehler) {
+        return res.status(e.code === "LLM_UNAVAILABLE" ? 503 : 400).json({ error: e.message, code: e.code });
+      }
+      console.error("[demo] Fehler:", e);
+      res.status(502).json({ error: "Antwort konnte nicht erzeugt werden" });
+    }
+  });
+
   // ---------- Billing ----------
   app.post("/api/billing/checkout", mitSession, async (req, res) => {
     const stripe = stripeClient();
@@ -210,6 +260,7 @@ export function createApp({ db = openDatabase(), llm = (m, o) => llmChat(m, o) }
   };
   app.get("/", seite("index.html"));
   app.get("/preise", seite("index.html"));
+  app.get("/check", seite("check.html"));
   app.get("/login", seite("login.html"));
   app.get("/registrieren", seite("login.html"));
   app.get("/app", (req, res) => {
