@@ -1,23 +1,19 @@
 set -u
 PID=$(systemctl show cybersarah-ccc -p MainPID --value)
 DBU=$(tr '\0' '\n' < /proc/$PID/environ | grep '^DATABASE_URL=' | cut -d= -f2-)
-echo "== DATABASE_URL des Prozesses (ohne Zugangsdaten) =="
-echo "$DBU" | sed -E 's#(://)[^@]+@#\1***@#'
-echo "== Ursache (cause) im Journal =="
-journalctl -u cybersarah-ccc --since "-15 min" --no-pager 2>/dev/null | grep -iE 'ECONNREFUSED|ENOTFOUND|self.signed|certificate|password authentication|no pg_hba|timeout|SSL|role .* does not exist|permission denied|cause' | sort -u | tail -6 | cut -c1-300
-echo "== Postgres lauscht? =="
-ss -ltn | grep -E ':5432|:443 ' | awk '{print $4}'
-echo "== Direkter Test mit der URL des Prozesses (psql) =="
-PGCONNECT_TIMEOUT=8 psql "$DBU" -At -c "SELECT current_user, inet_server_addr(), (SELECT count(*) FROM users)" 2>&1 | head -3 | cut -c1-250
-echo "== Test ueber Node/pg wie der Dienst (SSL-Variante) =="
-cd /opt/ccc/repo
-cat > /tmp/dbt.cjs <<'JS'
-const { Pool } = require("/opt/ccc/repo/node_modules/pg");
-const raw = process.env.DBU;
-const url = raw.replace(/[?&]sslmode=[^&]*/g, "");
-const ssl = /sslmode=disable/.test(raw) ? false : { rejectUnauthorized: false };
-const p = new Pool({ connectionString: url, ssl, max: 1, connectionTimeoutMillis: 8000 });
-p.query("select count(*) as n from users").then(r => { console.log("pg OK users =", r.rows[0].n); return p.end(); })
- .catch(e => { console.log("pg FEHLER:", e.code || "", (e.message || "").slice(0, 160)); return p.end(); });
-JS
-DBU="$DBU" node /tmp/dbt.cjs; rm -f /tmp/dbt.cjs
+ROLE=$(echo "$DBU" | sed -E 's#^[a-z]+://([^:@]+)[:@].*#\1#')
+echo "Dienst-Rolle: $ROLE"
+echo "== Wo liegen die users-Tabellen? =="
+sudo -u postgres psql -d cybersarah -At -c "SELECT schemaname||'.'||tablename||' (owner '||tableowner||')' FROM pg_tables WHERE tablename='users'"
+echo "== Rollen-Setup =="
+sudo -u postgres psql -d cybersarah -At -c "SELECT rolname, rolsuper, rolconfig FROM pg_roles WHERE rolname='$ROLE'"
+echo "== search_path (DB / Rolle / Session des Dienstes) =="
+sudo -u postgres psql -d cybersarah -At -c "SHOW search_path"
+PGCONNECT_TIMEOUT=8 psql "$DBU" -At -c "SHOW search_path" 2>&1 | head -1
+PGCONNECT_TIMEOUT=8 psql "$DBU" -At -c "SELECT current_schemas(true)" 2>&1 | head -1
+echo "== Rechte der Dienst-Rolle auf public =="
+sudo -u postgres psql -d cybersarah -At -c "SELECT has_schema_privilege('$ROLE','public','USAGE') AS usage, has_table_privilege('$ROLE','public.users','SELECT') AS sel"
+echo "== Gibt es mehrere Datenbanken? =="
+sudo -u postgres psql -At -c "SELECT datname FROM pg_database WHERE NOT datistemplate"
+echo "== Welche DB sieht die Dienst-Rolle? =="
+PGCONNECT_TIMEOUT=8 psql "$DBU" -At -c "SELECT current_database(), (SELECT count(*) FROM information_schema.tables WHERE table_schema='public')" 2>&1 | head -1
