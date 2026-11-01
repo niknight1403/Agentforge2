@@ -31,6 +31,8 @@ if [ -n "${AID:-}" ]; then
   echo "-- Ergebnis (Auszug, 600 Zeichen) --"
   jq -r '.result.data.json.ergebnis // "" | tostring' /tmp/exec.json 2>/dev/null | head -c 600; echo
 fi
+echo "== Quelle des LLM-Aufrufs (Ereignislog) =="
+sudo -u postgres psql -d cybersarah -At -c "SELECT aufgabeId||' | '||nachricht FROM \"aiAufgabenEreignisse\" ORDER BY id DESC LIMIT 2"
 echo "== DB-Beleg =="
 sudo -u postgres psql -d cybersarah -At -c "SELECT 'aufgaben: '||status||' = '||count(*) FROM \"aiAufgaben\" GROUP BY status"
 sudo -u postgres psql -d cybersarah -At -c "SELECT 'ereignisse: '||count(*) FROM \"aiAufgabenEreignisse\""
