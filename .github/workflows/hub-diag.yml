@@ -22,20 +22,25 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
           set -uo pipefail
-          ENVLINE=$(systemctl show villaforge-hub -p Environment --value)
-          export $(echo "$ENVLINE" | tr ' ' '\n' | grep -E '^(VF_ADMIN_EMAIL|VF_ADMIN_PASSWORD)=' | tr '\n' ' ')
+          echo "== Code-Stand im Deploy-Verzeichnis =="
+          git -C /opt/villaforge log --oneline -1 2>/dev/null || echo "  kein git"
+          echo -n "  neue Diagnosezeile vorhanden: "
+          grep -c "keine Route versucht" /opt/villaforge/server/llm.mjs 2>/dev/null || echo 0
+          PID=$(ss -ltnp 2>/dev/null | grep ':12000' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+          echo "  Hub-PID=$PID gestartet: $(ps -o lstart= -p "$PID" 2>/dev/null)"
+          EMAIL=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_EMAIL=' | cut -d= -f2-)
+          PASS=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_PASSWORD=' | cut -d= -f2-)
+          echo "  Admin-Zugang in der Umgebung: $([ -n "$EMAIL" ] && [ -n "$PASS" ] && echo ja || echo nein)"
           echo "== Login =="
           TOK=$(curl -s --max-time 20 -X POST http://127.0.0.1:12000/api/auth/login -H 'content-type: application/json' \
-            -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" \
+            -d "{\"email\":\"$EMAIL\",\"password\":\"$PASS\"}" \
             | python3 -c 'import json,sys;print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
           [ -n "$TOK" ] && echo "  Session: vorhanden" || echo "  Session: FEHLT"
           echo "== Master-Chat =="
           curl -s --max-time 150 -X POST http://127.0.0.1:12000/api/master/chat -H 'content-type: application/json' \
             -H "authorization: Bearer $TOK" \
             -d '{"message":"Antworte ausschliesslich mit einem kurzen Satz, dass die Modellverbindung geprueft ist.","requestId":"diag-'"$(date +%s)"'"}' \
-            | head -c 700; echo
-          echo "== Diagnosezeilen mit versuchten Routen =="
-          journalctl -u villaforge-hub --since '-4min' --no-pager -o cat | grep 'Fehlschlag' | tail -6
-          echo "== Speicher =="
-          free -m | head -3
+            | head -c 600; echo
+          echo "== LLM-Diagnosezeilen (letzte 3) =="
+          journalctl --since '-6min' --no-pager -o cat | grep 'Fehlschlag' | tail -3
           DIAG
