@@ -39,6 +39,19 @@ jobs:
               console.log('LOCAL_NODE',JSON.stringify({routeId:row.id,name:row.name,enabled:!!row.enabled,status:row.status,http:response.status,latencyMs:Date.now()-started,models:Array.isArray(data.models)?data.models.map(m=>m.name):[],historicalSuccesses:row.ok,historicalFailures:row.fail}));
             }catch{console.log('LOCAL_NODE',JSON.stringify({routeId:row.id,name:row.name,enabled:!!row.enabled,status:row.status,error:'CONNECTION_OR_TIMEOUT',latencyMs:Date.now()-started}));}
           }
+
+          const candidates=rows.filter(r=>!r.enabled&&/qwen2\.5-coder:(3b|7b)$/i.test(r.model));
+          for(const row of candidates){
+            const started=Date.now();
+            try{
+              const key=row.key_env?resolveKey(row.key_env):'';
+              const url=row.base_url.replace(/\/$/,'')+'/chat/completions';
+              const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json',...(key?{authorization:'Bearer '+key}:{})},body:JSON.stringify({model:row.model,messages:[{role:'user',content:'Antworte ausschliesslich mit dem kurzen Satz: Modellverbindung erfolgreich geprueft.'}],max_tokens:24,temperature:0,stream:false}),signal:AbortSignal.timeout(15000),redirect:'error'});
+              const data=await response.json().catch(()=>({})),answer=String(data.choices?.[0]?.message?.content||'');
+              console.log('LOCAL_INFERENCE',JSON.stringify({routeId:row.id,name:row.name,http:response.status,ok:response.ok&&answer.length>12,answerLength:answer.length,latencyMs:Date.now()-started}));
+            }catch{console.log('LOCAL_INFERENCE',JSON.stringify({routeId:row.id,name:row.name,ok:false,error:'CONNECTION_OR_TIMEOUT',latencyMs:Date.now()-started}));}
+          }
+
           const health=await fetch('http://127.0.0.1:12000/api/health',{signal:AbortSignal.timeout(5000)}).then(r=>r.json());
           console.log('HUB_MODEL_STATE',JSON.stringify(health.llm));
           NODE
