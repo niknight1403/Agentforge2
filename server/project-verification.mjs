@@ -57,7 +57,8 @@ function isNoOp(binary,args=[]){
  if(flag<0)return false;
  const code=args[flag+1]||'';
  // Reject constant-success snippets, while keeping assertions and real work executable.
- return /^\s*(?:(?:console\.log|print)\(\s*(['"])[^'"\n]*\1\s*\)\s*;?\s*|(?:process\.exit|sys\.exit)\(0\)\s*;?\s*)+$/.test(code);
+ const statements=code.split(';').map(s=>s.trim()).filter(Boolean);
+ return statements.length===0||statements.every(s=>/^(?:console\.log|print)\(\s*(['"])[^'"\n]*\1\s*\)$/.test(s)||/^(?:process\.exit|sys\.exit)\(0\)$/.test(s));
 }
 function isNoOpScript(script){
  if(noOp.test(script))return true;

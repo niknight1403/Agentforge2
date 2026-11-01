@@ -64,3 +64,8 @@ test('Software-Auftraege mit langen Rollen-Headern werden nicht nach spaeteren M
  assert.equal(deliveryProfile(villa('Build an application with audio and video editing')).id,'software');
  assert.equal(deliveryProfile(villa('Du bist ein Softwareentwickler. Produziere ein Video fuer den App-Launch.')).id,'video');
 });
+
+test('Programme, Tools und Mediengeneratoren benoetigen Software-Abnahme',()=>{
+ for(const idea of ['Build a logo generator','Erstelle ein Programm, das ein Logo erzeugt','Create a tool that renders a video','Baue einen Bildgenerator','Build an audio editor','Erstelle einen Generator fuer Bilder'])assert.equal(deliveryProfile(villa(idea)).id,'software',idea);
+ assert.equal(deliveryProfile(villa('Erstelle ein Video ueber unser Programm')).id,'video');
+});
