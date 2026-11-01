@@ -12,7 +12,7 @@ import { projectDirectory,verifyProjectRuntime } from './project-verification.mj
  * server/data/builds/. Beim Erreichen der Beta-Reife (Score >= 65) baut der
  * Hub automatisch einmalig mit (maybeAutoBuild, getaktet vom Rat-Loop).
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, statSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, statSync, readdirSync, realpathSync } from 'node:fs';
 import { join, resolve, extname, basename } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -253,6 +253,81 @@ function perfManifest(dir, record, L) {
   }
 }
 
+// --- App-Geruest -----------------------------------------------------------
+// Die Vorlage villa-apk-template/ lag ungenutzt im Repo: Villen erzeugten
+// Wissensdatenbanken und Tests, aber nie einen Einstiegspunkt. Das Produkt-Gate
+// verlangt index.html, package.json oder AndroidManifest.xml - ohne Geruest
+// scheiterte jede Produktabnahme, obwohl die Villa fertig war.
+const APP_ENTRY = /^(?:index\.html|package\.json|AndroidManifest\.xml)$/;
+const SCAFFOLD_SKIP = new Set(['node_modules', '.git', '.gradle', 'backups', '__pycache__']);
+
+function walkProject(dir, visit, level = 0, maxLevel = 8) {
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isFile() && visit(full, entry.name, level)) return true;
+    if (entry.isDirectory() && level < maxLevel && !SCAFFOLD_SKIP.has(entry.name) && walkProject(full, visit, level + 1, maxLevel)) return true;
+  }
+  return false;
+}
+
+/** Traegt das Projekt irgendwo einen App-Einstiegspunkt? */
+export function hasAppEntryPoint(dir) {
+  if (!existsSync(dir)) return false;
+  return walkProject(dir, (_full, name) => APP_ENTRY.test(name));
+}
+
+function shellPage(villa, dir) {
+  const files = [];
+  walkProject(dir, (full, name) => {
+    let size = 0;
+    try { size = statSync(full).size; } catch { /* Groesse optional */ }
+    files.push({ name, size });
+    return false;
+  });
+  const escape = (value) => String(value).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const rows = files.slice(0, 80).map((f) => `<li><code>${escape(f.name)}</code><span>${(f.size / 1024).toFixed(1)} KB</span></li>`).join('');
+  return `<!DOCTYPE html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escape(villa.name)}</title>
+<style>
+:root{color-scheme:dark}
+body{margin:0;padding:24px;background:#0A0E14;color:#E6F1F5;font:16px/1.5 system-ui,sans-serif}
+h1{margin:0 0 4px;font-size:24px;color:#00FFD1}
+p.sub{margin:0 0 20px;color:#7F92A0;font-size:14px}
+h2{margin:24px 0 8px;font-size:15px;color:#7F92A0;text-transform:uppercase;letter-spacing:.08em}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+li{display:flex;justify-content:space-between;gap:16px;background:#111823;border:1px solid #1E2A38;border-radius:10px;padding:10px 14px}
+code{color:#00FFD1;font-size:14px;word-break:break-all}
+li span{color:#7F92A0;font-size:13px;white-space:nowrap}
+</style></head>
+<body>
+<h1>${escape(villa.name)}</h1>
+<p class="sub">Villa ${escape(villa.id)} &middot; Projektstand ${escape(new Date(now()).toISOString().slice(0, 10))}</p>
+<h2>Projektdateien (${files.length})</h2>
+<ul>${rows || '<li>Noch keine Projektdateien</li>'}</ul>
+</body></html>
+`;
+}
+
+/**
+ * Legt das App-Geruest aus villa-apk-template/ ins Projekt, wenn keins da ist.
+ * Die Startseite zeigt den Inhalt der Villa statt eines Platzhalters.
+ */
+export function scaffoldAppShell(villa, dir, L = () => {}) {
+  const source = join(process.cwd(), 'villa-apk-template');
+  if (!existsSync(source)) { L('App-Vorlage villa-apk-template/ fehlt - kein Geruest ergaenzt.'); return false; }
+  const target = join(dir, 'app-shell');
+  const manifest = join(target, 'app', 'src', 'main', 'AndroidManifest.xml');
+  if (existsSync(manifest)) { L('App-Geruest app-shell/ ist bereits vorhanden.'); return true; }
+  cpSync(source, target, { recursive: true });
+  const page = join(target, 'app', 'src', 'main', 'assets', 'www', 'index.html');
+  writeFileSync(page, shellPage(villa, dir), 'utf8');
+  L('App-Geruest aus der Vorlage ergaenzt: app-shell/ mit AndroidManifest.xml und index.html.');
+  return true;
+}
+
 export async function startBuild(villaId, { auto = false } = {}) {
   const villa = db.prepare('SELECT id, name FROM villas WHERE id = ?').get(Number(villaId));
   if (!villa) throw new Error('Villa nicht gefunden');
@@ -267,6 +342,10 @@ export async function startBuild(villaId, { auto = false } = {}) {
   (async () => {
     const L = (s) => { record.log.push(String(s).slice(0, 400)); if (record.log.length > 60) record.log.shift(); save(); };
     try {
+      // Ohne Einstiegspunkt ist das Paket kein Produkt: Geruest aus der Vorlage.
+      if (kind !== 'empty' && !hasAppEntryPoint(dir)) {
+        record.scaffold = scaffoldAppShell(villa, dir, L);
+      }
       // Build-Modus entscheiden: Cloud-APK braucht ein Git-Remote im
       // Workspace; ohne Remote faellt der Build sauber auf ein Produkt-Paket
       // zurueck, statt komplett zu scheitern (Studio-Phase-2-Fix).
