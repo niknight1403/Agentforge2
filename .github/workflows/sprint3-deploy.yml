@@ -1,0 +1,57 @@
+name: Sprint3-Deploy (Agenten-Engine live + Verifikation)
+on:
+  workflow_dispatch: {}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: VM auf Feature-Branch bringen, migrieren, Agent live ausfuehren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          WD=/opt/ccc/repo
+          cd $WD
+          echo "===== 1) CODE (Feature-Branch) ====="
+          git fetch origin feature/ai-influenza-phase7 2>&1 | tail -1
+          git reset --hard origin/feature/ai-influenza-phase7 2>&1 | tail -1
+          git log -1 --oneline
+          echo "===== 2) BUILD ====="
+          npm ci --no-audit --no-fund 2>&1 | tail -2
+          npm run build 2>&1 | tail -3
+          echo "===== 3) MIGRATION 0016 ====="
+          sudo -u postgres psql -d cybersarah -v ON_ERROR_STOP=1 -f $WD/drizzle/0016_ai_influenza_agents.sql 2>&1 | tail -5
+          sudo -u postgres psql -d cybersarah -At -c "SELECT 'Agenten: ' || count(*) FROM \"aiAgenten\""
+          echo "===== 4) NEUSTART ====="
+          systemctl restart cybersarah-ccc
+          sleep 25
+          systemctl is-active cybersarah-ccc
+          PORT=$(systemctl show cybersarah-ccc -p Environment --value | grep -oE 'PORT=[0-9]+' | cut -d= -f2); PORT=${PORT:-3000}
+          curl -s -m 10 http://127.0.0.1:$PORT/api/ready | head -c 160; echo
+          echo "===== 5) LIVE-VERIFIKATION (Agent fuehrt echte Aufgabe aus) ====="
+          TOK=$(curl -s -m 15 -X POST http://127.0.0.1:$PORT/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | jq -r '.token // empty')
+          echo "Token: ${#TOK} Zeichen"
+          AUTH="Authorization: Bearer $TOK"
+          echo "-- initialisieren --"
+          curl -s -m 20 -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{"json":{}}' "http://127.0.0.1:$PORT/api/trpc/aiInfluenza.initialisieren" | head -c 200; echo
+          echo "-- Aufgabe anlegen (marktanalyse) --"
+          ANL=$(curl -s -m 20 -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{"json":{"aufgabeTyp":"marktanalyse","eingabe":{"nische":"KI-Marketing-Dienstleistungen fuer Handwerksbetriebe im DACH-Raum","zielgruppe":"Inhaber mit 5-50 Mitarbeitern"}}}' "http://127.0.0.1:$PORT/api/trpc/aiInfluenza.aufgabeAnlegen")
+          echo "$ANL" | head -c 300; echo
+          AID=$(echo "$ANL" | jq -r '.result.data.json.aufgabeId // empty')
+          echo "Aufgaben-ID: $AID"
+          echo "-- Aufgabe ausfuehren --"
+          curl -s -m 180 -X POST -H "$AUTH" -H "Content-Type: application/json" -d "{\"json\":{\"aufgabeId\":$AID}}" "http://127.0.0.1:$PORT/api/trpc/aiInfluenza.aufgabeAusfuehren" -o /tmp/exec.json
+          jq -r '.result.data.json | "Status: " + (.status // "?") + " | Fehler: " + ((.fehler // "keiner")|tostring) + " | Ergebnis-Zeichen: " + ((.ergebnis // "")|length|tostring)' /tmp/exec.json 2>/dev/null || head -c 300 /tmp/exec.json
+          jq -r '.result.data.json.ergebnis // ""' /tmp/exec.json 2>/dev/null | head -12
+          echo "-- DB-Endzustand --"
+          sudo -u postgres psql -d cybersarah -At -c "SELECT 'aiAufgaben: ' || status || ' = ' || count(*) FROM \"aiAufgaben\" GROUP BY status"
+          sudo -u postgres psql -d cybersarah -At -c "SELECT 'Ereignisse: ' || count(*) FROM \"aiAufgabenEreignisse\""
+          sudo -u postgres psql -d cybersarah -At -c "SELECT typ || ' -> ' || ausgefuehrt_aufgaben || ' Aufgaben, ' || fehler_anzahl || ' Fehler' FROM \"aiAgenten\" WHERE ausgefuehrt_aufgaben > 0 OR fehler_anzahl > 0"
+          sudo -u postgres psql -d cybersarah -At -c "SELECT 'Agenten gesamt: ' || count(*) FROM \"aiAgenten\""
+          EOS
