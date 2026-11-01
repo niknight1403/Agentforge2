@@ -89,7 +89,7 @@ jobs:
           db.close();
           NODEJS
           cd /opt/villaforge
-          node /tmp/villa-prompt-apply.mjs
+          sudo node /tmp/villa-prompt-apply.mjs
           EOS
 
       - name: Verifikation ueber die Hub-API
