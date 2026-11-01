@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'pause | resume | pause_all | resume_all | status | set_idea | add_task | delete | task_cleanup | schema | tasks'
+        description: 'pause | resume | pause_all | resume_all | status | set_idea | add_task | delete | task_cleanup | schema | tasks | verify_report'
         required: true
         default: 'status'
       ids:
@@ -54,6 +54,27 @@ jobs:
               : db.prepare('SELECT id, name, status, autonomy FROM villas ORDER BY id').all();
             for (const v of rows) console.log(`[${v.id}] ${v.name} | status: ${v.status} | autonomy: ${v.autonomy}`);
             return rows.length;
+          }
+          if (mode === 'verify_report') {
+            console.log('== PROJEKT-PRUEFNACHWEISE ==');
+            const rows = db.prepare('SELECT villa_id, status, checks, blockers, verified_at FROM project_verifications ORDER BY villa_id').all();
+            for (const r of rows) {
+              console.log(`VPRUEF [${r.villa_id}] status=${r.status} at=${r.verified_at ? new Date(Number(r.verified_at)).toISOString() : 'nie'}`);
+              let checks = {};
+              try { checks = JSON.parse(r.checks || '{}'); } catch {}
+              for (const [kind, v] of Object.entries(checks)) {
+                const reason = String(v?.reason || v?.error || '').replace(/\s+/g, ' ').slice(0, 220);
+                console.log(`  ${kind}: ${v?.status || 'unbekannt'}${reason ? ' - ' + reason : ''}`);
+              }
+              let blockers = [];
+              try { blockers = JSON.parse(r.blockers || '[]'); } catch {}
+              for (const b of blockers.slice(0, 4)) console.log(`  BLOCKER: ${String(b).slice(0, 200)}`);
+            }
+            try {
+              for (const v of db.prepare('SELECT id, source_path FROM villas WHERE source_path IS NOT NULL AND source_path != ""').all())
+                console.log(`QUELLE [${v.id}] ${v.source_path}`);
+            } catch (e) { console.log('Quellpfade: ' + e.message); }
+            process.exit(0);
           }
           if (mode === 'status') {
             console.log('== STATUS ALLER VILLEN ==');
