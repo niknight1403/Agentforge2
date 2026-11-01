@@ -131,3 +131,22 @@ eine Entscheidung des Owners (Zugangsdaten und Freigabe), nicht nur Code.
 - Sofort-Test: https://hub.cybersarah-ki.com/pilot/check
 - Registrierung mit 20 Freianfragen, Stripe-Checkout live, Webhook aktiv
 - KPI-Quelle: Stripe (aktive Abos, MRR) und eigene Datenbank (Anfragen, Nutzer)
+
+## 9. Werkzeuge im Repo
+
+| Datei | Zweck |
+|---|---|
+| `pilot/scripts/outbound.py` | erzeugt aus Lead-CSVs Telefonkarten (Markdown) und vier E-Mail-Entwuerfe je Betrieb als `.eml`, plus `manifest.csv` mit Faelligkeitsdaten |
+| `pilot/scripts/send_wave.py` | versendet die Welle ueber die Gmail-API, mit Tageslimit (Standard 30), Dry-Run ohne `--senden` und Protokoll `sent.csv` (keine Doppelsendungen) |
+| `pilot/public/check.html` | oeffentlicher Sofort-Test als Einstieg, drei Anfragen pro Tag ohne Konto |
+
+Ablauf: Leads als CSV (`firma;stadt;website;email;telefon;impressum_url;formular`) ablegen,
+`python3 pilot/scripts/outbound.py leads_*.csv --out outbound/` ausfuehren, Dry-Run pruefen,
+dann mit `--senden` versenden.
+
+## 10. Rechtlicher Hinweis (wichtig)
+
+Kalt-E-Mail an Unternehmen ohne vorherigen Kontakt ist nach § 7 UWG angreifbar, auch im B2B.
+Deshalb ist der Erstkontakt per Telefon oder LinkedIn vorgesehen; E-Mail erst nach Zustimmung
+im Gespraech oder nach Opt-in (Sofort-Test, Newsletter). Die Telefonkarten enthalten den
+Gesprächsleitfaden, die `.eml`-Dateien sind fuer den Versand nach Zustimmung gedacht.
