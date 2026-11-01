@@ -1,3 +1,4 @@
+import {masterAnswerMessages} from './master-answer-context.mjs';
 import { randomUUID } from 'node:crypto';
 import { db, now } from './db.mjs';
 import { controlCatalog, SETTING_RULES, setSetting, toolEnabled, validEndpoint, readConnector, recordControl, listThemes, upsertTheme } from './control-store.mjs';
@@ -224,10 +225,12 @@ export function createMasterControl(deps) {
         // Master turns require reliable structured planning and must use the
         // quality-first free cascade; routine local-first routing overloads
         // the small Ollama host during concurrent villa work.
-        const out = await chat([{role:'system',content:prompt},...history],{json:true,mode:'plan',priority:'interactive',role:'ARCHITECT',strategy:'FALLBACK',maxTokens:1200,totalTimeoutMs:60000,temperature:0.15});
+        const readOnlyMessages=masterAnswerMessages(message);
+        const out = await chat(readOnlyMessages||[{role:'system',content:prompt},...history],{json:true,mode:'plan',priority:'interactive',role:'ARCHITECT',strategy:'FALLBACK',maxTokens:1200,totalTimeoutMs:60000,temperature:0.15});
         if (out.offline) answer = 'Keine aktive KI-Route verfügbar. Direkte Befehle funktionieren weiterhin: „Status“, „Archiviere doppelte Villen“, „Aktiviere Pack council“ oder „Erstelle Villa "Name": Ziel“. Freie Konfiguration benötigt eine erreichbare bestehende KI-Route.';
         else {
           const parsed = JSON.parse(String(out.content).replace(/^```(?:json)?\s*|\s*```$/g,''));
+          if(readOnlyMessages&&(!Array.isArray(parsed.actions)||parsed.actions.length))throw Error('Eine reine Erklaerung darf keine Aktionen ausfuehren.');
           plan = parsed.actions; answer = String(parsed.answer || 'Bitte beschreibe die gewünschte Änderung genauer.');
         }
       }
