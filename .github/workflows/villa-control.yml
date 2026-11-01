@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'pause | resume | pause_all | resume_all | status | set_idea | add_task | delete | task_cleanup | schema | tasks | verify_report'
+        description: 'pause | resume | pause_all | resume_all | status | set_idea | add_task | delete | task_cleanup | schema | tasks | verify_report | project'
         required: true
         default: 'status'
       ids:
@@ -54,6 +54,33 @@ jobs:
               : db.prepare('SELECT id, name, status, autonomy FROM villas ORDER BY id').all();
             for (const v of rows) console.log(`[${v.id}] ${v.name} | status: ${v.status} | autonomy: ${v.autonomy}`);
             return rows.length;
+          }
+          if (mode === 'project') {
+            const idsP = (idsArg || '').split(',').map((x) => Number(x.trim())).filter(Boolean);
+            for (const id of idsP) {
+              const v = db.prepare('SELECT id, name, source_path FROM villas WHERE id=?').get(id);
+              if (!v) { console.log(`PROJEKT [${id}] Villa fehlt`); continue; }
+              const basis = v.source_path || `/opt/villaforge/server/data/workspace/villa-${id}/project`;
+              console.log(`PROJEKT [${id}] ${v.name} -> ${basis}`);
+              const fs = require('node:fs');
+              for (const datei of ['package.json', 'villaforge.verify.json', 'index.html']) {
+                const pfad = basis + '/' + datei;
+                if (!fs.existsSync(pfad)) { console.log(`  ${datei}: fehlt`); continue; }
+                const inhalt = fs.readFileSync(pfad, 'utf8');
+                if (datei === 'package.json') {
+                  let scripts = {};
+                  try { scripts = JSON.parse(inhalt).scripts || {}; } catch (e) { console.log('  package.json: ungueltig - ' + e.message); continue; }
+                  console.log('  scripts: ' + JSON.stringify(scripts));
+                } else {
+                  console.log(`  ${datei}: ${inhalt.length} Zeichen`);
+                }
+              }
+              try {
+                const dateien = fs.readdirSync(basis).slice(0, 14);
+                console.log('  dateien: ' + dateien.join(', '));
+              } catch (e) { console.log('  dateien: ' + e.message); }
+            }
+            process.exit(0);
           }
           if (mode === 'verify_report') {
             console.log('== PROJEKT-PRUEFNACHWEISE ==');
