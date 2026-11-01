@@ -1,13 +1,23 @@
 set -u
-echo "== Journal: users-Query-Fehler des laufenden Dienstes (letzte 30 Min) =="
-journalctl -u cybersarah-ccc --since "-30 min" --no-pager 2>/dev/null | grep -iE 'Failed query|from "users"|column .* does not exist|relation .* does not exist|cause' | tail -6 | cut -c1-420
-echo "== Spalten der Tabelle users =="
-sudo -u postgres psql -d cybersarah -At -c "SELECT string_agg(column_name, ', ' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_name='users' AND table_schema='public'"
-echo "== Spalten, die der Code selektiert (drizzle/schema.ts users) =="
+PID=$(systemctl show cybersarah-ccc -p MainPID --value)
+DBU=$(tr '\0' '\n' < /proc/$PID/environ | grep '^DATABASE_URL=' | cut -d= -f2-)
+echo "== DATABASE_URL des Prozesses (ohne Zugangsdaten) =="
+echo "$DBU" | sed -E 's#(://)[^@]+@#\1***@#'
+echo "== Ursache (cause) im Journal =="
+journalctl -u cybersarah-ccc --since "-15 min" --no-pager 2>/dev/null | grep -iE 'ECONNREFUSED|ENOTFOUND|self.signed|certificate|password authentication|no pg_hba|timeout|SSL|role .* does not exist|permission denied|cause' | sort -u | tail -6 | cut -c1-300
+echo "== Postgres lauscht? =="
+ss -ltn | grep -E ':5432|:443 ' | awk '{print $4}'
+echo "== Direkter Test mit der URL des Prozesses (psql) =="
+PGCONNECT_TIMEOUT=8 psql "$DBU" -At -c "SELECT current_user, inet_server_addr(), (SELECT count(*) FROM users)" 2>&1 | head -3 | cut -c1-250
+echo "== Test ueber Node/pg wie der Dienst (SSL-Variante) =="
 cd /opt/ccc/repo
-awk '/export const users = pgTable/,/^\}\);/' drizzle/schema.ts | grep -oE '(varchar|text|integer|timestamp|serial|boolean|pgEnum|[a-zA-Z]+Role)\("[A-Za-z_]+"' | sed -E 's/.*\("//; s/"//' | paste -sd, | cut -c1-300
-echo "== Migrationsstand (drizzle) =="
-sudo -u postgres psql -d cybersarah -At -c "SELECT count(*), max(id) FROM drizzle.__drizzle_migrations" 2>&1 | head -2
-ls drizzle/*.sql | tail -3
-echo "== Login-Test ueber echte Route (Statuscode) =="
-curl -s -m 10 -o /dev/null -w "account.login (falsches PW) -> HTTP %{http_code}\n" -H 'Content-Type: application/json' -d '{"json":{"email":"niko.oeben@gmail.com","password":"falsch-falsch-123"}}' http://127.0.0.1:13000/api/trpc/account.login
+cat > /tmp/dbt.cjs <<'JS'
+const { Pool } = require("/opt/ccc/repo/node_modules/pg");
+const raw = process.env.DBU;
+const url = raw.replace(/[?&]sslmode=[^&]*/g, "");
+const ssl = /sslmode=disable/.test(raw) ? false : { rejectUnauthorized: false };
+const p = new Pool({ connectionString: url, ssl, max: 1, connectionTimeoutMillis: 8000 });
+p.query("select count(*) as n from users").then(r => { console.log("pg OK users =", r.rows[0].n); return p.end(); })
+ .catch(e => { console.log("pg FEHLER:", e.code || "", (e.message || "").slice(0, 160)); return p.end(); });
+JS
+DBU="$DBU" node /tmp/dbt.cjs; rm -f /tmp/dbt.cjs
