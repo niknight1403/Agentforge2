@@ -40,4 +40,13 @@ echo ""
 echo "===== 8) Laeuft ein zweiter Webserver (Caddy/Traefik) auf 443? ====="
 ss -tlnp 2>/dev/null | grep -E ":443 |:80 |:9443 " | head -10
 
+echo ""
+echo "===== 9) Logfile ====="
+ls -l /var/log/anfragepilot/ 2>/dev/null
+echo "--- letzte Zeilen app.log ---"
+tail -5 /var/log/anfragepilot/app.log 2>/dev/null || echo "app.log fehlt"
+echo -n "Schreibtest als ubuntu: "
+su - ubuntu -c "echo 'schreibtest $(date -Is)' >> /var/log/anfragepilot/app.log" 2>&1 && echo "OK" || echo "FEHLGESCHLAGEN"
+echo "--- Zeilenanzahl danach: $(wc -l < /var/log/anfragepilot/app.log 2>/dev/null) ---"
+
 echo "DIAGNOSE_ENDE"
