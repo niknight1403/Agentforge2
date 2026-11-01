@@ -22,26 +22,29 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
           set -uo pipefail
-          UNIT=$(systemctl list-units --type=service --all --no-legend | grep -oE '^[a-z0-9@_.-]*villa[a-z0-9@_.-]*\.service' | head -1)
-          [ -n "${UNIT:-}" ] || UNIT=villaforge.service
-          PORT=$(systemctl show "$UNIT" -p Environment --value 2>/dev/null | grep -oE 'PORT=[0-9]+' | cut -d= -f2)
-          [ -n "${PORT:-}" ] || PORT=12000
-          echo "UNIT=$UNIT PORT=$PORT"
-          echo "== systemctl =="
-          systemctl is-active "$UNIT"; systemctl is-enabled "$UNIT"
-          echo "== health =="
-          curl -s --max-time 15 "http://127.0.0.1:${PORT}/api/health" | head -c 900; echo
-          echo "== llm/status =="
-          curl -s --max-time 15 "http://127.0.0.1:${PORT}/api/llm/status" | head -c 900; echo
-          echo "== free-routes report =="
-          curl -s --max-time 20 "http://127.0.0.1:${PORT}/api/free-routes/report" | head -c 900; echo
-          echo "== Ollama =="
-          systemctl is-active ollama 2>/dev/null || echo "kein ollama-Dienst"
-          curl -s --max-time 10 http://127.0.0.1:11434/api/tags | head -c 300; echo
-          echo "== freier Speicher =="
+          echo "== Wer hoert auf 12000 =="
+          ss -ltnp 2>/dev/null | grep ':12000' | head -3
+          PID=$(ss -ltnp 2>/dev/null | grep ':12000' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+          echo "PID=$PID"
+          if [ -n "${PID:-}" ]; then
+            echo "== Prozess =="
+            ps -o pid,etime,rss,cmd -p "$PID" | tail -2
+            echo "== Unit =="
+            UNIT=$(cat /proc/$PID/cgroup 2>/dev/null | grep -oE '[a-zA-Z0-9@_.-]+\.service' | head -1)
+            echo "UNIT=${UNIT:-unbekannt}"
+            echo "== Umgebung (nur Namen) =="
+            tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | cut -d= -f1 | sort -u | head -40
+          fi
+          echo "== laufende Dienste mit villa/hub/forge =="
+          systemctl list-units --type=service --state=running --no-legend 2>/dev/null | grep -iE 'villa|forge|hub' | head -5
+          echo "== pm2 =="
+          pm2 jlist 2>/dev/null | head -c 400 || echo "kein pm2"
+          echo "== Logs: LLM-Fehler der letzten 40 Minuten =="
+          journalctl --since '-40min' --no-pager 2>/dev/null | grep -iE 'LLM_UNAVAILABLE|llm-cascade|no route|all routes|timeout|ECONNREFUSED' | tail -25
+          echo "== Ollama-Latenztest =="
+          /usr/bin/time -f 'ollama: %e s' curl -s --max-time 90 http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:7b","prompt":"Antworte mit: ok","stream":false,"options":{"num_predict":8}}' 2>&1 | tail -c 400
+          echo
+          echo "== Speicher/Top =="
           free -m | head -3
-          echo "== letzte Logzeilen =="
-          journalctl -u "$UNIT" -n 40 --no-pager 2>/dev/null | tail -40
-          echo "== Env vorhanden (nur Namen) =="
-          systemctl show "$UNIT" -p Environment --value | tr ' ' '\n' | grep -oE '^[A-Z_]+(?==)' | sort -u | head -40
+          ps -eo pid,rss,comm --sort=-rss | head -6
           DIAG
