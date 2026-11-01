@@ -60,12 +60,13 @@ def main():
         attempts = body.get("routeAttempts") or []
         used = ""
         if attempts:
-            last = attempts[-1]
-            used = f"letzter Versuch {str(last.get('route'))[:26]}={last.get('code')}"
+            used = " | ".join(f"{str(a.get('route'))[:22]}={a.get('code')}" for a in attempts[:6])
         ok = body.get("ok") is True
         ok_count += 1 if ok else 0
         answer = " ".join(str(body.get("answer", "")).split())[:46]
-        print(f"  Lauf {run}: ok={ok} {ms:>6} ms {err or ''} {used}")
+        print(f"  Lauf {run}: ok={ok} {ms:>6} ms {err or ''}")
+        if used:
+            print(f"          Versuche: {used}")
         if ok:
             print(f"          Antwort: {answer}")
             route = body.get("route") or body.get("model") or ""
