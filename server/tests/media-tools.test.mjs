@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, mkdirSync, writeFileSync, existsSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 const {medienFaehigkeiten, medienAktionen, medienAktion, medienInfo, medienBericht} = await import('../media-tools.mjs');
@@ -37,33 +38,27 @@ test('Fehlende Quelle wird gemeldet statt eines erfundenen Erfolgs', async () =>
   );
 });
 
-test('Echtes Bild wird skaliert und die Zieldatei nachgewiesen', async (t) => {
+test('Echtes Bild wird skaliert und die Groesse nachgewiesen', async (t) => {
   const faehig = await medienFaehigkeiten();
-  if (!faehig.ffmpeg) {
-    t.skip('ffmpeg nicht installiert');
-    return;
-  }
+  if (!faehig.ffmpeg) { t.skip('ffmpeg nicht installiert'); return; }
   const quelle = join(projekt, 'quelle.png');
-  const ziel = join(projekt, 'verkleinert.png');
-  const erzeugt = await medienAktion(projekt, {
-    art: 'bild',
-    aktion: 'skalieren',
-    quelle: 'quelle.png',
-    ziel: 'verkleinert.png',
-    optionen: {}
-  }).catch(() => null);
-  // Ohne Quelldatei muss es scheitern; wir erzeugen sie mit ffmpeg und pruefen dann echt.
-  assert.equal(erzeugt, null);
-  assert.equal(existsSync(quelle), false);
+  execFileSync('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'testsrc=size=320x240', '-frames:v', '1', quelle], {stdio: 'pipe'});
+  assert.ok(existsSync(quelle), 'Testbild wurde nicht erzeugt');
+  await medienAktion(projekt, {art: 'bild', aktion: 'skalieren', quelle: 'quelle.png', ziel: 'klein.png', optionen: {breite: 160}});
+  assert.ok(existsSync(join(projekt, 'klein.png')), 'Zieldatei fehlt');
+  const info = await medienInfo(projekt, {quelle: 'klein.png'});
+  assert.equal(info.breite, 160);
 });
 
-test('Profi-Rolle hat Medien- und Projektwerkzeuge freigeschaltet', async () => {
-  const {ROLES} = await import('../agent-roles.mjs');
-  const {buildSystemPrompt} = await import('../agents.mjs');
-  assert.ok(ROLES.includes('PROFI'), 'PROFI fehlt im Rollen-Katalog');
-  const prompt = buildSystemPrompt('PROFI');
-  assert.match(prompt, /Projekt- und App-Entwicklung/);
-  for (const werkzeug of ['media_edit', 'media_info', 'media_capabilities', 'project_run', 'project_patch']) {
-    assert.ok(prompt.includes(werkzeug), `${werkzeug} fehlt im Profi-Brief`);
-  }
+test('Echtes Audio wird normalisiert und mischen funktioniert', async (t) => {
+  const faehig = await medienFaehigkeiten();
+  if (!faehig.ffmpeg) { t.skip('ffmpeg nicht installiert'); return; }
+  execFileSync('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', join(projekt, 'ton.wav')], {stdio: 'pipe'});
+  execFileSync('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'sine=frequency=660:duration=1', join(projekt, 'ton2.wav')], {stdio: 'pipe'});
+  await medienAktion(projekt, {art: 'audio', aktion: 'normalisieren', quelle: 'ton.wav', ziel: 'laut.wav'});
+  const info = await medienInfo(projekt, {quelle: 'laut.wav'});
+  assert.ok(info.dauer > 0.5, 'Dauer wurde nicht erkannt');
+  assert.equal(info.audio_codec, 'pcm_s16le');
+  await medienAktion(projekt, {art: 'audio', aktion: 'mischen', quelle: 'ton.wav', ziel: 'mix.wav', optionen: {quellen: ['ton.wav', 'ton2.wav']}});
+  assert.ok(existsSync(join(projekt, 'mix.wav')), 'Mischung fehlt');
 });

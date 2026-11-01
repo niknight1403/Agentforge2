@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'status oder restart'
+        description: 'status, restart oder media (installiert ffmpeg und prueft Medien)'
         default: 'status'
         required: true
 
@@ -48,6 +48,17 @@ jobs:
           echo "== Hub-Log (letzte 25) =="; [ -n "$HUB" ] && journalctl -u "$HUB" -n 25 --no-pager 2>&1 | cut -c1-220
           echo "== nginx-Fehlerlog =="; tail -n 8 /var/log/nginx/error.log 2>/dev/null | cut -c1-220
           echo "== OOM/Kill-Spuren =="; dmesg 2>/dev/null | grep -iE 'out of memory|killed process' | tail -3
+          if [ "$ACTION" = "media" ]; then
+            echo "== Medien-Werkzeuge einrichten =="
+            if ! command -v ffmpeg >/dev/null 2>&1; then
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get install -y -qq ffmpeg 2>&1 | tail -3
+            fi
+            command -v ffmpeg && ffmpeg -version 2>/dev/null | head -1
+            command -v ffprobe && ffprobe -version 2>/dev/null | head -1
+            echo "== Echter Medientest im Projektcode =="
+            cd /opt/villaforge && sudo node --test server/tests/media-tools.test.mjs 2>&1 | tail -18
+          fi
           if [ "$ACTION" = "restart" ] && [ -n "$HUB" ]; then
             echo "== NEUSTART $HUB =="; systemctl restart "$HUB"; sleep 8
             curl -s -m 15 -w "\nHTTP %{http_code} in %{time_total}s\n" http://127.0.0.1:12000/api/health | tail -c 300

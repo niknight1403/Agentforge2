@@ -118,8 +118,13 @@ export async function medienAktion(root, {art, aktion, quelle, ziel, optionen = 
   if (!AKTIONEN[artKey].includes(aktion)) {
     throw Error(`Aktion "${aktion}" gibt es fuer ${artKey} nicht. Erlaubt: ${AKTIONEN[artKey].join(', ')}`);
   }
+  // Pfade zuerst pruefen: ein Ausbruch aus dem Projekt ist unabhaengig davon
+  // ein Fehler, ob ffmpeg installiert ist.
+  imProjekt(root, quelle);
+  if (ziel) imProjekt(root, ziel);
+
   const faehig = await medienFaehigkeiten();
-  if (!faehig.ffmpeg) throw Error('ffmpeg ist auf diesem Rechner nicht installiert. Ohne echtes Werkzeug wird nichts bearbeitet.');
+  if (!faehig.ffmpeg) throw Error('ffmpeg ist auf diesem Rechner nicht installiert: ' + (await medienBericht()).hinweis);
 
   // Zusammenfuegen braucht mehrere Quellen und hat kein einzelnes Zielpaar.
   if (artKey === 'video' && aktion === 'zusammenfuegen') {
