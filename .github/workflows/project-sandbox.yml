@@ -1,0 +1,24 @@
+name: Project Sandbox Integration
+on:
+  pull_request:
+    paths: ['server/project-execution.mjs','server/project-process.mjs','server/fs-tools.mjs','scripts/test-project-sandbox.mjs','.github/workflows/project-sandbox.yml']
+permissions:
+  contents: read
+jobs:
+  sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Prepare disposable CI image and resolve immutable digest
+        run: |
+          docker pull node:24-bookworm-slim
+          image=$(docker image inspect node:24-bookworm-slim --format '{{index .RepoDigests 0}}')
+          echo "VF_SANDBOX_TEST_IMAGE=$image" >> "$GITHUB_ENV"
+      - name: Execute isolation and timeout tests in real Docker
+        run: node scripts/test-project-sandbox.mjs

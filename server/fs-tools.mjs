@@ -1,3 +1,5 @@
+import {executeInvocation} from './project-process.mjs';
+import {projectExecution} from './project-execution.mjs';
 import { execFile } from 'node:child_process';
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative, resolve, extname } from 'node:path';
@@ -206,14 +208,18 @@ export function runCommand(root, binary, args = [], timeoutMs = 120_000) {
     const cwd = resolve(root);
     if (!existsSync(cwd)) return resolvePromise({ ok: false, error: 'Projektordner fehlt' });
 
+    let invocation;
+    try{invocation=projectExecution(cwd,bin,list);}catch(error){return resolvePromise({ok:false,error:error.message});}
+
     // Das Zeitlimit zaehlt ab dem tatsaechlichen Start, nicht ab dem Warten.
     cmdAcquire().then(() => {
-      execFile(bin, list, {
+      executeInvocation(invocation, {
         cwd,
         timeout: timeoutMs,
         maxBuffer: 2_000_000,
         env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV, CI: '1' }
       }, (err, stdout, stderr) => {
+
         cmdRelease();
         const out = `${stdout || ''}${stderr || ''}`.trim();
         resolvePromise({
