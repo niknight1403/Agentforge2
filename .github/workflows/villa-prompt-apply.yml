@@ -56,12 +56,13 @@ jobs:
           import { DatabaseSync } from 'node:sqlite';
           import { readFileSync } from 'node:fs';
 
-          const villaId = Number(process.env.VILLA_ID);
-          const startNow = String(process.env.START_NOW).toLowerCase() === 'true';
+          const [villaArg, startArg, summaryArg] = process.argv.slice(2);
+          const villaId = Number(villaArg);
+          const startNow = String(startArg).toLowerCase() === 'true';
           const prompt = readFileSync('/tmp/villa-prompt.md', 'utf8').trim();
           if (!villaId || !prompt) { console.error('Villa-ID oder Prompt fehlt'); process.exit(1); }
 
-          const summary = (process.env.IDEA_SUMMARY || '').trim()
+          const summary = (summaryArg || '').trim()
             || prompt.split('\n').filter(Boolean)[0].replace(/^#\s*/, '').slice(0, 300);
 
           const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
@@ -89,7 +90,7 @@ jobs:
           db.close();
           NODEJS
           cd /opt/villaforge
-          sudo node /tmp/villa-prompt-apply.mjs
+          sudo node /tmp/villa-prompt-apply.mjs "$VILLA_ID" "$START_NOW" "$IDEA_SUMMARY"
           EOS
 
       - name: Verifikation ueber die Hub-API
