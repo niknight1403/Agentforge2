@@ -50,15 +50,29 @@ export function projectReadiness(id){
  return {verified,status:verified?'verified':fresh?'blocked':'unverified',blockers,checks,verifiedAt:fresh?row.verified_at:null,fingerprint:project.fingerprint,sourceFiles:project.sourceFiles};
 }
 const noOp=/^\s*(?:echo\b|exit\s+0\b|(?:true|:)\s*$)/i;
+function isNoOp(binary,args=[]){
+ if(noOp.test(binary))return true;
+ if(!/^(?:node|nodejs|python3?|sh|bash)$/.test(binary))return false;
+ const flag=args.findIndex(a=>['-e','--eval','-c'].includes(a));
+ if(flag<0)return false;
+ const code=args[flag+1]||'';
+ // Reject constant-success snippets, while keeping assertions and real work executable.
+ return /^\s*(?:(?:console\.log|print)\(\s*(['"])[^'"\n]*\1\s*\)\s*;?\s*|(?:process\.exit|sys\.exit)\(0\)\s*;?\s*)+$/.test(code);
+}
+function isNoOpScript(script){
+ if(noOp.test(script))return true;
+ const inline=script.match(/^\s*(node(?:js)?|python3?)\s+(?:-e|--eval|-c)\s+(['"])([\s\S]*)\2\s*$/);
+ return !!inline&&isNoOp(inline[1],['-e',inline[3]]);
+}
 export function verificationPlan(root){
  let custom;
  try{custom=JSON.parse(readFileSync(join(root,'villaforge.verify.json'),'utf8'));}catch{}
  let pkg;try{pkg=JSON.parse(readFileSync(join(root,'package.json'),'utf8'));}catch{}
  return Object.fromEntries(['build','tests','smoke'].map(kind=>{
   const explicit=custom?.[kind];
-  if(explicit && typeof explicit.binary==='string'&&Array.isArray(explicit.args)&&explicit.args.length<=20&&explicit.args.every(a=>typeof a==='string'&&a.length<=1000))return [kind,explicit];
+  if(explicit && typeof explicit.binary==='string'&&Array.isArray(explicit.args)&&explicit.args.length<=20&&explicit.args.every(a=>typeof a==='string'&&a.length<=1000))return [kind,isNoOp(explicit.binary,explicit.args)?null:explicit];
   const script=kind==='tests'?'test':kind;
-  if(pkg?.scripts?.[script]&&!noOp.test(pkg.scripts[script]))return [kind,{binary:'npm',args:['run',script]}];
+  if(pkg?.scripts?.[script]&&!isNoOpScript(pkg.scripts[script]))return [kind,{binary:'npm',args:['run',script]}];
   return [kind,null];
  }));
 }

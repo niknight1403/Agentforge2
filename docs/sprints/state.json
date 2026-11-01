@@ -6,26 +6,26 @@
     "VF-0001",
     "VF-0002",
     "VF-0003",
+    "VF-0004",
     "VF-0005",
     "VF-0006",
     "VF-0007",
     "VF-0008"
   ],
-  "current": "VF-0004",
-  "next": "VF-0004",
+  "current": "VF-0009",
+  "next": "VF-0009",
   "blockers": [
-    "Frische Produktions-Master-Probe nach Deploy: HTTP 503 LLM_UNAVAILABLE nach 60.5s; ein begrenzter Retry nach HTTP 409 ist erfolgt.",
     "Alle 16 Villen vollstaendig gelesen, aber keine bestandene Produktabnahme; Modell- und Artefaktnachweise bleiben getrennt.",
     "Bild-/Bildbearbeitungs-/Video-/Audio-Rendering benoetigt autorisierte Providerkonfiguration; keine kostenpflichtige Ressource wurde eingerichtet.",
     "Bestehende Android-Debug-Signatur ist noch keine dauerhaft verwaltete Produktionssignierung."
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
   "executionMode": "foreground-only",
-  "workBranch": "work/capability-autopilot",
+  "workBranch": "work/green-gates",
   "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/33",
   "qualityBaseline": {
-    "tests": 355,
-    "pass": 355,
+    "tests": 359,
+    "pass": 359,
     "fail": 0,
     "browserE2E": 20,
     "browserAuditScopes": 9,
@@ -37,9 +37,9 @@
   "pullRequestStatus": "merged",
   "backgroundExecution": false,
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41249802676",
-  "releaseStatus": "blocked: production LLM unavailable and product acceptance open",
+  "releaseStatus": "blocked: product acceptance and production signing open",
   "checkpointParent": "35491d80662d51947fd22e0dcc0d2cba24503557",
-  "nextAction": "VF-0004: konkrete Modellkapazitaet/Erreichbarkeit isoliert diagnostizieren, keine weiteren blinden Gesamt-Retries. Danach echte Produktabnahme je Villa; neue Faehigkeiten bleiben bis Test/Review projektlokale Kandidaten.",
+  "nextAction": "Produktabnahme und Auslieferung je Villa; falsche Medienklassifikation und No-op-Builds beheben. Bestehende Start/Stop-Entscheidungen erhalten.",
   "lastMaintenance": {
     "baseCommit": "cdff83ff7f5057c5ef5aba62174fa1da203d4699",
     "pullRequests": [
@@ -54,5 +54,27 @@
       "availableForVillas": 16,
       "eligibleWithActiveVilla": 14
     }
+  },
+  "lastRealModelVerification": {
+    "schemaVersion": 1,
+    "sprint": "VF-0004",
+    "status": "done",
+    "production": true,
+    "version": "1.60.5",
+    "verifiedAt": "2026-11-01T00:15:22Z",
+    "runtimeCommit": "b7c3a43da5c661a31de7f6f61068ac93d18e74d1",
+    "routeRecoveryRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41255761579",
+    "verificationRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41249986255",
+    "verificationJob": 124698781023,
+    "httpStatus": 200,
+    "ok": true,
+    "sideEffects": 0,
+    "latencySeconds": 33,
+    "enabledVerifiedRoutes": [
+      30,
+      31,
+      32
+    ],
+    "scope": "Echte Master-Modellantwort; keine Produktabnahme der Villen."
   }
 }

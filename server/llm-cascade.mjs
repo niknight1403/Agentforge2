@@ -84,7 +84,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    const limit=isLocalRoute(r)?finiteLimit(process.env.OLLAMA_MAX_PARALLEL,1,1,32):finiteLimit(process.env.VF_LLM_ROUTE_CONCURRENCY,3,1,32);
    // Serialize local work within the request deadline. Queue capacity and
    // cancellation keep concurrent villa starts bounded and stoppable.
-   const localQueueWaitMs=Math.max(25,Math.min(Number(process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS)||90000,120000));
+   const localQueueWaitMs=opts.priority==='interactive'?finiteLimit(process.env.VF_LLM_INTERACTIVE_LOCAL_QUEUE_WAIT_MS,1500,25,3000):Math.max(25,Math.min(Number(process.env.VF_LLM_LOCAL_QUEUE_WAIT_MS)||90000,120000));
    const cloudQueueWaitMs=opts.priority==='interactive'?finiteLimit(process.env.VF_LLM_INTERACTIVE_QUEUE_WAIT_MS,1500,25,3000):finiteLimit(process.env.VF_LLM_CLOUD_QUEUE_WAIT_MS,250,25,1000);
    const slotDeadline=isLocalRoute(r)?Math.min(deadline,clock()+localQueueWaitMs):Math.min(cloudDeadline,clock()+cloudQueueWaitMs);
    const admissionLimit=!isLocalRoute(r)&&opts.priority!=='interactive'&&limit>1?limit-1:limit;

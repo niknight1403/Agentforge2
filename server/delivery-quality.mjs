@@ -50,6 +50,22 @@ const PROFILES = {
 const SOFTWARE_HINT = /\b(app|application|software|webseite|website|webapp|plattform|dashboard|api|saas|code|programm|tool|system|entwickel|implementier|generator)\b/i;
 function classify(idea='') {
   const s=String(idea);
+  // Determine the requested deliverable, not a later feature/marketing subject.
+  // An audio app needs software gates; a video about an app needs a video export.
+  const normalized=s.replace(/\b(?:audio|musik|video|bildbearbeitungs|dj)[- ]app\b/gi,'App');
+  const action=/\b(?:develop\w*|build|create|entwickl\w*|erstelle?|baue?|programmier\w*|implementier\w*|produzier\w*|generier\w*)\s+([^.!?\n]{0,180})/i.exec(normalized);
+  const target=action?.[1].match(/\b(app|application|software|anwendung|webapp|webseite|website|video|film|clip|audio|musik|song|bild|bilder|grafik|logo|pitch|präsentation|praesentation|hardware|prototyp)\b/i)?.[1].toLowerCase();
+  if(target){
+    if(['app','application','software','anwendung','webapp','webseite','website'].includes(target))return 'software';
+    if(['video','film','clip'].includes(target))return 'video';
+    if(['audio','musik','song'].includes(target))return 'audio';
+    if(['bild','bilder','grafik','logo'].includes(target))return 'image';
+    if(['pitch','präsentation','praesentation'].includes(target))return 'pitch';
+    if(['hardware','prototyp'].includes(target))return 'invention';
+  }
+  const heading=normalized.slice(0,600).match(/\b(app|application|software|webapp|webseite|website|video|film|audio|musik|song|bild|bilder|grafik|logo|pitch|hardware|prototyp)\b/i)?.[1].toLowerCase();
+  if(['app','application','software','webapp','webseite','website'].includes(heading))return 'software';
+  if(SOFTWARE_HINT.test(s)&&/\b(apk|aab|android[- ]app|ios[- ]app|flutter|gradle|react[- ]native)\b/i.test(s))return 'software';
   if (/\b(video|film|clip|animation|werbespot|reel)\b/i.test(s)) return 'video';
   if (/\b(audio|musik|song|soundtrack|voiceover|podcast|jingle)\b/i.test(s)) return 'audio';
   if (/\b(pitch|präsentation|praesentation|pitchdeck|deck|investorenpräsentation|investorenpraesentation)\b/i.test(s)) return 'pitch';

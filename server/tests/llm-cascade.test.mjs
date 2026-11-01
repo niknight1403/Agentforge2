@@ -260,3 +260,16 @@ test('Cloud capacity retains an interactive lane without exceeding the configure
   releases[1]();releases[3]();await Promise.all([b,c]);assert.equal(run.stats().active,0);assert.equal(run.stats().waiting,0);
  }finally{for(const release of releases)release();if(old===undefined)delete process.env.VF_LLM_ROUTE_CONCURRENCY;else process.env.VF_LLM_ROUTE_CONCURRENCY=old;}
 });
+
+test('Interactive local failover reaches an idle alternative before a busy endpoint consumes the full deadline',async()=>{
+ const previous=process.env.VF_LLM_INTERACTIVE_LOCAL_QUEUE_WAIT_MS;
+ process.env.VF_LLM_INTERACTIVE_LOCAL_QUEUE_WAIT_MS='25';
+ let release;const held=new Promise(r=>release=r),seen=[];
+ try{
+  const run=makeCascade({routes:()=>[route(901,'ollama'),route(902,'lmstudio')],key:()=>'',call:async r=>{seen.push(r.id);if(r.id===901)await held;return answer;}});
+  const background=run([],{strategy:'LOCAL_FIRST'});await new Promise(r=>setImmediate(r));
+  const started=Date.now();const out=await run([],{strategy:'LOCAL_FIRST',priority:'interactive',totalTimeoutMs:1000});
+  assert.equal(out.content,answer.content);assert.ok(Date.now()-started<500);assert.deepEqual(seen,[901,902]);assert.equal(out.failovers[0].code,'BUSY');
+  release();await background;assert.deepEqual(run.stats().active,0);assert.equal(run.stats().waiting,0);
+ }finally{release?.();if(previous===undefined)delete process.env.VF_LLM_INTERACTIVE_LOCAL_QUEUE_WAIT_MS;else process.env.VF_LLM_INTERACTIVE_LOCAL_QUEUE_WAIT_MS=previous;}
+});

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "sprint": "VF-0004",
+  "status": "done",
+  "production": true,
+  "version": "1.60.5",
+  "verifiedAt": "2026-11-01T00:15:22Z",
+  "runtimeCommit": "b7c3a43da5c661a31de7f6f61068ac93d18e74d1",
+  "routeRecoveryRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41255761579",
+  "verificationRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41249986255",
+  "verificationJob": 124698781023,
+  "httpStatus": 200,
+  "ok": true,
+  "sideEffects": 0,
+  "latencySeconds": 33,
+  "enabledVerifiedRoutes": [
+    30,
+    31,
+    32
+  ],
+  "scope": "Echte Master-Modellantwort; keine Produktabnahme der Villen."
+}
