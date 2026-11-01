@@ -40,7 +40,10 @@ export async function startHub({ port, host = '127.0.0.1', env = {}, keep = fals
     VF_DB: join(dir, 'hub.db'),
     VF_WORKSPACE: join(dir, 'workspace'),
     VF_LOG_FILE: join(dir, 'hub.log'),
-    VF_RESUME: '0'
+    VF_RESUME: '0',
+    // Isolierte Testinstanz: keine echten Konten, keine Auth-Huerde fuer die
+    // UI-Audits (der Server protokolliert den offenen Modus ausdruecklich).
+    VF_OPEN_MODE: '1'
   };
   for (const key of Object.keys(childEnv)) if (KEY_PATTERN.test(key)) delete childEnv[key];
 

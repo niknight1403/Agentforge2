@@ -90,6 +90,8 @@ async function startHub() {
     VF_WORKSPACE: join(workDir, 'workspace'),
     VF_LOG_FILE: join(workDir, 'hub.log'),
     VF_RESUME: '0',
+    // Isolierte Testinstanz: UI-Test braucht keinen Login (Server warnt im Log).
+    VF_OPEN_MODE: '1',
     VF_LOCAL_LLM_URL: modelMock.url,
     VF_LOCAL_LLM_MODEL: 'villa-test'
   };
