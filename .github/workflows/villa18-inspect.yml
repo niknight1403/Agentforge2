@@ -10,6 +10,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      - name: Remove embedded credential without executing project code
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          keyfile=$(mktemp)
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$ORACLE_SSH_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$keyfile" ubuntu@92.5.177.159 'sudo python3 -' <<'PY'
+          import pathlib,re,os
+          p=pathlib.Path('/opt/villaforge/server/data/workspace/villa-18/project/src/git_sync_manager.js')
+          if p.is_symlink():raise SystemExit('Refusing symlink')
+          text=p.read_text()
+          cleaned,n=re.subn(r"process\.env\.GITHUB_TOKEN\s*\|\|\s*'ghp_[A-Za-z0-9]+'","process.env.GITHUB_TOKEN || ''",text)
+          if n!=1:raise SystemExit('Expected credential pattern changed; no write')
+          if p.read_text()!=text:raise SystemExit('Source changed; no write')
+          p.write_text(cleaned)
+          if re.search(r'ghp_[A-Za-z0-9]{20,}',p.read_text()):raise SystemExit('Credential pattern remains')
+          print('Embedded credential removed; no project code executed. Existing verification is invalidated by source fingerprint.')
+          PY
       - name: Read project files without execution
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
