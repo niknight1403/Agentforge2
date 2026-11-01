@@ -18,24 +18,24 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-      - name: Zustand des Hubs lesen
+      - name: Master-Chat reproduzieren und Fehlerursachen lesen
         run: |
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
           set -uo pipefail
-          echo "== volle LLM-Fehlerzeilen (letzte 3) =="
-          journalctl -u villaforge-hub -n 400 --no-pager -o cat 2>/dev/null | grep -A4 'Fehlschlag LLM_UNAVAILABLE' | tail -20
-          echo
-          echo "== geladene Ollama-Modelle =="
-          curl -s --max-time 10 http://127.0.0.1:11434/api/ps | head -c 500; echo
-          echo "== 7B-Latenz (16 Tokens) =="
-          START=$(date +%s)
-          curl -s --max-time 120 http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:7b","prompt":"Antworte mit: ok","stream":false,"options":{"num_predict":16}}' -o /tmp/oll.json -w 'http_code=%{http_code} total=%{time_total}s\n'
-          END=$(date +%s); echo "dauer=$((END-START))s"; head -c 200 /tmp/oll.json; echo
-          echo "== 32B vorhanden? =="
-          curl -s --max-time 10 http://127.0.0.1:11434/api/tags | grep -oE '"name":"[^"]+"' | head -8
-          echo "== Speicher/Top =="
+          ENVLINE=$(systemctl show villaforge-hub -p Environment --value)
+          export $(echo "$ENVLINE" | tr ' ' '\n' | grep -E '^(VF_ADMIN_EMAIL|VF_ADMIN_PASSWORD)=' | tr '\n' ' ')
+          echo "== Login =="
+          TOK=$(curl -s --max-time 20 -X POST http://127.0.0.1:12000/api/auth/login -H 'content-type: application/json' \
+            -d "{\"email\":\"$VF_ADMIN_EMAIL\",\"password\":\"$VF_ADMIN_PASSWORD\"}" \
+            | python3 -c 'import json,sys;print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
+          [ -n "$TOK" ] && echo "  Session: vorhanden" || echo "  Session: FEHLT"
+          echo "== Master-Chat =="
+          curl -s --max-time 150 -X POST http://127.0.0.1:12000/api/master/chat -H 'content-type: application/json' \
+            -H "authorization: Bearer $TOK" \
+            -d '{"message":"Antworte ausschliesslich mit einem kurzen Satz, dass die Modellverbindung geprueft ist.","requestId":"diag-'"$(date +%s)"'"}' \
+            | head -c 700; echo
+          echo "== Diagnosezeilen mit versuchten Routen =="
+          journalctl -u villaforge-hub --since '-4min' --no-pager -o cat | grep 'Fehlschlag' | tail -6
+          echo "== Speicher =="
           free -m | head -3
-          ps -eo pid,rss,comm --sort=-rss | head -5
-          echo "== Limits des Dienstes =="
-          systemctl show villaforge-hub -p Environment --value | tr ' ' '\n' | grep -E 'VF_LLM|OLLAMA_MAX|VF_VILLA_SLOTS' | head -12
           DIAG
