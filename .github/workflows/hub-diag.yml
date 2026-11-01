@@ -18,21 +18,32 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-      - name: Live-Smoketest auf dem Server
+      - name: Fehlerlage des Master-Chats erfassen
         run: |
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
           set -uo pipefail
           PID=$(ss -ltnp 2>/dev/null | grep ':12000' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
           EMAIL=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_EMAIL=' | cut -d= -f2-)
           PASS=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_PASSWORD=' | cut -d= -f2-)
-          VILLA=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_RELEASE_VILLA_ID=' | cut -d= -f2-)
-          cd /opt/villaforge || exit 1
-          echo "== Smoke ohne Produktabnahme =="
-          VF_SMOKE_BASE_URL=http://127.0.0.1:12000 VF_ADMIN_EMAIL="$EMAIL" VF_ADMIN_PASSWORD="$PASS" timeout 240 node -e '
-            const {verifyLiveLlm}=await import("/opt/villaforge/scripts/live-llm-smoke.mjs");
-            try{const out=await verifyLiveLlm({baseUrl:process.env.VF_SMOKE_BASE_URL,email:process.env.VF_ADMIN_EMAIL,password:process.env.VF_ADMIN_PASSWORD});console.log("SMOKE_OK",JSON.stringify(out));}
-            catch(e){console.log("SMOKE_FAIL",String(e.message||e));}
-          ' 2>&1 | tail -5
-          echo "== Speicher =="
-          free -m | head -3
+          TOK=$(curl -s --max-time 20 -X POST http://127.0.0.1:12000/api/auth/login -H 'content-type: application/json' -d "{\"email\":\"$EMAIL\",\"password\":\"$PASS\"}" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
+          echo "== LLM-Status =="
+          curl -s --max-time 20 -H "authorization: Bearer $TOK" http://127.0.0.1:12000/api/llm/status | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          print('  state:',d.get('state'),'| aktiv:',d.get('active'),'| wartend:',d.get('waiting'))
+          for r in (d.get('routes') or [])[:8]:
+              print(f\"  {str(r.get('name'))[:40]:40s} eligible={r.get('eligible')} circuit={r.get('circuitState', r.get('circuit'))} cooldown={r.get('cooldownMs', r.get('cooldown'))}\")
+          " 2>/dev/null || echo "  Status nicht lesbar"
+          echo "== Villen =="
+          curl -s --max-time 20 -H "authorization: Bearer $TOK" http://127.0.0.1:12000/api/villas | python3 -c "
+          import json,sys
+          v=json.load(sys.stdin)
+          from collections import Counter
+          c=Counter(x.get('status') for x in v)
+          print('  ',dict(c))
+          " 2>/dev/null || echo "  Villen nicht lesbar"
+          echo "== Master-Chat mit Routenliste =="
+          curl -s --max-time 150 -X POST http://127.0.0.1:12000/api/master/chat -H 'content-type: application/json' -H "authorization: Bearer $TOK" -d '{"message":"Antworte ausschliesslich mit einem kurzen Satz, dass die Modellverbindung geprueft ist.","requestId":"diag-'"$(date +%s)"'"}' | head -c 800; echo
+          echo "== letzte LLM-Fehler =="
+          journalctl -u villaforge-hub --since '-3min' --no-pager -o cat | grep 'Fehlschlag' | tail -2
           DIAG
