@@ -19,7 +19,7 @@ import {execFileSync} from 'node:child_process';
 
 process.chdir('/opt/villaforge');
 const {db, now} = await import('/opt/villaforge/server/db.mjs');
-const {verifyProjectRuntime, projectDirectory, verificationPlan} = await import('/opt/villaforge/server/project-verification.mjs');
+const {verifyProjectRuntime, projectDirectory, verificationPlan, inspectProject} = await import('/opt/villaforge/server/project-verification.mjs');
 
 const arg = (name, fallback) => {
   const treffer = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -182,24 +182,35 @@ function autonomieFreigeben(id, name) {
 const kandidaten = db.prepare(`
   SELECT v.id, v.name, v.status, v.autonomy,
          (SELECT status FROM project_verifications p WHERE p.villa_id = v.id) AS pruefung,
+         (SELECT fingerprint FROM project_verifications p WHERE p.villa_id = v.id) AS stand,
          (SELECT COUNT(*) FROM tasks t WHERE t.villa_id = v.id AND t.status IN ('PENDING','RUNNING')) AS offen
   FROM villas v
   WHERE v.status NOT IN ('ARCHIVED','COMPLETED')
     AND COALESCE((SELECT status FROM project_verifications p WHERE p.villa_id = v.id), 'offen') != 'passed'
-  ORDER BY v.id
+  ORDER BY COALESCE((SELECT verified_at FROM project_verifications p WHERE p.villa_id = v.id), 0) ASC, v.id
 `).all();
 
 console.log(`== SWEEP: ${kandidaten.length} Villen offen, diese Runde ${Math.min(LIMIT, kandidaten.length)} (limit=${LIMIT}, auto-max=${AUTO_MAX}) ==`);
 
 let abgenommen = 0;
-for (const villa of kandidaten.slice(0, LIMIT)) {
+let bearbeitet = 0;
+for (const villa of kandidaten) {
+  if (bearbeitet >= LIMIT) break;
   const ordner = projectDirectory(villa.id);
   const stack = stackVon(ordner);
   console.log(`\n-- Villa ${villa.id} "${villa.name}" | ${stack} | bisher ${villa.pruefung} | ${villa.offen} offene Aufgaben`);
   if (stack === 'unbekannt') {
-    console.log('  Projektordner fehlt oder ist leer - ohne Quellen gibt es nichts abzunehmen');
+    // Ohne Quelldateien gibt es nichts abzunehmen; das soll aber kein Kontingent verbrauchen.
+    reparaturAuftrag(villa.id, ['Projektordner enthaelt keine pruefbaren Quellen - Implementierung fehlt']);
+    console.log('  Projektordner fehlt oder ist leer - Reparaturaufgabe notiert, naechste Villa');
     continue;
   }
+  const jetztStand = inspectProject(villa.id);
+  if (jetztStand.fingerprint && jetztStand.fingerprint === villa.stand && !DRY) {
+    console.log('  Quellstand unveraendert seit der letzten Abnahme - uebersprungen');
+    continue;
+  }
+  bearbeitet += 1;
   buildNachweis(villa.id, ordner, stack);
   if (DRY) continue;
 
