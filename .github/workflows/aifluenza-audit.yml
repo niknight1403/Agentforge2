@@ -1,0 +1,56 @@
+name: AI-Influenza Basis-Audit (Live)
+on:
+  workflow_dispatch: {}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Live-Zustand fuer AI-Influenza erheben
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "===== A) SUBSCRIPTION_PLANS ====="
+          sudo -u postgres psql -d revenue_os -c "SELECT id, name, preis, waehrung, intervall, aktiv FROM subscription_plans ORDER BY preis" 2>&1 | head -16
+          echo "===== B) AGENTEN ====="
+          sudo -u postgres psql -d revenue_os -At -c "SELECT string_agg(column_name, ' ') FROM information_schema.columns WHERE table_name='agents'" ; echo
+          sudo -u postgres psql -d revenue_os -At -c "SELECT id, name, rolle, status FROM agents LIMIT 8" 2>/dev/null || sudo -u postgres psql -d revenue_os -At -c "SELECT * FROM agents LIMIT 5" 2>&1 | head -6
+          echo "===== C) KAMPAGNEN-KANAELE ====="
+          sudo -u postgres psql -d revenue_os -At -c "SELECT kanal, count(*) FROM campaigns GROUP BY kanal ORDER BY 2 DESC" 2>/dev/null | head -10
+          echo "===== D) INFLUENCER-SPALTEN ====="
+          for T in crm_influencers influencer_postings influencer_plattformen faceless_videos; do
+            echo "-- $T --"
+            sudo -u postgres psql -d revenue_os -At -c "SELECT string_agg(column_name, ' ') FROM information_schema.columns WHERE table_name='$T'" 2>/dev/null; echo
+          done
+          echo "===== E) STRIPE (read-only) ====="
+          SK=$(systemctl show cybersarah-ccc -p Environment --value | grep -oE 'STRIPE_SECRET_KEY=[^ "]+' | cut -d= -f2)
+          if [ -n "$SK" ]; then
+            echo "Key vorhanden (${#SK} Zeichen)"
+            echo "-- Produkte --"
+            curl -s -m 20 -u "$SK:" "https://api.stripe.com/v1/products?limit=20" -o /tmp/sp.json
+            jq -r 'if .error then "FEHLER: " + .error.message else (.data[] | "  " + .id + " | " + .name + " | aktiv=" + (.active|tostring)) end' /tmp/sp.json 2>/dev/null | head -20
+            echo "-- Preise --"
+            curl -s -m 20 -u "$SK:" "https://api.stripe.com/v1/prices?limit=20&expand[]=data.product" -o /tmp/spr.json
+            jq -r 'if .error then "FEHLER: " + .error.message else (.data[] | "  " + .id + " | " + (.product.name // "?") + " | " + (((.unit_amount // 0)/100)|tostring) + " " + .currency + " | " + (.recurring.interval // "einmalig")) end' /tmp/spr.json 2>/dev/null | head -20
+            echo "-- Webhooks --"
+            curl -s -m 20 -u "$SK:" "https://api.stripe.com/v1/webhook_endpoints?limit=10" -o /tmp/spw.json
+            jq -r 'if .error then "FEHLER: " + .error.message else (.data[] | "  " + .url + " | " + .status) end' /tmp/spw.json 2>/dev/null | head -10
+          else
+            echo "Kein STRIPE_SECRET_KEY im Unit"
+          fi
+          echo "===== F) INFLUENCER-ROUTER LIVE ====="
+          PORT=$(systemctl show cybersarah-ccc -p Environment --value | grep -oE 'PORT=[0-9]+' | cut -d= -f2); PORT=${PORT:-3000}
+          TOK=$(curl -s -m 10 -X POST http://127.0.0.1:$PORT/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | jq -r '.token // empty' 2>/dev/null)
+          echo "Login-Token: ${#TOK} Zeichen"
+          for P in "influencer.personas" "influencer.campaignPlan" "revenueAutopilot.status"; do
+            CODE=$(curl -s -m 15 -o /tmp/tr.json -w '%{http_code}' -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -X POST "http://127.0.0.1:$PORT/api/trpc/$P" -d '{}')
+            echo "  $P -> HTTP $CODE"
+            head -c 180 /tmp/tr.json 2>/dev/null; echo
+          done
+          EOS
