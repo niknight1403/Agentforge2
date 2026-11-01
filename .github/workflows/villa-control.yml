@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'pause | resume | pause_all | resume_all | status | set_idea | add_task | delete | task_cleanup | schema | tasks | verify_report | project'
+        description: 'pause | resume | pause_all | resume_all | status | set_idea | add_task | delete | task_cleanup | schema | tasks | verify_report | project | verify_now'
         required: true
         default: 'status'
       ids:
@@ -43,7 +43,7 @@ jobs:
           MODE="$1"; IDS="$2"; IDEA_B64="$3"
           F=/tmp/villa-control-$$.mjs; tee $F >/dev/null << 'NODEJS'
           import { DatabaseSync } from 'node:sqlite';
-          import { readFileSync, existsSync, readdirSync } from 'node:fs';
+          import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
           const [mode, idsArg, ideaB64] = process.argv.slice(2);
           const idea = ideaB64 ? Buffer.from(ideaB64, 'base64').toString('utf8') : '';
           const db = new DatabaseSync('/opt/villaforge/server/data/villaforge.db');
@@ -55,6 +55,34 @@ jobs:
               : db.prepare('SELECT id, name, status, autonomy FROM villas ORDER BY id').all();
             for (const v of rows) console.log(`[${v.id}] ${v.name} | status: ${v.status} | autonomy: ${v.autonomy}`);
             return rows.length;
+          }
+          if (mode === 'verify_now') {
+            // Schreibt optional ehrliche Pruefbefehle (villaforge.verify.json) und
+            // fuehrt danach die echte Abnahme im Hub-Code aus.
+            const idsV = (idsArg || '').split(',').map((x) => Number(x.trim())).filter(Boolean);
+            let vorgaben = {};
+            try { const roh = Buffer.from(ideaB64 || '', 'base64').toString('utf8'); if (roh.trim()) vorgaben = JSON.parse(roh); } catch (e) { console.log('VORGABEN ungueltig: ' + e.message); }
+            process.chdir('/opt/villaforge');
+            const { verifyProjectRuntime, projectDirectory } = await import('/opt/villaforge/server/project-verification.mjs');
+            for (const id of idsV) {
+              const ziel = projectDirectory(id);
+              const vorgabe = vorgaben[String(id)];
+              if (vorgabe) {
+                const pfad = ziel + '/villaforge.verify.json';
+                writeFileSync(pfad, JSON.stringify(vorgabe, null, 2));
+                console.log(`VORGABE [${id}] ${JSON.stringify(vorgabe)}`);
+              }
+              let out;
+              try { out = await verifyProjectRuntime(id); } catch (e) { console.log(`PRUEFUNG [${id}] Fehler: ${e.message}`); continue; }
+              console.log(`PRUEFUNG [${id}] ok=${out.ok}`);
+              for (const [kind, v] of Object.entries(out.checks || {})) {
+                const zusatz = v.reason || v.error || (v.command ? v.command.join(' ') : '');
+                console.log(`  ${kind}: ${v.status}${zusatz ? ' - ' + String(zusatz).slice(0, 180) : ''}`);
+                if (v.status !== 'passed' && v.output) console.log(`    log: ${String(v.output).replace(/\s+/g, ' ').slice(-200)}`);
+              }
+              for (const b of out.blockers || []) console.log(`  BLOCKER: ${String(b).slice(0, 200)}`);
+            }
+            process.exit(0);
           }
           if (mode === 'project') {
             const idsP = (idsArg || '').split(',').map((x) => Number(x.trim())).filter(Boolean);
