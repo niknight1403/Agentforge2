@@ -15,7 +15,7 @@
   "current": "VF-0009",
   "next": "VF-0009",
   "blockers": [
-    "Frische Masterprobe nach Deploy: HTTP 200 ohne Nebenaktionen, aber Antwort zur vorherigen Modellprobe statt zur aktuellen Start-Frage. Relevanz-Assertion bleibt rot.",
+    "Frische Masterprobe: zuerst HTTP 200 ohne auftragsbezogene Antwort; ein begrenzter Kontrolllauf nach Deploy scheitert mit HTTP 503, BUSY am 32B-Knoten und Timeout am Oracle-Knoten. Kein weiterer blinder Gesamt-Retry.",
     "Alle 16 Villen vollstaendig gelesen, aber keine bestandene Produktabnahme; Modell- und Artefaktnachweise bleiben getrennt.",
     "Bild-/Bildbearbeitungs-/Video-/Audio-Rendering benoetigt autorisierte Providerkonfiguration; keine kostenpflichtige Ressource wurde eingerichtet.",
     "Bestehende Android-Debug-Signatur ist noch keine dauerhaft verwaltete Produktionssignierung.",
@@ -41,7 +41,7 @@
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
   "releaseStatus": "blocked: live probe raced deployment; current semantic Master probe failed; product acceptance open",
   "checkpointParent": "35491d80662d51947fd22e0dcc0d2cba24503557",
-  "nextAction": "Release-Reihenfolge nach Deploy integrieren und pruefen. Frische Masterantwort muss zum aktuellen Auftrag passen. Vor echter Villa-Produktabnahme isolierte Projektlaufzeit nachweisen.",
+  "nextAction": "PR #35 Release-Reihenfolge integrieren. Interaktive Kaskade anhand des realen 60s-Fehlers reparieren: eine Oracle-Inferenz verbraucht das Restbudget, gepruefte Alternativen werden nicht erreicht. Danach echte auftragsbezogene Masterprobe und isolierte Produktabnahme.",
   "lastMaintenance": {
     "baseCommit": "16bee853539d071c6f9f7bb3b1ca56d5039f8b70",
     "pullRequests": [
@@ -84,5 +84,6 @@
     "boundedChangesPerRun": 1,
     "notifyOnlyWhenAllRequiredEvidencePasses": true,
     "continuousExecution": false
-  }
+  },
+  "followUpPullRequest": "https://github.com/niknight1403/Agentforge2/pull/35"
 }

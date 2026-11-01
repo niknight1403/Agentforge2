@@ -191,6 +191,22 @@
     "ok": true,
     "sideEffects": 0,
     "status": "failed semantic relevance",
-    "latencySeconds": 41.6
+    "latencySeconds": 41.6,
+    "boundedRetry": {
+      "job": 124703247111,
+      "status": "failed",
+      "httpStatus": 503,
+      "latencySeconds": 60.4,
+      "attempts": [
+        {
+          "route": "Ollama CAX41 (32B)",
+          "code": "BUSY"
+        },
+        {
+          "route": "Ollama Oracle Cloud",
+          "code": "TIMEOUT"
+        }
+      ]
+    }
   }
 }

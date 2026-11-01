@@ -33,3 +33,7 @@ Die APK-Pipeline pruefte um 00:32:17 UTC den produktiven Chat waehrend des Deplo
 `fs-tools.mjs` startet freigegebene Projektbefehle direkt mit `execFile`; dies belegt keine Sandbox. Vor echten Builds fremden Projektcodes muss die isolierte Ausfuehrung nachgewiesen werden. Villa 5 ist ein moeglicher erster Abnahmekandidat mit vorhandenen Build/Test/Smoke-Befehlen; die Abnahme ist noch offen.
 
 Stuendliche begrenzte Fortsetzung und Q-Gate-Pruefung sind als Automation eingerichtet. Keine kontinuierliche Codex-Ausfuehrung und keine Erfolgsbenachrichtigung vor allen Pflichtnachweisen.
+
+Ein begrenzter Kontrolllauf nach Deploy scheiterte mit HTTP 503 nach 60.4 s: 32B-Knoten BUSY, Oracle-Inferenz TIMEOUT; weitere gepruefte lokale Knoten wurden innerhalb des Restbudgets nicht erreicht. Dies bleibt der naechste konkrete Routing-Blocker. Keine weiteren blinden Retries.
+
+Review-Korrektur: Auch reine Aenderungen an `build-apk.yml` loesen Hub-Deploy aus und erhalten dadurch den automatischen APK-Lauf. YAML geparst, nachfolgende GitHub-Checks bleiben Pflicht.
