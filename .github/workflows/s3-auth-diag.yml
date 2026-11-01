@@ -1,4 +1,4 @@
-name: Sprint3 Live-Test
+name: Sprint4 Stripe-Probe
 on:
   workflow_dispatch: {}
 jobs:
@@ -13,4 +13,4 @@ jobs:
         run: |
           install -m 600 /dev/null /tmp/k
           printf '%s\n' "$ORACLE_SSH_KEY" > /tmp/k
-          ssh -i /tmp/k -o StrictHostKeyChecking=accept-new ubuntu@92.5.177.159 'sudo bash -s' < ops/s3-live.sh
+          ssh -i /tmp/k -o StrictHostKeyChecking=accept-new ubuntu@92.5.177.159 'sudo bash -s' < ops/s4-stripe-probe.sh
