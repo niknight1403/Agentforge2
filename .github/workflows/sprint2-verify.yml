@@ -1,0 +1,64 @@
+name: Sprint2-Verifikation (Cleanup + DB-Gate-Test)
+on:
+  workflow_dispatch: {}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Aufraeumen, Constraint setzen, Gate transaktional testen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          echo "===== 1) CLEANUP TESTDATEN ====="
+          sudo -u postgres psql -d revenue_os -c "DELETE FROM angebote WHERE kunde_id IN (SELECT id FROM kunden WHERE email='test-gate@example.invalid'); DELETE FROM kunden WHERE email='test-gate@example.invalid';"
+          echo "===== 2) CONSTRAINT =====
+          "
+          sudo -u postgres psql -d revenue_os -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'angebote_versand_gate') THEN
+              ALTER TABLE angebote ADD CONSTRAINT angebote_versand_gate
+                CHECK (status <> 'versendet' OR (freigegeben_am IS NOT NULL AND freigegeben_von IS NOT NULL));
+            END IF;
+          END $$;
+          SQL
+          echo "===== 3) GATE-TEST (transaktional, wird zurueckgerollt) ====="
+          sudo -u postgres psql -d revenue_os <<'SQL'
+          BEGIN;
+          WITH k AS (
+            INSERT INTO kunden (email, name, quelle) VALUES ('gate-check@example.invalid','Gate','inbound') RETURNING id
+          ), a AS (
+            INSERT INTO angebote (kunde_id, paket, titel, leistungsumfang, preis, status)
+            SELECT id, 'starter', 'Gate-Test', 'Test', 299.00, 'freigabe_offen' FROM k RETURNING id
+          )
+          SELECT id AS angebot_id FROM a;
+          -- ohne Freigabe versenden MUSS scheitern:
+          SAVEPOINT s1;
+          UPDATE angebote SET status='versendet' WHERE kunde_id = (SELECT id FROM kunden WHERE email='gate-check@example.invalid');
+          SQL
+          echo "--> Erwartet oben ein CHECK-Fehler (kein Freigabe-Nachweis)."
+          sudo -u postgres psql -d revenue_os <<'SQL'
+          BEGIN;
+          WITH k AS (
+            INSERT INTO kunden (email, name, quelle) VALUES ('gate-ok@example.invalid','Gate OK','inbound') RETURNING id
+          ), a AS (
+            INSERT INTO angebote (kunde_id, paket, titel, leistungsumfang, preis, status, freigegeben_von, freigegeben_am)
+            SELECT id, 'growth', 'Gate-OK-Test', 'Test', 999.00, 'freigegeben', 'admin-test', now() FROM k RETURNING id
+          )
+          SELECT id AS angebot_id FROM a;
+          UPDATE angebote SET status='versendet' WHERE kunde_id = (SELECT id FROM kunden WHERE email='gate-ok@example.invalid');
+          SELECT status, freigegeben_von FROM angebote WHERE kunde_id = (SELECT id FROM kunden WHERE email='gate-ok@example.invalid');
+          ROLLBACK;
+          SQL
+          echo "===== 4) ENDZUSTAND ====="
+          sudo -u postgres psql -d revenue_os -c "SELECT 'kunden' AS tabelle, count(*) FROM kunden UNION ALL SELECT 'angebote', count(*) FROM angebote UNION ALL SELECT 'auftraege', count(*) FROM auftraege"
+          sudo -u postgres psql -d revenue_os -At -c "SELECT count(*) || ' AI-Influenza-Plaene aktiv' FROM subscription_plans WHERE name LIKE 'AI Influenza%' AND aktiv"
+          sudo -u postgres psql -d revenue_os -At -c "SELECT 'Constraint vorhanden: ' || count(*) FROM pg_constraint WHERE conname='angebote_versand_gate'"
+          EOS
