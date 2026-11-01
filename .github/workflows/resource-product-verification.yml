@@ -1,0 +1,41 @@
+name: Resource and Product Verification
+on:
+  push:
+    branches: [work/resource-product-verification]
+    paths: ['.github/workflows/resource-product-verification.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read production capacity and nearest active product
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request,time
+          base='https://hub.cybersarah-ki.com'
+          def call(path,data=None,token=None):
+              req=urllib.request.Request(base+path,data=json.dumps(data).encode() if data is not None else None,headers={'Content-Type':'application/json',**({'Authorization':'Bearer '+token} if token else {})})
+              with urllib.request.urlopen(req,timeout=25) as response:return json.load(response)
+          token=call('/api/auth/login',{'email':os.environ['VF_ADMIN_EMAIL'],'password':os.environ['VF_ADMIN_PASSWORD']}).get('token')
+          if not token:raise SystemExit('No session')
+          health=call('/api/health',token=token)
+          resources=call('/api/resources',token=token)
+          scheduler=call('/api/scheduler',token=token)
+          product=call('/api/villas/18/product',token=token)
+          report={'sampledAt':int(time.time()*1000),'health':{'ok':health.get('ok'),'version':health.get('version')},'resources':{k:resources.get(k) for k in ['sampledAt','pressure','cpu','memory','recommendation']},'scheduler':{k:scheduler.get(k) for k in ['slots','active','queue','retrying']},'villa18':{k:product.get(k) for k in ['verified','domain','unfinishedTasks','blockers','checks']}}
+          print(json.dumps(report,ensure_ascii=False))
+          with open('/tmp/resource-product-report.json','w') as f:json.dump(report,f,ensure_ascii=False,indent=2)
+          if health.get('ok') is not True:raise SystemExit('Production health failed')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: resource-product-report
+          path: /tmp/resource-product-report.json
+          if-no-files-found: error
