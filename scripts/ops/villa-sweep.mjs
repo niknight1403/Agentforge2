@@ -166,15 +166,21 @@ function reparaturAuftrag(id, blocker) {
   return Number(neu.lastInsertRowid);
 }
 
+// Belegt sind nur Slots, in denen wirklich gearbeitet wird. Eine Villa mit
+// Autonomie, die stillsteht, darf den Fortschritt der anderen nicht blockieren.
+function arbeitendeVillen() {
+  return db.prepare("SELECT COUNT(*) c FROM villas WHERE autonomy=1 AND status='RUNNING'").get().c;
+}
+
 function autonomieFreigeben(id, name) {
-  const aktiv = db.prepare('SELECT COUNT(*) c FROM villas WHERE autonomy=1').get().c;
+  const aktiv = arbeitendeVillen();
   if (aktiv >= AUTO_MAX) {
-    console.log(`  Autonomie bleibt aus (${aktiv}/${AUTO_MAX} Villen aktiv)`);
+    console.log(`  Autonomie bleibt aus (${aktiv}/${AUTO_MAX} Villen arbeiten)`);
     return false;
   }
   if (DRY) { console.log('  [dry-run] wuerde Autonomie freigeben'); return false; }
-  db.prepare("UPDATE villas SET autonomy=1, updated_at=? WHERE id=?").run(now(), id);
-  console.log(`  Autonomie freigegeben (${aktiv + 1}/${AUTO_MAX}): ${name}`);
+  db.prepare("UPDATE villas SET autonomy=1, status='RUNNING', updated_at=? WHERE id=?").run(now(), id);
+  console.log(`  Autonomie freigegeben und gestartet (${aktiv + 1}/${AUTO_MAX}): ${name}`);
   return true;
 }
 
@@ -194,6 +200,7 @@ console.log(`== SWEEP: ${kandidaten.length} Villen offen, diese Runde ${Math.min
 
 let abgenommen = 0;
 let bearbeitet = 0;
+let arrest = 0;
 for (const villa of kandidaten) {
   if (bearbeitet >= LIMIT) break;
   const ordner = projectDirectory(villa.id);
@@ -236,6 +243,30 @@ for (const villa of kandidaten) {
   const blocker = eigenverschulden.length ? eigenverschulden : (ergebnis.blockers || []).slice(0, 4);
   reparaturAuftrag(villa.id, blocker);
   autonomieFreigeben(villa.id, villa.name);
+}
+
+// Wenn kein Quellstand sich bewegt hat, wird genau eine Villa aufgeweckt:
+// bevorzugt die mit dem kuerzesten Weg zur Abnahme (nur noch smoke offen).
+if (bearbeitet === 0 && arrest === 0 && !DRY) {
+  const beste = kandidaten
+    .filter((v) => v.status !== 'ARCHIVED')
+    .sort((a, b) => {
+      const rang = (v) => {
+        const zeile = db.prepare('SELECT checks FROM project_verifications WHERE villa_id=?').get(v.id);
+        let pruefungen = {};
+        try { pruefungen = JSON.parse(zeile?.checks || '{}'); } catch {}
+        const fertig = (pruefungen.build?.status === 'passed' && pruefungen.tests?.status === 'passed') ? 0 : 1;
+        return fertig * 1000 + Number(v.offen || 0);
+      };
+      return rang(a) - rang(b);
+    })[0];
+  if (beste) {
+    console.log(`\n== AUFWECKEN: Villa ${beste.id} "${beste.name}" (${beste.offen} offene Aufgaben) ==`);
+    if (autonomieFreigeben(beste.id, beste.name)) {
+      reparaturAuftrag(beste.id, ['Quellstand unveraendert, Abnahme weiter offen - Arbeit fortsetzen und Befunde beheben']);
+      arrest += 1;
+    }
+  }
 }
 
 const stand = db.prepare("SELECT COUNT(*) c FROM project_verifications WHERE status='passed'").get().c;
