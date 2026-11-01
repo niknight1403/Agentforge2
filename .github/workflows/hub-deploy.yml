@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'server/**'
+      - 'scripts/**'
       - '!server/tests/**'
       - 'package.json'
       - 'package-lock.json'

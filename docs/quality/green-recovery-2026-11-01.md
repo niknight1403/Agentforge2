@@ -22,4 +22,14 @@ Alle 16 Villen haben noch keine gueltige vollstaendige Produktabnahme. Offene Au
 
 ## Lokale Pruefung
 
-`npm run check`: 359 Tests bestanden und Webbuild bestanden vor der zusaetzlichen No-op-Regression. Anschliessend 13/13 gezielte Projektverifikationstests bestanden. Das vollstaendige Gate wird fuer den integrierten Stand erneut ausgefuehrt.
+`npm run check`: 361/361 Tests, Syntax- und Secret-Scan sowie Webbuild bestanden (Exit 0). PR #34: Hub-Tests, Browser/Design-Audit, APEX und CodeQL bestanden. Integriert und mit externem HTTP 200 deployed: `6064f2f158a947e7a77e578cbd6c67a91a680d0b`.
+
+## Nach Deploy weiterhin rot
+
+Die frische Masterprobe antwortete HTTP 200 ohne Aktionen, beantwortete aber die vorherige Modellverbindungsfrage statt der aktuellen Start-Frage. Die Relevanzpruefung bleibt fehlgeschlagen: https://github.com/niknight1403/Agentforge2/actions/runs/41257200279 . Der fruehere erfolgreiche VF-0004-Nachweis ersetzt diesen neuen roten Nachweis nicht.
+
+Die APK-Pipeline pruefte um 00:32:17 UTC den produktiven Chat waehrend des Deploys (lokaler Healthcheck erst 00:32:23 UTC) und scheiterte mit HTTP 502. Die automatische APK-Pipeline wird deshalb an erfolgreichen Hub-Deploy gekoppelt. Checkout und Release-Ziel verwenden dessen `head_sha`; bei neuerem main wird kein alter Build publiziert. Tag- und manuelle Ausloeser bleiben erhalten und erfordern weiterhin die produktiven Gates. Scripts-Aenderungen loesen ebenfalls Hub-Deploy aus, damit deren APK-Lauf folgen kann. Keine neuen Tokenrechte oder Secrets.
+
+`fs-tools.mjs` startet freigegebene Projektbefehle direkt mit `execFile`; dies belegt keine Sandbox. Vor echten Builds fremden Projektcodes muss die isolierte Ausfuehrung nachgewiesen werden. Villa 5 ist ein moeglicher erster Abnahmekandidat mit vorhandenen Build/Test/Smoke-Befehlen; die Abnahme ist noch offen.
+
+Stuendliche begrenzte Fortsetzung und Q-Gate-Pruefung sind als Automation eingerichtet. Keine kontinuierliche Codex-Ausfuehrung und keine Erfolgsbenachrichtigung vor allen Pflichtnachweisen.

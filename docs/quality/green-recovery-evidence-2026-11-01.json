@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "status": "partial",
+  "version": "1.60.5",
+  "baselineCommit": "16bee853539d071c6f9f7bb3b1ca56d5039f8b70",
+  "reviewedCommit": "69cc396458c82394e868f09bc094c199158115aa",
+  "integratedCommit": "6064f2f158a947e7a77e578cbd6c67a91a680d0b",
+  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/34",
+  "localCheck": {
+    "command": "npm run check",
+    "exitCode": 0,
+    "tests": 361,
+    "passed": 361,
+    "failed": 0,
+    "webBuild": true
+  },
+  "ci": {
+    "hub": "https://github.com/niknight1403/Agentforge2/actions/runs/41256756833",
+    "browser": "https://github.com/niknight1403/Agentforge2/actions/runs/41256756854",
+    "security": "https://github.com/niknight1403/Agentforge2/actions/runs/41256756780",
+    "apex": "https://github.com/niknight1403/Agentforge2/actions/runs/41256756824",
+    "status": "all passed"
+  },
+  "products": {
+    "readOnly": true,
+    "fixture": false,
+    "workflow": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970917",
+    "total": 16,
+    "verified": 0,
+    "rows": [
+      {
+        "id": 1,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 79,
+        "sourceFiles": 2,
+        "buildDeclared": false
+      },
+      {
+        "id": 2,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 22,
+        "sourceFiles": 1066,
+        "buildDeclared": true
+      },
+      {
+        "id": 3,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 11,
+        "sourceFiles": 15,
+        "buildDeclared": true
+      },
+      {
+        "id": 4,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 23,
+        "sourceFiles": 3,
+        "buildDeclared": false
+      },
+      {
+        "id": 5,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 0,
+        "sourceFiles": 228,
+        "buildDeclared": true
+      },
+      {
+        "id": 8,
+        "domain": "audio",
+        "verified": false,
+        "unfinishedTasks": 1,
+        "sourceFiles": 14,
+        "buildDeclared": false
+      },
+      {
+        "id": 9,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 26,
+        "sourceFiles": 107,
+        "buildDeclared": true
+      },
+      {
+        "id": 10,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 1,
+        "sourceFiles": 2,
+        "buildDeclared": true
+      },
+      {
+        "id": 12,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 1,
+        "sourceFiles": 5,
+        "buildDeclared": true
+      },
+      {
+        "id": 17,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 15,
+        "sourceFiles": 1,
+        "buildDeclared": true
+      },
+      {
+        "id": 18,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 3,
+        "sourceFiles": 8,
+        "buildDeclared": false
+      },
+      {
+        "id": 24,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 27,
+        "sourceFiles": 5,
+        "buildDeclared": true
+      },
+      {
+        "id": 25,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 0,
+        "sourceFiles": 3,
+        "buildDeclared": false
+      },
+      {
+        "id": 29,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 12,
+        "sourceFiles": 9,
+        "buildDeclared": true
+      },
+      {
+        "id": 31,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 23,
+        "sourceFiles": 0,
+        "buildDeclared": false
+      },
+      {
+        "id": 34,
+        "domain": "software",
+        "verified": false,
+        "unfinishedTasks": 38,
+        "sourceFiles": 6,
+        "buildDeclared": false
+      }
+    ]
+  },
+  "release": {
+    "status": "blocked",
+    "reasons": [
+      "Keine vollstaendige Produktabnahme der 16 Villen",
+      "Medienprovider fehlen",
+      "Android-Produktionssignierung nicht nachgewiesen",
+      "Isolierte Laufzeit generierten Projektcodes nicht nachgewiesen"
+    ],
+    "workflow": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
+    "failure": "HTTP 502 during deployment restart, before product acceptance",
+    "proposedRepair": "Run automatic APK pipeline after successful Hub-Deploy and check out that exact workflow head_sha. Keep tag/manual triggers and strict LLM/product gates."
+  },
+  "continuation": {
+    "mechanism": "ChatGPT condition_watch automation",
+    "enabled": true,
+    "cadence": "hourly",
+    "notifications": "only when all required evidence passes",
+    "boundedChangesPerRun": 1
+  },
+  "deployment": {
+    "commit": "6064f2f158a947e7a77e578cbd6c67a91a680d0b",
+    "workflow": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970867",
+    "status": "passed",
+    "externalHttp": 200,
+    "externalLatencySeconds": 0.552129
+  },
+  "latestMasterProbe": {
+    "workflow": "https://github.com/niknight1403/Agentforge2/actions/runs/41257200279",
+    "job": 124702784358,
+    "httpStatus": 200,
+    "ok": true,
+    "sideEffects": 0,
+    "status": "failed semantic relevance",
+    "latencySeconds": 41.6
+  }
+}

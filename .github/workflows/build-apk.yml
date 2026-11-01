@@ -4,14 +4,10 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
+  workflow_run:
+    workflows: [Hub-Deploy]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'app/build.gradle.kts'
-      - 'docs/releases/**'
-      - '.github/workflows/build-apk.yml'
-      - 'server/**'
-      - 'scripts/**'
-      - 'package.json'
 
 concurrency:
   group: villaforge-apk-${{ github.ref }}
@@ -25,9 +21,14 @@ permissions:
 
 jobs:
   apk:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    env:
+      VF_BUILD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VF_BUILD_SHA }}
 
       - name: JDK 17 einrichten
         uses: actions/setup-java@v4
@@ -119,13 +120,13 @@ jobs:
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then TAG="v$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)"; fi
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then
             LATEST_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
-            if [ "$LATEST_SHA" != "$GITHUB_SHA" ]; then
+            if [ "$LATEST_SHA" != "$VF_BUILD_SHA" ]; then
               echo "Superseded build; retain artifacts but do not publish a release."
               exit 0
             fi
           fi
           TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq '.sha' 2>/dev/null || true)
-          if [ -n "$TAG_SHA" ] && [ "$TAG_SHA" != "$GITHUB_SHA" ]; then
+          if [ -n "$TAG_SHA" ] && [ "$TAG_SHA" != "$VF_BUILD_SHA" ]; then
             echo "Release tag belongs to another commit; refusing to replace its artifacts."
             exit 1
           fi
@@ -134,9 +135,9 @@ jobs:
             if [ -f "$NOTES" ]; then gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$NOTES"; fi
             gh release upload "$TAG" VillaForge.apk VillaForge-Web.zip --repo "$GITHUB_REPOSITORY" --clobber
           elif [ -f "$NOTES" ]; then
-            gh release create "$TAG" VillaForge.apk VillaForge-Web.zip --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
+            gh release create "$TAG" VillaForge.apk VillaForge-Web.zip --target "$VF_BUILD_SHA" --repo "$GITHUB_REPOSITORY" \
               --title "VillaForge $TAG" --notes-file "$NOTES"
           else
-            gh release create "$TAG" VillaForge.apk VillaForge-Web.zip --target "$GITHUB_SHA" --repo "$GITHUB_REPOSITORY" \
+            gh release create "$TAG" VillaForge.apk VillaForge-Web.zip --target "$VF_BUILD_SHA" --repo "$GITHUB_REPOSITORY" \
               --title "VillaForge $TAG" --generate-notes
           fi
