@@ -123,18 +123,43 @@ if [ -z "$SITE" ]; then
 fi
 echo "nginx-Site (aktiv): ${SITE:-nicht gefunden}"
 
-if [ -n "$SITE" ] && ! grep -q "snippets/anfragepilot.conf" "$SITE"; then
+# Include ueberall entfernen (idempotent), dann genau einmal in den richtigen Block setzen.
+for datei in $(grep -rl "snippets/anfragepilot.conf" /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null || true); do
+  sed -i '/snippets\/anfragepilot.conf/d' "$datei"
+done
+
+if [ -n "$SITE" ]; then
   SICHERUNG="$SITE.vor-pilot.$(date +%s)"
   cp "$SITE" "$SICHERUNG"
   python3 - "$SITE" <<'PY'
 import sys
 pfad = sys.argv[1]
 text = open(pfad).read()
-stelle = text.rfind('}')
-open(pfad, 'w').write(text[:stelle] + "    include snippets/anfragepilot.conf;\n" + text[stelle:])
+marke = 'server_name hub.cybersarah-ki.com'
+idx = text.find(marke)
+if idx == -1:
+    print('SERVERBLOCK NICHT GEFUNDEN'); sys.exit(2)
+start = text.rfind('server', 0, idx)
+oeffnung = text.index('{', start)
+tiefe = 0
+j = oeffnung
+while j < len(text):
+    if text[j] == '{':
+        tiefe += 1
+    elif text[j] == '}':
+        tiefe -= 1
+        if tiefe == 0:
+            break
+    j += 1
+zeile = text.count('\n', 0, oeffnung) + 1
+text = text[:j] + '    include snippets/anfragepilot.conf;\n' + text[j:]
+open(pfad, 'w').write(text)
+print(f'Include in Serverblock ab Zeile {zeile} gesetzt')
 PY
-  echo "include ergaenzt in $SITE"
 fi
+
+echo "--- Struktur der Site-Datei (Serverbloecke und Include) ---"
+grep -nE "server \{|server_name|include snippets/anfragepilot|listen " "$SITE" 2>/dev/null | head -20 || true
 
 if ! nginx -t; then
   echo "nginx-Konfiguration ungueltig - Include wird zurueckgenommen"
