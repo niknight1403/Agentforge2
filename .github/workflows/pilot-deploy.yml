@@ -54,11 +54,12 @@ jobs:
             sudo grep -hE '^(export )?(GROQ_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY|STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET)=' /opt/villaforge/hub.env \
               | sed 's/^export //' | sudo tee "$ENV" >/dev/null || true
           fi
-          grep -qE '^PORT=' "$ENV" || echo 'PORT=3910' | sudo tee -a "$ENV" >/dev/null
-          grep -qE '^NODE_ENV=' "$ENV" || echo 'NODE_ENV=production' | sudo tee -a "$ENV" >/dev/null
-          grep -qE '^DB_FILE=' "$ENV" || echo 'DB_FILE=/opt/anfragepilot/data/anfragepilot.db' | sudo tee -a "$ENV" >/dev/null
-          grep -qE '^BASIS_URL=' "$ENV" || echo 'BASIS_URL=https://hub.cybersarah-ki.com/pilot' | sudo tee -a "$ENV" >/dev/null
+          sudo grep -qE '^PORT=' "$ENV" || echo 'PORT=3910' | sudo tee -a "$ENV" >/dev/null
+          sudo grep -qE '^NODE_ENV=' "$ENV" || echo 'NODE_ENV=production' | sudo tee -a "$ENV" >/dev/null
+          sudo grep -qE '^DB_FILE=' "$ENV" || echo 'DB_FILE=/opt/anfragepilot/data/anfragepilot.db' | sudo tee -a "$ENV" >/dev/null
+          sudo grep -qE '^BASIS_URL=' "$ENV" || echo 'BASIS_URL=https://hub.cybersarah-ki.com/pilot' | sudo tee -a "$ENV" >/dev/null
           sudo mkdir -p /opt/anfragepilot/data
+          sudo chown -R ubuntu:ubuntu /opt/anfragepilot
           echo "Umgebung vorbereitet ($(sudo grep -c = "$ENV") Variablen, Schluessel: $(sudo grep -cE '^(GROQ|OPENAI|GEMINI)_API_KEY=' "$ENV" || true))"
 
           # systemd-Dienst
@@ -82,8 +83,21 @@ jobs:
           sudo systemctl daemon-reload
           sudo systemctl enable anfragepilot.service >/dev/null 2>&1 || true
           if [ "$RESTART" = "true" ]; then sudo systemctl restart anfragepilot.service; fi
-          sleep 2
-          systemctl is-active anfragepilot.service
+          for i in $(seq 1 15); do
+            STATUS=$(systemctl is-active anfragepilot.service || true)
+            if [ "$STATUS" = "active" ]; then echo "Dienst aktiv nach ${i}s"; break; fi
+            sleep 1
+          done
+          echo "Dienststatus: ${STATUS:-unbekannt}"
+          if [ "${STATUS:-}" != "active" ]; then
+            echo "=== Diagnose ==="
+            sudo systemctl status anfragepilot.service --no-pager -l | head -25 || true
+            echo "=== Journal ==="
+            sudo journalctl -u anfragepilot.service -n 40 --no-pager | tail -30 || true
+            echo "=== Direktstart-Probe ==="
+            (cd /opt/anfragepilot && sudo -u ubuntu env $(sudo grep -v '^#' /opt/anfragepilot/pilot.env | xargs) timeout 6 node src/server.js 2>&1 | head -15) || true
+            exit 1
+          fi
 
           # nginx: Unterpfad /pilot/ auf den Dienst (bestehende Konfiguration bleibt unberuehrt)
           SNIP=/etc/nginx/snippets/anfragepilot.conf
