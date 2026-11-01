@@ -97,6 +97,9 @@ jobs:
                     '            fehler += 1',
                     '            print("Nicht lesbar: " + str(datei))',
                     'print(str(geprueft) + " Dateien uebersetzt, " + str(fehler) + " Fehler")',
+                    'if geprueft == 0:',
+                    '    print("Keine Python-Quellen gefunden - dieser Build prueft nichts und gilt nicht als Nachweis")',
+                    '    sys.exit(2)',
                     'sys.exit(0 if fehler == 0 else 1)',
                     ''
                   ];
