@@ -1,0 +1,25 @@
+name: Stripe-Key-Modi (nur Praefixe)
+on:
+  workflow_dispatch: {}
+jobs:
+  modes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      K1: ${{ secrets.STRIPE_SECRET_KEY }}
+      K2: ${{ secrets.STRIPE_SETUP_KEY }}
+      K3: ${{ secrets.CCC_STRIPE_SECRET_KEY }}
+    steps:
+      - name: Praefixe pruefen
+        run: |
+          for N in K1 K2 K3; do
+            V="${!N}"
+            if [ -z "$V" ]; then echo "$N: leer"; continue; fi
+            P="${V:0:8}"
+            case "$V" in
+              sk_test_*|rk_test_*) M="TEST";;
+              sk_live_*|rk_live_*) M="LIVE";;
+              *) M="unbekannt";;
+            esac
+            echo "$N: Praefix=$P Modus=$M Laenge=${#V}"
+          done
