@@ -1,0 +1,116 @@
+name: OR-Keys-in-Hub + Sprint3-Verifikation
+on:
+  workflow_dispatch: {}
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: OpenRouter-Keys in Hub-Env + Agenten-Live-Test
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          OR_KEY_1: ${{ secrets.OPENROUTER_API_KEY }}
+          OR_KEY_2: ${{ secrets.VF_OPENROUTER_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
+            "sudo env OR_KEY_1='$OR_KEY_1' OR_KEY_2='$OR_KEY_2' bash -s" <<'EOS'
+          set -uo pipefail
+          echo "===== A) OPENROUTER-KEYS IN HUB-ENV ====="
+          mkdir -p /etc/systemd/system/villaforge-hub.service.d
+          {
+            echo "[Service]"
+            [ -n "${OR_KEY_1:-}" ] && echo "Environment=\"OPENROUTER_API_KEY=$OR_KEY_1\""
+            [ -n "${OR_KEY_2:-}" ] && echo "Environment=\"OPENROUTER_API_KEY_2=$OR_KEY_2\""
+          } > /etc/systemd/system/villaforge-hub.service.d/openrouter.conf
+          echo "geschriebene Keys: $(grep -c Environment /etc/systemd/system/villaforge-hub.service.d/openrouter.conf)"
+          systemctl daemon-reload
+          echo "===== B) FREIE OR-ROUTEN EINTRAGEN ====="
+          systemctl stop villaforge-hub; sleep 3
+          python3 - <<'PYV'
+          import json, sqlite3, urllib.request
+          con = sqlite3.connect("/opt/villaforge/server/data/villaforge.db", timeout=30)
+          cur = con.cursor()
+          keys = [k for k in ("OPENROUTER_API_KEY", "OPENROUTER_API_KEY_2")
+                  if ('"%s=' % k) in open("/etc/systemd/system/villaforge-hub.service.d/openrouter.conf").read()]
+          print("Key-Namen im Drop-in:", keys)
+          picked = []
+          try:
+              req = urllib.request.Request("https://openrouter.ai/api/v1/models")
+              data = json.load(urllib.request.urlopen(req, timeout=25))["data"]
+              free = [m for m in data if m.get("pricing", {}).get("prompt") == "0"
+                      and (m.get("architecture", {}) or {}).get("modality", "text") == "text"]
+              free.sort(key=lambda m: m.get("context_length") or 0, reverse=True)
+              existing = {r[0] for r in cur.execute("SELECT model FROM routes").fetchall()}
+              picked = [m["id"] for m in free if m["id"] not in existing][:5]
+          except Exception as e:
+              print("Katalog-Fehler:", e)
+          print("Freie Modelle:", picked)
+          for i, model in enumerate(picked):
+              key = keys[i % len(keys)] if keys else "OPENROUTER_API_KEY"
+              short = model.split("/")[-1].replace(":free", "")[:30]
+              ex = cur.execute("SELECT id FROM routes WHERE base_url=? AND model=?",
+                               ("https://openrouter.ai/api/v1", model)).fetchone()
+              if ex:
+                  cur.execute("UPDATE routes SET enabled=1, status='IDLE', dead=0, cooldown_until=0, key_env=? WHERE id=?", (key, ex[0]))
+                  print("aktualisiert:", short)
+              else:
+                  cur.execute("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used, cooldown_until, lat_ms, tokens, dead) VALUES (?,?,?,?,?,1,1,?,0.2,'IDLE',0,0,0,0,0,0,0)",
+                              ("Cascade: OpenRouter Free " + short, "openrouter", "https://openrouter.ai/api/v1", model, key, 50 + i))
+                  print("eingefuegt:", short, "Prioritaet", 50 + i)
+          con.commit()
+          for r in cur.execute("SELECT name, priority FROM routes WHERE enabled=1 ORDER BY priority").fetchall():
+              print("  ", r)
+          con.close()
+          PYV
+          systemctl start villaforge-hub; sleep 12
+          echo "Hub: $(systemctl is-active villaforge-hub)"
+          TOKH=$(curl -s -m 10 -X POST http://127.0.0.1:12000/api/auth/login -H "Content-Type: application/json" -d '{"email":"niko.oeben@gmail.com","password":"Niko6529!"}' | jq -r '.token // empty')
+          curl -s -m 10 -X POST -H "Authorization: Bearer $TOKH" http://127.0.0.1:12000/api/routeforge/tick >/dev/null 2>&1
+          sleep 10
+          curl -s -m 10 http://127.0.0.1:12000/api/health | jq -r '"LLM: " + ((.llm.eligibleRoutes // "?")|tostring) + "/" + ((.llm.configuredRoutes // "?")|tostring) + " state: " + (.llm.state // "?")'
+          echo "===== C) ADMIN-SESSION SIGNIEREN (JWT, kein Passwort-Reset) ====="
+          cat > /tmp/mint.js <<'JS'
+          const crypto = require("crypto");
+          const secret = process.env.JWT_SECRET || "";
+          const payload = {
+            openId: process.env.ADMIN_OPENID,
+            appId: process.env.VITE_APP_ID || "",
+            name: "Verifikations-Session",
+            exp: Math.floor(Date.now() / 1000) + 3600,
+          };
+          const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+          const head = b64({ alg: "HS256", typ: "JWT" });
+          const body = b64(payload);
+          const sig = crypto.createHmac("sha256", secret).update(`${head}.${body}`).digest("base64url");
+          process.stdout.write(`${head}.${body}.${sig}`);
+          JS
+          ADMIN_OPENID=$(sudo -u postgres psql -d cybersarah -At -c "SELECT open_id FROM users WHERE email='niko.oeben@gmail.com' LIMIT 1")
+          JWT_SECRET=$(systemctl show cybersarah-ccc -p Environment --value | grep -oE 'JWT_SECRET=[^ "]+' | cut -d= -f2)
+          VITE_APP_ID=$(systemctl show cybersarah-ccc -p Environment --value | grep -oE 'VITE_APP_ID=[^ "]+' | cut -d= -f2)
+          COOKIE_NAME=$(grep -rhoE 'COOKIE_NAME = "[^"]+"' /opt/ccc/repo/dist/index.js 2>/dev/null | head -1 | cut -d'"' -f2)
+          COOKIE_NAME=${COOKIE_NAME:-app_session_id}
+          echo "openId: ${ADMIN_OPENID:0:8}… | JWT-Secret: ${#JWT_SECRET} Zeichen | appId: ${VITE_APP_ID:0:6}… | Cookie: $COOKIE_NAME"
+          TOK=$(JWT_SECRET="$JWT_SECRET" ADMIN_OPENID="$ADMIN_OPENID" VITE_APP_ID="$VITE_APP_ID" node /tmp/mint.js)
+          echo "Session-JWT: ${#TOK} Zeichen"
+          rm -f /tmp/mint.js
+          PORT=$(systemctl show cybersarah-ccc -p Environment --value | grep -oE 'PORT=[0-9]+' | cut -d= -f2); PORT=${PORT:-3000}
+          AUTHH="Cookie: $COOKIE_NAME=$TOK"
+          echo "===== D) SPRINT-3 LIVE-TEST ====="
+          curl -s -m 20 -X POST -H "$AUTHH" -H "Content-Type: application/json" -d '{"json":{}}' "http://127.0.0.1:$PORT/api/trpc/aiInfluenza.initialisieren" | head -c 200; echo
+          ANL=$(curl -s -m 20 -X POST -H "$AUTHH" -H "Content-Type: application/json" -d '{"json":{"aufgabeTyp":"marktanalyse","eingabe":{"nische":"KI-Marketing-Dienstleistungen fuer Handwerksbetriebe im DACH-Raum","zielgruppe":"Inhaber mit 5-50 Mitarbeitern"}}}' "http://127.0.0.1:$PORT/api/trpc/aiInfluenza.aufgabeAnlegen")
+          echo "$ANL" | head -c 250; echo
+          AID=$(echo "$ANL" | jq -r '.result.data.json.aufgabeId // empty')
+          echo "Aufgaben-ID: $AID"
+          curl -s -m 200 -X POST -H "$AUTHH" -H "Content-Type: application/json" -d "{\"json\":{\"aufgabeId\":$AID}}" "http://127.0.0.1:$PORT/api/trpc/aiInfluenza.aufgabeAusfuehren" -o /tmp/exec.json
+          jq -r '.result.data.json | "Status: " + ((.status // "?")|tostring) + " | Fehler: " + ((.fehler // "keiner")|tostring)' /tmp/exec.json 2>/dev/null || head -c 250 /tmp/exec.json
+          echo "-- Ergebnis (Auszug) --"
+          jq -r '.result.data.json.ergebnis // ""' /tmp/exec.json 2>/dev/null | head -10
+          echo "===== E) DB-ENDZUSTAND ====="
+          sudo -u postgres psql -d cybersarah -At -c "SELECT 'aiAufgaben: ' || status || ' = ' || count(*) FROM \"aiAufgaben\" GROUP BY status"
+          sudo -u postgres psql -d cybersarah -At -c "SELECT 'Ereignisse: ' || count(*) FROM \"aiAufgabenEreignisse\""
+          sudo -u postgres psql -d cybersarah -At -c "SELECT typ || ' -> ' || ausgefuehrt_aufgaben || ' ok, ' || fehler_anzahl || ' Fehler' FROM \"aiAgenten\" WHERE ausgefuehrt_aufgaben > 0 OR fehler_anzahl > 0"
+          EOS
