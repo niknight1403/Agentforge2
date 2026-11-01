@@ -1,0 +1,55 @@
+name: Villa 18 Source Inspection
+on:
+  push:
+    branches: [work/villa18-inspect]
+    paths: ['.github/workflows/villa18-inspect.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read project files without execution
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          keyfile=$(mktemp)
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$ORACLE_SSH_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$keyfile" ubuntu@92.5.177.159 'python3 -' > /tmp/villa18-source.json <<'PY'
+          import pathlib,json,shutil
+          root=pathlib.Path('/opt/villaforge/server/data/workspace/villa-18/project')
+          files={};size=0
+          for path in sorted(root.rglob('*')):
+              rel=path.relative_to(root)
+              if any(p in ['node_modules','.git','dist','build'] or p.startswith('.env') for p in rel.parts):continue
+              if path.is_symlink():raise SystemExit('Symlink requires explicit inspection')
+              if not path.is_file() or path.suffix not in ['.js','.mjs','.json','.html','.css','.md','.ts','.py']:continue
+              if len(files)>=100 or path.stat().st_size>200000:raise SystemExit('Inspection budget exceeded')
+              text=path.read_text();size+=len(text.encode())
+              if size>2000000:raise SystemExit('Inspection budget exceeded')
+              files[str(rel)]=text
+          print(json.dumps({'root':str(root),'files':files,'dockerPresent':bool(shutil.which('docker'))}))
+          PY
+      - name: Read current open task and product gate
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import os,json,urllib.request
+          def call(path,data=None,token=None):
+              req=urllib.request.Request('https://hub.cybersarah-ki.com'+path,data=json.dumps(data).encode() if data else None,headers={'Content-Type':'application/json',**({'Authorization':'Bearer '+token} if token else {})})
+              with urllib.request.urlopen(req,timeout=25) as r:return json.load(r)
+          token=call('/api/auth/login',{'email':os.environ['VF_ADMIN_EMAIL'],'password':os.environ['VF_ADMIN_PASSWORD']})['token']
+          tasks=call('/api/villas/18/tasks',token=token)
+          with open('/tmp/villa18-tasks.json','w') as f:json.dump({'tasks':tasks,'product':call('/api/villas/18/product',token=token)},f)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: villa18-inspection
+          path: /tmp/villa18-*.json
+          if-no-files-found: error
