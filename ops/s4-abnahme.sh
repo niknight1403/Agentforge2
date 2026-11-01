@@ -13,7 +13,6 @@ Environment="AI_INFLUENZA_STRIPE_WEBHOOK_SECRET=$STRIPE_TEST_WHSEC"
 EOF
 chmod 600 /etc/systemd/system/cybersarah-ccc.service.d/ai-influenza-stripe.conf
 umask 022
-npm run build >/tmp/build.log 2>&1 && echo "Build OK" || { tail -6 /tmp/build.log; exit 1; }
 systemctl daemon-reload && systemctl restart cybersarah-ccc; sleep 25
 
 PID=$(systemctl show cybersarah-ccc -p MainPID --value)
@@ -38,8 +37,9 @@ r=d.get('result',{}).get('data',{}).get('json')
 print([(o['paket'],o['aktion']) for o in r['objekte']] if r else d)"
 
 echo "== 4) Testkunde + freigegebenes Angebot (revenue_os, markiert als Abnahmetest) =="
-RO() { sudo -u postgres psql -d revenue_os -At -v ON_ERROR_STOP=1 "$@"; }
+RO() { sudo -u postgres psql -d revenue_os -Atq -v ON_ERROR_STOP=1 "$@" | head -1; }
 KID=$(RO -c "INSERT INTO kunden (email,name,firma,quelle,status) VALUES ('abnahme-test@example.invalid','Abnahme Test','Testfirma (Stripe-Testmodus)','abnahme','interessent') ON CONFLICT (email) DO UPDATE SET updated_at=now() RETURNING id")
+RO -c "DELETE FROM angebote WHERE erstellt_von='abnahme' AND kunde_id=$KID" >/dev/null
 AID=$(RO -c "INSERT INTO angebote (kunde_id,paket,titel,leistungsumfang,preis,status,freigegeben_von,freigegeben_am,erstellt_von) VALUES ($KID,'starter','Abnahmetest Starter','12 Beitraege, 4 KI-Bilder, Content-Plan',299,'freigegeben','niko.oeben@gmail.com',now(),'abnahme') RETURNING id")
 echo "kunde_id=$KID angebot_id=$AID"
 echo "== 5) Checkout erstellen =="
