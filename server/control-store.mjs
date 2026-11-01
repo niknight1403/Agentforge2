@@ -46,6 +46,29 @@ export function setSetting(key, value) {
   db.prepare('INSERT OR REPLACE INTO control_settings VALUES (?,?)').run(key, JSON.stringify(value));
   return { key, value };
 }
+const THEME_COLOR_KEYS = ['bg', 'card', 'card-solid', 'cyan', 'purple', 'pink', 'green', 'blue'];
+export function listThemes() {
+  const row = db.prepare('SELECT value FROM control_settings WHERE key=?').get('customThemes');
+  if (!row) return [];
+  try { const parsed = JSON.parse(row.value); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+}
+export function upsertTheme({ id, title, description = '', colors = {}, activate = false } = {}) {
+  const slug = String(id ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+  if (!slug) throw new Error('Theme-ID fehlt.');
+  const clean = {};
+  for (const key of THEME_COLOR_KEYS) {
+    const value = colors?.[key];
+    if (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) clean[key] = value.toLowerCase();
+  }
+  if (Object.keys(clean).length < 2) throw new Error('Mindestens zwei HEX-Farben erforderlich.');
+  const themes = listThemes().filter((theme) => theme.id !== slug);
+  themes.push({ id: slug, title: String(title || slug).slice(0, 80), description: String(description).slice(0, 240), colors: clean, activate: !!activate, created_at: now() });
+  while (themes.length > 12) themes.shift();
+  db.prepare('INSERT OR REPLACE INTO control_settings VALUES (?,?)').run('customThemes', JSON.stringify(themes));
+  recordControl('system', `Eigenes Theme gespeichert: ${slug} (${Object.keys(clean).length} Farben)`);
+  return { id: slug, title: String(title || slug).slice(0, 80), colors: clean, activate: !!activate, total: themes.length };
+}
+
 export function toolEnabled(name) { return db.prepare('SELECT enabled FROM control_tools WHERE name=?').get(name)?.enabled !== 0; }
 export function skillInstructions() {
   return db.prepare('SELECT title, instructions FROM control_skills WHERE enabled=1 ORDER BY id').all()

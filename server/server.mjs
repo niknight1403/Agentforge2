@@ -44,7 +44,7 @@ import {
 import { verifyGitHubSignature, buildCommitChangelog, sendTelegramChangelog } from './github-changelog.mjs';
 import { openHandsCanvasStatus } from './openhands.mjs';
 import { startTelemetryConsumer } from './event-mesh.mjs';
-import { controlCatalog, saveConnector, updateConnector, deleteConnector, readConnector, saveControlSkill, setControlSkillEnabled, deleteControlSkill } from './control-store.mjs';
+import { controlCatalog, saveConnector, updateConnector, deleteConnector, readConnector, saveControlSkill, setControlSkillEnabled, deleteControlSkill, listThemes } from './control-store.mjs';
 import { createReadStream, existsSync as fsExists } from 'node:fs';
 import { initBillingStore, createCheckoutSession, createBillingPortalSession, billingSummary, adminBillingMetrics, flushStripeUsage } from './billing.mjs';
 import { issueGatewayToken, gatewayPrincipal, hasGatewayScope, canAccessVilla, gatewayRoleScopes, initGatewayStore, createGatewayApiKey, listGatewayApiKeys, revokeGatewayApiKey } from './api-gateway.mjs';
@@ -727,6 +727,9 @@ async function api(req, res, url) {
 
 
   // ---- Skills, sichere Connectoren und integrierte Entwickler-Packs ----
+  if (p === '/api/design/themes' && m === 'GET') {
+    return json(res, 200, { themes: listThemes() });
+  }
   if (p === '/api/control/catalog' && m === 'GET') {
     const catalog=controlCatalog();
     return json(res,200,{skills:catalog.skills.map(s=>({...s,builtin:['product-brief','professional-delivery','engineering-quality','visual-design','creative-production','source-grounded-research','safe-connectors-routing','compute-routing-orchestrator'].includes(s.id)})),connectors:catalog.connectors,packs:packState()});

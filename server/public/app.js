@@ -584,6 +584,36 @@ function applyTheme(name) {
   localStorage.setItem('vf_design_theme', key);
   document.querySelectorAll('[data-theme-choice]').forEach(b => { const active = b.dataset.themeChoice === key; b.classList.toggle('selected', active); b.querySelector('em').textContent = active ? 'Aktiv' : 'Anwenden'; });
 }
+async function loadCustomThemes() {
+  let data;
+  try { data = await api('/api/design/themes'); } catch { return; }
+  const list = Array.isArray(data && data.themes) ? data.themes : [];
+  const picker = $('#themePicker');
+  if (!list.length || !picker) return;
+  for (const item of list) {
+    if (!item || typeof item.id !== 'string' || themes[item.id]) continue;
+    const colors = item.colors || {};
+    themes[item.id] = {
+      bg: colors.bg || '#07090E',
+      card: colors.card || 'rgba(18,22,34,.8)',
+      'card-solid': colors['card-solid'] || '#121622',
+      cyan: colors.cyan || '#00E5FF',
+      purple: colors.purple || '#8B5CF6',
+      pink: colors.pink || '#EC4899',
+      green: colors.green || '#00FFA3',
+      blue: colors.blue || '#2EA7FF'
+    };
+    const card = document.createElement('button');
+    card.className = 'theme-card';
+    card.type = 'button';
+    card.dataset.themeChoice = item.id;
+    card.innerHTML = `<span class="theme-swatch" style="background:${esc(themes[item.id].bg)}"><i style="background:${esc(themes[item.id].cyan)}"></i><i style="background:${esc(themes[item.id].purple)}"></i><i style="background:${esc(themes[item.id].pink)}"></i></span><b>${esc(item.title || item.id)}</b><small>Eigenes Theme</small><em>Anwenden</em>`;
+    card.addEventListener('click', () => applyTheme(item.id));
+    picker.appendChild(card);
+  }
+  const stored = localStorage.getItem('vf_design_theme');
+  if (stored && themes[stored]) applyTheme(stored);
+}
 async function addRoute() {
   const name = $('#rName').value.trim(); const url = $('#rUrl').value.trim();
   if (!name || !url) { toast('Name und Base URL angeben'); return; }
@@ -689,6 +719,16 @@ if (localStorage.getItem('vf_design_theme_version') !== 'aurora-6-1') {
   localStorage.setItem('vf_design_theme_version', 'aurora-6-1');
 }
 applyTheme(localStorage.getItem('vf_design_theme') || 'aurora');
+loadCustomThemes();
+// Der Skip-Link springt auf die gerade sichtbare Ansicht, nicht auf eine versteckte.
+document.querySelectorAll('.skip-link').forEach((link) => link.addEventListener('click', (event) => {
+  const active = document.querySelector('.view.active') || document.querySelector('.view:not([hidden])');
+  if (!active) return;
+  event.preventDefault();
+  if (!active.hasAttribute('tabindex')) active.setAttribute('tabindex', '-1');
+  active.focus();
+  active.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}));
 $('#addSecretBtn').addEventListener('click', addSecret);
 document.querySelectorAll('.tab-chip').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#detailPanel').hidden) closeWorkspace(); });
