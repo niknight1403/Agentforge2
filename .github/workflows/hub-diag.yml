@@ -22,29 +22,20 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
           set -uo pipefail
-          echo "== Wer hoert auf 12000 =="
-          ss -ltnp 2>/dev/null | grep ':12000' | head -3
-          PID=$(ss -ltnp 2>/dev/null | grep ':12000' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
-          echo "PID=$PID"
-          if [ -n "${PID:-}" ]; then
-            echo "== Prozess =="
-            ps -o pid,etime,rss,cmd -p "$PID" | tail -2
-            echo "== Unit =="
-            UNIT=$(cat /proc/$PID/cgroup 2>/dev/null | grep -oE '[a-zA-Z0-9@_.-]+\.service' | head -1)
-            echo "UNIT=${UNIT:-unbekannt}"
-            echo "== Umgebung (nur Namen) =="
-            tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | cut -d= -f1 | sort -u | head -40
-          fi
-          echo "== laufende Dienste mit villa/hub/forge =="
-          systemctl list-units --type=service --state=running --no-legend 2>/dev/null | grep -iE 'villa|forge|hub' | head -5
-          echo "== pm2 =="
-          pm2 jlist 2>/dev/null | head -c 400 || echo "kein pm2"
-          echo "== Logs: LLM-Fehler der letzten 40 Minuten =="
-          journalctl --since '-40min' --no-pager 2>/dev/null | grep -iE 'LLM_UNAVAILABLE|llm-cascade|no route|all routes|timeout|ECONNREFUSED' | tail -25
-          echo "== Ollama-Latenztest =="
-          /usr/bin/time -f 'ollama: %e s' curl -s --max-time 90 http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:7b","prompt":"Antworte mit: ok","stream":false,"options":{"num_predict":8}}' 2>&1 | tail -c 400
+          echo "== volle LLM-Fehlerzeilen (letzte 3) =="
+          journalctl -u villaforge-hub -n 400 --no-pager -o cat 2>/dev/null | grep -A4 'Fehlschlag LLM_UNAVAILABLE' | tail -20
           echo
+          echo "== geladene Ollama-Modelle =="
+          curl -s --max-time 10 http://127.0.0.1:11434/api/ps | head -c 500; echo
+          echo "== 7B-Latenz (16 Tokens) =="
+          START=$(date +%s)
+          curl -s --max-time 120 http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:7b","prompt":"Antworte mit: ok","stream":false,"options":{"num_predict":16}}' -o /tmp/oll.json -w 'http_code=%{http_code} total=%{time_total}s\n'
+          END=$(date +%s); echo "dauer=$((END-START))s"; head -c 200 /tmp/oll.json; echo
+          echo "== 32B vorhanden? =="
+          curl -s --max-time 10 http://127.0.0.1:11434/api/tags | grep -oE '"name":"[^"]+"' | head -8
           echo "== Speicher/Top =="
           free -m | head -3
-          ps -eo pid,rss,comm --sort=-rss | head -6
+          ps -eo pid,rss,comm --sort=-rss | head -5
+          echo "== Limits des Dienstes =="
+          systemctl show villaforge-hub -p Environment --value | tr ' ' '\n' | grep -E 'VF_LLM|OLLAMA_MAX|VF_VILLA_SLOTS' | head -12
           DIAG
