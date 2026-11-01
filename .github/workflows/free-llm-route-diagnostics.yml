@@ -2,49 +2,44 @@ name: Free LLM Route Diagnostics
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - '.github/workflows/free-llm-route-diagnostics.yml'
-
+    branches: [main, work/green-gates]
+    paths: ['.github/workflows/free-llm-route-diagnostics.yml']
 permissions:
   contents: read
-
 jobs:
   live-route-probe:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Kostenlose Hub-Kaskade mit kurzem Prompt prüfen
+      - name: Konfigurierte lokale Knoten lesend messen
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
-          chmod 600 ~/.ssh/oracle_key
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'REMOTE'
+          keyfile=$(mktemp)
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$ORACLE_SSH_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$keyfile" ubuntu@92.5.177.159 "sudo bash -s" <<'REMOTE'
           set -euo pipefail
           cd /opt/villaforge
           node --input-type=module <<'NODE'
-          const { chat } = await import('./server/llm.mjs');
-          try {
-            const result = await chat(
-              [{ role: 'user', content: 'Antworte ausschließlich mit OK.' }],
-              { role: 'CODER', maxTokens: 8, timeoutMs: 8000, totalTimeoutMs: 45000 }
-            );
-            console.log('LIVE_LLM_RESULT', JSON.stringify({
-              ok: true,
-              route: result.route || null,
-              model: result.model || null,
-              answerLength: String(result.content || '').length
-            }));
-          } catch (error) {
-            console.log('LIVE_LLM_RESULT', JSON.stringify({
-              ok: false,
-              code: error.code || 'LLM_ERROR',
-              attempts: Array.isArray(error.attempts) ? error.attempts : []
-            }));
-            process.exitCode = 1;
+          const { db } = await import('./server/db.mjs');
+          const { resolveKey } = await import('./server/llm.mjs');
+          const rows=db.prepare("SELECT id,name,base_url,model,key_env,enabled,status,ok,fail FROM routes WHERE provider='ollama' ORDER BY priority,id").all();
+          const seen=new Set();
+          for(const row of rows){
+            const url=new URL(row.base_url);url.pathname=url.pathname.replace(/\/v1\/?$/,'')+'/api/tags';
+            const identity=url.origin+url.pathname;if(seen.has(identity))continue;seen.add(identity);
+            const started=Date.now();
+            try{
+              const key=row.key_env?resolveKey(row.key_env):'';
+              const response=await fetch(url,{headers:key?{authorization:'Bearer '+key}:{},signal:AbortSignal.timeout(4000),redirect:'error'});
+              const data=await response.json().catch(()=>({}));
+              console.log('LOCAL_NODE',JSON.stringify({routeId:row.id,name:row.name,enabled:!!row.enabled,status:row.status,http:response.status,latencyMs:Date.now()-started,models:Array.isArray(data.models)?data.models.map(m=>m.name):[],historicalSuccesses:row.ok,historicalFailures:row.fail}));
+            }catch{console.log('LOCAL_NODE',JSON.stringify({routeId:row.id,name:row.name,enabled:!!row.enabled,status:row.status,error:'CONNECTION_OR_TIMEOUT',latencyMs:Date.now()-started}));}
           }
+          const health=await fetch('http://127.0.0.1:12000/api/health',{signal:AbortSignal.timeout(5000)}).then(r=>r.json());
+          console.log('HUB_MODEL_STATE',JSON.stringify(health.llm));
           NODE
           REMOTE
