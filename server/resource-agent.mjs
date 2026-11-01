@@ -1,3 +1,4 @@
+import {availableMemory} from './resource-memory.mjs';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -86,7 +87,7 @@ function modelFit(availableBytes) {
 
 export function resourceStatus() {
   if (latest) return latest;
-  const total = os.totalmem(), free = os.freemem(), load = os.loadavg();
+  const total = os.totalmem(), free = availableMemory(total), load = os.loadavg();
   const cpu = cpuTimes();
   const usagePct = total ? Math.round(((total - free) / total) * 1000) / 10 : 0;
   return buildSnapshot({ cpu, total, free, load, gpu: null, processRss: safeProcessRss(), sampledAt: now(), persist: false });
@@ -134,7 +135,7 @@ export async function sampleResources({ gpuProbe = nvidiaSnapshot, clock = now }
   try { gpu = await gpuProbe(); } catch { gpu = amdSnapshot(); }
   if (!gpu) gpu = amdSnapshot();
   const cpu = cpuTimes();
-  const total = os.totalmem(), free = os.freemem(), load = os.loadavg();
+  const total = os.totalmem(), free = availableMemory(total), load = os.loadavg();
   latest = buildSnapshot({ cpu, total, free, load, gpu, processRss: safeProcessRss(), sampledAt: clock(), persist: true });
   return latest;
 }
