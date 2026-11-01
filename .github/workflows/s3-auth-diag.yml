@@ -1,0 +1,16 @@
+name: Sprint3 Auth-Diagnose
+on:
+  workflow_dispatch: {}
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Diagnose
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          install -m 600 /dev/null /tmp/k
+          printf '%s\n' "$ORACLE_SSH_KEY" > /tmp/k
+          ssh -i /tmp/k -o StrictHostKeyChecking=accept-new ubuntu@92.5.177.159 'sudo bash -s' < ops/s3-diag.sh
