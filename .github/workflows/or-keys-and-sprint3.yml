@@ -48,6 +48,17 @@ jobs:
               picked = [m["id"] for m in free if m["id"] not in existing][:5]
           except Exception as e:
               print("Katalog-Fehler:", e)
+          if not picked:
+              try:
+                  req = urllib.request.Request("https://openrouter.ai/api/v1/models")
+                  data = json.load(urllib.request.urlopen(req, timeout=25))["data"]
+                  print("Debug: Modelle gesamt:", len(data))
+                  freeish = [m for m in data if str(m.get("pricing", {}).get("prompt", "")) in ("0", "0.0")]
+                  print("Debug: kostenlos (stringvergleich):", len(freeish))
+                  print("Debug: Beispiel:", freeish[0]["id"] if freeish else "keins")
+                  picked = [m["id"] for m in freeish][:5]
+              except Exception as e2:
+                  print("Debug-Fehler:", e2)
           print("Freie Modelle:", picked)
           for i, model in enumerate(picked):
               key = keys[i % len(keys)] if keys else "OPENROUTER_API_KEY"
@@ -88,7 +99,7 @@ jobs:
           const sig = crypto.createHmac("sha256", secret).update(`${head}.${body}`).digest("base64url");
           process.stdout.write(`${head}.${body}.${sig}`);
           JS
-          ADMIN_OPENID=$(sudo -u postgres psql -d cybersarah -At -c "SELECT open_id FROM users WHERE email='niko.oeben@gmail.com' LIMIT 1")
+          ADMIN_OPENID=$(sudo -u postgres psql -d cybersarah -At -c "SELECT \"openId\" FROM users WHERE email='niko.oeben@gmail.com' LIMIT 1")
           JWT_SECRET=$(systemctl show cybersarah-ccc -p Environment --value | grep -oE 'JWT_SECRET=[^ "]+' | cut -d= -f2)
           VITE_APP_ID=$(systemctl show cybersarah-ccc -p Environment --value | grep -oE 'VITE_APP_ID=[^ "]+' | cut -d= -f2)
           COOKIE_NAME=$(grep -rhoE 'COOKIE_NAME = "[^"]+"' /opt/ccc/repo/dist/index.js 2>/dev/null | head -1 | cut -d'"' -f2)
