@@ -18,32 +18,49 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-      - name: Fehlerlage des Master-Chats erfassen
+      - name: Villen drosseln und interaktive Spur pruefen
         run: |
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'sudo bash -s' <<'DIAG'
           set -uo pipefail
+          echo "== Villen-Slots auf 2 begrenzen =="
+          mkdir -p /etc/systemd/system/villaforge-hub.service.d
+          cat > /etc/systemd/system/villaforge-hub.service.d/zz-interactive.conf <<'CONF'
+          [Service]
+          Environment=VF_VILLA_SLOTS=2
+          Environment=VF_LLM_INTERACTIVE_LOCAL_QUEUE_WAIT_MS=2800
+          Environment=VF_LLM_INTERACTIVE_QUEUE_WAIT_MS=2800
+          CONF
+          systemctl daemon-reload
+          systemctl restart villaforge-hub
+          for i in $(seq 1 20); do sleep 2; curl -sf --max-time 5 http://127.0.0.1:12000/api/health >/dev/null && { echo "  health ok ($i)"; break; }; done
           PID=$(ss -ltnp 2>/dev/null | grep ':12000' | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
           EMAIL=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_EMAIL=' | cut -d= -f2-)
           PASS=$(tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep '^VF_ADMIN_PASSWORD=' | cut -d= -f2-)
           TOK=$(curl -s --max-time 20 -X POST http://127.0.0.1:12000/api/auth/login -H 'content-type: application/json' -d "{\"email\":\"$EMAIL\",\"password\":\"$PASS\"}" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("token",""))' 2>/dev/null)
-          echo "== LLM-Status =="
-          curl -s --max-time 20 -H "authorization: Bearer $TOK" http://127.0.0.1:12000/api/llm/status | python3 -c "
+          echo "== laufende Villen reduzieren =="
+          IDS=$(curl -s --max-time 20 -H "authorization: Bearer $TOK" http://127.0.0.1:12000/api/villas | python3 -c "
           import json,sys
-          d=json.load(sys.stdin)
-          print('  state:',d.get('state'),'| aktiv:',d.get('active'),'| wartend:',d.get('waiting'))
-          for r in (d.get('routes') or [])[:8]:
-              print(f\"  {str(r.get('name'))[:40]:40s} eligible={r.get('eligible')} circuit={r.get('circuitState', r.get('circuit'))} cooldown={r.get('cooldownMs', r.get('cooldown'))}\")
-          " 2>/dev/null || echo "  Status nicht lesbar"
-          echo "== Villen =="
+          v=[x for x in json.load(sys.stdin) if x.get('status') in ('RUNNING','WAITING_FOR_MODEL')]
+          v.sort(key=lambda x: (x.get('progress') or 0), reverse=True)
+          print(' '.join(str(x['id']) for x in v[2:]))
+          " 2>/dev/null)
+          echo "  pausiere: ${IDS:-keine}"
+          for id in $IDS; do curl -s -o /dev/null -X POST -H "authorization: Bearer $TOK" "http://127.0.0.1:12000/api/villas/$id/stop"; done
+          sleep 25
+          echo "== Zustand =="
           curl -s --max-time 20 -H "authorization: Bearer $TOK" http://127.0.0.1:12000/api/villas | python3 -c "
           import json,sys
-          v=json.load(sys.stdin)
           from collections import Counter
-          c=Counter(x.get('status') for x in v)
-          print('  ',dict(c))
-          " 2>/dev/null || echo "  Villen nicht lesbar"
-          echo "== Master-Chat mit Routenliste =="
-          curl -s --max-time 150 -X POST http://127.0.0.1:12000/api/master/chat -H 'content-type: application/json' -H "authorization: Bearer $TOK" -d '{"message":"Antworte ausschliesslich mit einem kurzen Satz, dass die Modellverbindung geprueft ist.","requestId":"diag-'"$(date +%s)"'"}' | head -c 800; echo
-          echo "== letzte LLM-Fehler =="
-          journalctl -u villaforge-hub --since '-3min' --no-pager -o cat | grep 'Fehlschlag' | tail -2
+          print('  ',dict(Counter(x.get('status') for x in json.load(sys.stdin))))
+          " 2>/dev/null
+          echo "== Master-Chat dreimal =="
+          for n in 1 2 3; do
+            curl -s --max-time 120 -X POST http://127.0.0.1:12000/api/master/chat -H 'content-type: application/json' -H "authorization: Bearer $TOK" -d '{"message":"Antworte ausschliesslich mit einem kurzen Satz, dass die Modellverbindung geprueft ist.","requestId":"diag-'"$(date +%s)-$n"'"}' | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          att=d.get('routeAttempts') or []
+          print(f\"  Versuch $n: ok={d.get('ok')} code={d.get('code','-')} route={att[0]['route'][:34] if att else '-'} ({att[0]['code'] if att else '-'})\")
+          "
+          done
+          free -m | head -2
           DIAG
