@@ -1,0 +1,38 @@
+name: Logcheck Sprint 4
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-logs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+
+      - name: Hub-Journal 25min pruefen
+        run: |
+          /tmp/sshcmd 'bash -s' << 'EOS'
+          echo "=== SYSTEMD SERVICES CHECK ==="
+          sudo systemctl list-units --type=service | grep -i villa || true
+
+          echo "=== JOURNALCTL -u villaforge (25 min) ==="
+          sudo journalctl -u villaforge --since "25 min ago" --no-pager | tail -50 || true
+
+          echo "=== JOURNALCTL -u villaforge-hub (25 min) ==="
+          sudo journalctl -u villaforge-hub --since "25 min ago" --no-pager | tail -50 || true
+
+          echo "=== JOURNALCTL ROUTEFORGE SWITCH CHECK (401) ==="
+          sudo journalctl --since "25 min ago" --no-pager | grep -i 'routeforge:switch' || true
+
+          echo "=== JOURNALCTL 401 CHECK (25 min) ==="
+          sudo journalctl --since "25 min ago" --no-pager | grep -i 'HTTP 401' | tail -30 || true
+          EOS
