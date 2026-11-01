@@ -126,12 +126,13 @@ NGINX
 SICHER_DIR=/root/nginx-backups
 mkdir -p "$SICHER_DIR"
 for datei in /etc/nginx/sites-enabled/*; do
-  case "$(basename "$datei")" in
-    *.bak*|*.save*|*.orig|*.disabled)
-      echo "Verschiebe Backup aus sites-enabled: $(basename "$datei")"
-      mv "$datei" "$SICHER_DIR/$(basename "$datei").$(date +%s)"
-      ;;
+  NAME=$(basename "$datei")
+  # Die aktive Site und bewusst verlinkte Sites bleiben, alles andere (Sicherungen) raus.
+  case "$NAME" in
+    villaforge-hub|ollama) continue ;;
   esac
+  echo "Verschiebe aus sites-enabled: $NAME"
+  mv "$datei" "$SICHER_DIR/$NAME.$(date +%s)"
 done
 
 # Nur echte, aktive Site-Dateien beruecksichtigen (keine Backups!).
@@ -158,7 +159,7 @@ for datei in $(grep -rl "snippets/anfragepilot.conf" /etc/nginx/sites-enabled /e
 done
 
 if [ -n "$SITE" ]; then
-  SICHERUNG="$SITE.vor-pilot.$(date +%s)"
+  SICHERUNG=/root/nginx-backups/$(basename "$SITE").vor-pilot.$(date +%s)
   cp "$SITE" "$SICHERUNG"
   python3 - "$SITE" <<'PY'
 import sys
