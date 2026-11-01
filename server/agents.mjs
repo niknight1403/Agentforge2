@@ -21,6 +21,7 @@ import { generateMedia, mediaCapabilities } from './media.mjs';
 import { saveCheckpoint, recoverCheckpoint } from './checkpoints.mjs';
 import { withOtelSpan } from './otel.mjs';
 import { ROLES } from './agent-roles.mjs';
+import { medienAktion, medienInfo, medienAktionen } from './media-tools.mjs';
 import { normalizeSwarmBlueprint } from './swarm.mjs';
 export { normalizeSwarmBlueprint } from './swarm.mjs';
 
@@ -334,6 +335,28 @@ const TOOLS = {
       const r = readProjectFile(root, a.path, Number(a.maxBytes) || 40000);
       if (!r.ok) return r.error;
       return `${a.path}${r.truncated ? ' (gekuerzt)' : ''}:\n${r.content}`;
+    }
+  },
+  media_info: {
+    description: 'Liest echte Metadaten einer Bild-, Video- oder Audiodatei im Projekt (Dauer, Aufloesung, Codec, Kanaele).',
+    schema: { quelle: 'string' },
+    run: async (ctx, a) => {
+      const root = sourceRoot(ctx.villaId);
+      if (!root) return 'Kein Quellprojekt hinterlegt.';
+      try { return JSON.stringify(await medienInfo(root, { quelle: a.quelle })); }
+      catch (e) { return 'Metadaten nicht lesbar: ' + String(e.message).slice(0, 300); }
+    }
+  },
+  media_edit: {
+    description: 'Bearbeitet Bild, Video oder Audio lokal mit ffmpeg und speichert das Ergebnis im Projekt. Arten und Aktionen: medienAktionen() im Modul media-tools.',
+    schema: { art: 'bild|video|audio', aktion: 'string', quelle: 'string', ziel: 'string', optionen: 'object' },
+    run: async (ctx, a) => {
+      const root = sourceRoot(ctx.villaId);
+      if (!root) return 'Kein Quellprojekt hinterlegt.';
+      try {
+        const r = await medienAktion(root, { art: a.art, aktion: a.aktion, quelle: a.quelle, ziel: a.ziel, optionen: a.optionen || {} });
+        return `Fertig: ${r.datei || r.ordner}${r.bytes ? ` (${r.bytes} Bytes)` : ''}`;
+      } catch (e) { return 'Medienbearbeitung fehlgeschlagen: ' + String(e.message).slice(0, 400); }
     }
   },
   project_run: {
@@ -788,6 +811,7 @@ const ROLE_BRIEF = {
   DOCUMENTER: 'Du schreibst Dokumentation, die ein Neuling ohne Nachfragen nutzen kann: Zweck, Schnellstart in max. 5 Schritten, Nutzungsbeispiele, Betrieb und Stolperfallen. Kein Fuelltext, keine Selbstverstaendlichkeiten.',
   CRITIC: 'Du bist der Advocatus Diaboli: Risiken, Widersprueche, unvalidierte Annahmen und Single Points of Failure. Jeder Punkt: Schweregrad, Beleg (Datei/Bericht/Quelle) und Gegenmassnahme. Du bist direkt, nie destruktiv: dein Ziel ist, Aussetzer vor dem Launch zu finden.',
   INTEGRATOR: 'Du fuehrst Teilergebnisse zu einem Release-faehigen Ganzen: Vollstaendigkeitspruefung gegen alle Akzeptanzkriterien, Zusammenfuehren der Artefakte, Build und Tests via project_run, am Ende ein klarer Release-Stand mit offenen Restpunkten.',
+  PROFI: 'Du bist der Profi fuer Projekt- und App-Entwicklung und fuer Medien: du baust das Produkt wirklich (project_patch/project_write, Build und Tests via project_run bis gruen) und du bearbeitest Bild, Video und Audio selbst mit media_info und media_edit (skalieren, zuschneiden, schneiden, gif, Einzelbilder, normalisieren, mischen, Stille entfernen). Alles laeuft lokal und kostenlos; Cloud-Rendering nur bei ausdruecklichem Auftrag ueber media_generate. Pruefe vor Medienarbeit mit media_info die echten Metadaten und danach die erzeugte Datei, statt Erfolg zu behaupten. Liefere Code und Medien als Projektdatei, nicht als Beschreibung. Akzeptanz: Build und Tests gruen, Mediendatei existiert und ist in media_info nachweisbar.',
   WORKER: 'Du erledigst die zugewiesene Teilaufgabe praeszise und lieferst ein sofort verwertbares Artefakt statt einer Absichtserklaerung. Offene Punkte benennst du ausdruecklich, statt sie zu uebergehen.',
   BUSINESS: 'Du arbeitest mit konkreten Zahlen: Zielgruppe, Zahlungsbereitschaft, Preisstufen, Kosten, Marge, Break-even. Jede Zahl nennt ihre Annahme und Rechnung, jede Einschaetzung einen Vertrauensbereich. Rechtliche Risiken (DSGVO, Impressum, Lizenzen) pruefst du mit.',
   GROWTH: 'Du planst Wachstum messbar: 90-Tage-Plan mit Kanaelen, je nach Aufwand, Kosten und erwarteter Wirkung (Range statt Punkt). Aktivierung, Bindung, Empfehlung und ein Messplan (welche KPI, wie gemessen). Ohne Messgroesse gilt ein Vorschlag als unvollstaendig.',
@@ -812,6 +836,7 @@ const ROLE_TOOLS = {
   WORKER: 'artifact_write, artifact_patch, memory_write',
   BUSINESS: 'report_write, memory_write, web_search',
   GROWTH: 'report_write, memory_write, web_search, web_fetch',
+  PROFI: 'project_patch, project_write, project_read, project_search, project_tree, project_run, artifact_write, artifact_list, media_info, media_edit, media_capabilities, memory_write',
   ROOT: 'maturity_check, council_convene, backlog_review, memory_write, memory_search, task_create, swarm_dispatch, agent_spawn, report_write, media_capabilities, media_prepare, media_generate, resource_status, free_route_status',
   STRATEGIST: 'maturity_check, backlog_review, memory_write, report_write, project_tree',
   REASONER: 'memory_search, memory_write, project_read, project_search, report_write',
@@ -1791,6 +1816,7 @@ export function guessRole(task) {
   if (/test|fehler/.test(t)) return 'TESTER';
   if (/dokument|readme/.test(t)) return 'DOCUMENTER';
   if (/risiko|kritik/.test(t)) return 'CRITIC';
+  if (/bild|video|audio|medien|rendern|schnitt|thumbnail|podcast/.test(t)) return 'PROFI';
   if (/integrat|release|zusammen/.test(t)) return 'INTEGRATOR';
   if (/strategie|szenario|entscheidung|roadmap|priorisier/.test(t)) return 'STRATEGIST';
   if (/analyse|begr|ursache|zusammenhang|denk|argument/.test(t)) return 'REASONER';

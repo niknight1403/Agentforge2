@@ -35,6 +35,8 @@ jobs:
           echo "== Git-Stand/Remote auf der VM =="; for D in /opt/villaforge /opt/villaforge/..; do [ -d "$D/.git" ] && { cd "$D"; git remote -v | head -1; git log -1 --format='%h %s' | cut -c1-120; break; }; done
           echo "== Gate in laufendem Code? =="; grep -c "VF_LLM_MAX_CONCURRENT" /opt/villaforge/server/llm.mjs 2>/dev/null || echo "0 (kein Gate)"
           echo "== Platzhalter-Meldung im Pruef-Gate? =="; grep -c "ist ein Platzhalter" /opt/villaforge/server/project-verification.mjs 2>/dev/null || echo "0 (alte Fassung)"
+          echo "== Medien-Werkzeuge =="; for B in ffmpeg ffprobe; do P=$(command -v $B || echo /usr/bin/$B); if [ -x "$P" ]; then echo "$B: $($P -version 2>/dev/null | head -1 | cut -c1-60)"; else echo "$B: FEHLT"; fi; done
+          echo "== Profi-Rolle im Code? =="; grep -c "PROFI" /opt/villaforge/server/agent-roles.mjs 2>/dev/null; grep -c "media_edit" /opt/villaforge/server/agents.mjs 2>/dev/null; ls -la /opt/villaforge/server/media-tools.mjs 2>/dev/null | awk '{print $5, $9}'
           echo "== Drop-ins =="; ls /etc/systemd/system/villaforge-hub.service.d/ 2>/dev/null
           echo "== DB-Groessen =="; DB=$(ls /opt/villaforge/server/data/villaforge.db* 2>/dev/null); ls -la $DB 2>/dev/null | awk '{print $5, $9}'
           which sqlite3 >/dev/null 2>&1 || apt-get install -y -qq sqlite3 >/dev/null 2>&1

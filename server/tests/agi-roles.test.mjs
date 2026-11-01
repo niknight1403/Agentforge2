@@ -24,8 +24,9 @@ const { db, now } = await import('../db.mjs');
 
 const QUINTETT = ['STRATEGIST', 'REASONER', 'SYNTHESIZER', 'OPTIMIZER', 'VERIFIER'];
 
-test('AGI-Quintett ist Teil des Rollen-Katalogs (17 Rollen gesamt)', () => {
-  assert.equal(ROLES.length, 17);
+test('AGI-Quintett und Profi-Rolle sind Teil des Rollen-Katalogs (18 Rollen gesamt)', () => {
+  assert.equal(ROLES.length, 18);
+  assert.ok(ROLES.includes('PROFI'), 'PROFI fehlt');
   for (const r of QUINTETT) assert.ok(ROLES.includes(r), `${r} fehlt`);
 });
 
