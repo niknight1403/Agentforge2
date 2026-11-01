@@ -15,4 +15,4 @@ jobs:
         run: |
           install -m 600 /dev/null /tmp/k
           printf '%s\n' "$ORACLE_SSH_KEY" > /tmp/k
-          cat ops/s4-ro-diag.sh | ssh -i /tmp/k -o StrictHostKeyChecking=accept-new ubuntu@92.5.177.159 'sudo bash -s'
+          cat ops/s4-ro-fix.sh | ssh -i /tmp/k -o StrictHostKeyChecking=accept-new ubuntu@92.5.177.159 'sudo bash -s'
