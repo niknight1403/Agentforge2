@@ -1,0 +1,40 @@
+name: Sandbox Host Validation
+on:
+  push:
+    branches: [work/sandbox-host-validation]
+    paths: ['.github/workflows/sandbox-host-validation.yml']
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Inspect installed images and validate only when deployment is settled
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          keyfile=$(mktemp)
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$ORACLE_SSH_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i "$keyfile" ubuntu@92.5.177.159 'sudo python3 -' <<'PY'
+          import subprocess,json,pathlib
+          def run(args):
+              return subprocess.run(args,capture_output=True,text=True,timeout=20)
+          version=run(['docker','version','--format','{{.Server.Version}}'])
+          print('DOCKER_AVAILABLE',version.returncode==0)
+          if version.returncode:raise SystemExit('Docker daemon unavailable')
+          listing=run(['docker','image','ls','--format','{{.Repository}}:{{.Tag}}','--filter','reference=node:*'])
+          images=[]
+          for tag in listing.stdout.splitlines()[:10]:
+              info=run(['docker','image','inspect',tag])
+              if info.returncode==0:
+                  d=json.loads(info.stdout)[0]
+                  images.append({'tag':tag,'digests':d.get('RepoDigests',[])})
+          print('EXISTING_NODE_IMAGES',json.dumps(images))
+          p=pathlib.Path('/opt/villaforge/server/data/workspace/villa-18/project')
+          print('WORKSPACE_ACCESS',json.dumps({'exists':p.exists(),'uid':p.stat().st_uid if p.exists() else None,'mode':oct(p.stat().st_mode&511) if p.exists() else None}))
+          print('NO_CHANGES: no image download, permissions change, service restart or project execution')
+          PY
