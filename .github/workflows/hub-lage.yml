@@ -61,6 +61,17 @@ jobs:
 
           zeig('SCHEDULER', hol('/api/scheduler', token), ['slots', 'active', 'queued', 'paused'])
 
+          roh = hol('/api/llm/status', token)
+          print('LLM-ROH: ' + json.dumps(roh, ensure_ascii=False)[:1200])
+          routen = hol('/api/routes', token)
+          if isinstance(routen, dict) and '_fehler' not in routen:
+              liste = routen.get('routes') or routen.get('routen') or []
+              print('ROUTEN-ANZAHL:', len(liste))
+              for r in liste[:3]:
+                  print('ROUTE-ROH:', json.dumps(r, ensure_ascii=False)[:400])
+          else:
+              print('ROUTEN: ' + json.dumps(routen, ensure_ascii=False)[:300])
+
           llm = hol('/api/llm/status', token)
           if isinstance(llm, dict) and '_fehler' not in llm:
               kurz = {}
@@ -79,8 +90,9 @@ jobs:
           diag = hol('/api/admin/villa-diagnostics', token)
           if isinstance(diag, dict) and '_fehler' not in diag:
               zeig('VILLEN-SUMME', diag, [k for k in diag if not isinstance(diag.get(k), list)], laenge=400)
-              for v in (diag.get('villas') or [])[:12]:
-                  zeig('VILLA', v, ['id', 'name', 'status', 'executing', 'queued', 'failed', 'lastError'])
+              villen = diag.get('villas') or diag.get('items') or []
+              for v in villen[:4]:
+                  print('VILLA-ROH: ' + json.dumps(v, ensure_ascii=False)[:450])
           else:
               zeig('VILLEN', diag)
 
