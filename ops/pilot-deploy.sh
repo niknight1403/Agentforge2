@@ -133,28 +133,50 @@ if [ -n "$SITE" ]; then
   cp "$SITE" "$SICHERUNG"
   python3 - "$SITE" <<'PY'
 import sys
+
 pfad = sys.argv[1]
 text = open(pfad).read()
 marke = 'server_name hub.cybersarah-ki.com'
-idx = text.find(marke)
-if idx == -1:
-    print('SERVERBLOCK NICHT GEFUNDEN'); sys.exit(2)
-start = text.rfind('server', 0, idx)
-oeffnung = text.index('{', start)
-tiefe = 0
-j = oeffnung
-while j < len(text):
-    if text[j] == '{':
-        tiefe += 1
-    elif text[j] == '}':
-        tiefe -= 1
-        if tiefe == 0:
-            break
-    j += 1
-zeile = text.count('\n', 0, oeffnung) + 1
-text = text[:j] + '    include snippets/anfragepilot.conf;\n' + text[j:]
+
+def block_an(position):
+    start = text.rfind('server', 0, position)
+    oeffnung = text.index('{', start)
+    tiefe = 0
+    j = oeffnung
+    while j < len(text):
+        if text[j] == '{':
+            tiefe += 1
+        elif text[j] == '}':
+            tiefe -= 1
+            if tiefe == 0:
+                break
+        j += 1
+    return oeffnung, j
+
+kandidaten = []
+pos = text.find(marke)
+while pos != -1:
+    a, b = block_an(pos)
+    kandidaten.append((a, b, text[a:b + 1]))
+    pos = text.find(marke, pos + 1)
+
+if not kandidaten:
+    print('SERVERBLOCK NICHT GEFUNDEN')
+    sys.exit(2)
+
+# Der oeffentliche Verkehr laeuft ueber TLS: diesen Block patchen.
+gewaehlt = None
+for a, b, inhalt in kandidaten:
+    if 'listen 443' in inhalt or 'ssl_certificate' in inhalt:
+        gewaehlt = (a, b, inhalt)
+        break
+if gewaehlt is None:
+    gewaehlt = kandidaten[-1]
+
+a, b, inhalt = gewaehlt
+print(f'{len(kandidaten)} Serverblock/Serverbloecke gefunden, patche Block mit listen 443')
+text = text[:b] + '    include snippets/anfragepilot.conf;\n' + text[b:]
 open(pfad, 'w').write(text)
-print(f'Include in Serverblock ab Zeile {zeile} gesetzt')
 PY
 fi
 
