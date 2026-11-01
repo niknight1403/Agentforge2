@@ -23,113 +23,21 @@ jobs:
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
           printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
-          chmod +x /tmp/sshcmd
-          tar -czf /tmp/pilot.tgz -C pilot $(cd pilot && ls -A | grep -v node_modules)
+          printf '%s\n' 'exec scp -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key "$@"' > /tmp/scpcmd
+          chmod +x /tmp/sshcmd /tmp/scpcmd
+          tar -czf /tmp/pilot.tgz -C pilot package.json package-lock.json src public tests
 
-      - name: Quellcode auf die VM uebertragen
+      - name: Dateien uebertragen
         run: |
-          scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/pilot.tgz ubuntu@92.5.177.159:/tmp/pilot.tgz
-          /tmp/sshcmd "ls -l /tmp/pilot.tgz"
+          /tmp/scpcmd /tmp/pilot.tgz ubuntu@92.5.177.159:/tmp/pilot.tgz
+          /tmp/scpcmd ops/pilot-deploy.sh ubuntu@92.5.177.159:/tmp/pilot-deploy.sh
+          /tmp/sshcmd "ls -l /tmp/pilot.tgz /tmp/pilot-deploy.sh"
 
-      - name: Installieren, Dienst und nginx einrichten
+      - name: Deploy-Skript auf der VM ausfuehren
         env:
           RESTART: ${{ github.event.inputs.neu_starten }}
         run: |
-          /tmp/sshcmd "RESTART='$RESTART' bash -s" << 'EOS'
-          set -euo pipefail
-          ZIEL=/opt/anfragepilot
-
-          sudo mkdir -p "$ZIEL"
-          sudo tar -xzf /tmp/pilot.tgz -C "$ZIEL" --overwrite
-          sudo chown -R ubuntu:ubuntu "$ZIEL"
-
-          cd "$ZIEL"
-          npm ci --omit=dev --no-audit --no-fund >/tmp/pilot-npm.log 2>&1 || npm install --omit=dev --no-audit --no-fund >>/tmp/pilot-npm.log 2>&1
-          echo "Abhaengigkeiten: $(ls node_modules | wc -l) Pakete"
-
-          # Zugangsdaten: aus der bestehenden Hub-Umgebung uebernehmen (bleiben auf der VM).
-          ENV=/opt/anfragepilot/pilot.env
-          sudo touch "$ENV"; sudo chmod 600 "$ENV"
-          if [ -f /opt/villaforge/hub.env ]; then
-            sudo grep -hE '^(export )?(GROQ_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY|STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET)=' /opt/villaforge/hub.env \
-              | sed 's/^export //' | sudo tee "$ENV" >/dev/null || true
-          fi
-          sudo grep -qE '^PORT=' "$ENV" || echo 'PORT=3910' | sudo tee -a "$ENV" >/dev/null
-          sudo grep -qE '^NODE_ENV=' "$ENV" || echo 'NODE_ENV=production' | sudo tee -a "$ENV" >/dev/null
-          sudo grep -qE '^DB_FILE=' "$ENV" || echo 'DB_FILE=/opt/anfragepilot/data/anfragepilot.db' | sudo tee -a "$ENV" >/dev/null
-          sudo grep -qE '^BASIS_URL=' "$ENV" || echo 'BASIS_URL=https://hub.cybersarah-ki.com/pilot' | sudo tee -a "$ENV" >/dev/null
-          sudo mkdir -p /opt/anfragepilot/data
-          sudo chown -R ubuntu:ubuntu /opt/anfragepilot
-          echo "Umgebung vorbereitet ($(sudo grep -c = "$ENV") Variablen, Schluessel: $(sudo grep -cE '^(GROQ|OPENAI|GEMINI)_API_KEY=' "$ENV" || true))"
-
-          # systemd-Dienst
-          sudo tee /etc/systemd/system/anfragepilot.service >/dev/null <<'UNIT'
-          [Unit]
-          Description=AnfragePilot API und Dashboard
-          After=network.target
-
-          [Service]
-          Type=simple
-          User=ubuntu
-          WorkingDirectory=/opt/anfragepilot
-          EnvironmentFile=/opt/anfragepilot/pilot.env
-          ExecStart=/usr/bin/node src/server.js
-          Restart=always
-          RestartSec=5
-
-          [Install]
-          WantedBy=multi-user.target
-          UNIT
-          sudo systemctl daemon-reload
-          sudo systemctl enable anfragepilot.service >/dev/null 2>&1 || true
-          if [ "$RESTART" = "true" ]; then sudo systemctl restart anfragepilot.service; fi
-          for i in $(seq 1 15); do
-            STATUS=$(systemctl is-active anfragepilot.service || true)
-            if [ "$STATUS" = "active" ]; then echo "Dienst aktiv nach ${i}s"; break; fi
-            sleep 1
-          done
-          echo "Dienststatus: ${STATUS:-unbekannt}"
-          if [ "${STATUS:-}" != "active" ]; then
-            echo "=== Diagnose ==="
-            sudo systemctl status anfragepilot.service --no-pager -l | head -25 || true
-            echo "=== Journal ==="
-            sudo journalctl -u anfragepilot.service -n 40 --no-pager | tail -30 || true
-            echo "=== Direktstart-Probe ==="
-            (cd /opt/anfragepilot && sudo -u ubuntu env $(sudo grep -v '^#' /opt/anfragepilot/pilot.env | xargs) timeout 6 node src/server.js 2>&1 | head -15) || true
-            exit 1
-          fi
-
-          # nginx: Unterpfad /pilot/ auf den Dienst (bestehende Konfiguration bleibt unberuehrt)
-          SNIP=/etc/nginx/snippets/anfragepilot.conf
-          sudo mkdir -p /etc/nginx/snippets
-          sudo tee "$SNIP" >/dev/null <<'NGINX'
-          location /pilot/ {
-            proxy_pass http://127.0.0.1:3910/;
-            proxy_http_version 1.1;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_read_timeout 120s;
-            client_max_body_size 1m;
-          }
-          NGINX
-          SITE=$(sudo grep -rl "server_name hub.cybersarah-ki.com" /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | head -1)
-          echo "nginx-Site: ${SITE:-nicht gefunden}"
-          if [ -n "$SITE" ] && ! sudo grep -q "snippets/anfragepilot.conf" "$SITE"; then
-            sudo cp "$SITE" "$SITE.bak.$(date +%s)"
-            sudo python3 - "$SITE" <<'PY'
-          import sys, re
-          pfad = sys.argv[1]
-          text = open(pfad).read()
-          stelle = text.rfind('}')
-          text = text[:stelle] + "    include snippets/anfragepilot.conf;\n" + text[stelle:]
-          open(pfad, 'w').write(text)
-          PY
-            echo "include ergaenzt"
-          fi
-          sudo nginx -t && sudo systemctl reload nginx && echo "nginx neu geladen"
-          EOS
+          /tmp/sshcmd "sudo RESTART='$RESTART' bash /tmp/pilot-deploy.sh"
 
       - name: Live-Verifikation
         run: |
@@ -140,6 +48,6 @@ jobs:
           curl -s -m 20 -o /tmp/pilot-start.html -w "HTTP %{http_code}, %{size_download} Bytes\n" https://hub.cybersarah-ki.com/pilot/
           grep -o "<title>[^<]*</title>" /tmp/pilot-start.html || true
           echo "--- Tarife ---"
-          curl -s -m 20 https://hub.cybersarah-ki.com/pilot/api/plans | head -c 300; echo ""
-          echo "--- Bestandsschutz: CCC unberuehrt? ---"
+          curl -s -m 20 https://hub.cybersarah-ki.com/pilot/api/plans | head -c 320; echo ""
+          echo "--- Bestandsschutz CCC ---"
           curl -s -m 20 -o /dev/null -w "CCC-Health: HTTP %{http_code}\n" https://hub.cybersarah-ki.com/ccc/api/health
