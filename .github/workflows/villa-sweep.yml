@@ -1,0 +1,39 @@
+name: Villa-Sweep
+# Nimmt blockierte Villen automatisch nacheinander ab: echter Build-Nachweis,
+# echte Abnahme, bei Bedarf Reparaturaufgabe samt Autonomie-Freigabe.
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Villen pro Lauf'
+        default: '2'
+        required: false
+      dry_run:
+        description: 'nur anzeigen (true/false)'
+        default: 'false'
+        required: false
+
+concurrency:
+  group: villa-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Villen abnehmen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          LIMIT: ${{ github.event.inputs.limit || '2' }}
+          DRY: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ZUSATZ=""
+          if [ "$DRY" = "true" ]; then ZUSATZ="--dry-run"; fi
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
+            "cd /opt/villaforge && git log -1 --format='Code %h' && sudo node scripts/ops/villa-sweep.mjs --limit=$LIMIT $ZUSATZ"
