@@ -1605,6 +1605,25 @@ export async function runQualityGate(villaId, task, answer) {
     const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
     hasPkg = true; hasTest = !!pkg?.scripts?.test;
   } catch { /* kein npm-Projekt */ }
+  // v1.42.0: Das Werkzeug richtet sich nach dem Projektinhalt, nicht nach der
+  // zufaellig vorhandenen package.json. Villa #34 schrieb Python-Code, hatte
+  // aber eine package.json mit 'jest' — das Gate nahm den npm-Weg und scheiterte
+  // dauerhaft mit "sh: 1: jest: not found", obwohl nie JavaScript entstand.
+  let nodeSrc = 0; let pySrc = 0;
+  try {
+    for (const f of readdirSync(root, { recursive: true })) {
+      const name = String(f);
+      const parts = name.split('/');
+      if (parts.some((p) => p.startsWith('.') || p === 'node_modules')) continue;
+      if (/\.(c|m)?jsx?$|\.tsx?$/.test(name)) nodeSrc++;
+      else if (name.endsWith('.py')) pySrc++;
+    }
+  } catch { /* Zaehlung optional */ }
+  const pythonProjekt = pySrc > 0 && nodeSrc === 0;
+  if (pythonProjekt && hasPkg && hasTest) {
+    // Werkzeug folgt dem Inhalt: Python-Projekt ohne JavaScript ueberspringt npm.
+    hasPkg = false; hasTest = false;
+  }
   if (hasPkg && hasTest) {
     const npmTest = () => runTool({ villaId, agentId: 0 }, 'project_run', { binary: 'npm', args: ['test', '--silent'], timeoutMs: 180000 });
     const npmInstall = () => runTool({ villaId, agentId: 0 }, 'project_run', { binary: 'npm', args: ['install', '--include=dev', '--no-audit', '--no-fund'], timeoutMs: 300000 });

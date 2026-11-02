@@ -51,3 +51,20 @@ Leerlauf, die Villa meldete trotzdem „läuft".
   Zweifel scheitert sie ehrlich, statt grün zu lügen.
 - Das Tor ersetzt keine inhaltliche Prüfung. Es belegt nur, dass die
   vorhandenen Tests tatsächlich laufen.
+
+## Nachtrag v1.42.0 — Werkzeug folgt dem Projektinhalt
+
+Villa #34 schrieb echten Python-Code (`src/main.py`), hatte aber eine
+`package.json` mit `"test": "jest"` aus einem früheren Schritt. Das Tor nahm
+deshalb den npm-Weg und scheiterte dauerhaft an `sh: 1: jest: not found`,
+obwohl im Projekt nie JavaScript entstanden war.
+
+Neu: Vor der Werkzeugwahl zählt das Tor die Quelldateien (ohne `node_modules`
+und versteckte Ordner). Gibt es Python-Dateien und **keine** JavaScript- oder
+TypeScript-Dateien, gilt das Projekt als Python-Projekt und der npm-Zweig wird
+übersprungen, auch wenn eine `package.json` mit Test-Script herumliegt. Dann
+greift das Python-Syntax-Tor (`py_compile`).
+
+Grenzen: Bei gemischten Projekten (echtes JavaScript **und** Python) bleibt der
+npm-Weg zuständig. Eine liegengebliebene `package.json` in einem reinen
+Python-Projekt wird nicht gelöscht, nur ignoriert.

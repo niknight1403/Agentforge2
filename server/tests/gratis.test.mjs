@@ -231,3 +231,22 @@ test('Qualitaetstor: fehlendes Testwerkzeug wird als devDependency nachgezogen',
   assert.equal(res.environment, true, 'unaufloesbares Werkzeug bleibt ein Umgebungsproblem');
   assert.doesNotMatch(String(res.annotated), /gruen/, 'kein falsches Gruen');
 });
+
+test('Qualitaetstor: Python-Projekt mit liegengebliebener package.json nutzt das Python-Tor', async () => {
+  const t = now();
+  db.prepare("INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES ('Python-Villa','x','CREATED',10,1,?,?)").run(t, t);
+  const villaId = Number(db.prepare('SELECT id FROM villas ORDER BY id DESC LIMIT 1').get().id);
+
+  // Wie Villa #34: echte Python-Datei, dazu eine package.json, deren Test-Script
+  // 'jest' ruft - ohne node_modules und ohne je geschriebenes JavaScript.
+  const dir = join(tmp, 'projekt-python-' + t);
+  mkdirSync(join(dir, 'src'), { recursive: true });
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'p', scripts: { test: 'jest' } }));
+  writeFileSync(join(dir, 'src/main.py'), 'def addiere(a, b):\n    return a + b\n');
+
+  setSource(villaId, dir);
+  const res = await runQualityGate(villaId, { title: 'Produkt bauen' }, 'Fertig.');
+  assert.equal(res.passed, true, 'Python-Projekt muss am Python-Tor bestehen, nicht an jest scheitern');
+  assert.equal(res.environment, undefined, 'kein Umgebungsproblem aus dem npm-Zweig');
+  assert.match(String(res.annotated), /py_compile gruen/);
+});
