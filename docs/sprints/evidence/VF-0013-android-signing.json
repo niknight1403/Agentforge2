@@ -10,8 +10,14 @@
     "Require all four protected signing values to configure a production-only Gradle signing config.",
     "Fail closed for assembleRelease and bundleRelease when signing values are incomplete.",
     "Decode the keystore into the ephemeral GitHub runner temp directory with restrictive permissions.",
-    "Keep the live product acceptance check before GitHub Release publication."
+    "Keep the live product acceptance check before GitHub Release publication.",
+    "Run an Android CI negative test: assembleRelease without signing must fail for the signing guard and must not emit an APK."
   ],
+  "regressionTests": {
+    "androidSigningPolicyTests": 4,
+    "passed": 4,
+    "releaseAssemblyGuardOnLinuxCI": "pending"
+  },
   "requiredExternalOwnerAction": "The release owner must create/use the stable production Android signing key and configure VILLA_RELEASE_KEYSTORE_BASE64, VILLA_RELEASE_STORE_PASSWORD, VILLA_RELEASE_KEY_ALIAS and VILLA_RELEASE_KEY_PASSWORD in GitHub Actions Secrets. Never place values in repository files or logs.",
   "notProven": [
     "No real signing key was available or inspected.",

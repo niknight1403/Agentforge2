@@ -25,6 +25,26 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+      - name: Release-Build ohne Produktionsschluessel muss geschlossen scheitern
+        shell: bash
+        run: |
+          set +e
+          gradle :app:assembleRelease --no-daemon --stacktrace > "$RUNNER_TEMP/release-signing-check.log" 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Release assembly unexpectedly succeeded without production signing."
+            exit 1
+          fi
+          if ! grep -Fq "Production release signing is not configured." "$RUNNER_TEMP/release-signing-check.log"; then
+            cat "$RUNNER_TEMP/release-signing-check.log"
+            echo "Release assembly failed for a reason other than the required signing guard."
+            exit 1
+          fi
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            echo "An APK was produced despite missing production signing."
+            exit 1
+          fi
       - name: Android lint, unit tests and debug build
         run: gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4

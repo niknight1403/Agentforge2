@@ -351,6 +351,7 @@
       "modules": [
         "app/build.gradle.kts",
         ".github/workflows/build-apk.yml",
+        ".github/workflows/android-check.yml",
         "server/tests/android-release-signing.test.mjs",
         "docs/DEVELOPMENT-QUALITY.md"
       ],

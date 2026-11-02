@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceCommit": "527ea065d55c33b23dda973380ca5f6668210d18",
+  "sourceCommit": "d91c03aca9d7498a34dd2d314d4a03f1ef9503ed",
   "design": "Aurora / sichtbare Variante 6",
   "completed": [
     "VF-0001",
@@ -10,21 +10,24 @@
     "VF-0005",
     "VF-0006",
     "VF-0007",
-    "VF-0008"
+    "VF-0008",
+    "VF-0011",
+    "VF-0012"
   ],
-  "current": "VF-0009",
-  "next": "VF-0009",
+  "current": "VF-0013",
+  "next": "VF-0013",
   "blockers": [
     "Production project execution previously defaulted to host mode when VF_PROJECT_SANDBOX was unset. The bounded fix fails closed in NODE_ENV=production until a pinned isolated runner is explicitly configured.",
     "Deep Villa 34 still has no accepted usable product; build/smoke require next and tests require jest.",
     "The pinned Docker project sandbox is not yet configured and verified on the production host; unknown project code must remain blocked until then.",
     "Image, image-editing, video and audio rendering still require authorized provider configuration.",
-    "Existing Android debug signature is not a managed production signing identity."
+    "Existing Android debug signature is not a managed production signing identity.",
+    "Production Android signing secrets are not yet provisioned or verified."
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
   "executionMode": "foreground-and-scheduled-iterations",
-  "workBranch": "fix/production-project-execution-fail-closed",
-  "pullRequest": null,
+  "workBranch": "niknight1403-production-launch-agentforge2",
+  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/68",
   "qualityBaseline": {
     "tests": 491,
     "pass": 491,
@@ -34,13 +37,13 @@
     "findings": 0
   },
   "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden.",
-  "integratedCommit": "527ea065d55c33b23dda973380ca5f6668210d18",
+  "integratedCommit": "6aacb3e62ea4210eb8bc1d801c96783077115e2a",
   "version": "1.60.8",
-  "pullRequestStatus": "local safety blocker fix verified; pull request not yet opened",
+  "pullRequestStatus": "open; checks green through d91c03aca9d7498a34dd2d314d4a03f1ef9503ed; VF-0013 Android negative signing build test pending",
   "backgroundExecution": false,
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
-  "releaseStatus": "blocked: integrated deployment, browser acceptance and product acceptance pending",
-  "checkpointParent": "527ea065d55c33b23dda973380ca5f6668210d18",
+  "releaseStatus": "blocked: verified Villa product, production Docker sandbox and managed Android signing identity pending",
+  "checkpointParent": "6aacb3e62ea4210eb8bc1d801c96783077115e2a",
   "nextAction": "After this fail-closed change is merged and deployed, verify production health and a fresh side-effect-free Master response. In a later bounded run, configure and verify the already implemented pinned Docker project sandbox before any Deep Villa build/test/smoke execution.",
   "lastMaintenance": {
     "baseCommit": "527ea065d55c33b23dda973380ca5f6668210d18",

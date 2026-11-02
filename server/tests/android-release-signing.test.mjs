@@ -7,6 +7,7 @@ import {dirname,resolve} from 'node:path';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const gradle=readFileSync(resolve(root,'app/build.gradle.kts'),'utf8');
 const workflow=readFileSync(resolve(root,'.github/workflows/build-apk.yml'),'utf8');
+const androidCheck=readFileSync(resolve(root,'.github/workflows/android-check.yml'),'utf8');
 
 test('release APK never falls back to the debug signing key',()=>{
  assert.doesNotMatch(gradle,/signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)/);
@@ -29,4 +30,11 @@ test('production release publishing remains behind the live product acceptance g
  const productGate=workflow.indexOf('name: Produktive LLM-Kette und Villa-Produktabnahme prüfen');
  const publish=workflow.indexOf('name: GitHub-Release mit getesteter APK erstellen');
  assert.ok(productGate>=0&&publish>productGate);
+});
+
+test('Android PR CI verifies missing production signing blocks APK assembly',()=>{
+ assert.match(androidCheck,/Release-Build ohne Produktionsschluessel muss geschlossen scheitern/);
+ assert.match(androidCheck,/gradle :app:assembleRelease/);
+ assert.match(androidCheck,/Production release signing is not configured\./);
+ assert.match(androidCheck,/An APK was produced despite missing production signing/);
 });
