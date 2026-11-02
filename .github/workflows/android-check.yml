@@ -75,8 +75,17 @@ jobs:
             exit 1
           fi
           debug_apk=app/build/outputs/apk/debug/app-debug.apk
-          debug_digest=$("$apksigner" verify --print-certs "$debug_apk" | sed -nE 's/^Signer #1 certificate SHA-256 digest: ([[:xdigit:]]{64})$/\1/p' | tr '[:upper:]' '[:lower:]')
-          release_digest=$("$apksigner" verify --print-certs "$release_apk" | sed -nE 's/^Signer #1 certificate SHA-256 digest: ([[:xdigit:]]{64})$/\1/p' | tr '[:upper:]' '[:lower:]')
+          cert_digest() {
+            "$apksigner" verify --print-certs "$1" | awk -F': ' '
+              /certificate SHA-256 digest:/ {
+                digest=$2
+                gsub(/[^[:xdigit:]]/, "", digest)
+                if (length(digest) == 64) { print tolower(digest); exit }
+              }
+            '
+          }
+          debug_digest=$(cert_digest "$debug_apk")
+          release_digest=$(cert_digest "$release_apk")
           if ! [[ "$debug_digest" =~ ^[0-9a-f]{64}$ && "$release_digest" =~ ^[0-9a-f]{64}$ ]]; then
             echo "Could not verify Android APK signing certificates."
             exit 1
