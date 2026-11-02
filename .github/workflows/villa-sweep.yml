@@ -10,6 +10,10 @@ on:
         description: 'Villen pro Lauf'
         default: '2'
         required: false
+      villa_id:
+        description: 'Nur diese Villa pruefen (0 = alle; Standard: Deep Villa #34)'
+        default: '34'
+        required: false
       dry_run:
         description: 'nur anzeigen (true/false)'
         default: 'false'
@@ -29,11 +33,13 @@ jobs:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
           LIMIT: ${{ github.event.inputs.limit || '2' }}
           DRY: ${{ github.event.inputs.dry_run || 'false' }}
+          VILLA_ID: ${{ github.event.inputs.villa_id || '34' }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          ZUSATZ=""
+          [[ "$VILLA_ID" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "Ungueltige Villa-ID"; exit 2; }
+          ZUSATZ="--villa-id=$VILLA_ID"
           if [ "$DRY" = "true" ]; then ZUSATZ="--dry-run"; fi
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
             "NODE=\$(command -v node || echo /usr/bin/node); cd /opt/villaforge && git log -1 --format='Code %h' && sudo \"\$NODE\" scripts/ops/villa-sweep.mjs --limit=$LIMIT $ZUSATZ"
