@@ -31,8 +31,8 @@ jobs:
       - name: Confirm exact-match predicate
         run: |
           set -euo pipefail
-          jq -en '[{"id":7,"name":"Deep Villa"},{"id":8,"name":"Other"}] | [.[] | select((.name // "" | ascii_downcase | gsub("[ _-]";"")) == "deepvilla")] | if length == 1 then .[0].id else error("ambiguous") end' | grep -qx 7
-          if jq -en '[{"id":7,"name":"Deep Villa"},{"id":8,"name":"Deep-Villa"}] | [.[] | select((.name // "" | ascii_downcase | gsub("[ _-]";"")) == "deepvilla")] | if length == 1 then .[0].id else error("ambiguous") end'; then exit 1; fi
+          jq -en '[{"id":34,"name":"Deep · please build an app"},{"id":8,"name":"Other"}] | [.[] | select(.id == 34 and (.name // "" | ascii_downcase | startswith("deep ·")))] | if length == 1 then .[0].id else error("ambiguous") end' | grep -qx 34
+          if jq -en '[{"id":34,"name":"Deep · please build an app"},{"id":34,"name":"Deep · duplicate"}] | [.[] | select(.id == 34 and (.name // "" | ascii_downcase | startswith("deep ·")))] | if length == 1 then .[0].id else error("ambiguous") end'; then exit 1; fi
   apply:
     needs: validate
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.apply == true)
