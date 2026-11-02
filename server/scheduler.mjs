@@ -18,6 +18,7 @@
 import { db } from './db.mjs';
 import { getSetting } from './control-store.mjs';
 import { orchestrate } from './agents.mjs';
+import { focusDecision, focusVillaIds, releaseFocusIfComplete } from './project-focus.mjs';
 
 // Fokus laesst sich weiterhin explizit fuer laengere Projektlaeufe aktivieren,
 // begrenzt aber nicht mehr die Zahl manuell startbarer Villen.
@@ -68,6 +69,7 @@ const retryCounts = new Map();
 const runOptions = new Map(); // options belong to a villa, never to the last caller
 const generations = new Map(); // invalidate late results after an explicit stop
 const retryDetails = new Map();
+const focusVillaIdsSafe = () => { try { return focusVillaIds(); } catch { return []; } };
 let starter = null;        // Funktion (villaId) => Promise, die den Lauf startet
 
 /** Setzt die Startfunktion (orchestrate) - vermeidet zyklische Importe. */
@@ -79,6 +81,7 @@ export function schedulerStatus() {
   return {
     focusMode: FOCUS_MODE(),
     focusVillaId: villaFocusId(),
+    projectFocus: focusVillaIdsSafe(),
     slots: SLOTS(),
     active: [...active],
     queued: queue.length,
@@ -178,6 +181,13 @@ export function enqueueVillas(ids) {
 /** Einheitlicher Einstieg: alle automatischen und manuellen Starts laufen
  *  ueber denselben Scheduler (Default 3 Slots). */
 export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, runToCompletion = true, force = false } = {}) {
+  // Projekt-Fokus (Nikos Auftrag 2026-11-02): Solange ein Fokus steht, starten
+  // nur die Fokus-Villen. Die Absage nennt den Grund, statt still nichts zu tun.
+  releaseFocusIfComplete();
+  const decision = focusDecision(id);
+  if (!decision.allowed) {
+    return { ...schedulerStatus(), refused: Number(id), refusedCode: decision.code, refusedMessage: decision.message };
+  }
   if (force) {
     const timer = retryTimers.get(Number(id));
     if (timer) clearTimeout(timer);

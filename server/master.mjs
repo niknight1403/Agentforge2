@@ -1,6 +1,7 @@
 import { db, now } from './db.mjs';
 import { chat as realChat } from './llm.mjs';
-import { createVilla, orchestrate, stopVilla } from './agents.mjs';
+import { createVilla, stopVilla } from './agents.mjs';
+import { scheduleVilla } from './scheduler.mjs';
 
 /*
  * MASTER-AGENT (v1.33.0): persoenlicher App-Entwicklungs-Manager mit eigenem
@@ -157,7 +158,7 @@ export async function masterChat(message) {
     return { reply, villaId: 0, offline: true };
   }
 
-  let villaId = 0, villaName = '', designImage = '', designVariants = [];
+  let villaId = 0, villaName = '', designImage = '', designVariants = [], masterNote = '';
   const create = parsed.create && parsed.create.name && parsed.create.idea ? parsed.create : null;
   if (create && !offline) {
     const seed = Math.floor(Math.random() * 9973) + Date.now() % 97;
@@ -172,7 +173,9 @@ export async function masterChat(message) {
     villaId = id;
     villaName = String(create.name).slice(0, 80);
     // Autonomer Start: die Villa arbeitet sofort ihre Aufgaben ab.
-    orchestrate(id, { concurrency: 0, maxRounds: 6 }).catch(() => {});
+    // Start ueber den Scheduler: respektiert Projekt-Fokus und Slots.
+    const started = scheduleVilla(id, { runToCompletion: true });
+    if (started.refused) masterNote = started.refusedMessage || '';
   }
 
   // Steueraktionen ausfuehren (stop/pause/start je Villen-Name)
@@ -192,7 +195,8 @@ export async function masterChat(message) {
         doneActions.push({ type: 'pause_villa', name: v.name, ok: true, note: 'pausiert' });
       } else if (a.type === 'start_villa') {
         db.prepare('UPDATE villas SET autonomy = 1, status = ?, updated_at = ? WHERE id = ?').run('RUNNING', now(), v.id);
-        orchestrate(v.id, { concurrency: 0, maxRounds: 6 }).catch(() => {});
+        const started = scheduleVilla(v.id, { runToCompletion: true });
+        if (started.refused) { doneActions.push({ type: a.type, name: v.name, ok: false, note: started.refusedMessage || 'Start abgelehnt' }); continue; }
         doneActions.push({ type: 'start_villa', name: v.name, ok: true, note: ' gestartet' });
       } else {
         doneActions.push({ type: a.type, name: v.name, ok: false, note: 'unbekannter Befehlstyp' });
@@ -204,5 +208,5 @@ export async function masterChat(message) {
 
   db.prepare('INSERT INTO master_messages (role, content, villa_id, villa_name, design_image, created_at) VALUES (?,?,?,?,?,?)')
     .run('assistant', String(parsed.reply).slice(0, 3000), villaId, villaName, designImage, now());
-  return { reply: parsed.reply, villaId, villaName, designImage, designVariants, offline: false, started: villaId > 0, actions: doneActions };
+  return { reply: masterNote ? String(parsed.reply) + '\n\n' + masterNote : parsed.reply, villaId, villaName, designImage, designVariants, offline: false, started: villaId > 0 && !masterNote, actions: doneActions, focusNote: masterNote || undefined };
 }

@@ -20,6 +20,7 @@ import { createVilla, runAgent, orchestrate, stopVilla, isRunning, extendVillaRu
 import { packState, packSummary, setPackEnabled } from './packs.mjs';
 import { resumePendingVillas } from './resume.mjs';
 import { schedulerStatus, villaRanking, enqueueVillas, configureScheduler, scheduleVilla, cancelScheduledVilla} from './scheduler.mjs';
+import { focusStatus, setVillaFocus, clearVillaFocus, focusHistory } from './project-focus.mjs';
 import { maintenanceTick, pruneOldData, dbSize } from './maintenance.mjs';
 import { cmdGateStatus } from './fs-tools.mjs';
 import { bus, emit } from './events.mjs';
@@ -230,7 +231,11 @@ async function api(req, res, url) {
       const id = Number(action[1]);
       if (!canAccessVilla(claims, id)) return json(res, 403, { error: 'Villa scope denied.' });
       if (!db.prepare('SELECT id FROM villas WHERE id=?').get(id)) return json(res, 404, { error: 'Villa not found.' });
-      if (action[2] === 'start' && m === 'POST') { scheduleVilla(id, { runToCompletion: true }); return json(res, 202, { accepted: true, villaId: id }); }
+      if (action[2] === 'start' && m === 'POST') {
+        const sched = scheduleVilla(id, { runToCompletion: true });
+        if (sched.refused) return json(res, 409, { accepted: false, code: sched.refusedCode, error: sched.refusedMessage });
+        return json(res, 202, { accepted: true, villaId: id });
+      }
       if (action[2] === 'stop' && m === 'POST') { stopVilla(id); cancelScheduledVilla(id); return json(res, 200, { stopped: true, villaId: id }); }
     }
     if (p === '/api/v1/gateway/tasks' && m === 'POST') {
@@ -838,6 +843,19 @@ async function api(req, res, url) {
     });
     return json(res, 201, result);
   }
+  // ---- Projekt-Fokus: erst die priorisierten Projekte fertigstellen ----
+  if (parts[0] === 'api' && parts[1] === 'focus') {
+    if (m === 'GET') return json(res, 200, { ...focusStatus(), history: focusHistory(10) });
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Nur Administratoren.' });
+    if (m === 'POST') {
+      const b = await readBody(req).catch(() => ({}));
+      const ids = Array.isArray(b.villaIds) ? b.villaIds : [b.villaId];
+      try { return json(res, 200, { ok: true, ...setVillaFocus(ids, { reason: b.reason || '' }) }); }
+      catch (error) { return json(res, 400, { error: String(error?.message || error) }); }
+    }
+    if (m === 'DELETE') return json(res, 200, { ok: true, ...clearVillaFocus({ reason: 'Fokus manuell beendet.' }) });
+    return json(res, 405, { error: 'Methode nicht erlaubt.' });
+  }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'GET') {
     const id = Number(parts[2]);
     const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);
@@ -936,6 +954,7 @@ async function api(req, res, url) {
     const runToCompletion = b.runToCompletion !== false;
     const alreadyRunning = isRunning(id);
     const scheduled = scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6, runToCompletion, force: true });
+    if (scheduled.refused) return json(res, 409, { ok: false, code: scheduled.refusedCode, error: scheduled.refusedMessage, focus: focusStatus() });
     if (alreadyRunning && runToCompletion) extendVillaRunToCompletion(id);
     return json(res, 202, { ok: true, alreadyRunning, runToCompletion, started: scheduled.active.includes(id) || isRunning(id), queued: scheduled.queue.includes(id), scheduler: scheduled });
   }
