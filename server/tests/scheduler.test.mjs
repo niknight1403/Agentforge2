@@ -29,7 +29,7 @@ test('Rangfolge: meister Fortschritt zuerst, Fehler kosten', () => {
   assert.ok(order.indexOf(clean) < order.indexOf(faulty), 'bei gleichem Fortschritt: Fehler zurueck');
 });
 
-test('Slot-Grenze: maximal zwei Startanforderungen laufen parallel, Queue bleibt FIFO', async () => {
+test('Slot-Grenze: maximal zwei Starts parallel, wartende Queue priorisiert Abschlussgrad', async () => {
   _resetScheduler();
   const a = villa('A', 1, 9);
   const b = villa('B', 9, 1);
@@ -47,11 +47,11 @@ test('Slot-Grenze: maximal zwei Startanforderungen laufen parallel, Queue bleibt
   assert.equal(schedulerStatus().queued, 2);
   releases.get(b)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [a, b, c], 'B fertig -> C rueckt nach');
-  releases.get(c)();
+  assert.deepEqual(started, [a, b, d], 'B fertig -> fast fertige Villa D rueckt nach');
+  releases.get(d)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [a, b, c, d], 'C fertig -> D rueckt nach');
-  releases.get(d)(); releases.get(a)();
+  assert.deepEqual(started, [a, b, d, c], 'D fertig -> Villa C rueckt nach');
+  releases.get(c)(); releases.get(a)();
   await new Promise((r) => setImmediate(r));
   assert.ok(peak <= 2, `Spitze ${peak} ueber Grenze`);
 });
@@ -76,6 +76,27 @@ test('Doppeltes Einreihen startet nur einmal', async () => {
   configureScheduler({ start: () => { calls += 1; return new Promise(() => {}); } });
   enqueueVillas([v]); enqueueVillas([v]);
   assert.equal(calls, 1);
+});
+
+test('Warteschlange priorisiert den schnellsten belegbaren Produktabschluss', async () => {
+  _resetScheduler();
+  const activeA = villa('Aktiv A', 0, 10), activeB = villa('Aktiv B', 0, 10);
+  const earlyButRaw = villa('Frueh eingereiht', 1, 9);
+  const nearDone = villa('Fast fertig', 9, 1);
+  const started = [], releases = new Map();
+  configureScheduler({ start: (id) => new Promise((resolve) => {
+    started.push(id);
+    releases.set(id, resolve);
+  }) });
+  enqueueVillas([activeA, activeB, earlyButRaw, nearDone]);
+  assert.deepEqual(started, [activeA, activeB], 'laufende Slots werden nicht verdraengt');
+  assert.deepEqual(schedulerStatus().queue, [nearDone, earlyButRaw], 'wartende Villa mit hoechstem Abschlussgrad steht vorne');
+  releases.get(activeA)({ status: 'COMPLETED' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, [activeA, activeB, nearDone], 'naechster freier Slot erzeugt zuerst den schnellsten Abschluss');
+  for (const release of releases.values()) release({ status: 'COMPLETED' });
+  await new Promise((resolve) => setImmediate(resolve));
+  _resetScheduler();
 });
 
 test('produktionsfokus aktiviert CyberSarah und Revenue Engine, entfernt Legacy-Villen', async () => {

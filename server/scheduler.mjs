@@ -72,8 +72,19 @@ const retryCounts = new Map();
 const runOptions = new Map(); // options belong to a villa, never to the last caller
 const generations = new Map(); // invalidate late results after an explicit stop
 const retryDetails = new Map();
+const reservedResumes = new Set(); // Backoff beendet: Slot bleibt bis zum tatsaechlichen Wiederstart reserviert
 const focusVillaIdsSafe = () => { try { return focusVillaIds(); } catch { return []; } };
 let starter = null;        // Funktion (villaId) => Promise, die den Lauf startet
+
+function prioritizeQueue(preserveFront = 0) {
+  if (queue.length < 2) return;
+  const rank = new Map(villaRanking().map((villa) => [Number(villa.id), Number(villa.rank) || 0]));
+  const keep = Math.max(0, Math.min(queue.length, Number(preserveFront) || 0));
+  const head = queue.slice(0, keep);
+  const tail = queue.slice(keep).map((id, index) => ({ id, index, reserved: reservedResumes.has(Number(id)), rank: rank.get(Number(id)) ?? -Infinity }));
+  tail.sort((a, b) => Number(b.reserved) - Number(a.reserved) || b.rank - a.rank || a.index - b.index);
+  queue.splice(0, queue.length, ...head, ...tail.map((item) => item.id));
+}
 
 function occupiedSlots() {
   return new Set([...active, ...retryTimers.keys()]).size;
@@ -94,6 +105,7 @@ export function schedulerStatus() {
     queued: queue.length,
     queue: queue.slice(),
     retrying: [...retryTimers.keys()],
+    resuming: [...reservedResumes],
     retryDetails: Object.fromEntries(retryDetails),
     lastStart: Object.fromEntries(lastStart)
   };
@@ -114,7 +126,10 @@ function retryVilla(id, requestedDelayMs = 15_000, reason = 'MODEL_UNAVAILABLE')
     if (!villa || villa.autonomy !== 1 || villa.status === 'ARCHIVED') return;
     // Dieselbe unfertige Villa behaelt ihre Ausfuehrungsspur. Sie wird vor
     // spaeter eingereihten Villen fortgesetzt, sobald der Backoff endet.
-    if (!active.has(villaId) && !queue.includes(villaId)) queue.unshift(villaId);
+    if (!active.has(villaId) && !queue.includes(villaId)) {
+      queue.unshift(villaId);
+      reservedResumes.add(villaId);
+    }
     pump();
   }, delayMs);
   timer.unref?.();
@@ -132,6 +147,7 @@ export function cancelScheduledVilla(id) {
   retryTimers.delete(villaId);
   retryCounts.delete(villaId);
   retryDetails.delete(villaId);
+  reservedResumes.delete(villaId);
   runOptions.delete(villaId);
   const index = queue.indexOf(villaId);
   if (index < 0) return !!timer;
@@ -139,9 +155,11 @@ export function cancelScheduledVilla(id) {
   return true;
 }
 
-function pump() {
+function pump(preserveFront = 0) {
+  prioritizeQueue(preserveFront);
   while (starter && occupiedSlots() < SLOTS() && queue.length) {
     const id = queue.shift();
+    reservedResumes.delete(Number(id));
     const villa=db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(id);
     if(active.has(id)||!villa||villa.autonomy!==1||['ARCHIVED','STOPPING','COMPLETED'].includes(villa.status)){runOptions.delete(id);continue;}
     active.add(id);
@@ -185,7 +203,7 @@ export function enqueueVillas(ids) {
     const villaId = Number(id);
     if (Number.isSafeInteger(villaId) && villaId > 0 && !active.has(villaId) && !queue.includes(villaId)) queue.push(villaId);
   }
-  pump();
+  pump(Math.max(0, SLOTS() - occupiedSlots()));
   return schedulerStatus();
 }
 
@@ -235,6 +253,7 @@ export function _resetScheduler() {
   retryCounts.clear();
   runOptions.clear();
   retryDetails.clear();
+  reservedResumes.clear();
   generations.clear();
   starter = null;
 }
