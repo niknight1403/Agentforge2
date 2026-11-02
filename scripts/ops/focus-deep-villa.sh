@@ -19,7 +19,7 @@ while IFS= read -r id; do
   [[ "$id" == "$TARGET" ]] && continue
   echo "Pause competing Villa #$id"
   "${CURL[@]}" -X POST -H "${AUTH[0]}" "$H/api/villas/$id/stop" | jq -e '.ok == true' >/dev/null
-done < <(jq -r --argjson target "$TARGET" '.[] | select(.id != $target) | select((.autonomy // 0)==1 or (.status // "" | IN("RUNNING","WAITING_FOR_MODEL","STOPPING")) or (.executing // 0)==1) | .id' <<< "$VILLAS")
+done < <(jq -r --argjson target "$TARGET" '.[] | select(.id != $target) | select((.autonomy // 0)==1 or (.status // "" | test("^(RUNNING|WAITING_FOR_MODEL|STOPPING)$")) or (.executing // 0)==1) | .id' <<< "$VILLAS")
 # Check all competitors are now disarmed, regardless of transient STOPPING state.
 AFTER=$("${CURL[@]}" -H "${AUTH[0]}" "$H/api/villas")
 jq -e --argjson id "$TARGET" 'all(.[] | select(.id != $id); (.autonomy // 0) == 0)' <<< "$AFTER" >/dev/null
