@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-11-02T18:31:00Z",
+  "baseCommit": "48091e79d1f10762fd6245cbed47090a94d9a8e3",
+  "scope": "one reversible product-acceptance blocker: exact sanitized verification failures were not reaching the existing repair task",
+  "productionEvidence": {
+    "workflow": "https://github.com/niknight1403/Agentforge2/actions/runs/41496790385",
+    "job": "https://github.com/niknight1403/Agentforge2/actions/runs/41496790385/job/125466875371",
+    "villaId": 34,
+    "build": "sh: 1: next: not found",
+    "tests": "sh: 1: jest: not found",
+    "smoke": "sh: 1: next: not found",
+    "repairTaskId": 178060,
+    "sourceChanged": false
+  },
+  "change": [
+    "centralize safe verification failure extraction in the existing project verification module",
+    "put concrete build/test/smoke diagnostics before generic gate findings in the existing repair task",
+    "emit the same bounded sanitized diagnosis in the operations log for production verification"
+  ],
+  "constraints": [
+    "no dependency installation or execution of unknown lifecycle code in production",
+    "no new scheduler or provider registry",
+    "no paused Villa reactivation introduced",
+    "no raw secrets in task or log diagnostics"
+  ],
+  "localVerification": [
+    {
+      "command": "npm test",
+      "exitCode": 0,
+      "result": "490/490 passed"
+    },
+    {
+      "command": "npm run check:syntax",
+      "exitCode": 0,
+      "result": "203 JavaScript files valid"
+    },
+    {
+      "command": "npm run build:web",
+      "exitCode": 0,
+      "result": "13 files built; 8 local HTML assets checked"
+    },
+    {
+      "command": "npm run check:secrets",
+      "exitCode": 0,
+      "result": "clean"
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0,
+      "result": "clean"
+    }
+  ],
+  "status": "awaiting integration, CI browser acceptance, deploy and production rerun",
+  "resume": "After merge/deploy, dispatch the existing Deep focus sweep once and confirm the Reparaturbefund contains next/jest without secrets. Do not broaden to another blocker in the same run."
+}

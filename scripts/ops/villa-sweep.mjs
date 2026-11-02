@@ -19,7 +19,7 @@ import {execFileSync} from 'node:child_process';
 
 process.chdir('/opt/villaforge');
 const {db, now} = await import('/opt/villaforge/server/db.mjs');
-const {verifyProjectRuntime, projectDirectory, verificationPlan, inspectProject} = await import('/opt/villaforge/server/project-verification.mjs');
+const {verifyProjectRuntime, projectDirectory, verificationPlan, inspectProject, sanitizeVerificationFailure, verificationRepairFindings} = await import('/opt/villaforge/server/project-verification.mjs');
 const {focusDecision, releaseFocusIfComplete} = await import('/opt/villaforge/server/project-focus.mjs');
 const {canUseTool} = await import('/opt/villaforge/server/packs.mjs');
 const DEVELOPMENT_TOOLS = ['project_tree', 'project_search', 'project_read', 'project_write', 'project_patch', 'project_run'];
@@ -160,21 +160,9 @@ function buildNachweis(id, ordner, stack) {
   return true;
 }
 
-function safeStageFailure(check) {
-  const raw = String(check?.reason || check?.output || '');
-  const lines = raw.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-  const relevant = lines.filter(x => /error|failed|missing|cannot find|not found|syntax|ENOENT|ERR_|assert|exception|timeout|permission/i.test(x));
-  const selected = (relevant.length ? relevant : lines.slice(-2)).slice(0, 3).join(' | ');
-  return selected
-    .replace(/(https?:\/\/)[^\s@]+@/gi, '$1[redacted]@')
-    .replace(/\b(?:ghp_|github_pat_|sk-|mstrl_|AIza)[A-Za-z0-9_\-]{10,}\b/g, '[redacted]')
-    .replace(/(api[_-]?key|password|token|secret|authorization)\s*[:=]\s*[^\s|]+/gi, '$1=[redacted]')
-    .replace(/(?:\/home\/[^/\s]+|\/opt\/villaforge\/server\/data\/workspace)/g, '[workspace]')
-    .slice(0, 380) || 'Keine sichere Fehlerdetails verfuegbar';
-}
-
 function reparaturAuftrag(id, blocker) {
   if (DRY) { console.log('  [dry-run] wuerde Reparaturaufgabe anlegen/aktualisieren'); return null; }
+  console.log(`  Reparaturbefund: ${blocker.map((item) => String(item).slice(0, 380)).join(' | ').slice(0, 1200)}`);
   const titel = '[REPARATUR] Produktabnahme bestehen';
   const unavailable = toolReadiness().filter((tool) => !tool.enabled).map((tool) => tool.name);
   const text = 'Der Sweep hat die Abnahme echt ausgefuehrt. Offene Befunde: ' + blocker.join('; ').slice(0, 900) +
@@ -253,10 +241,11 @@ for (const villa of kandidaten) {
     for (const kind of ['build', 'tests', 'smoke', 'quality']) {
       const stage = checks[kind];
       console.log(`  letzter ${kind}: ${String(stage?.status || 'missing').slice(0, 30)}`);
-      if (stage && stage.status !== 'passed') console.log(`  Diagnose ${kind}: ${safeStageFailure(stage)}`);
+      if (stage && stage.status !== 'passed') console.log(`  Diagnose ${kind}: ${sanitizeVerificationFailure(stage)}`);
     }
     console.log(`  blockierende Abnahmebefunde: ${Array.isArray(blockers) ? blockers.length : 0} (Details im gesicherten Hub-Pruefbericht)`);
-    if (Array.isArray(blockers) && blockers.length && !DRY) reparaturAuftrag(villa.id, blockers.slice(0, 4).map((b) => String(b).slice(0, 180)));
+    const findings = verificationRepairFindings(checks, blockers);
+    if (findings.length && !DRY) reparaturAuftrag(villa.id, findings);
     continue;
   }
   bearbeitet += 1;
@@ -275,7 +264,7 @@ for (const villa of kandidaten) {
     .map(([kind, v]) => `${kind}: ${String(v.reason || v.status).slice(0, 200)}`);
   for (const [kind, v] of Object.entries(ergebnis.checks || {})) {
     console.log(`  ${kind}: ${v.status}${v.reason ? ' - ' + String(v.reason).slice(0, 150) : ''}`);
-    if (v.status !== 'passed') console.log(`  Diagnose ${kind}: ${safeStageFailure(v)}`);
+    if (v.status !== 'passed') console.log(`  Diagnose ${kind}: ${sanitizeVerificationFailure(v)}`);
   }
   if (ergebnis.ok) {
     abgenommen += 1;
@@ -284,7 +273,7 @@ for (const villa of kandidaten) {
   }
   const eigenverschulden = befunde.filter((b) => /^tests: failed|^quality:/.test(b) || /Syntaxfehler/.test(b));
   const blocker = eigenverschulden.length ? eigenverschulden : (ergebnis.blockers || []).slice(0, 4);
-  reparaturAuftrag(villa.id, blocker);
+  reparaturAuftrag(villa.id, verificationRepairFindings(ergebnis.checks, blocker));
   autonomieFreigeben(villa.id, villa.name);
 }
 
@@ -306,10 +295,12 @@ if (bearbeitet === 0 && arrest === 0 && !DRY) {
   if (beste) {
     console.log(`\n== AUFWECKEN: Villa ${beste.id} "${beste.name}" (${beste.offen} offene Aufgaben) ==`);
     if (autonomieFreigeben(beste.id, beste.name)) {
-      const letzte = db.prepare('SELECT blockers FROM project_verifications WHERE villa_id=?').get(beste.id);
-      let ursachen = [];
+      const letzte = db.prepare('SELECT checks,blockers FROM project_verifications WHERE villa_id=?').get(beste.id);
+      let pruefungen = {}, ursachen = [];
+      try { pruefungen = JSON.parse(letzte?.checks || '{}'); } catch {}
       try { ursachen = JSON.parse(letzte?.blockers || '[]'); } catch {}
-      reparaturAuftrag(beste.id, Array.isArray(ursachen) && ursachen.length ? ursachen.slice(0, 4) : ['Quellstand unveraendert, Build/Test/Smoke-Abnahme offen']);
+      const findings = verificationRepairFindings(pruefungen, ursachen);
+      reparaturAuftrag(beste.id, findings.length ? findings : ['Quellstand unveraendert, Build/Test/Smoke-Abnahme offen']);
       arrest += 1;
     }
   }
