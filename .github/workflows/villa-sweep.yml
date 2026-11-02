@@ -40,6 +40,6 @@ jobs:
           chmod 600 ~/.ssh/oracle_key
           [[ "$VILLA_ID" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "Ungueltige Villa-ID"; exit 2; }
           ZUSATZ="--villa-id=$VILLA_ID"
-          if [ "$DRY" = "true" ]; then ZUSATZ="--dry-run"; fi
+          if [ "$DRY" = "true" ]; then ZUSATZ="$ZUSATZ --dry-run"; fi
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
             "NODE=\$(command -v node || echo /usr/bin/node); cd /opt/villaforge && git log -1 --format='Code %h' && sudo \"\$NODE\" scripts/ops/villa-sweep.mjs --limit=$LIMIT $ZUSATZ"
