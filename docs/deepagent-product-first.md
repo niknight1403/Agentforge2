@@ -48,3 +48,25 @@ der Prompt.
 - Jede Council-Runde enthält Bewertungen und Minderheitenvoten.
 - `TASTE`- und `SPION`-Artefakte sind Pflichtbestandteil der Villa-Übergabe.
 - Kein Prompt-Inhalt, keine Nutzerdaten und keine Secrets in Telemetrie oder Logs.
+
+## Umgesetzt am 02.11.2026 (Code-Seite)
+
+Das Gate ist nicht mehr nur Prompt-Text, sondern im Endpunkt erzwungen.
+
+**Neue Bausteine**
+- `server/deep-product-gate.mjs` — reine Bewertungslogik plus begrenzter Ordner-Scanner (max. 400 Dateien, 200 KB je Datei, `node_modules`/`.git`/`dist` ausgenommen).
+- `server/tests/deep-product-gate.test.mjs` — 10 Faelle: leeres Projekt, belegtes Produkt, fehlender Verifikationslauf, fehlgeschlagener Build, Testdatei fehlt, Secrets im Projekt, duenne Spec, Kriterien als JSON und als Checkboxen, Scanner-Grenzen, fehlender Ordner.
+- `server/tests/deep-product-gate-e2e.test.mjs` — 2 Faelle gegen den echten Hub: `POST /api/deep/projects/:id/develop` antwortet mit 409 und Blockern ohne Produkt; mit Belegen passiert die Anfrage das Gate.
+
+**Verhalten**
+- `POST /api/deep/projects/:id/develop` legt die Villa erst an, wenn das Gate besteht. Sonst `409` mit `gateBlocked: true`, `villaId: 0`, der Liste der Blockierte und `checks` je Pruefung.
+- Geprueft werden: Quellcode (mind. 2 Dateien), Spec mit Inhalt, mind. 2 pruefbare Abnahmekriterien, Testdatei, README mit Startbefehl, keine Secret-Muster, aufgezeichneter Verifikationslauf (`verification.json` mit Build, Tests und Nutzerfluss auf `passed`).
+- Unbekannt ist blockiert: fehlt ein Beleg, entsteht keine Villa.
+
+**Verifikation**
+- `npm test`: 428 Tests, 0 Fehler (vorher 426; die zwei neuen E2E-Faelle inklusive).
+- `npm run check:syntax`: 190 Dateien gueltig.
+
+**Bewusst offen**
+- Ein belegter Verdrahtungslauf gegen ein echtes Modell (Villa-Erstellung nach bestandenem Gate) ist in CI nicht moeglich, weil dort keine Cloud-Keys gesetzt sind; der Test nennt in diesem Fall `LLM_UNAVAILABLE` statt Erfolg.
+- Council-Scores und Minderheitenvoten werden weiterhin nicht persistiert (naechster Schritt).
