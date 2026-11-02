@@ -32,7 +32,7 @@ test('Scheduler: begrenzte Villa-Slots und alle Startstellen ueber scheduleVilla
   const srv = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8');
   assert.ok(!/[^A-Za-z.]orchestrate\(/.test(srv.replace(/scheduleVilla\(/g, '')), 'server.mjs startet keine Villa direkt');
   const sched = readFileSync(new URL('../scheduler.mjs', import.meta.url), 'utf8');
-  assert.ok(sched.includes('VF_VILLA_SLOTS ?? 6'), 'Slot-Default 6');
+  assert.ok(sched.includes('VF_VILLA_SLOTS ?? 2'), 'Slot-Default 2');
   assert.ok(sched.includes('export function scheduleVilla'), 'scheduleVilla exportiert');
 });
 
