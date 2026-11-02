@@ -225,6 +225,12 @@ for (const villa of kandidaten) {
   const jetztStand = inspectProject(villa.id);
   if (jetztStand.fingerprint && jetztStand.fingerprint === villa.stand && !DRY) {
     console.log('  Quellstand unveraendert seit der letzten Abnahme - uebersprungen');
+    const last = db.prepare('SELECT status, checks, blockers FROM project_verifications WHERE villa_id=?').get(villa.id);
+    let checks = {}, blockers = [];
+    try { checks = JSON.parse(last?.checks || '{}'); } catch {}
+    try { blockers = JSON.parse(last?.blockers || '[]'); } catch {}
+    for (const kind of ['build', 'tests', 'smoke', 'quality']) console.log(`  letzter ${kind}: ${String(checks[kind]?.status || 'missing').slice(0, 30)}`);
+    console.log(`  blockierende Abnahmebefunde: ${Array.isArray(blockers) ? blockers.length : 0} (Details im gesicherten Hub-Pruefbericht)`);
     continue;
   }
   bearbeitet += 1;
