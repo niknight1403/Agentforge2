@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "sprint": "VF-0012",
+  "status": "in_progress",
+  "sprintAcceptanceComplete": false,
+  "productionSandboxReady": false,
+  "sourceCommit": "dd94ca3a0f9e25d677a8ddcfbc325f1d572388a2",
+  "productionBlocker": "The production runtime has no verified VF_PROJECT_SANDBOX=docker configuration or immutable image; no production host inspection or mutation was performed.",
+  "implementation": [
+    "Add a read-only preflight for explicit Docker mode, a pinned image digest and exact locally available RepoDigest metadata.",
+    "Never pull an image or start a container; emit only stable diagnostic codes and boolean checks.",
+    "Keep the existing production execution gate unchanged."
+  ],
+  "localVerification": {
+    "targetedCommand": "node --import ./server/tests/_env.mjs --test server/tests/project-sandbox-preflight.test.mjs",
+    "targetedTests": 7,
+    "targetedPassed": 7,
+    "targetedFailed": 0,
+    "syntaxFiles": 206,
+    "preflightCommand": "node scripts/check-project-sandbox.mjs",
+    "preflightExitCode": 1,
+    "preflightResult": "PROJECT_SANDBOX_REQUIRED (expected on this unconfigured local host)",
+    "patchFormatting": "passed"
+  },
+  "notProven": [
+    "The production host has not been configured or verified.",
+    "No Docker isolation test was run against a production image.",
+    "No Villa product was verified or downloaded.",
+    "No production deploy was started."
+  ]
+}

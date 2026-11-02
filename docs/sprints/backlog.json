@@ -304,10 +304,39 @@
         "Produktabnahme bleibt blockiert, bis ein echtes Produktionsprodukt verifiziert und herunterladbar ist",
         "Produktive Projektpruefungen benoetigen die noch nicht konfigurierte gepinnte Docker-Sandbox"
       ],
-      "status": "in_progress",
+      "status": "done",
       "scopeDefined": true,
       "evidence": [
         "docs/sprints/evidence/VF-0011-diagnosis.json"
+      ],
+      "implementationCommit": "dd94ca3a0f9e25d677a8ddcfbc325f1d572388a2"
+    },
+    {
+      "id": "VF-0012",
+      "area": "Produktionsblocker und Release-Gates",
+      "goal": "Produktions-Sandbox vor Freigabe nicht-invasiv vorpruefen",
+      "benefit": "Fehlende oder falsche Docker-/Digest-Konfiguration wird vor Villa-Ausfuehrung sicher und reproduzierbar erkannt",
+      "dependencies": [
+        "VF-0011"
+      ],
+      "modules": [
+        "server/project-sandbox-preflight.mjs",
+        "scripts/check-project-sandbox.mjs",
+        "server/tests/project-sandbox-preflight.test.mjs"
+      ],
+      "acceptanceCriteria": [
+        "Vorpruefung verlangt expliziten Docker-Modus und syntaktisch unveraenderliches Image-Digest",
+        "Vorhandensein und exakter Digest werden nur per Docker image inspect geprueft; kein Pull oder Containerstart",
+        "Fehlerausgaben enthalten nur feste Codes und Check-Flags, keine Image-Referenz, stderr oder Secrets",
+        "Regressionstests belegen fehlende Konfiguration, Docker-/Imagefehler, Digest-Mismatch und Ready-Fall"
+      ],
+      "risks": [
+        "Eine lokal bestandene Vorpruefung provisioniert die Produktionsmaschine nicht und ersetzt keine Isolationstests"
+      ],
+      "status": "in_progress",
+      "scopeDefined": true,
+      "evidence": [
+        "docs/sprints/evidence/VF-0012-sandbox-preflight.json"
       ],
       "implementationCommit": null
     },
