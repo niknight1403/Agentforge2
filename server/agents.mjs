@@ -1618,6 +1618,21 @@ export async function runQualityGate(villaId, task, answer) {
       if (missingTool) {
         await npmInstall();
         gate = String(await npmTest());
+        // v1.41.1: Fehlt das Testwerkzeug auch nach npm install, ist es keine
+        // Abhaengigkeit des Projekts (Script 'jest', aber kein jest in
+        // devDependencies). Dann genau dieses Werkzeug nachziehen, statt die
+        // Aufgabe immer wieder scheitern zu lassen.
+        const fehlt = /sh: \d+: ([a-zA-Z0-9._-]+): not found/i.exec(gate) || /([a-zA-Z0-9._-]+): command not found/i.exec(gate);
+        if (fehlt && !/^Exit 0/.test(gate)) {
+          const werkzeug = fehlt[1];
+          if (/^[a-z0-9._-]{2,40}$/i.test(werkzeug)) {
+            await runTool({ villaId, agentId: 0 }, 'project_run', { binary: 'npm', args: ['install', '--save-dev', '--no-audit', '--no-fund', werkzeug], timeoutMs: 300000 });
+            gate = String(await npmTest());
+            if (/^Exit 0/.test(gate)) {
+              return { passed: true, output: gate, installed: true, annotated: `${answer}\n\n[Qualitaetstor: npm test gruen nach Installation von ${werkzeug} als devDependency.]` };
+            }
+          }
+        }
         if (/^Exit 0/.test(gate)) {
           return { passed: true, output: gate, installed: true, annotated: `${answer}\n\n[Qualitaetstor: npm test gruen nach Installation der Testabhaengigkeiten.]` };
         }

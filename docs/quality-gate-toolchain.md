@@ -32,6 +32,10 @@ Leerlauf, die Villa meldete trotzdem „läuft".
    `command not found`, `not found`, `ENOENT`) oder fehlt `node_modules`,
    wird einmal `npm install --include=dev --no-audit --no-fund` ausgeführt und
    der Test danach wiederholt.
+   Fehlt das genannte Werkzeug danach immer noch, wird es gezielt als
+   devDependency nachgezogen (`npm install --save-dev <werkzeug>`) und erneut
+   getestet. Grund: ein Test-Script `jest` ohne `jest` in den devDependencies
+   lässt sich durch ein allgemeines `npm install` nicht reparieren.
 3. Ist der Test dann grün, gilt er als bestanden; die Antwort vermerkt die
    Nachinstallation ausdrücklich (`npm test gruen nach Installation der
    Testabhaengigkeiten`).

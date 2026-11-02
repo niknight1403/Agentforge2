@@ -210,3 +210,24 @@ test('Qualitaetstor: fehlendes Testwerkzeug wird nachinstalliert statt endlos zu
   assert.equal(gruen.passed, true);
   assert.equal(gruen.environment, undefined);
 });
+
+test('Qualitaetstor: fehlendes Testwerkzeug wird als devDependency nachgezogen', async () => {
+  const t = now();
+  db.prepare("INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES ('Werkzeug2-Villa','x','CREATED',10,1,?,?)").run(t, t);
+  const villaId = Number(db.prepare('SELECT id FROM villas ORDER BY id DESC LIMIT 1').get().id);
+
+  // Test-Script ruft ein Werkzeug, das weder installiert noch deklariert ist.
+  // Der Fix zieht es als devDependency nach; hier bleibt es unaufloesbar,
+  // deshalb muss ehrlich 'environment' stehen - nicht gruen, nicht endlos.
+  const dir = join(tmp, 'projekt-werkzeug2-' + t);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({
+    name: 'p', version: '1.0.0', scripts: { test: 'gibtesnicht-abc' }, devDependencies: {}
+  }));
+  setSource(villaId, dir);
+
+  const res = await runQualityGate(villaId, { title: 'Feature bauen' }, 'Fertig.');
+  assert.equal(res.passed, false);
+  assert.equal(res.environment, true, 'unaufloesbares Werkzeug bleibt ein Umgebungsproblem');
+  assert.doesNotMatch(String(res.annotated), /gruen/, 'kein falsches Gruen');
+});
