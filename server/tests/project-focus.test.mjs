@@ -98,6 +98,16 @@ test('Fokus loest sich auf, sobald alle Fokus-Villen fertig sind', () => {
   assert.equal(focus.focusDecision(other).allowed, true);
 });
 
+test('COMPLETED-Status mit offenen Aufgaben darf den Fokus nicht freigeben', () => {
+  reset();
+  const a = villa('Noch nicht fertig', 'COMPLETED', 2, 5);
+  focus.setVillaFocus([a]);
+  const status = focus.releaseFocusIfComplete();
+  assert.equal(status.active, true);
+  assert.equal(status.ready_to_release, false);
+  assert.equal(status.villas[0].done, false);
+});
+
 test('Eine offene Aufgabe haelt den Fokus', () => {
   reset();
   const a = villa('Projekt A', 'COMPLETED', 0, 5);
