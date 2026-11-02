@@ -29,7 +29,7 @@ test('Rangfolge: meister Fortschritt zuerst, Fehler kosten', () => {
   assert.ok(order.indexOf(clean) < order.indexOf(faulty), 'bei gleichem Fortschritt: Fehler zurueck');
 });
 
-test('Slot-Grenze: maximal zwei Startanforderungen laufen parallel, Queue bleibt FIFO', async () => {
+test('Slot-Grenze: maximal zwei Starts parallel, wartende Queue priorisiert Abschlussgrad', async () => {
   _resetScheduler();
   const a = villa('A', 1, 9);
   const b = villa('B', 9, 1);
@@ -47,11 +47,11 @@ test('Slot-Grenze: maximal zwei Startanforderungen laufen parallel, Queue bleibt
   assert.equal(schedulerStatus().queued, 2);
   releases.get(b)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [a, b, c], 'B fertig -> C rueckt nach');
-  releases.get(c)();
+  assert.deepEqual(started, [a, b, d], 'B fertig -> fast fertige Villa D rueckt nach');
+  releases.get(d)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [a, b, c, d], 'C fertig -> D rueckt nach');
-  releases.get(d)(); releases.get(a)();
+  assert.deepEqual(started, [a, b, d, c], 'D fertig -> Villa C rueckt nach');
+  releases.get(c)(); releases.get(a)();
   await new Promise((r) => setImmediate(r));
   assert.ok(peak <= 2, `Spitze ${peak} ueber Grenze`);
 });
