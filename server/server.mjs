@@ -1,3 +1,4 @@
+import { createPublishPost, listPublishPosts, getVillaRevenue } from './publishing.mjs';
 import {capabilityStatus,requestCapability} from './capability-autopilot.mjs';
 import {villaDiagnostics} from './villa-diagnostics.mjs';
 import { VERSION } from './version.mjs';
@@ -1319,6 +1320,32 @@ async function api(req, res, url) {
     const out = developCycle(id);
     if (out.added > 0 && !isRunning(id)) scheduleVilla(id, { concurrency: 0, maxRounds: 6 });
     return json(res, 200, { ok: true, added: out.added, maturity: out.maturity.score, stage: out.maturity.stage, phase: out.maturity.currentPhase });
+  }
+  // Sprint 8 — Publishing-Sandbox & Revenue-Light
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'publish' && m === 'POST') {
+    try {
+      const b = await readBody(req);
+      const out = createPublishPost(Number(parts[2]), b);
+      return json(res, 200, out);
+    } catch (e) {
+      return json(res, e.statusCode || 400, { error: e.message });
+    }
+  }
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'publish' && m === 'GET') {
+    try {
+      const out = listPublishPosts(Number(parts[2]));
+      return json(res, 200, out);
+    } catch (e) {
+      return json(res, e.statusCode || 400, { error: e.message });
+    }
+  }
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'revenue' && m === 'GET') {
+    try {
+      const out = getVillaRevenue(Number(parts[2]));
+      return json(res, 200, out);
+    } catch (e) {
+      return json(res, e.statusCode || 400, { error: e.message });
+    }
   }
   if (p === '/api/events') {
     res.writeHead(200, {
