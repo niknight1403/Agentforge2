@@ -70,3 +70,13 @@ Das Gate ist nicht mehr nur Prompt-Text, sondern im Endpunkt erzwungen.
 **Bewusst offen**
 - Ein belegter Verdrahtungslauf gegen ein echtes Modell (Villa-Erstellung nach bestandenem Gate) ist in CI nicht moeglich, weil dort keine Cloud-Keys gesetzt sind; der Test nennt in diesem Fall `LLM_UNAVAILABLE` statt Erfolg.
 - Council-Scores und Minderheitenvoten werden weiterhin nicht persistiert (naechster Schritt).
+
+## Rat: Rubrik und Minderheitenvoten persistiert (02.11.2026)
+
+- Neue Spalten `council.scores` und `council.dissent` (Migration fuer bestehende Datenbanken in `server/db.mjs`).
+- Neue Logik in `server/council-rubric.mjs`: Rubrik `nutzen`, `machbarkeit`, `belegbarkeit`, `differenzierung` (je 1-5, gewichtet 0.35/0.25/0.25/0.15) plus impact/effort wie bisher.
+- `runCouncil()` speichert `scores` (inkl. `rated`-Status) und `dissent`; `listCouncil()` liefert beides mit.
+- Minderheitenvoten nennen den Agenten, den Hebel, die schwaechste Dimension und den Grund, warum der Vorschlag liegen blieb (Schwelle 6).
+- Ehrlichkeits-Fix: eine defekte Bewertungsantwort erzeugt **keine** neutralen 5/5-Werte mehr. Der Vorschlag laeuft als `rated: false` mit `score: null` weiter, bleibt als offenes Votum dokumentiert, und es entsteht trotzdem eine Aufgabe, damit die Villa nicht stillsteht.
+- Bewertungen werden primaer ueber den Agentennamen zugeordnet, nicht ueber die Reihenfolge der Modellantwort.
+- Tests: 10 Faelle fuer Rubrik/Auswertung, 3 Faelle fuer Persistenz (inkl. Alt-Test `council2` auf die ehrliche Erwartung umgestellt). Suite: 440 Tests gruen.

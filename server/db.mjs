@@ -194,7 +194,13 @@ CREATE TABLE IF NOT EXISTS council (
   participants TEXT NOT NULL DEFAULT '',
   messages TEXT NOT NULL DEFAULT '[]',
   proposals TEXT NOT NULL DEFAULT '[]',
+  scores TEXT NOT NULL DEFAULT '[]',
+  dissent TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL
 );
 `);
 db.exec('CREATE INDEX IF NOT EXISTS idx_council_villa ON council(villa_id, id);');
+
+// Migration fuer bestehende Datenbanken (Tabelle existiert an dieser Stelle).
+ensureColumn('council', 'scores', "TEXT NOT NULL DEFAULT '[]'");
+ensureColumn('council', 'dissent', "TEXT NOT NULL DEFAULT '[]'");

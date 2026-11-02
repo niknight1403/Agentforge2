@@ -19,6 +19,7 @@ import { db, now } from './db.mjs';
 import { maybeAutoBuild } from './builds.mjs';
 import { chat as defaultChat } from './llm.mjs';
 import { maturity, proposalsToTasks } from './product.mjs';
+import { buildDissent, parseRubric, rubricSystemPrompt, rubricUserPrompt, summarizeScores } from './council-rubric.mjs';
 
 /** Abstand zwischen zwei automatischen Rat-Runden je Villa (2 Stunden). */
 export const COUNCIL_INTERVAL_MS = 2 * 60 * 60 * 1000;
@@ -92,31 +93,66 @@ export async function runCouncil(villaId, { chatFn = defaultChat, participants =
   }
 
   // Bewertungs-Synthese: ein Denker-Durchlauf bewertet jeden Vorschlag nach
-  // Wirkung (impact) und Aufwand (effort) auf einer Skala 1-10 und ordnet ihn.
-  // Ohne Modell oder bei defektem JSON gilt ein neutraler Score (5/5).
-  let ranked = proposals.map((p) => ({ ...p, impact: 5, effort: 5, score: 5 }));
+  // Wirkung (impact 1-10), Aufwand (effort 1-10) und der Rubrik des Rats
+  // (Nutzen, Machbarkeit, Belegbarkeit, Differenzierung — je 1-5).
+  // Faellt die Bewertung aus, wird NICHTS erfunden: die Vorschlaege laufen als
+  // `rated: false` weiter und landen als offene Minderheitenvoten im Datensatz.
+  let ranked = proposals.map((p) => ({ ...p, impact: null, effort: null, score: null, rated: false }));
+  let rubric = { rated: false, entries: [], reason: 'keine Vorschlaege' };
   if (proposals.length > 0) {
     try {
       const raw = textOf(await chatFn([
-        { role: 'system', content: 'Du bist die Bewertungs-Synthese des Rats. Bewerte jeden Vorschlag strikt: impact (Wirkung auf Marktreife 1-10), effort (Aufwand 1-10, mehr = teurer). Antworte NUR mit JSON: {"ranked":[{"agent":"Name","impact":7,"effort":3}]} fuer jeden Vorschlag in derselben Reihenfolge.' },
-        { role: 'user', content: proposals.map((p, i) => `${i + 1}. ${p.agent}: ${p.text}`).join('\n') }
-      ], { maxTokens: 400, json: true }));
-      const parsed = JSON.parse(String(raw).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, ''));
-      if (Array.isArray(parsed?.ranked)) {
-        ranked = proposals.map((p, i) => {
-          const r = parsed.ranked[i] || {};
-          const impact = Math.min(10, Math.max(1, Number(r.impact) || 5));
-          const effort = Math.min(10, Math.max(1, Number(r.effort) || 5));
-          return { ...p, impact, effort, score: Math.round((impact * 10 - effort * 3) / 7 * 10) / 10 };
-        }).sort((a, b) => b.score - a.score);
-      }
-    } catch { /* neutraler Fallback-Score bleibt */ }
+        { role: 'system', content: rubricSystemPrompt() },
+        { role: 'user', content: rubricUserPrompt(proposals) }
+      ], { maxTokens: 520, json: true }));
+      rubric = parseRubric(raw, proposals);
+    } catch (error) {
+      rubric = { rated: false, entries: [], reason: `Bewertung nicht auswertbar: ${String(error?.message || error).slice(0, 120)}` };
+    }
+    if (rubric.entries.length) {
+      // Zuordnung primaer ueber den Agentennamen (Reihenfolge im Modell-Output
+      // ist nicht verlaesslich), nur als Rueckfall ueber den Index.
+      ranked = proposals.map((p, i) => {
+        const byName = rubric.entries.find((e) => e.agent && p.agent && e.agent === p.agent);
+        const entry = byName || rubric.entries[i] || {};
+        return {
+          ...p,
+          impact: entry.impact ?? null,
+          effort: entry.effort ?? null,
+          score: entry.leverage ?? null,
+          rubric: entry.rubric ?? null,
+          weighted: entry.weighted ?? null,
+          rated: Boolean(entry.rated),
+        };
+      }).sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity));
+    }
   }
 
   const round = db.prepare('SELECT COUNT(*) c FROM council WHERE villa_id = ?').get(villaId).c + 1;
+  // Aufgaben-Auswahl: nur bewertete Vorschlaege mit echtem Hebel. Ist keine
+  // Bewertung vorhanden, wird ehrlich der erste Vorschlag genommen (damit die
+  // Villa nicht stillsteht) und das im Datensatz als `unrated` markiert.
+  const actionable = ranked.filter((r) => r.rated && Number(r.score) >= 6);
+  const chosen = actionable.length ? actionable : ranked.slice(0, 1);
+  // Ohne Bewertung gibt es trotzdem Voten: jeder nicht uebernommene Vorschlag
+  // bleibt als offener Vorschlag im Datensatz, klar als unbewertet markiert.
+  const dissentEntries = rubric.entries.length
+    ? rubric.entries
+    : ranked.map((r) => ({ agent: r.agent, rubric: {}, rated: false, missing: ['keine Bewertung vorhanden'], leverage: null }));
+  const dissent = buildDissent(dissentEntries, { selectedAgents: chosen.map((c) => c.agent), threshold: 6 });
+
   db.prepare(
-    'INSERT INTO council (villa_id, round, participants, messages, proposals, created_at) VALUES (?,?,?,?,?,?)'
-  ).run(villaId, round, agents.map((a) => a.name).join(', '), JSON.stringify(messages), JSON.stringify(ranked), now());
+    'INSERT INTO council (villa_id, round, participants, messages, proposals, scores, dissent, created_at) VALUES (?,?,?,?,?,?,?,?)'
+  ).run(
+    villaId,
+    round,
+    agents.map((a) => a.name).join(', '),
+    JSON.stringify(messages),
+    JSON.stringify(ranked),
+    JSON.stringify(summarizeScores(rubric)),
+    JSON.stringify(dissent),
+    now()
+  );
 
   if (proposals.length > 0) {
     const summary = proposals.map((p) => `${p.agent}: ${p.text}`).join('\n');
@@ -128,23 +164,39 @@ export async function runCouncil(villaId, { chatFn = defaultChat, participants =
     ).run(villaId, 'COUNCIL', `Rat der Agenten Runde ${round}`, summary, JSON.stringify(messages), now());
   }
 
-  // Nur Vorschlaege mit echtem Hebel werden Aufgaben (Score >= 6): Der Rat
-  // sortiert sich damit selbst, statt jeden Vorschlag gleichzubehandeln.
-  const actionable = ranked.filter((r) => Number(r.score) >= 6);
-  const tasksCreated = proposalsToTasks(villaId, actionable.length ? actionable : ranked.slice(0, 1));
-  return { round, agents: agents.map((a) => a.name), proposals: proposals.length, ranked: ranked.map((r) => ({ agent: r.agent, impact: r.impact, effort: r.effort, score: r.score })), tasksCreated, maturity: mat.score, phase: mat.currentPhase };
+  const tasksCreated = proposalsToTasks(villaId, chosen);
+  return {
+    round,
+    agents: agents.map((a) => a.name),
+    proposals: proposals.length,
+    ranked: ranked.map((r) => ({
+      agent: r.agent,
+      impact: r.impact,
+      effort: r.effort,
+      score: r.score,
+      weighted: r.weighted ?? null,
+      rated: r.rated,
+    })),
+    rating: { rated: rubric.rated, reason: rubric.reason ?? null },
+    dissent,
+    tasksCreated,
+    maturity: mat.score,
+    phase: mat.currentPhase,
+  };
 }
 
 /** Letzte Rat-Runden einer Villa, geparst (messages/proposals als Arrays). */
 export function listCouncil(villaId, limit = 10) {
   const rows = db.prepare(
-    'SELECT id, villa_id, round, participants, messages, proposals, created_at FROM council WHERE villa_id = ? ORDER BY id DESC LIMIT ?'
+    'SELECT id, villa_id, round, participants, messages, proposals, scores, dissent, created_at FROM council WHERE villa_id = ? ORDER BY id DESC LIMIT ?'
   ).all(villaId, Number(limit) || 10);
   return rows.map((r) => {
-    let messages = []; let proposals = [];
+    let messages = []; let proposals = []; let scores = {}; let dissent = [];
     try { messages = JSON.parse(r.messages); } catch { /* defekt: leer */ }
     try { proposals = JSON.parse(r.proposals); } catch { /* defekt: leer */ }
-    return { ...r, messages, proposals };
+    try { scores = JSON.parse(r.scores); } catch { /* defekt: unbewertet */ }
+    try { dissent = JSON.parse(r.dissent); } catch { /* defekt: keine Voten */ }
+    return { ...r, messages, proposals, scores, dissent };
   });
 }
 
