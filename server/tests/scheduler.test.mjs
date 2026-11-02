@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 process.env.VF_DB = join(mkdtempSync(join(tmpdir(), 'vf-sched-')), 'test.db');
-// Drei manuell gestartete Villen muessen parallel laufen koennen.
-process.env.VF_VILLA_SLOTS = '3';
+// Selbst ueberhoehte Konfigurationen duerfen nie mehr als zwei Villen starten.
+process.env.VF_VILLA_SLOTS = '9';
 const { db, now } = await import('../db.mjs');
 const { villaRanking, enqueueVillas, configureScheduler, schedulerStatus, cancelScheduledVilla, scheduleVilla, _resetScheduler } = await import('../scheduler.mjs');
 
@@ -29,7 +29,7 @@ test('Rangfolge: meister Fortschritt zuerst, Fehler kosten', () => {
   assert.ok(order.indexOf(clean) < order.indexOf(faulty), 'bei gleichem Fortschritt: Fehler zurueck');
 });
 
-test('Slot-Grenze: drei Startanforderungen laufen parallel, Queue bleibt FIFO', async () => {
+test('Slot-Grenze: maximal zwei Startanforderungen laufen parallel, Queue bleibt FIFO', async () => {
   _resetScheduler();
   const a = villa('A', 1, 9);
   const b = villa('B', 9, 1);
@@ -43,25 +43,25 @@ test('Slot-Grenze: drei Startanforderungen laufen parallel, Queue bleibt FIFO', 
     releases.set(id, () => { current -= 1; resolve(); });
   }) });
   enqueueVillas([a, b, c, d]);
-  assert.deepEqual(started, [a, b, c], 'die ersten drei Anforderungen starten unveraendert');
-  assert.equal(schedulerStatus().queued, 1);
+  assert.deepEqual(started, [a, b], 'nur die ersten zwei Anforderungen starten');
+  assert.equal(schedulerStatus().queued, 2);
   releases.get(b)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [a, b, c, d], 'B fertig -> D rueckt nach');
-  releases.get(d)();
+  assert.deepEqual(started, [a, b, c], 'B fertig -> C rueckt nach');
+  releases.get(c)();
   await new Promise((r) => setImmediate(r));
-  assert.deepEqual(started, [a, b, c, d], 'D fertig, kein weiterer Lauf wartet');
-  releases.get(c)(); releases.get(a)();
+  assert.deepEqual(started, [a, b, c, d], 'C fertig -> D rueckt nach');
+  releases.get(d)(); releases.get(a)();
   await new Promise((r) => setImmediate(r));
-  assert.ok(peak <= 3, `Spitze ${peak} ueber Grenze`);
+  assert.ok(peak <= 2, `Spitze ${peak} ueber Grenze`);
 });
 
 test('Einzelstopp entfernt nur die gewaehlte Villa aus der Warteschlange', () => {
   _resetScheduler();
-  const a = villa('Aktiv A', 1, 2), b = villa('Aktiv B', 2, 1), c = villa('Aktiv C', 3, 1), queued = villa('Wartend', 0, 5);
+  const a = villa('Aktiv A', 1, 2), b = villa('Aktiv B', 2, 1), queued = villa('Wartend', 0, 5);
   configureScheduler({ start: () => new Promise(() => {}) });
-  enqueueVillas([a, b, c, queued]);
-  assert.equal(schedulerStatus().active.length, 3);
+  enqueueVillas([a, b, queued]);
+  assert.equal(schedulerStatus().active.length, 2);
   assert.deepEqual(schedulerStatus().queue, [queued]);
   assert.equal(cancelScheduledVilla(queued), true);
   assert.equal(cancelScheduledVilla(queued), false);
@@ -106,7 +106,7 @@ test('produktionsfokus aktiviert CyberSarah und Revenue Engine, entfernt Legacy-
   const started = [];
   configureScheduler({ start: async (id) => { started.push(id); return new Promise(() => {}); } });
   db.prepare("INSERT OR REPLACE INTO control_settings(key,value) VALUES ('villaFocusId',?)").run(String(a));
-  assert.equal(schedulerStatus().slots, 3, 'Fokus darf die Parallel-Slots nicht reduzieren');
+  assert.equal(schedulerStatus().slots, 2, 'Fokus behaelt die feste Zwei-Spuren-Grenze');
   const enq = enqueueVillas([other, a, b]);
   assert.ok(enq.active.includes(a) && enq.active.includes(b), 'beide Produktionsvillaen laufen');
   assert.ok(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(other).autonomy === 0, 'geparkte Villa bleibt autonomy 0');
@@ -144,6 +144,31 @@ test('Neustart setzt den gespeicherten Abschlussmodus fuer jede Villa fort', asy
   _resetScheduler();
 });
 
+test('Unfertige Abschlussvilla reserviert ihren Slot waehrend des Backoffs', async () => {
+  _resetScheduler();
+  const a = villa('Unfertig A', 0, 2), b = villa('Aktiv B', 0, 2), c = villa('Wartend C', 0, 2);
+  db.prepare('UPDATE villas SET autonomy=1 WHERE id IN (?,?,?)').run(a, b, c);
+  let releaseB;
+  configureScheduler({ start: (id) => {
+    if (id === a) return Promise.resolve({ status: 'PAUSED' });
+    if (id === b) return new Promise((resolve) => { releaseB = resolve; });
+    return new Promise(() => {});
+  } });
+  scheduleVilla(a);
+  scheduleVilla(b);
+  scheduleVilla(c);
+  await new Promise((resolve) => setImmediate(resolve));
+  const waiting = schedulerStatus();
+  assert.deepEqual(waiting.retrying, [a]);
+  assert.deepEqual(waiting.active, [b]);
+  assert.deepEqual(waiting.queue, [c], 'neue Villa darf reservierten Abschlussplatz nicht uebernehmen');
+  releaseB({ status: 'COMPLETED' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(schedulerStatus().active, [c], 'nur die zweite freie Spur startet die naechste Villa');
+  cancelScheduledVilla(a);
+  _resetScheduler();
+});
+
 test('Modellausfall wartet mit Backoff und kann per Stopp abgebrochen werden', async () => {
   _resetScheduler();
   const id = villa('Route wartet', 0, 1);
@@ -176,26 +201,29 @@ test('Sprint 1: queued villas retain independent start options', async () => {
   _resetScheduler();
   const ids = Array.from({length:5},(_,i)=>villa(`Options ${i}`,0,1));
   const seen=[], releases=[];
-  configureScheduler({start:(id,options)=>{seen.push({id,options});return new Promise(r=>releases.push(r));}});
+  configureScheduler({start:(id,options)=>{seen.push({id,options});return new Promise(r=>releases.push(()=>r({status:'COMPLETED'})));}});
   ids.forEach((id,i)=>scheduleVilla(id,{concurrency:i+1,maxRounds:i+2,runToCompletion:i%2===0}));
   releases[0](); await new Promise(r=>setImmediate(r));
-  assert.equal(seen[3].options.concurrency,4);
-  assert.equal(seen[3].options.maxRounds,5);
-  assert.equal(seen[3].options.runToCompletion,false);
+  assert.equal(seen[2].options.concurrency,3);
+  assert.equal(seen[2].options.maxRounds,4);
+  assert.equal(seen[2].options.runToCompletion,true);
   releases[1](); await new Promise(r=>setImmediate(r));
+  assert.equal(seen[3].options.concurrency,4);
+  assert.equal(seen[3].options.runToCompletion,true);
+  releases[2](); await new Promise(r=>setImmediate(r));
   assert.equal(seen[4].options.concurrency,5);
   for(const release of releases)release();
   await new Promise(r=>setImmediate(r));_resetScheduler();
 });
 
-test('Sprint 2: explicit finite runs clear the persisted completion mode', async () => {
+test('Sprint 2: caller cannot disable finish-before-rotation', async () => {
   _resetScheduler();const id=villa('Finite',0,1);
   const {villaRunToCompletion}=await import('../scheduler.mjs');
   configureScheduler({start:async()=>({status:'PAUSED'})});
   scheduleVilla(id,{runToCompletion:true});
   await new Promise(r=>setImmediate(r));
   scheduleVilla(id,{runToCompletion:false});
-  assert.equal(villaRunToCompletion(id),false);
+  assert.equal(villaRunToCompletion(id),true);
   await new Promise(r=>setImmediate(r));_resetScheduler();
 });
 

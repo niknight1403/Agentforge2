@@ -28,11 +28,11 @@ db.prepare("INSERT INTO villas (name, idea, status, max_agents, autonomy, create
 const villaId = Number(db.prepare('SELECT id FROM villas ORDER BY id DESC LIMIT 1').get().id);
 
 test('Scheduler: begrenzte Villa-Slots und alle Startstellen ueber scheduleVilla', () => {
-  assert.ok(schedulerStatus().slots >= 1 && schedulerStatus().slots <= 2, 'ressourcenschonend maximal zwei parallele Villen als Standard');
+  assert.equal(schedulerStatus().slots, 2, 'genau zwei Villen duerfen parallel startbar sein');
   const srv = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8');
   assert.ok(!/[^A-Za-z.]orchestrate\(/.test(srv.replace(/scheduleVilla\(/g, '')), 'server.mjs startet keine Villa direkt');
   const sched = readFileSync(new URL('../scheduler.mjs', import.meta.url), 'utf8');
-  assert.ok(sched.includes('VF_VILLA_SLOTS ?? 2'), 'Slot-Default 2');
+  assert.ok(sched.includes('MAX_VILLA_SLOTS = 2'), 'harte Slot-Grenze 2');
   assert.ok(sched.includes('export function scheduleVilla'), 'scheduleVilla exportiert');
 });
 

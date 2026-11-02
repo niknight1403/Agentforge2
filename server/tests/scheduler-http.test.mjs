@@ -31,7 +31,7 @@ test('HTTP start, queue and stop preserve per-villa state and unfinished work',{
   assert.equal(first.status,202);assert.equal(first.body.alreadyRunning,false);assert.equal(first.body.runToCompletion,true);
   await Promise.race([inferenceStarted,pause(2000).then(()=>{throw Error('No LLM call');})]);
   const second=await call(`/api/villas/${ids[1]}/orchestrate`,{runToCompletion:false});
-  assert.equal(second.body.queued,true);assert.equal(second.body.runToCompletion,false);assert.equal(second.body.alreadyRunning,false);
+  assert.equal(second.body.queued,true);assert.equal(second.body.runToCompletion,true);assert.equal(second.body.alreadyRunning,false);
   const villas=(await call('/api/villas')).body;
   assert.equal(villas.find(v=>v.id===ids[0]).executing,1);assert.equal(villas.find(v=>v.id===ids[1]).queued,1);assert.equal(villas.find(v=>v.id===ids[0]).retry,null);
   await call(`/api/villas/${ids[1]}/stop`,{});await call(`/api/villas/${ids[0]}/stop`,{});

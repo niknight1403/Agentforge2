@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceCommit": "6064f2f158a947e7a77e578cbd6c67a91a680d0b",
+  "sourceCommit": "87a3d40f00b66e4302bedd853aff873957a26782",
   "design": "Aurora / sichtbare Variante 6",
   "completed": [
     "VF-0001",
@@ -23,11 +23,11 @@
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
   "executionMode": "foreground-and-scheduled-iterations",
-  "workBranch": "work/release-after-deploy",
-  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/34",
+  "workBranch": "fix/resource-constrained-villa-scheduling-20261102",
+  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/49",
   "qualityBaseline": {
-    "tests": 361,
-    "pass": 361,
+    "tests": 487,
+    "pass": 487,
     "fail": 0,
     "browserE2E": 20,
     "browserAuditScopes": 9,
@@ -35,25 +35,25 @@
   },
   "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden.",
   "integratedCommit": "6064f2f158a947e7a77e578cbd6c67a91a680d0b",
-  "version": "1.60.5",
-  "pullRequestStatus": "merged",
+  "version": "1.60.8",
+  "pullRequestStatus": "open: local completion-contract extension verified; CI for extension pending",
   "backgroundExecution": false,
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
-  "releaseStatus": "blocked: live probe raced deployment; current semantic Master probe failed; product acceptance open",
-  "checkpointParent": "35491d80662d51947fd22e0dcc0d2cba24503557",
-  "nextAction": "PR #35 Release-Reihenfolge integrieren. Interaktive Kaskade anhand des realen 60s-Fehlers reparieren: eine Oracle-Inferenz verbraucht das Restbudget, gepruefte Alternativen werden nicht erreicht. Danach echte auftragsbezogene Masterprobe und isolierte Produktabnahme.",
+  "releaseStatus": "blocked: proposed scheduler commit not deployed; fresh production and per-villa product acceptance evidence pending",
+  "checkpointParent": "87a3d40f00b66e4302bedd853aff873957a26782",
+  "nextAction": "PR #49 nach CI integrieren; danach Deploy-Health, frische Master-Modellantwort ohne Nebenaktionen, Browserabnahme sowie echte Produktabnahmen und Artefakte der vereinbarten Villen pruefen.",
   "lastMaintenance": {
-    "baseCommit": "16bee853539d071c6f9f7bb3b1ca56d5039f8b70",
+    "baseCommit": "1de8c7b220e7ce7aaa048576f237d9803e3b438f",
     "pullRequests": [
-      34
+      49
     ],
-    "evidence": "docs/quality/green-recovery-evidence-2026-11-01.json",
-    "audit": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970917",
+    "evidence": "docs/quality/two-villa-finish-first-2026-11-02.json",
+    "audit": null,
     "runtimeAutomation": {
       "available": true,
-      "mechanism": "extension of existing developCycle, no extra scheduler",
+      "mechanism": "existing scheduler and developCycle only; no duplicate scheduler",
       "availableForVillas": 16,
-      "eligibleWithActiveVilla": 14
+      "eligibleWithActiveVilla": 2
     }
   },
   "lastRealModelVerification": {
@@ -85,5 +85,5 @@
     "notifyOnlyWhenAllRequiredEvidencePasses": true,
     "continuousExecution": false
   },
-  "followUpPullRequest": "https://github.com/niknight1403/Agentforge2/pull/35"
+  "followUpPullRequest": "https://github.com/niknight1403/Agentforge2/pull/49"
 }

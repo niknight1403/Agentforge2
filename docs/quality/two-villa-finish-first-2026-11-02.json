@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "1de8c7b220e7ce7aaa048576f237d9803e3b438f",
+  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/49",
+  "scope": "Maximal zwei reservierte Villen-Spuren; Abschluss vor Rotation; pausierte Villen bleiben pausiert.",
+  "checks": [
+    {
+      "command": "node --import ./server/tests/_env.mjs --test server/tests/scheduler.test.mjs server/tests/scheduler-http.test.mjs server/tests/master-control.test.mjs server/tests/sprint10.test.mjs server/tests/scout-proposal-approval.test.mjs",
+      "exitCode": 0,
+      "tests": 39,
+      "passed": 39,
+      "failed": 0
+    },
+    {
+      "command": "npm test",
+      "exitCode": 0,
+      "tests": 487,
+      "passed": 487,
+      "failed": 0
+    },
+    {
+      "command": "npm run check:syntax",
+      "exitCode": 0,
+      "files": 203
+    },
+    {
+      "command": "npm run check:secrets",
+      "exitCode": 0,
+      "result": "clean"
+    },
+    {
+      "command": "npm run build:web",
+      "exitCode": 0,
+      "version": "1.60.8",
+      "files": 13,
+      "localHtmlAssets": 8
+    }
+  ],
+  "notProvenByThisEvidence": [
+    "deployment of the proposed commit",
+    "fresh production Master response",
+    "real product acceptance of every Villa",
+    "new release artifacts"
+  ]
+}
