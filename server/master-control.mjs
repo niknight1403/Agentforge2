@@ -168,7 +168,11 @@ export function createMasterControl(deps) {
       }
       case 'start_villa':
         if (db.prepare('SELECT status FROM villas WHERE id=?').get(a.villaId).status === 'ARCHIVED') throw new Error('Archivierte Villa zuerst wiederherstellen.');
-        db.prepare('UPDATE villas SET autonomy=1 WHERE id=?').run(a.villaId); result = await startVilla(a.villaId); break;
+        result = await startVilla(a.villaId);
+        // Der Scheduler entscheidet zuerst ueber Projektfokus und Kapazitaet.
+        // Ein abgelehnter Start darf eine pausierte Villa nicht reaktivieren.
+        if (!result?.refused) db.prepare('UPDATE villas SET autonomy=1,updated_at=? WHERE id=?').run(now(),a.villaId);
+        break;
       case 'archive_duplicates': result = archiveDuplicates(isRunning); break;
       case 'restore_villa': result = restoreVilla(a.villaId); break;
       case 'list_suggestions': result = suggestions(a.villaId ?? null,isRunning); break;

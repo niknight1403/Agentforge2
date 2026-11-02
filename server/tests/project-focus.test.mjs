@@ -54,21 +54,25 @@ test('Fokus blockiert den Start im Scheduler mit Grund statt still', () => {
   reset();
   const a = villa('Projekt A');
   const other = villa('Nebenprojekt');
+  db.prepare("UPDATE villas SET autonomy=0,status='PAUSED' WHERE id=?").run(other);
   focus.setVillaFocus([a]);
   const refused = sched.scheduleVilla(other, { runToCompletion: true });
   assert.equal(refused.refused, other);
   assert.equal(refused.refusedCode, 'FOCUS_ACTIVE');
   assert.ok(!refused.queue.includes(other), 'abgelehnte Villa landet nicht in der Warteschlange');
   assert.match(String(refused.refusedMessage), /Projekt-Fokus aktiv/);
+  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(other).autonomy, 0, 'abgelehnter Start reaktiviert die pausierte Villa nicht');
 });
 
 test('Fokus-Villa wird normal angenommen', () => {
   reset();
   const a = villa('Projekt A');
+  db.prepare("UPDATE villas SET autonomy=0,status='PAUSED' WHERE id=?").run(a);
   focus.setVillaFocus([a]);
   const status = sched.scheduleVilla(a, { runToCompletion: true });
   assert.equal(status.refused, undefined);
   assert.ok(status.active.includes(a) || status.queue.includes(a));
+  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(a).autonomy, 1);
 });
 
 test('Status zeigt Fortschritt je Fokus-Villa', () => {

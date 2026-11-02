@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-11-02T17:36:30Z",
+  "baseCommit": "1dd7989b5d7813c4f761d57a950fd31a1f4bf903",
+  "blocker": {
+    "type": "FOCUS_REFUSAL_REACTIVATED_PAUSED_VILLA",
+    "productionEvidence": {
+      "workflowRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41492749685",
+      "message": "Autonomie bleibt aus (3/2 Villen arbeiten)",
+      "targetVilla": 34
+    },
+    "rootCause": "HTTP and Master start paths set villas.autonomy=1 before the existing scheduler could refuse the start with FOCUS_ACTIVE."
+  },
+  "change": {
+    "scope": [
+      "server/scheduler.mjs",
+      "server/server.mjs",
+      "server/master-control.mjs"
+    ],
+    "behavior": "The existing scheduler owns activation after the focus decision. Refused starts preserve autonomy=0; accepted starts activate the selected villa.",
+    "reversible": true,
+    "newScheduler": false,
+    "newProviderRegistry": false
+  },
+  "verification": {
+    "targeted": {
+      "command": "node --import ./server/tests/_env.mjs --test server/tests/project-focus.test.mjs server/tests/master-control.test.mjs server/tests/scheduler-http.test.mjs",
+      "passed": 29,
+      "failed": 0
+    },
+    "full": {
+      "command": "npm test",
+      "passed": 489,
+      "failed": 0
+    },
+    "syntax": {
+      "command": "npm run check:syntax",
+      "files": 203,
+      "passed": true
+    },
+    "secrets": {
+      "command": "npm run check:secrets",
+      "passed": true
+    },
+    "webBuild": {
+      "command": "npm run build:web",
+      "version": "1.60.8",
+      "files": 13,
+      "assets": 8,
+      "passed": true
+    },
+    "localBrowser": {
+      "command": "npm run test:design",
+      "passed": false,
+      "blockedBy": "Chrome executable unavailable (ENOENT); CI browser evidence required for integrated commit."
+    }
+  },
+  "remainingRequiredEvidence": [
+    "Integrated commit CI and deployment health",
+    "Production focus inventory shows no refused Villa reactivated and at most two working Villas",
+    "Fresh real Master model response without side effects",
+    "Browser acceptance of integrated commit",
+    "Deep Villa 34 build, tests, smoke and usable product artifact",
+    "All agreed Villa product acceptances and downloadable artifacts"
+  ]
+}

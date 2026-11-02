@@ -127,6 +127,17 @@ test('Expliziter Start reaktiviert eine zuvor pausierte Villa',async()=>{
  const out=await service.turn({message:'Starte Studio',requestId:'start-villa-resume-1'});
  assert.equal(out.ok,true);assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(id).autonomy,1);
 });
+test('Vom Scheduler abgelehnter Start reaktiviert eine pausierte Villa nicht',async()=>{
+ const id=villa();db.prepare("UPDATE villas SET autonomy=0,status='PAUSED' WHERE id=?").run(id);
+ const service=createMasterControl({
+  chat:async()=>({content:JSON.stringify({answer:'Fokus bleibt bestehen.',actions:[{type:'start_villa',args:{villaId:id}}]})}),
+  createVilla:async()=>{throw Error('unexpected');},isRunning:()=>false,stopVilla:()=>false,cancelScheduledVilla:()=>false,
+  startVilla:()=>({refused:id,refusedCode:'FOCUS_ACTIVE'}),packState,setPackEnabled,toolSpecs:()=>[],emit:()=>{}
+ });
+ const out=await service.turn({message:'Starte die pausierte Neben-Villa',requestId:'focus-refusal-no-reactivation-1'});
+ assert.equal(out.ok,true);assert.equal(out.steps[0].result.refusedCode,'FOCUS_ACTIVE');
+ assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(id).autonomy,0);
+});
 
 test('Master planning context stays valid JSON, bounds large catalogs and omits skill bodies',async()=>{
  const {masterPlanningContext}=await import('../master-control.mjs');
