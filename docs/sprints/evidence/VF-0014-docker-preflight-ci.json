@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "sprint": "VF-0014",
-  "status": "in_progress",
-  "sprintAcceptanceComplete": false,
+  "status": "done",
+  "sprintAcceptanceComplete": true,
   "sourceCommit": "0d0cab35e384b2fe50c60b3f49d56b1e893c0c29",
   "implementation": [
     "Run the existing read-only sandbox preflight in the Docker integration workflow after resolving a pre-pulled CI image to an immutable digest.",
@@ -10,13 +10,23 @@
     "Assert the workflow wires only the already-present digest image and never invokes pull/start through the preflight."
   ],
   "verification": {
-    "preflightUnitTests": 7,
-    "priorPreflightUnitTestsPassed": 7,
-    "realDockerIntegrationWorkflow": "pending"
+    "preflightUnitTests": 8,
+    "preflightUnitTestsPassed": 8,
+    "realDockerIntegrationWorkflow": "passed",
+    "workflowRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41522821280",
+    "preflightOutput": {
+      "ready": true,
+      "modeConfigured": true,
+      "imagePinned": true,
+      "dockerAvailable": true,
+      "imagePresent": true
+    },
+    "isolationTests": "passed: nonroot, read-only host root, project writes, no network, timeout cleanup"
   },
   "notProven": [
     "Production Docker configuration and image were not inspected or changed.",
     "The CI image is not the production sandbox image.",
     "No Villa build, product acceptance, APK release or production deploy was run."
-  ]
+  ],
+  "implementationCommit": "b9c460dc267777ab2548635177b2b03b2f8756a9"
 }

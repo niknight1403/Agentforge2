@@ -47,6 +47,45 @@ jobs:
           fi
       - name: Android lint, unit tests and debug build
         run: gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
+      - name: Build and verify release signature with ephemeral CI-only key
+        shell: bash
+        run: |
+          set -euo pipefail
+          keystore="$RUNNER_TEMP/villaforge-ephemeral-ci.keystore"
+          release_apk=app/build/outputs/apk/release/app-release.apk
+          trap 'rm -f "$keystore" "$release_apk"' EXIT
+          password="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt -storetype JKS \
+            -keystore "$keystore" -storepass "$password" -keypass "$password" \
+            -alias ci-ephemeral -dname "CN=VillaForge Ephemeral CI" \
+            -keyalg RSA -keysize 2048 -validity 2 >/dev/null 2>&1
+          export VILLA_RELEASE_KEYSTORE_PATH="$keystore"
+          export VILLA_RELEASE_STORE_PASSWORD="$password"
+          export VILLA_RELEASE_KEY_ALIAS=ci-ephemeral
+          export VILLA_RELEASE_KEY_PASSWORD="$password"
+          gradle :app:assembleRelease --no-daemon --stacktrace
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$sdk_root" ]; then
+            echo "Android SDK root is not configured."
+            exit 1
+          fi
+          apksigner=$(find "$sdk_root/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)
+          if [ -z "$apksigner" ]; then
+            echo "Android build-tools apksigner is unavailable."
+            exit 1
+          fi
+          debug_apk=app/build/outputs/apk/debug/app-debug.apk
+          debug_digest=$("$apksigner" verify --print-certs "$debug_apk" | sed -nE 's/^Signer #1 certificate SHA-256 digest: ([[:xdigit:]]{64})$/\1/p' | tr '[:upper:]' '[:lower:]')
+          release_digest=$("$apksigner" verify --print-certs "$release_apk" | sed -nE 's/^Signer #1 certificate SHA-256 digest: ([[:xdigit:]]{64})$/\1/p' | tr '[:upper:]' '[:lower:]')
+          if ! [[ "$debug_digest" =~ ^[0-9a-f]{64}$ && "$release_digest" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Could not verify Android APK signing certificates."
+            exit 1
+          fi
+          if [ "$debug_digest" = "$release_digest" ]; then
+            echo "Release APK unexpectedly uses the debug signing certificate."
+            exit 1
+          fi
+          echo "Release APK signature verified with a CI-only key distinct from the debug signer."
       - uses: actions/upload-artifact@v4
         with:
           name: villaforge-debug-apk

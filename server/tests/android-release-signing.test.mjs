@@ -38,3 +38,13 @@ test('Android PR CI verifies missing production signing blocks APK assembly',()=
  assert.match(androidCheck,/Production release signing is not configured\./);
  assert.match(androidCheck,/An APK was produced despite missing production signing/);
 });
+
+test('Android PR CI proves release signing works without publishing the ephemeral APK',()=>{
+ assert.match(androidCheck,/Build and verify release signature with ephemeral CI-only key/);
+ assert.match(androidCheck,/keytool -genkeypair/);
+ assert.match(androidCheck,/gradle :app:assembleRelease/);
+ assert.match(androidCheck,/verify --print-certs/);
+ assert.match(androidCheck,/"\$debug_digest" = "\$release_digest"/);
+ assert.match(androidCheck,/trap 'rm -f "\$keystore" "\$release_apk"' EXIT/);
+ assert.doesNotMatch(androidCheck,/path: app\/build\/outputs\/apk\/release/);
+});

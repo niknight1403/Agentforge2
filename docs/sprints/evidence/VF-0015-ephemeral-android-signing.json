@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "sprint": "VF-0015",
+  "status": "in_progress",
+  "sprintAcceptanceComplete": false,
+  "sourceCommit": "b9c460dc267777ab2548635177b2b03b2f8756a9",
+  "implementation": [
+    "Generate a random, per-run CI-only JKS key in runner temp storage.",
+    "Build the release APK with the configured production-signing code path.",
+    "Verify APK signatures and assert release signer differs from the debug signer without printing certificate digests.",
+    "Delete the ephemeral keystore and never upload the release APK."
+  ],
+  "localVerification": {
+    "androidSigningPolicyTests": 5,
+    "passed": 5,
+    "gradleBuild": "not available on local Windows host",
+    "linuxAndroidCi": "pending"
+  },
+  "notProven": [
+    "The ephemeral key is not a production signing identity.",
+    "No update compatibility or production certificate continuity was tested.",
+    "No production release or deploy was started."
+  ]
+}

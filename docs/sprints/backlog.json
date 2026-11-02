@@ -394,27 +394,39 @@
       "risks": [
         "CI beweist nur die Mechanik mit CI-Image; Produktionshostkonfiguration und freigegebenes Image bleiben extern"
       ],
-      "status": "in_progress",
+      "status": "done",
       "scopeDefined": true,
       "evidence": [
         "docs/sprints/evidence/VF-0014-docker-preflight-ci.json"
       ],
-      "implementationCommit": null
+      "implementationCommit": "b9c460dc267777ab2548635177b2b03b2f8756a9"
     },
     {
       "id": "VF-0015",
       "area": "Produktionsblocker und Release-Gates",
-      "goal": null,
-      "benefit": "Produktionsblocker und Release-Gates",
-      "dependencies": [],
-      "modules": [],
-      "acceptanceCriteria": [],
-      "risks": [
-        "Scope vor Ausfuehrung anhand gemessener Ergebnisse festlegen"
+      "goal": "Konfigurierte Android-Release-Signierung mit Ephemeralschluessel erproben",
+      "benefit": "Gradle-Signaturkonfiguration und APK-Zertifikat werden ohne Produktionsschluessel end-to-end geprueft",
+      "dependencies": [
+        "VF-0013"
       ],
-      "status": "unscoped",
-      "scopeDefined": false,
-      "evidence": [],
+      "modules": [
+        ".github/workflows/android-check.yml",
+        "server/tests/android-release-signing.test.mjs"
+      ],
+      "acceptanceCriteria": [
+        "Android-PR-CI erzeugt einen nur fuer den Lauf gueltigen Keystore und baut damit ein Release-APK",
+        "apksigner bestaetigt die APK-Signatur",
+        "Ephemerales Release-Zertifikat weicht vom Debug-Zertifikat ab",
+        "Keystore wird nach dem Check entfernt und Release-APK wird nicht als Artefakt publiziert"
+      ],
+      "risks": [
+        "Ephemeraler CI-Schluessel prueft nur den Buildpfad; Produktionsschluessel, Identitaet und Update-Kontinuitaet muessen extern bestaetigt werden"
+      ],
+      "status": "in_progress",
+      "scopeDefined": true,
+      "evidence": [
+        "docs/sprints/evidence/VF-0015-ephemeral-android-signing.json"
+      ],
       "implementationCommit": null
     },
     {
