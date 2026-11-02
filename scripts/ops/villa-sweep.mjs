@@ -159,7 +159,7 @@ function reparaturAuftrag(id, blocker) {
   if (DRY) { console.log('  [dry-run] wuerde Reparaturaufgabe anlegen/aktualisieren'); return null; }
   const titel = '[REPARATUR] Produktabnahme bestehen';
   const text = 'Der Sweep hat die Abnahme echt ausgefuehrt. Offene Befunde: ' + blocker.join('; ').slice(0, 900) +
-    '. Behebe die Ursache im Projekt, nicht die Pruefung. Akzeptanz: build, test und smoke laufen am unveraenderten Quellstand erfolgreich.';
+    '. MVP-RELEASE-FOKUS: Implementiere zuerst genau einen nutzbaren Ende-zu-Ende-Nutzerfluss im bestehenden Projekt. Bearbeite Quellcode, Tests und reale Build-Konfiguration statt neue Agenten, Ideen oder generische Planungsaufgaben anzulegen. Fuehre Build, Tests und Smoke echt aus; behebe konkrete Fehler im Produkt. Keine Platzhalter, keine simulierten Ergebnisse, keine Umgehung der Pruefung. Akzeptanz: nutzbarer MVP, build, tests und smoke am selben Quellstand bestanden und echtes Artefakt vorhanden.';
   const offen = db.prepare("SELECT id FROM tasks WHERE villa_id=? AND title=? AND status NOT IN ('DONE','FAILED')").get(id, titel);
   if (offen) {
     db.prepare('UPDATE tasks SET description=?, updated_at=? WHERE id=?').run(text, now(), offen.id);
@@ -231,6 +231,7 @@ for (const villa of kandidaten) {
     try { blockers = JSON.parse(last?.blockers || '[]'); } catch {}
     for (const kind of ['build', 'tests', 'smoke', 'quality']) console.log(`  letzter ${kind}: ${String(checks[kind]?.status || 'missing').slice(0, 30)}`);
     console.log(`  blockierende Abnahmebefunde: ${Array.isArray(blockers) ? blockers.length : 0} (Details im gesicherten Hub-Pruefbericht)`);
+    if (Array.isArray(blockers) && blockers.length && !DRY) reparaturAuftrag(villa.id, blockers.slice(0, 4).map((b) => String(b).slice(0, 180)));
     continue;
   }
   bearbeitet += 1;
@@ -279,7 +280,10 @@ if (bearbeitet === 0 && arrest === 0 && !DRY) {
   if (beste) {
     console.log(`\n== AUFWECKEN: Villa ${beste.id} "${beste.name}" (${beste.offen} offene Aufgaben) ==`);
     if (autonomieFreigeben(beste.id, beste.name)) {
-      reparaturAuftrag(beste.id, ['Quellstand unveraendert, Abnahme weiter offen - Arbeit fortsetzen und Befunde beheben']);
+      const letzte = db.prepare('SELECT blockers FROM project_verifications WHERE villa_id=?').get(beste.id);
+      let ursachen = [];
+      try { ursachen = JSON.parse(letzte?.blockers || '[]'); } catch {}
+      reparaturAuftrag(beste.id, Array.isArray(ursachen) && ursachen.length ? ursachen.slice(0, 4) : ['Quellstand unveraendert, Build/Test/Smoke-Abnahme offen']);
       arrest += 1;
     }
   }
