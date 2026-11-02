@@ -364,12 +364,12 @@
       "risks": [
         "Produktionsschluessel muss vom Release-Owner sicher erzeugt und als GitHub Secrets hinterlegt werden; Werte werden nicht vom Agenten erzeugt, gelesen oder gesetzt"
       ],
-      "status": "in_progress",
+      "status": "done",
       "scopeDefined": true,
       "evidence": [
         "docs/sprints/evidence/VF-0013-android-signing.json"
       ],
-      "implementationCommit": null
+      "implementationCommit": "0d0cab35e384b2fe50c60b3f49d56b1e893c0c29"
     },
     {
       "id": "VF-0014",

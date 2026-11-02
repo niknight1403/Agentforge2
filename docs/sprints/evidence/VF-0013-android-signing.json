@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "sprint": "VF-0013",
-  "status": "in_progress",
-  "sprintAcceptanceComplete": false,
+  "status": "done",
+  "sprintAcceptanceComplete": true,
   "productionSigningConfigured": false,
   "sourceCommit": "49b95f727c7fa0a98f0683649aa6b8171b2c12f3",
   "confirmedGap": "The Android release variant was explicitly signed with the debug key; production signing material is not available in the repository and was not inspected.",
@@ -16,7 +16,7 @@
   "regressionTests": {
     "androidSigningPolicyTests": 4,
     "passed": 4,
-    "releaseAssemblyGuardOnLinuxCI": "pending"
+    "releaseAssemblyGuardOnLinuxCI": "passed"
   },
   "requiredExternalOwnerAction": "The release owner must create/use the stable production Android signing key and configure VILLA_RELEASE_KEYSTORE_BASE64, VILLA_RELEASE_STORE_PASSWORD, VILLA_RELEASE_KEY_ALIAS and VILLA_RELEASE_KEY_PASSWORD in GitHub Actions Secrets. Never place values in repository files or logs.",
   "notProven": [
@@ -24,5 +24,8 @@
     "No Gradle/Android SDK is installed on the current Windows host, so the Android build was not executed locally.",
     "No production-signed APK was built or verified.",
     "No production release or deploy was started."
-  ]
+  ],
+  "implementationCommit": "0d0cab35e384b2fe50c60b3f49d56b1e893c0c29",
+  "androidCiRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41521892544",
+  "androidCiResult": "The missing-signing assembleRelease guard passed, followed by Android lint, unit tests and assembleDebug."
 }

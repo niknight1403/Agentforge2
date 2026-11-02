@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceCommit": "d91c03aca9d7498a34dd2d314d4a03f1ef9503ed",
+  "sourceCommit": "b9c460dc267777ab2548635177b2b03b2f8756a9",
   "design": "Aurora / sichtbare Variante 6",
   "completed": [
     "VF-0001",
@@ -12,10 +12,11 @@
     "VF-0007",
     "VF-0008",
     "VF-0011",
-    "VF-0012"
+    "VF-0012",
+    "VF-0013"
   ],
-  "current": "VF-0013",
-  "next": "VF-0013",
+  "current": "VF-0014",
+  "next": "VF-0014",
   "blockers": [
     "Production project execution previously defaulted to host mode when VF_PROJECT_SANDBOX was unset. The bounded fix fails closed in NODE_ENV=production until a pinned isolated runner is explicitly configured.",
     "Deep Villa 34 still has no accepted usable product; build/smoke require next and tests require jest.",
@@ -39,7 +40,7 @@
   "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden.",
   "integratedCommit": "6aacb3e62ea4210eb8bc1d801c96783077115e2a",
   "version": "1.60.8",
-  "pullRequestStatus": "open; checks green through d91c03aca9d7498a34dd2d314d4a03f1ef9503ed; VF-0013 Android negative signing build test pending",
+  "pullRequestStatus": "open; VF-0013 Android negative signing build and Android checks passed on 0d0cab35; VF-0014 Docker integration CI pending on b9c460d",
   "backgroundExecution": false,
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
   "releaseStatus": "blocked: verified Villa product, production Docker sandbox and managed Android signing identity pending",
