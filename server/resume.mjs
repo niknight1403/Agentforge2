@@ -1,6 +1,6 @@
 import { db } from './db.mjs';
 import { orchestrate } from './agents.mjs';
-import { enqueueVillas, configureScheduler, villaRanking, villaRunToCompletion } from './scheduler.mjs';
+import { enqueueVillas, configureScheduler, villaRanking } from './scheduler.mjs';
 
 /**
  * Setzt Laeufe fort, die durch einen Neustart abgebrochen wurden.
@@ -28,5 +28,5 @@ export function resumePendingVillas({ concurrency = 0, maxRounds = 6, start = or
 }
 
 export function configureResumeScheduler({ concurrency = 0, maxRounds = 6, start = orchestrate } = {}) {
-  configureScheduler({ start: (id, options) => start(id, options ?? { concurrency, maxRounds, runToCompletion: villaRunToCompletion(id) }) });
+  configureScheduler({ start: (id, options) => start(id, options ?? { concurrency, maxRounds, runToCompletion: true }) });
 }

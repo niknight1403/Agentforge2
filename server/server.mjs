@@ -952,7 +952,7 @@ async function api(req, res, url) {
     if (villa.status === 'ARCHIVED') return json(res, 409, { error: 'Archivierte Villa zuerst wiederherstellen.' });
     const b = await readBody(req).catch(() => ({}));
     db.prepare('UPDATE villas SET autonomy=1,updated_at=? WHERE id=?').run(now(), id);
-    const runToCompletion = b.runToCompletion !== false;
+    const runToCompletion = true;
     const alreadyRunning = isRunning(id);
     const scheduled = scheduleVilla(id, { concurrency: Number(b.concurrency) || 0, maxRounds: Number(b.maxRounds) || 6, runToCompletion, force: true });
     if (scheduled.refused) return json(res, 409, { ok: false, code: scheduled.refusedCode, error: scheduled.refusedMessage, focus: focusStatus() });

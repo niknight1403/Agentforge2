@@ -1,12 +1,14 @@
 /**
- * Villa-Scheduler: bis zu drei Villen laufen parallel; weitere warten fair in der Queue.
+ * Villa-Scheduler: maximal zwei Villen arbeiten parallel; weitere warten fair in der Queue.
  *
  * Problem: Nach einem Neustart setzte der Hub alle unterbrochenen Villen
  * gleichzeitig fort (11 Villen x 4 Agenten). Auf 4 Kernen mit einem einzigen
  * Ollama endet das im Dauerstau, und selbst /api/health antwortet nicht mehr.
  *
- * Loesung: Es laufen standardmaessig drei Villen gleichzeitig. Weitere Laeufe
- * bleiben einzeln steuerbar und warten in einer fairen Queue.
+ * Loesung: Es laufen genau bis zu zwei Villen gleichzeitig. Weitere Laeufe
+ * bleiben einzeln steuerbar und warten in einer fairen Queue. Ein belegter
+ * Platz bleibt auch waehrend eines Modell-Backoffs fuer dieselbe unfertige
+ * Villa reserviert; erst Produktabnahme oder expliziter Stopp geben ihn frei.
  * Die Reihenfolge bestimmt der Fortschritt: Villen, die am weitesten sind,
  * werden zuerst fertig gebaut; danach rueckt die naechste nach. Dadurch
  * entstehen schneller vollstaendige Ergebnisse statt vieler halbfertiger.
@@ -38,7 +40,8 @@ export function setVillaRunToCompletion(id, enabled) {
   else db.prepare('DELETE FROM control_settings WHERE key=?').run(key);
   return villaRunToCompletion(id);
 }
-const SLOTS = () => Math.max(1, Math.min(10, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? 2)) || 6));
+const MAX_VILLA_SLOTS = 2;
+const SLOTS = () => Math.max(1, Math.min(MAX_VILLA_SLOTS, Number(getSetting('villaSlots', process.env.VF_VILLA_SLOTS ?? MAX_VILLA_SLOTS)) || MAX_VILLA_SLOTS));
 
 /** Fortschritt und Rang aller Villen in einer einzigen Abfrage. */
 export function villaRanking() {
@@ -71,6 +74,10 @@ const generations = new Map(); // invalidate late results after an explicit stop
 const retryDetails = new Map();
 const focusVillaIdsSafe = () => { try { return focusVillaIds(); } catch { return []; } };
 let starter = null;        // Funktion (villaId) => Promise, die den Lauf startet
+
+function occupiedSlots() {
+  return new Set([...active, ...retryTimers.keys()]).size;
+}
 
 /** Setzt die Startfunktion (orchestrate) - vermeidet zyklische Importe. */
 export function configureScheduler({ start }) {
@@ -105,7 +112,10 @@ function retryVilla(id, requestedDelayMs = 15_000, reason = 'MODEL_UNAVAILABLE')
     retryDetails.delete(villaId);
     const villa = db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(villaId);
     if (!villa || villa.autonomy !== 1 || villa.status === 'ARCHIVED') return;
-    enqueueVillas([villaId]);
+    // Dieselbe unfertige Villa behaelt ihre Ausfuehrungsspur. Sie wird vor
+    // spaeter eingereihten Villen fortgesetzt, sobald der Backoff endet.
+    if (!active.has(villaId) && !queue.includes(villaId)) queue.unshift(villaId);
+    pump();
   }, delayMs);
   timer.unref?.();
   retryTimers.set(villaId, timer);
@@ -130,10 +140,10 @@ export function cancelScheduledVilla(id) {
 }
 
 function pump() {
-  while (starter && active.size < SLOTS() && queue.length) {
+  while (starter && occupiedSlots() < SLOTS() && queue.length) {
     const id = queue.shift();
-    const villa=db.prepare('SELECT status FROM villas WHERE id=?').get(id);
-    if(active.has(id)||!villa||['ARCHIVED','STOPPING','COMPLETED'].includes(villa.status)){runOptions.delete(id);continue;}
+    const villa=db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(id);
+    if(active.has(id)||!villa||villa.autonomy!==1||['ARCHIVED','STOPPING','COMPLETED'].includes(villa.status)){runOptions.delete(id);continue;}
     active.add(id);
     const generation = generations.get(id) || 0;
     const failed = (err) => {
@@ -151,6 +161,7 @@ function pump() {
         .then((out) => {
           if (generation !== (generations.get(id) || 0)) return;
           if (out?.retryAfterMs) retryVilla(id, out.retryAfterMs);
+          else if (out?.status !== 'COMPLETED' && villaRunToCompletion(id)) retryVilla(id, 15_000, 'PRODUCT_INCOMPLETE');
           else retryCounts.delete(id);
         })
         .catch(failed)
@@ -179,8 +190,8 @@ export function enqueueVillas(ids) {
 }
 
 /** Einheitlicher Einstieg: alle automatischen und manuellen Starts laufen
- *  ueber denselben Scheduler (Default 3 Slots). */
-export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, runToCompletion = true, force = false } = {}) {
+ *  ueber denselben Scheduler (maximal zwei reservierte Ausfuehrungsspuren). */
+export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, force = false } = {}) {
   // Projekt-Fokus (Nikos Auftrag 2026-11-02): Solange ein Fokus steht, starten
   // nur die Fokus-Villen. Die Absage nennt den Grund, statt still nichts zu tun.
   releaseFocusIfComplete();
@@ -196,11 +207,13 @@ export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, runToComplet
     retryDetails.delete(Number(id));
   }
   if (retryTimers.has(Number(id))) return schedulerStatus();
-  setVillaRunToCompletion(id, runToCompletion);
+  // Nutzerstarts sind Abschlusslaeufe. Eine Villa gibt ihren Platz erst nach
+  // echter Produktabnahme oder einem ausdruecklichen Stopp frei.
+  setVillaRunToCompletion(id, true);
   runOptions.set(Number(id), {
     concurrency: Math.max(0, Math.min(32, Math.floor(Number(concurrency) || 0))),
     maxRounds: Math.max(1, Math.min(10000, Math.floor(Number(maxRounds) || 6))),
-    runToCompletion: Boolean(runToCompletion)
+    runToCompletion: true
   });
   if (!starter) configureScheduler({ start: orchestrate });
   const status = enqueueVillas([id]);

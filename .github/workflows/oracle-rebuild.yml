@@ -129,7 +129,7 @@ jobs:
           cat > "/etc/systemd/system/${UNIT}.d/zz-load.conf" <<'LOADCONF'
           [Service]
           Environment="VF_LLM_MAX_CONCURRENT=2"
-          Environment="VF_VILLA_SLOTS=5"
+          Environment="VF_VILLA_SLOTS=2"
           Environment="VF_CMD_MAX_CONCURRENT=1"
           LOADCONF
           systemctl daemon-reload
@@ -413,9 +413,9 @@ jobs:
           set -e
           HUBENV=/opt/villaforge/hub.env
           touch $HUBENV
-          # 5 Villen parallel, je max 2 gleichzeitige LLM-Anfragen (bleibt unter Free-Tier-Budget)
+          # Zwei Abschluss-Spuren; jede Villa behaelt ihre Spur bis zur Produktabnahme oder zum Stopp.
           sed -i '/^VF_VILLA_SLOTS=/d; /^VF_MAX_CONCURRENCY=/d' $HUBENV
-          echo "VF_VILLA_SLOTS=5" >> $HUBENV
+          echo "VF_VILLA_SLOTS=2" >> $HUBENV
           echo "VF_MAX_CONCURRENCY=2" >> $HUBENV
           chmod 600 $HUBENV
           grep -E "VF_VILLA_SLOTS|VF_MAX_CONCURRENCY" $HUBENV
