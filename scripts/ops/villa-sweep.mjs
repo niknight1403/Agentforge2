@@ -29,6 +29,8 @@ const arg = (name, fallback) => {
 const LIMIT = Number(arg('limit', 2));
 const AUTO_MAX = Math.max(0, Math.min(2, Number(arg('auto-max', 2)) || 0));
 const DRY = process.argv.includes('--dry-run');
+const ONLY_VILLA = Number(arg('villa-id', 0));
+if (!Number.isSafeInteger(ONLY_VILLA) || ONLY_VILLA < 0) throw new Error('Ungueltige Villa-ID.');
 
 const PY_BUILD = [
   '#!/usr/bin/env python3',
@@ -197,9 +199,10 @@ const kandidaten = db.prepare(`
          (SELECT COUNT(*) FROM tasks t WHERE t.villa_id = v.id AND t.status IN ('PENDING','RUNNING')) AS offen
   FROM villas v
   WHERE v.status NOT IN ('ARCHIVED','COMPLETED')
+    AND (? = 0 OR v.id = ?)
     AND COALESCE((SELECT status FROM project_verifications p WHERE p.villa_id = v.id), 'offen') != 'passed'
   ORDER BY COALESCE((SELECT verified_at FROM project_verifications p WHERE p.villa_id = v.id), 0) ASC, v.id
-`).all();
+`).all(ONLY_VILLA, ONLY_VILLA);
 
 console.log(`== SWEEP: ${kandidaten.length} Villen offen, diese Runde ${Math.min(LIMIT, kandidaten.length)} (limit=${LIMIT}, auto-max=${AUTO_MAX}) ==`);
 
