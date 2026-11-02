@@ -57,7 +57,7 @@ export function focusVillaState(villaId) {
   if (!villa) return { id, name: null, status: 'MISSING', open: 0, done: false, existing: false };
   const open = openTaskCount(id);
   const status = String(villa.status || '').toUpperCase();
-  const done = status === 'COMPLETED' || (open === 0 && !['RUNNING', 'PAUSED', 'WAITING_FOR_MODEL', 'STOPPING'].includes(status));
+  const done = open === 0 && (status === 'COMPLETED' || !['RUNNING', 'PAUSED', 'WAITING_FOR_MODEL', 'STOPPING'].includes(status));
   return { id, name: villa.name, status: villa.status, open, done, existing: true };
 }
 
