@@ -201,6 +201,24 @@ CREATE TABLE IF NOT EXISTS council (
 `);
 db.exec('CREATE INDEX IF NOT EXISTS idx_council_villa ON council(villa_id, id);');
 
+// Protokoll der Build-Ergebnisse: Grundlage fuer build_green_rate und
+// time_to_first_working (siehe server/telemetry.mjs).
+db.exec(`
+CREATE TABLE IF NOT EXISTS build_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  villa_id INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'unknown',
+  ok INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER,
+  finished_at INTEGER,
+  error TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_build_events_villa ON build_events(villa_id, ok);');
+// Migration: Abschlusszeitpunkt wird fuer time_to_first_working gebraucht.
+ensureColumn('build_events', 'finished_at', 'INTEGER');
+
 // Migration fuer bestehende Datenbanken (Tabelle existiert an dieser Stelle).
 ensureColumn('council', 'scores', "TEXT NOT NULL DEFAULT '[]'");
 ensureColumn('council', 'dissent', "TEXT NOT NULL DEFAULT '[]'");

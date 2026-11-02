@@ -9,6 +9,7 @@ import { createMasterControl } from './master-control.mjs';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
+import { telemetrySummary } from './telemetry.mjs';
 import { estimateTaskEta, MAX_TASK_SAMPLE_MS } from './task-eta.mjs';
 import { FREE_ROUTE_CATALOG } from './routes.mjs';
 import { chat, routingStatus, routingSummary, enabledRoutes, resolveKey, keyStatus } from './llm.mjs';
@@ -1002,6 +1003,11 @@ async function api(req, res, url) {
     });
   }
   /* ---- Innovations-Scout (v1.25): bessere Alternativen, Erklaerung was/warum/wie ---- */
+  /* ---- Produkt-Telemetrie (2026-11-02): drei belegte Kennzahlen ---- */
+  if (p === '/api/metrics/telemetry' && m === 'GET') {
+    const villaParam = Number(new URL(req.url, 'http://localhost').searchParams.get('villaId') || 0);
+    return json(res, 200, telemetrySummary({ villaId: villaParam > 0 ? villaParam : null }));
+  }
   if (p === '/api/proposals' && m === 'GET') {
     return json(res, 200, listProposals());
   }
