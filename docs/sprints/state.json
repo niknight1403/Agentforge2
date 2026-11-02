@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceCommit": "48091e79d1f10762fd6245cbed47090a94d9a8e3",
+  "sourceCommit": "527ea065d55c33b23dda973380ca5f6668210d18",
   "design": "Aurora / sichtbare Variante 6",
   "completed": [
     "VF-0001",
@@ -15,45 +15,51 @@
   "current": "VF-0009",
   "next": "VF-0009",
   "blockers": [
-    "Deep Villa 34: build/smoke fail because next is unavailable; tests fail because jest is unavailable. The existing repair task currently receives only generic gate messages; this checkpoint makes the exact sanitized failures actionable without executing unknown project code.",
-    "Production product acceptance remains incomplete; Villa 34 has no usable accepted product artifact yet.",
-    "Local browser audit cannot run because Chrome is unavailable; CI browser acceptance is required.",
+    "Production project execution previously defaulted to host mode when VF_PROJECT_SANDBOX was unset. The bounded fix fails closed in NODE_ENV=production until a pinned isolated runner is explicitly configured.",
+    "Deep Villa 34 still has no accepted usable product; build/smoke require next and tests require jest.",
+    "The pinned Docker project sandbox is not yet configured and verified on the production host; unknown project code must remain blocked until then.",
     "Image, image-editing, video and audio rendering still require authorized provider configuration.",
     "Existing Android debug signature is not a managed production signing identity."
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
   "executionMode": "foreground-and-scheduled-iterations",
-  "workBranch": "fix/deep-villa-dependency-preflight-2",
+  "workBranch": "fix/production-project-execution-fail-closed",
   "pullRequest": null,
   "qualityBaseline": {
-    "tests": 490,
-    "pass": 490,
+    "tests": 491,
+    "pass": 491,
     "fail": 0,
     "browserE2E": 20,
     "browserAuditScopes": 9,
     "findings": 0
   },
   "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden.",
-  "integratedCommit": "48091e79d1f10762fd6245cbed47090a94d9a8e3",
+  "integratedCommit": "527ea065d55c33b23dda973380ca5f6668210d18",
   "version": "1.60.8",
-  "pullRequestStatus": "local blocker fix verified; pull request not yet opened",
+  "pullRequestStatus": "local safety blocker fix verified; pull request not yet opened",
   "backgroundExecution": false,
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
   "releaseStatus": "blocked: integrated deployment, browser acceptance and product acceptance pending",
-  "checkpointParent": "48091e79d1f10762fd6245cbed47090a94d9a8e3",
-  "nextAction": "Integrate and deploy the bounded repair-diagnostics change, then rerun the existing Deep focus workflow and verify that the repair task/log contains the exact sanitized next/jest failures before any further product change.",
+  "checkpointParent": "527ea065d55c33b23dda973380ca5f6668210d18",
+  "nextAction": "After this fail-closed change is merged and deployed, verify production health and a fresh side-effect-free Master response. In a later bounded run, configure and verify the already implemented pinned Docker project sandbox before any Deep Villa build/test/smoke execution.",
   "lastMaintenance": {
-    "baseCommit": "48091e79d1f10762fd6245cbed47090a94d9a8e3",
+    "baseCommit": "527ea065d55c33b23dda973380ca5f6668210d18",
     "pullRequests": [
-      22
+      29,
+      30,
+      41
     ],
-    "evidence": "docs/quality/deep-villa-repair-diagnostics-2026-11-02.json",
-    "audit": "https://github.com/niknight1403/Agentforge2/actions/runs/41496790385",
+    "evidence": "docs/quality/production-project-execution-fail-closed-2026-11-02.json",
+    "productionChecks": {
+      "lastDeploy": "https://github.com/niknight1403/Agentforge2/actions/runs/41501655842",
+      "lastMasterProbe": "https://github.com/niknight1403/Agentforge2/actions/runs/41502633212",
+      "lastVillaSweep": "https://github.com/niknight1403/Agentforge2/actions/runs/41502633191",
+      "lastProductAudit": "https://github.com/niknight1403/Agentforge2/actions/runs/41502633354"
+    },
     "runtimeAutomation": {
-      "available": true,
-      "mechanism": "existing scheduler and repair task only; no new scheduler or provider registry",
+      "mechanism": "existing scheduler and project runner only; no new scheduler or provider registry",
       "focusedVilla": 34,
-      "diagnosis": "build/smoke: next not found; tests: jest not found"
+      "safetyGate": "NODE_ENV=production without explicit VF_PROJECT_SANDBOX now returns PROJECT_SANDBOX_REQUIRED"
     }
   },
   "lastRealModelVerification": {
