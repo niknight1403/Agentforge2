@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "sprint": "VF-0014",
+  "status": "in_progress",
+  "sprintAcceptanceComplete": false,
+  "sourceCommit": "0d0cab35e384b2fe50c60b3f49d56b1e893c0c29",
+  "implementation": [
+    "Run the existing read-only sandbox preflight in the Docker integration workflow after resolving a pre-pulled CI image to an immutable digest.",
+    "Trigger that workflow when the preflight module, CLI or regression test changes.",
+    "Assert the workflow wires only the already-present digest image and never invokes pull/start through the preflight."
+  ],
+  "verification": {
+    "preflightUnitTests": 7,
+    "priorPreflightUnitTestsPassed": 7,
+    "realDockerIntegrationWorkflow": "pending"
+  },
+  "notProven": [
+    "Production Docker configuration and image were not inspected or changed.",
+    "The CI image is not the production sandbox image.",
+    "No Villa build, product acceptance, APK release or production deploy was run."
+  ]
+}

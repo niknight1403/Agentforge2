@@ -1,8 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {projectSandboxPreflight} from '../project-sandbox-preflight.mjs';
+import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {dirname,resolve} from 'node:path';
 
 const image='registry.example.test/agentforge/project@sha256:'+'a'.repeat(64);
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 
 test('preflight reports a missing production sandbox without running Docker',()=>{
  let inspected=false;
@@ -51,4 +55,13 @@ test('preflight accepts only an already-present matching pinned image',()=>{
 test('preflight output excludes the configured image reference',()=>{
  const result=projectSandboxPreflight({mode:'docker',image,inspectImage:()=>({status:0,stdout:JSON.stringify([image])})});
  assert.equal(JSON.stringify(result).includes(image),false);
+});
+
+test('real-Docker CI runs the preflight against its already pulled immutable test image',()=>{
+ const workflow=readFileSync(resolve(root,'.github/workflows/project-sandbox.yml'),'utf8');
+ assert.match(workflow,/server\/project-sandbox-preflight\.mjs/);
+ assert.match(workflow,/scripts\/check-project-sandbox\.mjs/);
+ assert.match(workflow,/VF_PROJECT_SANDBOX=docker/);
+ assert.match(workflow,/VF_PROJECT_SANDBOX_IMAGE="\$VF_SANDBOX_TEST_IMAGE"/);
+ assert.match(workflow,/Verify read-only sandbox preflight against the local digest-pinned image/);
 });

@@ -1,7 +1,7 @@
 name: Project Sandbox Integration
 on:
   pull_request:
-    paths: ['server/project-execution.mjs','server/project-process.mjs','server/project-stage.mjs','server/fs-tools.mjs','scripts/test-project-sandbox.mjs','.github/workflows/project-sandbox.yml']
+    paths: ['server/project-execution.mjs','server/project-process.mjs','server/project-stage.mjs','server/project-sandbox-preflight.mjs','server/fs-tools.mjs','scripts/test-project-sandbox.mjs','scripts/check-project-sandbox.mjs','server/tests/project-sandbox-preflight.test.mjs','.github/workflows/project-sandbox.yml']
 permissions:
   contents: read
 jobs:
@@ -20,6 +20,11 @@ jobs:
           docker pull node:24-bookworm-slim
           image=$(docker image inspect node:24-bookworm-slim --format '{{index .RepoDigests 0}}')
           echo "VF_SANDBOX_TEST_IMAGE=$image" >> "$GITHUB_ENV"
+      - name: Verify read-only sandbox preflight against the local digest-pinned image
+        run: |
+          VF_PROJECT_SANDBOX=docker \
+          VF_PROJECT_SANDBOX_IMAGE="$VF_SANDBOX_TEST_IMAGE" \
+          node scripts/check-project-sandbox.mjs
       - name: Execute isolation and timeout tests in real Docker
         run: node scripts/test-project-sandbox.mjs
       - name: Verify root host still uses an unprivileged writable isolated copy

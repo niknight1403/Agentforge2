@@ -374,17 +374,31 @@
     {
       "id": "VF-0014",
       "area": "Produktionsblocker und Release-Gates",
-      "goal": null,
-      "benefit": "Produktionsblocker und Release-Gates",
-      "dependencies": [],
-      "modules": [],
-      "acceptanceCriteria": [],
-      "risks": [
-        "Scope vor Ausfuehrung anhand gemessener Ergebnisse festlegen"
+      "goal": "Sandbox-Vorpruefung gegen reales lokales Docker-Image integrieren",
+      "benefit": "Der digest-basierte Docker-Inspect-Pfad wird in CI mit einer existierenden Image-Referenz nachgewiesen",
+      "dependencies": [
+        "VF-0012"
       ],
-      "status": "unscoped",
-      "scopeDefined": false,
-      "evidence": [],
+      "modules": [
+        ".github/workflows/project-sandbox.yml",
+        "server/project-sandbox-preflight.mjs",
+        "scripts/check-project-sandbox.mjs",
+        "server/tests/project-sandbox-preflight.test.mjs"
+      ],
+      "acceptanceCriteria": [
+        "Sandbox-Integration-Workflow startet fuer Aenderungen an Vorpruefungsmodul, CLI und Regression",
+        "Workflow loest ein bereits lokal geladenes CI-Image zu einem unveraenderlichen Digest auf",
+        "Vorpruefungs-CLI meldet im echten Docker-Runner ready=true und imagePresent=true",
+        "Der Integrationstest laedt oder startet durch die Vorpruefung selbst kein Image und startet keinen Container"
+      ],
+      "risks": [
+        "CI beweist nur die Mechanik mit CI-Image; Produktionshostkonfiguration und freigegebenes Image bleiben extern"
+      ],
+      "status": "in_progress",
+      "scopeDefined": true,
+      "evidence": [
+        "docs/sprints/evidence/VF-0014-docker-preflight-ci.json"
+      ],
       "implementationCommit": null
     },
     {
