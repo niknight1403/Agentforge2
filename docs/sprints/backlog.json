@@ -333,43 +333,41 @@
       "risks": [
         "Eine lokal bestandene Vorpruefung provisioniert die Produktionsmaschine nicht und ersetzt keine Isolationstests"
       ],
-      "status": "in_progress",
+      "status": "done",
       "scopeDefined": true,
       "evidence": [
         "docs/sprints/evidence/VF-0012-sandbox-preflight.json"
       ],
-      "implementationCommit": null
-    },
-    {
-      "id": "VF-0012",
-      "area": "Produktionsblocker und Release-Gates",
-      "goal": null,
-      "benefit": "Produktionsblocker und Release-Gates",
-      "dependencies": [],
-      "modules": [],
-      "acceptanceCriteria": [],
-      "risks": [
-        "Scope vor Ausfuehrung anhand gemessener Ergebnisse festlegen"
-      ],
-      "status": "unscoped",
-      "scopeDefined": false,
-      "evidence": [],
-      "implementationCommit": null
+      "implementationCommit": "49b95f727c7fa0a98f0683649aa6b8171b2c12f3"
     },
     {
       "id": "VF-0013",
       "area": "Produktionsblocker und Release-Gates",
-      "goal": null,
-      "benefit": "Produktionsblocker und Release-Gates",
-      "dependencies": [],
-      "modules": [],
-      "acceptanceCriteria": [],
-      "risks": [
-        "Scope vor Ausfuehrung anhand gemessener Ergebnisse festlegen"
+      "goal": "Android-Release ohne Debug-Schluessel fail-closed signieren",
+      "benefit": "Ein Produktions-APK kann nur mit einem stabilen, geschuetzt bereitgestellten Schluessel entstehen",
+      "dependencies": [
+        "VF-0012"
       ],
-      "status": "unscoped",
-      "scopeDefined": false,
-      "evidence": [],
+      "modules": [
+        "app/build.gradle.kts",
+        ".github/workflows/build-apk.yml",
+        "server/tests/android-release-signing.test.mjs",
+        "docs/DEVELOPMENT-QUALITY.md"
+      ],
+      "acceptanceCriteria": [
+        "Release-Variant nutzt ausschliesslich den separaten Produktions-Signaturschluessel",
+        "Fehlende Signaturkonfiguration stoppt assembleRelease und bundleRelease, statt Debug-Signatur oder unsigned APK zu erzeugen",
+        "Workflow bezieht Schluesselmaterial nur aus GitHub Secrets und speichert den Keystore nur temporaer mit restriktiven Dateirechten",
+        "Regressionstest belegt Signaturpflicht und dass GitHub Release weiterhin hinter der produktiven Produktabnahme liegt"
+      ],
+      "risks": [
+        "Produktionsschluessel muss vom Release-Owner sicher erzeugt und als GitHub Secrets hinterlegt werden; Werte werden nicht vom Agenten erzeugt, gelesen oder gesetzt"
+      ],
+      "status": "in_progress",
+      "scopeDefined": true,
+      "evidence": [
+        "docs/sprints/evidence/VF-0013-android-signing.json"
+      ],
       "implementationCommit": null
     },
     {

@@ -3,6 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseSigningValues = listOf(
+    "VILLA_RELEASE_KEYSTORE_PATH",
+    "VILLA_RELEASE_STORE_PASSWORD",
+    "VILLA_RELEASE_KEY_ALIAS",
+    "VILLA_RELEASE_KEY_PASSWORD"
+).associateWith { providers.environmentVariable(it).orNull }
+val releaseSigningConfigured = releaseSigningValues.values.all { !it.isNullOrBlank() }
+
 android {
     namespace = "dev.villaforge.app"
     compileSdk = 34
@@ -15,17 +23,30 @@ android {
         versionName = "1.60.8"
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("production") {
+                storeFile = file(releaseSigningValues.getValue("VILLA_RELEASE_KEYSTORE_PATH")!!)
+                storePassword = releaseSigningValues.getValue("VILLA_RELEASE_STORE_PASSWORD")!!
+                keyAlias = releaseSigningValues.getValue("VILLA_RELEASE_KEY_ALIAS")!!
+                keyPassword = releaseSigningValues.getValue("VILLA_RELEASE_KEY_PASSWORD")!!
+            }
+        }
+    }
+
     buildTypes {
         release {
             // Optimierter Release-Build: R8 verkleinert+verschleiert, Ressourcen werden
-            // gestrippt. Debug-Signatur haelt die APK direkt installierbar.
+            // gestrippt. Produktionssignierung wird nur aus geschuetzten Runner-Secrets gesetzt.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("production")
+            }
         }
         debug {
             isMinifyEnabled = false
@@ -51,6 +72,19 @@ android {
             "/META-INF/DEPENDENCIES",
             "/META-INF/INDEX.LIST"
         )
+    }
+}
+
+val verifyReleaseSigning = tasks.register("verifyReleaseSigning") {
+    doLast {
+        if (!releaseSigningConfigured) {
+            throw GradleException("Production release signing is not configured.")
+        }
+    }
+}
+tasks.configureEach {
+    if (name == "assembleRelease" || name == "bundleRelease") {
+        dependsOn(verifyReleaseSigning)
     }
 }
 

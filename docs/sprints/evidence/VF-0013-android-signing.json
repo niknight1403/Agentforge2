@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "sprint": "VF-0013",
+  "status": "in_progress",
+  "sprintAcceptanceComplete": false,
+  "productionSigningConfigured": false,
+  "sourceCommit": "49b95f727c7fa0a98f0683649aa6b8171b2c12f3",
+  "confirmedGap": "The Android release variant was explicitly signed with the debug key; production signing material is not available in the repository and was not inspected.",
+  "implementation": [
+    "Require all four protected signing values to configure a production-only Gradle signing config.",
+    "Fail closed for assembleRelease and bundleRelease when signing values are incomplete.",
+    "Decode the keystore into the ephemeral GitHub runner temp directory with restrictive permissions.",
+    "Keep the live product acceptance check before GitHub Release publication."
+  ],
+  "requiredExternalOwnerAction": "The release owner must create/use the stable production Android signing key and configure VILLA_RELEASE_KEYSTORE_BASE64, VILLA_RELEASE_STORE_PASSWORD, VILLA_RELEASE_KEY_ALIAS and VILLA_RELEASE_KEY_PASSWORD in GitHub Actions Secrets. Never place values in repository files or logs.",
+  "notProven": [
+    "No real signing key was available or inspected.",
+    "No Gradle/Android SDK is installed on the current Windows host, so the Android build was not executed locally.",
+    "No production-signed APK was built or verified.",
+    "No production release or deploy was started."
+  ]
+}

@@ -25,7 +25,7 @@ Android:
 gradle :app:lintDebug :app:testDebugUnitTest :app:assembleRelease --no-daemon
 ```
 
-Benötigt JDK 17, Gradle 8.7 und das Android-SDK. Die veröffentlichte APK bleibt debug-signiert und ist nicht für den Play Store signiert.
+Benötigt JDK 17, Gradle 8.7 und das Android-SDK. Ein Release-Build wird nur mit dem stabilen Produktionsschlüssel erzeugt. Der GitHub-Workflow erwartet `VILLA_RELEASE_KEYSTORE_BASE64`, `VILLA_RELEASE_STORE_PASSWORD`, `VILLA_RELEASE_KEY_ALIAS` und `VILLA_RELEASE_KEY_PASSWORD` als geschützte Secrets; ohne sie bricht `assembleRelease` geschlossen ab. Der Keystore wird nur temporär auf dem Runner abgelegt. Ohne echte konfigurierte Schlüsseldaten ist kein signiertes Produktions-APK nachgewiesen.
 
 ## Automatische GitHub-Gates
 

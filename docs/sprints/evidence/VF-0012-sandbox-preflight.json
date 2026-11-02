@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "sprint": "VF-0012",
-  "status": "in_progress",
-  "sprintAcceptanceComplete": false,
+  "status": "done",
+  "sprintAcceptanceComplete": true,
   "productionSandboxReady": false,
   "sourceCommit": "dd94ca3a0f9e25d677a8ddcfbc325f1d572388a2",
   "productionBlocker": "The production runtime has no verified VF_PROJECT_SANDBOX=docker configuration or immutable image; no production host inspection or mutation was performed.",
@@ -27,5 +27,12 @@
     "No Docker isolation test was run against a production image.",
     "No Villa product was verified or downloaded.",
     "No production deploy was started."
-  ]
+  ],
+  "implementationCommit": "49b95f727c7fa0a98f0683649aa6b8171b2c12f3",
+  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/68",
+  "ciRuns": {
+    "hubTests": "https://github.com/niknight1403/Agentforge2/actions/runs/41519003952",
+    "browserAuditAndE2E": "https://github.com/niknight1403/Agentforge2/actions/runs/41519004011",
+    "browserAuditRetryPassed": true
+  }
 }

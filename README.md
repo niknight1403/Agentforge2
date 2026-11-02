@@ -68,7 +68,7 @@ bei Fehlern weiter.
 
 Kostenlose Anbieter begrenzen Kontingente. Bei deren Erschöpfung nutzt der Hub
 die nächste zulässige Route oder meldet die Nichtverfügbarkeit. Die Android-
-Release-APK ist direkt installierbar und debug-signiert.
+Release-Pakete duerfen ausschliesslich mit einem stabilen Produktionsschluessel signiert werden. Der APK-Workflow verlangt dafuer `VILLA_RELEASE_KEYSTORE_BASE64`, `VILLA_RELEASE_STORE_PASSWORD`, `VILLA_RELEASE_KEY_ALIAS` und `VILLA_RELEASE_KEY_PASSWORD` als GitHub Secrets; ohne diese Konfiguration wird der Release-Build abgebrochen. Die Schluesselwerte gehoeren nicht ins Repository.
 
 ## Neu in 1.35.0 — Umsatz-Fokus & Endprodukt-Vision
 
