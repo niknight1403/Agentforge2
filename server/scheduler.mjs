@@ -124,8 +124,12 @@ function retryVilla(id, requestedDelayMs = 15_000, reason = 'MODEL_UNAVAILABLE')
     if (!villa || villa.autonomy !== 1 || villa.status === 'ARCHIVED') return;
     // Dieselbe unfertige Villa behaelt ihre Ausfuehrungsspur. Sie wird vor
     // spaeter eingereihten Villen fortgesetzt, sobald der Backoff endet.
-    if (!active.has(villaId) && !queue.includes(villaId)) queue.unshift(villaId);
-    pump();
+    let preserveFront = 0;
+    if (!active.has(villaId) && !queue.includes(villaId)) {
+      queue.unshift(villaId);
+      preserveFront = 1;
+    }
+    pump(preserveFront);
   }, delayMs);
   timer.unref?.();
   retryTimers.set(villaId, timer);
