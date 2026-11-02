@@ -71,7 +71,7 @@ test('Bewertungs-Synthese ordnet Vorschlaege und nur Hebel >= 6 wird Aufgabe', a
   assert.ok(stored.messages.length === 3, 'AGI-Sitz teilgenommen');
 });
 
-test('Defekte Synthese faellt auf neutralen Score zurueck, Rat bleibt handlungsfhig', async () => {
+test('Defekte Synthese erfindet keine Scores, der Rat bleibt trotzdem handlungsfhig', async () => {
   const villaId = seedVilla('Fallback-Villa');
   insertAgent(villaId, 'Arbeiter-A', 'CODER');
   const r = await runCouncil(villaId, {
@@ -82,7 +82,12 @@ test('Defekte Synthese faellt auf neutralen Score zurueck, Rat bleibt handlungsf
     }
   });
   assert.equal(r.proposals, 1);
-  assert.ok(r.ranked.every((x) => x.score === 5));
+  // Ehrlichkeit statt Scheinpraezision: ohne auswertbare Bewertung bleibt der
+  // Vorschlag unbewertet (score null, rated false) - und wird als offenes
+  // Votum dokumentiert. Aufgabe entsteht trotzdem, damit die Villa laeuft.
+  assert.equal(r.rating.rated, false);
+  assert.ok(r.ranked.every((x) => x.score === null && x.rated === false));
+  assert.equal(r.tasksCreated >= 1, true);
 });
 
 test('AGI-Sitz: Denker-Rolle nimmt auch ausserhalb der Teilnehmerzahl teil', async () => {
