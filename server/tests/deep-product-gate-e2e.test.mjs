@@ -31,6 +31,21 @@ async function tokenFor(email) {
   return login.body.token;
 }
 
+
+const TASTE_JSON = JSON.stringify({
+  statements: [
+    { claim: 'Niko will reine Entwicklungsarbeit ohne Marketingpflicht', evidence: { source: 'repo:commits' } },
+    { claim: 'Niko zahlt nur fuer belegten Nutzen, nicht fuer Reichweite', evidence: { source: 'https://github.com/niknight1403/CyberSarah-Control-Center' } },
+    { claim: 'Niko bevorzugt Android-Apps mit sofort nutzbarem Build', evidence: { source: 'feedback:apk' } },
+  ],
+});
+const SPION_JSON = JSON.stringify({
+  competitors: [
+    { name: 'Anbieter A', observation: 'Baut Web-Apps direkt im Browser ohne lokale Installation.', source: 'https://a.example', date: '2026-10-20' },
+    { name: 'Anbieter B', observation: 'Exportiert Projekte als ZIP fuer den eigenen Rechner.', source: 'https://b.example', date: '2026-10-21' },
+  ],
+});
+
 test('Develop-Endpunkt verweigert die Villa, solange kein Produkt belegt ist', async () => {
   const token = await tokenFor('gate-block@example.com');
   const created = await api('/api/deep/projects', {
@@ -74,6 +89,8 @@ test('Mit belegtem Produkt im Projektordner passiert das Gate', async () => {
     tests: { status: 'passed' },
     userFlow: { status: 'passed' },
   }));
+  writeFileSync(join(dir, 'taste.json'), TASTE_JSON);
+  writeFileSync(join(dir, 'spion.json'), SPION_JSON);
 
   const res = await api(`/api/deep/projects/${projectId}/develop`, { method: 'POST', body: '{}' }, token);
   // Das Gate laesst durch: keine Gate-Blockade mehr. Ob danach eine Villa
@@ -86,4 +103,40 @@ test('Mit belegtem Produkt im Projektordner passiert das Gate', async () => {
   } else {
     assert.ok(Number(res.body.villaId) > 0, JSON.stringify(res.body));
   }
+});
+
+test('Belegtes Produkt ohne TASTE/SPION erzeugt keine Villa', async () => {
+  const token = await tokenFor('gate-artifacts@example.com');
+  const created = await api('/api/deep/projects', {
+    method: 'POST',
+    body: JSON.stringify({ idea: 'Ein kleiner Rechnungsgenerator mit CSV-Export fuer Selbststaendige.' }),
+  }, token);
+  const projectId = Number(created.body?.project?.id || created.body?.id);
+  assert.ok(projectId > 0, JSON.stringify(created.body));
+
+  const dir = join(process.env.DEEP_DIR, String(projectId));
+  mkdirSync(join(dir, 'src'), { recursive: true });
+  writeFileSync(join(dir, 'src', 'app.mjs'), 'export const start=()=>"ok";');
+  writeFileSync(join(dir, 'src', 'invoice.mjs'), 'export const total=(a)=>a;');
+  writeFileSync(join(dir, 'docs-spec.md'), '# Spezifikation\n' + 'Rechnung anlegen, Positionen erfassen, CSV exportieren. '.repeat(6));
+  writeFileSync(join(dir, 'acceptance.json'), JSON.stringify({ criteria: ['Rechnung anlegen', 'CSV exportieren'] }));
+  writeFileSync(join(dir, 'app.test.mjs'), 'test("ok",()=>{});');
+  writeFileSync(join(dir, 'README.md'), '# Rechnungen\n\nStart: npm start\n');
+  writeFileSync(join(dir, 'verification.json'), JSON.stringify({
+    build: { status: 'passed' },
+    tests: { status: 'passed' },
+    userFlow: { status: 'passed' },
+  }));
+  writeFileSync(join(dir, 'taste.json'), JSON.stringify({ statements: [
+    { claim: 'Niko will reine Entwicklungsarbeit ohne Marketingpflicht', evidence: { source: 'repo:commits' } },
+  ] }));
+
+  const res = await api(`/api/deep/projects/${projectId}/develop`, { method: 'POST', body: '{}' }, token);
+  assert.equal(res.status, 409);
+  assert.equal(res.body.artifactBlocked, true);
+  assert.equal(res.body.villaId, 0);
+  const keys = res.body.blockers.map((b) => b.key);
+  assert.ok(keys.includes('taste'), JSON.stringify(res.body.blockers));
+  assert.ok(keys.includes('spion'), JSON.stringify(res.body.blockers));
+  assert.match(res.body.message, /Uebergabe-Artefakte fehlen/);
 });
