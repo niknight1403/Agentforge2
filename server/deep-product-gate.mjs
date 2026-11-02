@@ -57,6 +57,16 @@ export function countAcceptanceCriteria(content) {
   return boxes ? boxes.length : 0;
 }
 
+/** Prueft beliebigen Text auf bekannte Schluesselmuster (fuer Artefakte ohne Dateibezug). */
+export function findSecretInText(text) {
+  const content = String(text || '');
+  if (!content) return null;
+  for (const { key, re } of SECRET_PATTERNS) {
+    if (re.test(content)) return { file: '(artefakte)', kind: key };
+  }
+  return null;
+}
+
 function findSecret(files) {
   for (const file of files) {
     const content = file.content || '';

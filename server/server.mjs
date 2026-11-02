@@ -30,6 +30,7 @@ import { evolutionState, proposeForVilla, evolveAll, listVillaProposals, listAll
 import { systemAudit, healTick, healActions } from './heal.mjs';
 import { startBuild, buildStatus, buildArtifact, previewInfo, previewFile, maybeAutoBuild } from './builds.mjs';
 import { productGateForProjectDir } from './deep-product-gate.mjs';
+import { scanHandoverArtifacts } from './handover-artifacts.mjs';
 import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
@@ -1131,6 +1132,24 @@ async function api(req, res, url) {
               message:
                 'Produkt-Gate nicht erfuellt: Die Villa entsteht erst, wenn das Projekt ein belegtes Produkt hat. ' +
                 'Fehlend: ' + gate.blockers.map((b) => b.label).join(', ') + '.'
+            });
+          }
+          // TASTE/SPION-Gate (Nikos Auftrag 2026-11-02): Die Villa erbt das
+          // Praeferenzprofil und die Wettbewerbsbeobachtung. Fehlen die Belege,
+          // entsteht keine Villa - der Endpunkt nennt die fehlenden Artefakte.
+          const handover = scanHandoverArtifacts(deepProjectDir(projectId));
+          if (!handover.ready) {
+            return json(res, 409, {
+              ok: false,
+              projectId,
+              villaId: 0,
+              gateBlocked: true,
+              artifactBlocked: true,
+              checks: { ...gate.checks, ...handover.checks },
+              blockers: [...gate.blockers, ...handover.blockers],
+              message:
+                'Uebergabe-Artefakte fehlen: Ohne belegtes TASTE-Praeferenzprofil und SPION-Wettbewerbsbeobachtung entsteht keine Villa. ' +
+                'Fehlend: ' + handover.blockers.map((b) => `${b.label} (${b.detail})`).join('; ') + '.'
             });
           }
           const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD' });

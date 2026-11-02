@@ -40,8 +40,16 @@ test('Audit erfindet weder fertige Produkte noch Modell- oder Provider-Nachweise
 });
 test('Gut konfigurierte Villa hat getrennte fachliche und technische Nachweise',()=>{
  const roles=['ROOT','CODER','TESTER','REVIEWER','INTEGRATOR'];
- const report=assessVillaConfiguration({villa:{id:1,idea:'Eine Web-App mit getestetem Export',status:'PAUSED',autonomy:0},agents:roles.map((role,id)=>({id,role,is_root:role==='ROOT'?1:0,system_prompt:PROMPT_CONTRACT})),taskCounts:{DONE:3,CANCELLED:1},tools:['project_read','project_write','project_patch','project_run'].map(name=>({name,enabled:true})),product:{verified:true},missionAvailable:true});
+ const artifacts={taste:{statements:[
+  {claim:'Niko will reine Entwicklungsarbeit ohne Marketingpflicht',evidence:{source:'repo:commits'}},
+  {claim:'Niko zahlt nur fuer belegten Nutzen, nicht fuer Reichweite',evidence:{source:'https://github.com/niknight1403/CyberSarah-Control-Center'}},
+  {claim:'Niko bevorzugt Android-Apps mit sofort nutzbarem Build',evidence:{source:'feedback:apk'}}]},
+  spion:{competitors:[
+  {name:'A',observation:'Baut Web-Apps direkt im Browser ohne lokale Installation.',source:'https://a.example',date:'2026-10-20'},
+  {name:'B',observation:'Exportiert Projekte als ZIP fuer den eigenen Rechner.',source:'https://b.example',date:'2026-10-21'}]}};
+ const report=assessVillaConfiguration({villa:{id:1,idea:'Eine Web-App mit getestetem Export',status:'PAUSED',autonomy:0},agents:roles.map((role,id)=>({id,role,is_root:role==='ROOT'?1:0,system_prompt:PROMPT_CONTRACT})),taskCounts:{DONE:3,CANCELLED:1},tools:['project_read','project_write','project_patch','project_run'].map(name=>({name,enabled:true})),product:{verified:true},missionAvailable:true,artifacts});
  assert.equal(report.status,'passed');assert.equal(report.unfinishedTasks,0);assert.match(report.limitations[0],/kein Nachweis/);
+ assert.equal(report.handoverEvidence.ready,true);
 });
 
 test('Kompakter Werkzeugvertrag erhaelt flache und JSON-Schema-Argumente',()=>{
@@ -64,4 +72,30 @@ test('Ungueltige Missionsantwort und konkurrierende Bearbeitung ueberschreiben k
  const v=villa();
  const report=await refineVillaPrompts({limit:10,chatFn:async()=>{db.prepare('UPDATE villas SET idea=? WHERE id=?').run('Vom Owner gerade aktualisierte Originalidee mit neuen Anforderungen.',v);return {content:JSON.stringify({vision:'Eine praezise Vision fuer den sicheren Dateiexport.',mission_prompt:PROMPT_CONTRACT,next_steps:['Erster Schritt mit echter Pruefung.','Zweiter Schritt mit echter Pruefung.','Dritter Schritt mit echter Pruefung.']})};}});
  assert.ok(report.some(r=>r.villaId===v&&r.status==='skipped_concurrent_edit'));assert.equal(db.prepare("SELECT COUNT(*) n FROM villa_proposals WHERE villa_id=?").get(v).n,0);
+});
+
+test('Uebergabe ohne TASTE/SPION bleibt ein Hinweis, nicht falsch rot',async()=>{
+ const report=assessVillaConfiguration({villa:{id:7,idea:'Eine Web-App mit getestetem Export',status:'PAUSED',autonomy:0},agents:[{id:1,is_root:1,role:'ROOT',system_prompt:PROMPT_CONTRACT}],taskCounts:{DONE:1},tools:[],product:{verified:true}});
+ const codes=report.checks.map(c=>c.code);
+ assert.ok(codes.includes('taste_profile')&&codes.includes('spion_observation'));
+ assert.equal(report.checks.find(c=>c.code==='taste_profile').status,'warning');
+ assert.equal(report.handoverEvidence,null);
+});
+
+test('Uebergebene Artefakte mit Belegen passieren, unbelegte blockieren',async()=>{
+ const base={villa:{id:8,idea:'Eine Web-App mit getestetem Export',status:'PAUSED',autonomy:0},agents:[{id:1,is_root:1,role:'ROOT',system_prompt:PROMPT_CONTRACT}],taskCounts:{DONE:1},tools:[],product:{verified:true}};
+ const taste={statements:[
+  {claim:'Niko will reine Entwicklungsarbeit ohne Marketingpflicht',evidence:{source:'repo:commits'}},
+  {claim:'Niko zahlt nur fuer belegten Nutzen, nicht fuer Reichweite',evidence:{source:'https://github.com/niknight1403/CyberSarah-Control-Center'}},
+  {claim:'Niko bevorzugt Android-Apps mit sofort nutzbarem Build',evidence:{source:'feedback:apk'}}]};
+ const spion={competitors:[
+  {name:'A',observation:'Baut Web-Apps direkt im Browser ohne lokale Installation.',source:'https://a.example',date:'2026-10-20'},
+  {name:'B',observation:'Exportiert Projekte als ZIP fuer den eigenen Rechner.',source:'https://b.example',date:'2026-10-21'}]};
+ const good=assessVillaConfiguration({...base,artifacts:{taste,spion}});
+ assert.equal(good.checks.find(c=>c.code==='taste_profile').status,'pass');
+ assert.equal(good.checks.find(c=>c.code==='spion_observation').status,'pass');
+ assert.deepEqual(good.handoverEvidence,{ready:true,blockers:[]});
+ const bad=assessVillaConfiguration({...base,artifacts:{taste,spion:{competitors:[]}}});
+ assert.equal(bad.checks.find(c=>c.code==='spion_observation').status,'blocked');
+ assert.equal(bad.status,'blocked');
 });
