@@ -84,3 +84,16 @@ test('Abgelehnter Platzhalter wird als Platzhalter benannt, nicht als fehlender 
  const gate=projectReadiness(id);
  assert.ok(gate.blockers.some(b=>/build: .*Platzhalter/.test(b)),'Blocker nennt den abgelehnten Platzhalter');
 });
+test('Reparaturbefunde enthalten konkrete Stufenfehler vor generischen Gate-Meldungen und entfernen Geheimnisse',async()=>{
+ const {verificationRepairFindings}=await import('../project-verification.mjs');
+ const findings=verificationRepairFindings({
+  build:{status:'failed',output:'sh: 1: next: not found'},
+  tests:{status:'failed',output:'token=super-secret-value\nsh: 1: jest: not found'},
+  smoke:{status:'failed',output:'/opt/villaforge/server/data/workspace/villa-34/project: next: not found'}
+ },['build: fehlgeschlagen','tests: fehlgeschlagen']);
+ assert.match(findings[0],/build: .*next: not found/);
+ assert.match(findings[1],/tests: .*jest: not found/);
+ assert.match(findings[2],/smoke: \[workspace\].*next: not found/);
+ assert.ok(findings.indexOf('build: fehlgeschlagen')>findings.findIndex(x=>x.startsWith('build: sh:')));
+ assert.ok(!findings.join('\n').includes('super-secret-value'));
+});

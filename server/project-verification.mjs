@@ -5,6 +5,35 @@ import {createHash} from 'node:crypto';
 import {calculateQualityGate,scoreStandaloneHtmlPerformance,scoreStandaloneHtmlSecurity} from './quality-gate.mjs';
 import {db,now} from './db.mjs';
 import {runCommand} from './fs-tools.mjs';
+
+/**
+ * Liefert eine kurze, geheimnisfreie Fehlerursache fuer einen fehlgeschlagenen
+ * Projekt-Pruefschritt. Diese Fassung darf in Reparaturauftraege und
+ * Betriebslogs uebernommen werden; rohe Ausgaben bleiben im Pruefnachweis.
+ */
+export function sanitizeVerificationFailure(check) {
+ const raw=String(check?.reason||check?.output||'');
+ const lines=raw.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ const relevant=lines.filter(x=>/error|failed|missing|cannot find|not found|syntax|ENOENT|ERR_|assert|exception|timeout|permission/i.test(x));
+ const selected=(relevant.length?relevant:lines.slice(-2)).slice(0,3).join(' | ');
+ return selected
+  .replace(/(https?:\/\/)[^\s@]+@/gi,'$1[redacted]@')
+  .replace(/\b(?:ghp_|github_pat_|sk-|mstrl_|AIza)[A-Za-z0-9_\-]{10,}\b/g,'[redacted]')
+  .replace(/(api[_-]?key|password|token|secret|authorization)\s*[:=]\s*[^\s|]+/gi,'$1=[redacted]')
+  .replace(/(?:\/home\/[^/\s]+|\/opt\/villaforge\/server\/data\/workspace)/g,'[workspace]')
+  .slice(0,380)||'Keine sichere Fehlerdetails verfuegbar';
+}
+
+/** Konkrete Stufenfehler stehen vor generischen Gate-Blockern. */
+export function verificationRepairFindings(checks={},blockers=[],limit=6) {
+ const out=[];
+ for(const kind of ['build','tests','smoke','quality']){
+  const stage=checks?.[kind];
+  if(stage&&stage.status!=='passed')out.push(`${kind}: ${sanitizeVerificationFailure(stage)}`);
+ }
+ if(Array.isArray(blockers))for(const blocker of blockers)out.push(String(blocker).slice(0,380));
+ return [...new Set(out.filter(Boolean))].slice(0,Math.max(1,Math.min(12,Number(limit)||6)));
+}
 export const PROJECT_WORKSPACE=resolve(process.env.VF_WORKSPACE||'server/data/workspace');
 export function ownProjectDir(id){return join(PROJECT_WORKSPACE,`villa-${id}`,'project');}
 export function projectDirectory(id){

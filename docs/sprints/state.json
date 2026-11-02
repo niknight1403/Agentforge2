@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceCommit": "1dd7989b5d7813c4f761d57a950fd31a1f4bf903",
+  "sourceCommit": "48091e79d1f10762fd6245cbed47090a94d9a8e3",
   "design": "Aurora / sichtbare Variante 6",
   "completed": [
     "VF-0001",
@@ -15,45 +15,45 @@
   "current": "VF-0009",
   "next": "VF-0009",
   "blockers": [
-    "Deep Villa 34: build/smoke fail because next is unavailable; tests fail because jest is unavailable. Project dependency handling must stay isolated and may not execute unknown lifecycle code with production privileges.",
-    "Production audit at commit 1dd7989 reports 18/18 Villas blocked; no complete product acceptance.",
+    "Deep Villa 34: build/smoke fail because next is unavailable; tests fail because jest is unavailable. The existing repair task currently receives only generic gate messages; this checkpoint makes the exact sanitized failures actionable without executing unknown project code.",
+    "Production product acceptance remains incomplete; Villa 34 has no usable accepted product artifact yet.",
     "Local browser audit cannot run because Chrome is unavailable; CI browser acceptance is required.",
     "Image, image-editing, video and audio rendering still require authorized provider configuration.",
     "Existing Android debug signature is not a managed production signing identity."
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
   "executionMode": "foreground-and-scheduled-iterations",
-  "workBranch": "fix/deep-villa-dependency-preflight",
+  "workBranch": "fix/deep-villa-dependency-preflight-2",
   "pullRequest": null,
   "qualityBaseline": {
-    "tests": 489,
-    "pass": 489,
+    "tests": 490,
+    "pass": 490,
     "fail": 0,
     "browserE2E": 20,
     "browserAuditScopes": 9,
     "findings": 0
   },
   "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden.",
-  "integratedCommit": "6064f2f158a947e7a77e578cbd6c67a91a680d0b",
+  "integratedCommit": "48091e79d1f10762fd6245cbed47090a94d9a8e3",
   "version": "1.60.8",
-  "pullRequestStatus": "local fix verified; pull request not yet opened",
+  "pullRequestStatus": "local blocker fix verified; pull request not yet opened",
   "backgroundExecution": false,
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
   "releaseStatus": "blocked: integrated deployment, browser acceptance and product acceptance pending",
-  "checkpointParent": "1dd7989b5d7813c4f761d57a950fd31a1f4bf903",
-  "nextAction": "Fix fuer atomare Fokus-Startentscheidung integrieren und deployen; danach Produktionsinventar pruefen. Anschliessend genau den naechsten Deep-Villa-Blocker (fehlende next/jest-Projektabhaengigkeiten) isoliert bearbeiten.",
+  "checkpointParent": "48091e79d1f10762fd6245cbed47090a94d9a8e3",
+  "nextAction": "Integrate and deploy the bounded repair-diagnostics change, then rerun the existing Deep focus workflow and verify that the repair task/log contains the exact sanitized next/jest failures before any further product change.",
   "lastMaintenance": {
-    "baseCommit": "1dd7989b5d7813c4f761d57a950fd31a1f4bf903",
+    "baseCommit": "48091e79d1f10762fd6245cbed47090a94d9a8e3",
     "pullRequests": [
       22
     ],
-    "evidence": "docs/quality/focus-start-atomicity-2026-11-02.json",
-    "audit": "https://github.com/niknight1403/Agentforge2/actions/runs/41492749657",
+    "evidence": "docs/quality/deep-villa-repair-diagnostics-2026-11-02.json",
+    "audit": "https://github.com/niknight1403/Agentforge2/actions/runs/41496790385",
     "runtimeAutomation": {
       "available": true,
-      "mechanism": "existing scheduler only; activation moved behind focus decision",
-      "availableForVillas": 18,
-      "eligibleWithActiveVilla": 1
+      "mechanism": "existing scheduler and repair task only; no new scheduler or provider registry",
+      "focusedVilla": 34,
+      "diagnosis": "build/smoke: next not found; tests: jest not found"
     }
   },
   "lastRealModelVerification": {
