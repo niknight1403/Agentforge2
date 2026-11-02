@@ -45,6 +45,7 @@ test('Android PR CI proves release signing works without publishing the ephemera
  assert.match(androidCheck,/gradle :app:assembleRelease/);
  assert.match(androidCheck,/verify --print-certs/);
  assert.match(androidCheck,/certificate SHA-256 digest:/);
+ assert.match(androidCheck,/sub\(\/\^\.\*certificate SHA-256 digest:/);
  assert.match(androidCheck,/length\(digest\) == 64/);
  assert.match(androidCheck,/"\$debug_digest" = "\$release_digest"/);
  assert.match(androidCheck,/trap 'rm -f "\$keystore" "\$release_apk"' EXIT/);

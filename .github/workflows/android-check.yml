@@ -76,9 +76,10 @@ jobs:
           fi
           debug_apk=app/build/outputs/apk/debug/app-debug.apk
           cert_digest() {
-            "$apksigner" verify --print-certs "$1" | awk -F': ' '
+            "$apksigner" verify --print-certs "$1" | awk '
               /certificate SHA-256 digest:/ {
-                digest=$2
+                digest=$0
+                sub(/^.*certificate SHA-256 digest:[[:space:]]*/, "", digest)
                 gsub(/[^[:xdigit:]]/, "", digest)
                 if (length(digest) == 64) { print tolower(digest); exit }
               }
