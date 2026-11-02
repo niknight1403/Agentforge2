@@ -96,9 +96,11 @@ export async function approveProposal(id, createVillaFn) {
       sourcePath: '',
       mode: 'BUILD'
     });
+    const createdId = Number(villa?.villaId ?? villa?.id);
+    if (!Number.isSafeInteger(createdId) || createdId < 1) throw new Error('Villa-Erstellung lieferte keine gueltige Villa-ID.');
     db.prepare('UPDATE proposals SET status = ?, villa_id = ?, decided_at = ? WHERE id = ?')
-      .run('approved', villa.id, now(), Number(id));
-    return { villaId: villa.id, villaName: villa.name };
+      .run('approved', createdId, now(), Number(id));
+    return { villaId: createdId, villaName: villa.name || row.proposed_name || row.title };
   } catch (err) {
     db.prepare('UPDATE proposals SET status = ? WHERE id = ?').run('pending', Number(id));
     throw err;
