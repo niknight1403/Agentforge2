@@ -285,17 +285,30 @@
     {
       "id": "VF-0011",
       "area": "Produktionsblocker und Release-Gates",
-      "goal": null,
-      "benefit": "Produktionsblocker und Release-Gates",
+      "goal": "Production Product-Gate fehleradaequat und datensparsam diagnostizieren",
+      "benefit": "Ein fehlendes Produkt bleibt blockiert, aber der konkrete sichere Ablehnungsgrund ist fuer Betrieb und Release sichtbar",
       "dependencies": [],
-      "modules": [],
-      "acceptanceCriteria": [],
-      "risks": [
-        "Scope vor Ausfuehrung anhand gemessener Ergebnisse festlegen"
+      "modules": [
+        "scripts/lib/product-release-gate.mjs",
+        "scripts/live-llm-smoke.mjs",
+        "server/tests/product-release-gate.test.mjs",
+        "server/tests/live-llm-smoke.test.mjs"
       ],
-      "status": "unscoped",
-      "scopeDefined": false,
-      "evidence": [],
+      "acceptanceCriteria": [
+        "Verified=true, leere Blocker, Buildstatus ready und valides App-ZIP bleiben Pflicht",
+        "Fehlerbericht nennt API-Listenlaenge, Pagination-Metadaten, Auswahlgrenze und jeden geprueften Kandidaten",
+        "Produkt-/Build-/Download-Ablehnungen werden pro Villa-ID ohne Namen, rohe Blockertexte, Tokens oder Secrets ausgegeben",
+        "Regressionstests belegen unveraendertes fail-closed Verhalten und redigierte Diagnose"
+      ],
+      "risks": [
+        "Produktabnahme bleibt blockiert, bis ein echtes Produktionsprodukt verifiziert und herunterladbar ist",
+        "Produktive Projektpruefungen benoetigen die noch nicht konfigurierte gepinnte Docker-Sandbox"
+      ],
+      "status": "in_progress",
+      "scopeDefined": true,
+      "evidence": [
+        "docs/sprints/evidence/VF-0011-diagnosis.json"
+      ],
       "implementationCommit": null
     },
     {

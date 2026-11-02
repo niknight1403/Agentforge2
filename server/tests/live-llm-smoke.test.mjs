@@ -16,11 +16,14 @@ async function fixture(options={}) {
     if(options.busyOnce&&chatCalls===1){res.statusCode=409;out={error:'Der Master-Agent bearbeitet gerade eine andere Nachricht.'};}
     else if(options.unavailable){res.statusCode=503;out={code:'LLM_UNAVAILABLE'};}
     else out={ok:true,answer:options.empty?'':'Die Modellverbindung ist geprüft.',steps:options.actions?[{type:'status'}]:[],offline:options.offline===true};
-   }else{res.statusCode=404;out={};}res.end(JSON.stringify(out));
+   }else if(req.url==='/api/villas')out=options.villas||[];
+   else if(/^\/api\/villas\/\d+\/product$/.test(req.url))out=options.product||{verified:false,blockers:[]};
+   else if(/^\/api\/villas\/\d+\/build$/.test(req.url))out={status:options.buildStatus||'none'};
+   else{res.statusCode=404;out={};}res.end(JSON.stringify(out));
   });
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
- try{return await verifyLiveLlm({baseUrl:`http://127.0.0.1:${server.address().port}`,email:'fixture@example.test',password:'fixture-only',clock:()=>10000,expectedVersion:VERSION,retryDelaysMs:options.retryDelaysMs??[0]});}
+ try{return await verifyLiveLlm({baseUrl:`http://127.0.0.1:${server.address().port}`,email:'fixture@example.test',password:'fixture-only',clock:()=>10000,expectedVersion:VERSION,retryDelaysMs:options.retryDelaysMs??[0],requireProductAcceptance:options.requireProductAcceptance===true});}
  finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
 }
 
@@ -40,4 +43,19 @@ test('Voruebergehende Sperre des Masters wird wiederholt statt das Gate zu falen
 });
 test('Dauerhafte Sperre scheitert weiterhin',async()=>{
  await assert.rejects(fixture({busyOnce:true,retryDelaysMs:[]}));
+});
+
+test('Live smoke preserves safe per-Villa product diagnostics without logging private blocker text',async()=>{
+ const error=await fixture({
+  requireProductAcceptance:true,
+  villas:[{id:34,tasks_done:95,name:'Private customer project'}],
+  product:{verified:false,blockers:['owner@example.test API_KEY=never-log','Verification smoke missing']},
+  buildStatus:'ready'
+ }).then(()=>null,error=>error);
+ assert.ok(error instanceof Error);
+ assert.match(error.message,/Live LLM smoke product acceptance blocked: PRODUCT_ACCEPTANCE_MISSING:/);
+ assert.match(error.message,/"id":34/);
+ assert.match(error.message,/"product":"not_verified"/);
+ assert.match(error.message,/"build":"ready"/);
+ assert.doesNotMatch(error.message,/owner@example\.test|never-log|Private customer project/);
 });

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "sprint": "VF-0011",
+  "status": "in_progress",
+  "acceptanceComplete": false,
+  "sourceCommit": "6aacb3e62ea4210eb8bc1d801c96783077115e2a",
+  "productionRuns": {
+    "lastSuccessfulHubDeploy": "https://github.com/niknight1403/Agentforge2/actions/runs/41513872263",
+    "failedReleaseSmoke": [
+      "https://github.com/niknight1403/Agentforge2/actions/runs/41513791102",
+      "https://github.com/niknight1403/Agentforge2/actions/runs/41514485527"
+    ],
+    "readOnlyProductDiagnosis": "https://github.com/niknight1403/Agentforge2/actions/runs/41515290424"
+  },
+  "productionFindings": {
+    "apiVillaRows": 18,
+    "apiImplementation": "GET /api/villas returns every non-archived row ordered by created_at DESC; no SQL limit or pagination",
+    "smokeSelection": "Up to 10 rows sorted by tasks_done DESC; 8 rows were outside the smoke candidate window",
+    "verifiedProducts": 0,
+    "topTenBuildsReady": 10,
+    "acceptedProduct": false,
+    "interpretation": "The release failure is real missing product verification, not proven API-list truncation. Ready builds alone do not satisfy acceptance."
+  },
+  "confirmedOperationalBlocker": {
+    "source": "docs/quality/production-project-execution-fail-closed-2026-11-02.json",
+    "detail": "Production project execution now fails closed with PROJECT_SANDBOX_REQUIRED when VF_PROJECT_SANDBOX is not configured. The Hub-Deploy workflow does not provision the sandbox. The existing diagnostic records Villa 34 build/smoke failures because next and jest are unavailable.",
+    "requiredOwnerAction": "The production/infrastructure owner must provision Docker and an already-present immutable image digest, configure VF_PROJECT_SANDBOX=docker and VF_PROJECT_SANDBOX_IMAGE through the approved host configuration path, then run the existing isolation and Villa verification checks. Do not enable host execution, pull a mutable image, or deploy before these checks pass."
+  },
+  "implementation": [
+    "Keep all product acceptance requirements unchanged.",
+    "Report list shape, pagination metadata, total rows, selected/omitted candidates and deterministic selection order.",
+    "Report each checked Villa ID with safe product state, blocker count/category counts, build status and download/ZIP outcome.",
+    "Never emit Villa names, raw blocker text, credentials, or error messages that may contain private data."
+  ],
+  "localVerification": {
+    "targetedCommand": "node --import ./server/tests/_env.mjs --test server/tests/product-release-gate.test.mjs server/tests/live-llm-smoke.test.mjs",
+    "targetedTests": 13,
+    "targetedPassed": 13,
+    "targetedFailed": 0,
+    "syntaxFiles": 203,
+    "secretScan": "passed",
+    "webBuild": "passed: 13 files; 8 local HTML assets"
+  },
+  "notProven": [
+    "No Villa is product-verified in production.",
+    "No new APK/Web release was published.",
+    "The Docker sandbox has not been configured or verified on the production host.",
+    "No production deploy was started for this change."
+  ]
+}

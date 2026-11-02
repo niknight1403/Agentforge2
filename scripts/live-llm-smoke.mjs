@@ -5,6 +5,21 @@ import {fileURLToPath} from 'node:url';
 import {verifyProductAcceptance} from './lib/product-release-gate.mjs';
 import {VERSION} from '../server/version.mjs';
 
+function safeProductAcceptanceError(error) {
+  const message=String(error?.message||'');
+  const prefix='PRODUCT_ACCEPTANCE_MISSING: ';
+  if(message.startsWith(prefix)){
+    try{
+      const diagnosis=JSON.parse(message.slice(prefix.length));
+      if(diagnosis?.code==='PRODUCT_ACCEPTANCE_MISSING'&&Array.isArray(diagnosis.checked))return `${prefix}${JSON.stringify(diagnosis)}`;
+    }catch{}
+  }
+  const productCode=message.match(/\b(PRODUCT_(?:LIST_INVALID|VILLA_ID_INVALID|DOWNLOAD_HTTP_\d{3}|ARCHIVE_INVALID|ARCHIVE_UNSAFE|APP_FILES_MISSING|ARCHIVE_TOO_LARGE))\b/);
+  if(productCode)return productCode[1];
+  const httpStatus=message.match(/\bHTTP\s+(\d{3})\b/i);
+  return `PRODUCT_GATE_REQUEST_FAILED${httpStatus?`_HTTP_${httpStatus[1]}`:''}`;
+}
+
 export async function verifyLiveLlm({baseUrl,email,password,expectedVersion=VERSION,fetchImpl=fetch,clock=Date.now,timeoutMs=120000,requireProductAcceptance=false,preferredVillaId,retryDelaysMs=[2000,4000,8000,15000]}={}) {
   const url=new URL(baseUrl);
   if(url.username||url.password||url.search||url.hash||url.pathname!=='/'||!['https:','http:'].includes(url.protocol)||url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw Error('Smoke endpoint must be an HTTPS origin or loopback fixture.');
@@ -44,13 +59,17 @@ export async function verifyLiveLlm({baseUrl,email,password,expectedVersion=VERS
   const replyAt=Number(after.llm?.lastSuccessfulReplyAt)||0;
   if(after.ok!==true||after.version!==expectedVersion||after.llm?.freeOnly!==true||replyAt<started-5000||replyAt<=Number(before.llm?.lastSuccessfulReplyAt||0)||!after.llm?.lastSuccessfulRoute)throw Error('Live LLM smoke: no fresh model-reply evidence.');
   let product;
-  if(requireProductAcceptance)product=await verifyProductAcceptance({preferredVillaId,requestJson:path=>request(path,null,login.token),download:async path=>{
-    const response=await fetchImpl(url.origin+path,{headers:{authorization:'Bearer '+login.token},signal,redirect:'error'});
-    if(!response.ok)throw Error('PRODUCT_DOWNLOAD_HTTP_'+response.status);
-    const reader=response.body.getReader(),parts=[];let size=0;
-    try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>50*1024*1024)throw Error('PRODUCT_ARCHIVE_TOO_LARGE');parts.push(Buffer.from(value));}}finally{await reader.cancel().catch(()=>{});}
-    return Buffer.concat(parts);
-  }});
+  if(requireProductAcceptance){
+    try{
+      product=await verifyProductAcceptance({preferredVillaId,requestJson:path=>request(path,null,login.token),download:async path=>{
+        const response=await fetchImpl(url.origin+path,{headers:{authorization:'Bearer '+login.token},signal,redirect:'error'});
+        if(!response.ok)throw Error('PRODUCT_DOWNLOAD_HTTP_'+response.status);
+        const reader=response.body.getReader(),parts=[];let size=0;
+        try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>50*1024*1024)throw Error('PRODUCT_ARCHIVE_TOO_LARGE');parts.push(Buffer.from(value));}}finally{await reader.cancel().catch(()=>{});}
+        return Buffer.concat(parts);
+      }});
+    }catch(error){throw Error(`Live LLM smoke product acceptance blocked: ${safeProductAcceptanceError(error)}`);}
+  }
   return {ok:true,version:after.version,route:String(after.llm.lastSuccessfulRoute).slice(0,120),latencyMs:clock()-started,...(product?{product}:{})};
 }
 
