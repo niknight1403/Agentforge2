@@ -9,6 +9,8 @@ TOKEN=$("${CURL[@]}" -H 'Content-Type: application/json' -d "$LOGIN" "$H/api/aut
 AUTH=("Authorization: Bearer $TOKEN")
 VILLAS=$("${CURL[@]}" -H "${AUTH[0]}" "$H/api/villas")
 # All decision-making is based on a fresh authenticated inventory, not a guessed ID.
+echo 'Read-only Villa inventory for exact target resolution:'
+jq -r '.[] | "#\\(.id) \\(.name) [\\(.status)]"' <<< "$VILLAS"
 TARGET=$(jq -er '[.[] | select((.name // "" | ascii_downcase | gsub("[ _-]";"")) == "deepvilla")] | if length == 1 then .[0].id else error("Expected exactly one Deep Villa, found "+(length|tostring)) end' <<< "$VILLAS")
 jq -c --argjson target "$TARGET" '[.[] | {id,name,status,autonomy,executing,task_count:.tasks_total,done:.tasks_done}] | {target:$target,villas:.}' <<< "$VILLAS"
 if [[ "$APPLY" != "true" ]]; then echo "READ-ONLY PREVIEW: no writes"; exit 0; fi
