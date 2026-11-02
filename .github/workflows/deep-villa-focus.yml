@@ -1,0 +1,48 @@
+name: Deep Villa – exclusive product focus
+on:
+  pull_request:
+    paths:
+      - scripts/ops/focus-deep-villa.sh
+      - .github/workflows/deep-villa-focus.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/ops/focus-deep-villa.sh
+      - .github/workflows/deep-villa-focus.yml
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply exclusive Deep Villa focus (true/false)"
+        type: boolean
+        default: false
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: deep-villa-exclusive-focus
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: bash -n scripts/ops/focus-deep-villa.sh
+      - name: Confirm exact-match predicate
+        run: |
+          set -euo pipefail
+          jq -en '[{"id":7,"name":"Deep Villa"},{"id":8,"name":"Other"}] | [.[] | select((.name // "" | ascii_downcase | gsub("[ _-]";"")) == "deepvilla")] | if length == 1 then .[0].id else error("ambiguous") end' | grep -qx 7
+          if jq -en '[{"id":7,"name":"Deep Villa"},{"id":8,"name":"Deep-Villa"}] | [.[] | select((.name // "" | ascii_downcase | gsub("[ _-]";"")) == "deepvilla")] | if length == 1 then .[0].id else error("ambiguous") end'; then exit 1; fi
+  apply:
+    needs: validate
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.apply == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate, focus Deep Villa, stop competitors and resume target
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+          VF_APPLY: 'true'
+        run: bash scripts/ops/focus-deep-villa.sh
