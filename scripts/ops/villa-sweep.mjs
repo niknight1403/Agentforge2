@@ -160,6 +160,19 @@ function buildNachweis(id, ordner, stack) {
   return true;
 }
 
+function safeStageFailure(check) {
+  const raw = String(check?.reason || check?.output || '');
+  const lines = raw.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  const relevant = lines.filter(x => /error|failed|missing|cannot find|not found|syntax|ENOENT|ERR_|assert|exception|timeout|permission/i.test(x));
+  const selected = (relevant.length ? relevant : lines.slice(-2)).slice(0, 3).join(' | ');
+  return selected
+    .replace(/(https?:\/\/)[^\s@]+@/gi, '$1[redacted]@')
+    .replace(/\b(?:ghp_|github_pat_|sk-|mstrl_|AIza)[A-Za-z0-9_\-]{10,}\b/g, '[redacted]')
+    .replace(/(api[_-]?key|password|token|secret|authorization)\s*[:=]\s*[^\s|]+/gi, '$1=[redacted]')
+    .replace(/(?:\/home\/[^/\s]+|\/opt\/villaforge\/server\/data\/workspace)/g, '[workspace]')
+    .slice(0, 380) || 'Keine sichere Fehlerdetails verfuegbar';
+}
+
 function reparaturAuftrag(id, blocker) {
   if (DRY) { console.log('  [dry-run] wuerde Reparaturaufgabe anlegen/aktualisieren'); return null; }
   const titel = '[REPARATUR] Produktabnahme bestehen';
@@ -237,7 +250,11 @@ for (const villa of kandidaten) {
     let checks = {}, blockers = [];
     try { checks = JSON.parse(last?.checks || '{}'); } catch {}
     try { blockers = JSON.parse(last?.blockers || '[]'); } catch {}
-    for (const kind of ['build', 'tests', 'smoke', 'quality']) console.log(`  letzter ${kind}: ${String(checks[kind]?.status || 'missing').slice(0, 30)}`);
+    for (const kind of ['build', 'tests', 'smoke', 'quality']) {
+      const stage = checks[kind];
+      console.log(`  letzter ${kind}: ${String(stage?.status || 'missing').slice(0, 30)}`);
+      if (stage && stage.status !== 'passed') console.log(`  Diagnose ${kind}: ${safeStageFailure(stage)}`);
+    }
     console.log(`  blockierende Abnahmebefunde: ${Array.isArray(blockers) ? blockers.length : 0} (Details im gesicherten Hub-Pruefbericht)`);
     if (Array.isArray(blockers) && blockers.length && !DRY) reparaturAuftrag(villa.id, blockers.slice(0, 4).map((b) => String(b).slice(0, 180)));
     continue;
@@ -258,6 +275,7 @@ for (const villa of kandidaten) {
     .map(([kind, v]) => `${kind}: ${String(v.reason || v.status).slice(0, 200)}`);
   for (const [kind, v] of Object.entries(ergebnis.checks || {})) {
     console.log(`  ${kind}: ${v.status}${v.reason ? ' - ' + String(v.reason).slice(0, 150) : ''}`);
+    if (v.status !== 'passed') console.log(`  Diagnose ${kind}: ${safeStageFailure(v)}`);
   }
   if (ergebnis.ok) {
     abgenommen += 1;
