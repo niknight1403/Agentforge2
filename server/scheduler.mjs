@@ -75,6 +75,16 @@ const retryDetails = new Map();
 const focusVillaIdsSafe = () => { try { return focusVillaIds(); } catch { return []; } };
 let starter = null;        // Funktion (villaId) => Promise, die den Lauf startet
 
+function prioritizeQueue(preserveFront = 0) {
+  if (queue.length < 2) return;
+  const rank = new Map(villaRanking().map((villa) => [Number(villa.id), Number(villa.rank) || 0]));
+  const keep = Math.max(0, Math.min(queue.length, Number(preserveFront) || 0));
+  const head = queue.slice(0, keep);
+  const tail = queue.slice(keep).map((id, index) => ({ id, index, rank: rank.get(Number(id)) ?? -Infinity }));
+  tail.sort((a, b) => b.rank - a.rank || a.index - b.index);
+  queue.splice(0, queue.length, ...head, ...tail.map((item) => item.id));
+}
+
 function occupiedSlots() {
   return new Set([...active, ...retryTimers.keys()]).size;
 }
@@ -139,7 +149,8 @@ export function cancelScheduledVilla(id) {
   return true;
 }
 
-function pump() {
+function pump(preserveFront = 0) {
+  prioritizeQueue(preserveFront);
   while (starter && occupiedSlots() < SLOTS() && queue.length) {
     const id = queue.shift();
     const villa=db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(id);
@@ -185,7 +196,7 @@ export function enqueueVillas(ids) {
     const villaId = Number(id);
     if (Number.isSafeInteger(villaId) && villaId > 0 && !active.has(villaId) && !queue.includes(villaId)) queue.push(villaId);
   }
-  pump();
+  pump(Math.max(0, SLOTS() - occupiedSlots()));
   return schedulerStatus();
 }
 
