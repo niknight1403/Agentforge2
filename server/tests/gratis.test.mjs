@@ -184,3 +184,29 @@ test('Qualitaetstor blockiert Projekte ohne Test-Script', async () => {
   assert.equal(out.passed,false);
   assert.match(out.output,/Tests fehlen/);
 });
+
+test('Qualitaetstor: fehlendes Testwerkzeug wird nachinstalliert statt endlos zu pendeln', async () => {
+  const t = now();
+  db.prepare("INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES ('Werkzeug-Villa','x','CREATED',10,1,?,?)").run(t, t);
+  const villaId = Number(db.prepare('SELECT id FROM villas ORDER BY id DESC LIMIT 1').get().id);
+
+  // Projekt, dessen Test-Script ein Werkzeug aufruft, das ohne node_modules fehlt.
+  const lauf = join(tmp, 'projekt-werkzeug-' + t);
+  mkdirSync(lauf, { recursive: true });
+  writeFileSync(join(lauf, 'package.json'), JSON.stringify({ name: 'p', scripts: { test: 'gibtesnicht-xyz --run' } }));
+  setSource(villaId, lauf);
+
+  const res = await runQualityGate(villaId, { title: 'Feature bauen' }, 'Fertig.');
+  assert.equal(res.passed, false, 'ohne ausfuehrbares Testwerkzeug darf das Tor nicht gruen sein');
+  assert.equal(res.environment, true, 'Umgebungsproblem wird als solches gekennzeichnet, damit keine Reparaturschleife entsteht');
+  assert.match(String(res.output), /127|not found|ENOENT/i, 'der Grund nennt das fehlende Werkzeug');
+
+  // Gegenprobe: lauffaehiges Projekt bleibt gruen und wird nicht als Umgebung markiert.
+  const ok = join(tmp, 'projekt-ok-' + t);
+  mkdirSync(ok, { recursive: true });
+  writeFileSync(join(ok, 'package.json'), JSON.stringify({ name: 'p', scripts: { test: 'node -e "process.exit(0)"' } }));
+  setSource(villaId, ok);
+  const gruen = await runQualityGate(villaId, { title: 'Feature bauen' }, 'Fertig.');
+  assert.equal(gruen.passed, true);
+  assert.equal(gruen.environment, undefined);
+});

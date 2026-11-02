@@ -1606,9 +1606,28 @@ export async function runQualityGate(villaId, task, answer) {
     hasPkg = true; hasTest = !!pkg?.scripts?.test;
   } catch { /* kein npm-Projekt */ }
   if (hasPkg && hasTest) {
-    const gate = await runTool({ villaId, agentId: 0 }, 'project_run', { binary: 'npm', args: ['test', '--silent'], timeoutMs: 180000 });
-    const passed = /^Exit 0/.test(String(gate));
-    return { passed, output: String(gate), annotated: passed ? `${answer}\n\n[Qualitaetstor: npm test gruen.]` : answer };
+    const npmTest = () => runTool({ villaId, agentId: 0 }, 'project_run', { binary: 'npm', args: ['test', '--silent'], timeoutMs: 180000 });
+    const npmInstall = () => runTool({ villaId, agentId: 0 }, 'project_run', { binary: 'npm', args: ['install', '--include=dev', '--no-audit', '--no-fund'], timeoutMs: 300000 });
+    // v1.41.0: Fehlt node_modules (oder wurde ohne devDependencies installiert),
+    // findet `npm test` das Testwerkzeug nicht ("Exit 127: jest: not found").
+    // Fruehere Fassung wiederholte dann endlos Reparaturaufgaben, ohne dass sich
+    // etwas aendern konnte. Deshalb vor dem Urteil die Abhaengigkeiten sichern.
+    let gate = String(await npmTest());
+    if (!/^Exit 0/.test(gate)) {
+      const missingTool = /Exit 127|command not found|: not found|ENOENT/i.test(gate) || !existsSync(join(root, 'node_modules'));
+      if (missingTool) {
+        await npmInstall();
+        gate = String(await npmTest());
+        if (/^Exit 0/.test(gate)) {
+          return { passed: true, output: gate, installed: true, annotated: `${answer}\n\n[Qualitaetstor: npm test gruen nach Installation der Testabhaengigkeiten.]` };
+        }
+        // Weiterhin nicht ausfuehrbar: das ist ein Umgebungsproblem, kein
+        // Codefehler. Die Aufgabe muss mit Grund scheitern statt zu pendeln.
+        return { passed: false, environment: true, output: gate, annotated: answer };
+      }
+    }
+    const passed = /^Exit 0/.test(gate);
+    return { passed, output: gate, annotated: passed ? `${answer}\n\n[Qualitaetstor: npm test gruen.]` : answer };
   }
   if (hasPkg && !hasTest) return { passed:false,annotated:answer,output:'Tests fehlen: npm test muss echte Fehlerfälle prüfen.' };
   // Python-Projekte: Syntax-Tor (py_compile) ueber alle .py-Dateien
@@ -1751,6 +1770,16 @@ export async function executeTask(villaId, task, executionOptions = {}) {
   // Qualitaetstor: Code-Aufgaben muessen den echten Test-Tor passieren.
   if (!res.error && codeRole) {
     const gate = await runQualityGate(villaId, task, answer);
+    if (!gate.passed && gate.environment) {
+      // Kein Codefehler: Testumgebung laesst sich nicht ausfuehren. Sofort mit
+      // Grund scheitern, statt die Aufgabe wieder und wieder ein zu reihen.
+      db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?')
+        .run('FAILED', `Qualitaetstor blockiert (Umgebung): Tests nicht ausfuehrbar, auch nach Installation der Abhaengigkeiten.\n${String(gate.output||'').slice(0, 1200)}\n\n${answer}`.slice(0, 4000), now(), task.id);
+      db.prepare("UPDATE agents SET status='IDLE', last_active_at=? WHERE id=?").run(now(), agent.id);
+      recordLesson(villaId, agent.id, `Blockade: ${task.title}`, `Tests waren nicht ausfuehrbar (Testwerkzeug fehlt nach npm install --include=dev). Erst Umgebung reparieren, dann Aufgabe neu bewerten.`);
+      emit('task', { villaId, taskId: task.id, agentId: agent.id, status: 'GATE_BLOCKED', title: task.title, reason: 'environment' });
+      return;
+    }
     if (!gate.passed) {
       saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:'quality_gate_failed',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,errorCode:'QUALITY_GATE'}});
       db.prepare('UPDATE tasks SET status = ?, result = ?, priority = MAX(1,priority - 1), retry_count=COALESCE(retry_count,0)+1, updated_at = ? WHERE id = ?')
