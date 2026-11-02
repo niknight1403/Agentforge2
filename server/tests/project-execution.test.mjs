@@ -12,3 +12,13 @@ test('invalid or unpinned sandbox configurations fail instead of running on host
  assert.throws(()=>projectExecution(tmpdir(),'node',[],{mode:'unknown'}),/MODE_INVALID/);
 });
 test('legacy host mode remains explicit until sandbox deployment is verified',()=>assert.deepEqual(projectExecution('/unused','node',['x'],{mode:'host'}),{binary:'node',args:['x']}));
+test('production fails closed when no project sandbox is configured',()=>{
+ const beforeNode=process.env.NODE_ENV,beforeSandbox=process.env.VF_PROJECT_SANDBOX;
+ try{
+  process.env.NODE_ENV='production';delete process.env.VF_PROJECT_SANDBOX;
+  assert.throws(()=>projectExecution('/unused','node',['x']),/PROJECT_SANDBOX_REQUIRED/);
+ }finally{
+  if(beforeNode===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=beforeNode;
+  if(beforeSandbox===undefined)delete process.env.VF_PROJECT_SANDBOX;else process.env.VF_PROJECT_SANDBOX=beforeSandbox;
+ }
+});

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-11-02T19:50:00Z",
+  "baseCommit": "527ea065d55c33b23dda973380ca5f6668210d18",
+  "scope": "one reversible production safety blocker: project commands could default to direct host execution in production",
+  "observed": {
+    "codePath": "server/project-execution.mjs defaulted VF_PROJECT_SANDBOX to host",
+    "deployPath": ".github/workflows/hub-deploy.yml does not configure a pinned project sandbox",
+    "productContext": "Villa 34 remains unaccepted; last sweep reports next/jest unavailable",
+    "lastSweep": "https://github.com/niknight1403/Agentforge2/actions/runs/41502633191",
+    "lastProductAudit": "https://github.com/niknight1403/Agentforge2/actions/runs/41502633354"
+  },
+  "change": [
+    "NODE_ENV=production now fails closed with PROJECT_SANDBOX_REQUIRED when VF_PROJECT_SANDBOX is absent",
+    "explicit host mode remains available for trusted development and test execution",
+    "the existing pinned Docker sandbox path remains unchanged and is the only production execution path to enable later"
+  ],
+  "constraints": [
+    "no unknown Villa code executed during this run",
+    "no new scheduler or provider registry",
+    "no Villa state or start/stop decision changed",
+    "no new secrets, permissions or costs"
+  ],
+  "localVerification": [
+    {
+      "command": "node --import ./server/tests/_env.mjs --test server/tests/project-execution.test.mjs server/tests/project-process.test.mjs server/tests/project-stage.test.mjs server/tests/project-verification.test.mjs",
+      "exitCode": 0,
+      "result": "25/25 passed"
+    },
+    {
+      "command": "npm test",
+      "exitCode": 0,
+      "result": "491/491 passed"
+    },
+    {
+      "command": "npm run check:syntax",
+      "exitCode": 0,
+      "result": "203 JavaScript files valid"
+    },
+    {
+      "command": "npm run check:secrets",
+      "exitCode": 0,
+      "result": "clean"
+    },
+    {
+      "command": "npm run build:web",
+      "exitCode": 0,
+      "result": "13 files built; 8 local HTML assets checked"
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0,
+      "result": "clean"
+    }
+  ],
+  "status": "awaiting PR CI, integration, deploy and production confirmation",
+  "resume": "Start from current main and state.json. Confirm no active PR/deploy. Verify fail-closed behavior is deployed. Then, in exactly one later change, configure the existing Docker sandbox with an immutable locally present image and run its isolation test before allowing any Villa project command."
+}

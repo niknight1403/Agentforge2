@@ -1,8 +1,16 @@
 import {randomUUID} from 'node:crypto';
 import {realpathSync} from 'node:fs';
 /** Opt-in isolated execution; never downloads images or falls back on failure. */
-export function projectExecution(root,binary,args,{mode=process.env.VF_PROJECT_SANDBOX||'host',image=process.env.VF_PROJECT_SANDBOX_IMAGE||''}={}){
+function defaultMode(){
+ // Projektcode ist nicht Teil des vertrauenswuerdigen Hub-Releases. Eine
+ // Produktionsinstanz darf ihn deshalb nur nach expliziter Sandbox-Freigabe
+ // ausfuehren. Entwicklung und Tests behalten ihren bisherigen Host-Modus.
+ if(process.env.VF_PROJECT_SANDBOX)return process.env.VF_PROJECT_SANDBOX;
+ return process.env.NODE_ENV==='production'?'required':'host';
+}
+export function projectExecution(root,binary,args,{mode=defaultMode(),image=process.env.VF_PROJECT_SANDBOX_IMAGE||''}={}){
  if(mode==='host')return {binary,args};
+ if(mode==='required')throw Error('PROJECT_SANDBOX_REQUIRED');
  if(mode!=='docker')throw Error('PROJECT_SANDBOX_MODE_INVALID');
  if(!/^[a-zA-Z0-9][a-zA-Z0-9._/:-]*@sha256:[a-f0-9]{64}$/.test(image))throw Error('PROJECT_SANDBOX_PINNED_IMAGE_REQUIRED');
  const source=realpathSync(root);
