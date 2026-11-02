@@ -11,7 +11,7 @@
  *     solange das Limit nicht erreicht ist, Autonomie fuer genau diese Villa.
  *
  * Aufruf auf dem Server (cwd /opt/villaforge):
- *   node scripts/ops/villa-sweep.mjs [--limit=2] [--auto-max=3] [--dry-run]
+ *   node scripts/ops/villa-sweep.mjs [--limit=2] [--auto-max=2] [--dry-run]
  */
 import {writeFileSync, existsSync, readdirSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -175,7 +175,7 @@ function arbeitendeVillen() {
 }
 
 function autonomieFreigeben(id, name) {
-  releaseFocusIfComplete();
+  if (!DRY) releaseFocusIfComplete();
   const decision = focusDecision(id);
   if (!decision.allowed) { console.log(`  Projektfokus: Villa ${id} nicht starten`); return false; }
   const aktiv = arbeitendeVillen();
@@ -208,7 +208,7 @@ let bearbeitet = 0;
 let arrest = 0;
 for (const villa of kandidaten) {
   if (bearbeitet >= LIMIT) break;
-  releaseFocusIfComplete();
+  if (!DRY) releaseFocusIfComplete();
   if (!focusDecision(villa.id).allowed) continue;
   const ordner = projectDirectory(villa.id);
   const stack = stackVon(ordner);
