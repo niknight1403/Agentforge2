@@ -1,0 +1,156 @@
+name: Publish-Smoke
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Publishing-Sandbox & Revenue-Light Smoke Test
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, sys
+
+          HUB_URL = 'https://hub.cybersarah-ki.com'
+          email = os.environ.get('VF_ADMIN_EMAIL')
+          password = os.environ.get('VF_ADMIN_PASSWORD')
+
+          if not email or not password:
+              print("FEHLER: Admin-Credentials (VF_ADMIN_EMAIL/VF_ADMIN_PASSWORD) fehlen.")
+              sys.exit(1)
+
+          # 1) Login
+          print("== 1) Login am Hub ==")
+          login_payload = json.dumps({'email': email, 'password': password}).encode('utf-8')
+          req = urllib.request.Request(f"{HUB_URL}/api/auth/login", data=login_payload, headers={'Content-Type': 'application/json'})
+          try:
+              with urllib.request.urlopen(req, timeout=30) as res:
+                  login_data = json.loads(res.read().decode())
+                  token = login_data.get('token')
+                  if not token:
+                      print("FEHLER: Login gab kein Token zurück.")
+                      sys.exit(1)
+                  print("Login erfolgreich. Token erhalten.")
+          except Exception as e:
+              print(f"FEHLER beim Login: {e}")
+              sys.exit(1)
+
+          headers = {
+              'Authorization': f'Bearer {token}',
+              'Content-Type': 'application/json'
+          }
+
+          # 2) Existierende Villa finden
+          print("\n== 2) Existierende Villa abrufen ==")
+          req = urllib.request.Request(f"{HUB_URL}/api/villas", headers=headers)
+          try:
+              with urllib.request.urlopen(req, timeout=30) as res:
+                  villas = json.loads(res.read().decode())
+                  if not villas or len(villas) == 0:
+                      print("FEHLER: Keine Villen gefunden.")
+                      sys.exit(1)
+                  villa_id = villas[0]['id']
+                  villa_name = villas[0].get('name', 'Unbenannt')
+                  print(f"Verwende Villa ID: {villa_id} ('{villa_name}')")
+          except Exception as e:
+              print(f"FEHLER beim Abrufen der Villen: {e}")
+              sys.exit(1)
+
+          # 3) POST /api/villas/:id/publish
+          print(f"\n== 3) POST /api/villas/{villa_id}/publish ==")
+          pub_payload = json.dumps({
+              'text': 'Sprint 8 Publishing Sandbox Smoke Test',
+              'platforms': ['x', 'linkedin']
+          }).encode('utf-8')
+          req = urllib.request.Request(f"{HUB_URL}/api/villas/{villa_id}/publish", data=pub_payload, headers=headers, method='POST')
+          post_pub_status = 0
+          post_pub_data = {}
+          try:
+              with urllib.request.urlopen(req, timeout=30) as res:
+                  post_pub_status = res.status
+                  post_pub_data = json.loads(res.read().decode())
+                  print(f"HTTP Status: {post_pub_status}")
+                  print("Response Snippet:", json.dumps(post_pub_data)[:300])
+          except urllib.error.HTTPError as e:
+              post_pub_status = e.code
+              print(f"HTTP error: {e.code} - {e.read().decode()}")
+          except Exception as e:
+              print(f"FEHLER bei POST publish: {e}")
+
+          # 4) GET /api/villas/:id/publish
+          print(f"\n== 4) GET /api/villas/{villa_id}/publish ==")
+          req = urllib.request.Request(f"{HUB_URL}/api/villas/{villa_id}/publish", headers=headers, method='GET')
+          get_pub_status = 0
+          get_pub_data = {}
+          try:
+              with urllib.request.urlopen(req, timeout=30) as res:
+                  get_pub_status = res.status
+                  get_pub_data = json.loads(res.read().decode())
+                  print(f"HTTP Status: {get_pub_status}")
+                  print("Response Snippet:", json.dumps(get_pub_data)[:300])
+          except urllib.error.HTTPError as e:
+              get_pub_status = e.code
+              print(f"HTTP error: {e.code} - {e.read().decode()}")
+          except Exception as e:
+              print(f"FEHLER bei GET publish: {e}")
+
+          # 5) GET /api/villas/:id/revenue
+          print(f"\n== 5) GET /api/villas/{villa_id}/revenue ==")
+          req = urllib.request.Request(f"{HUB_URL}/api/villas/{villa_id}/revenue", headers=headers, method='GET')
+          get_rev_status = 0
+          get_rev_data = {}
+          try:
+              with urllib.request.urlopen(req, timeout=30) as res:
+                  get_rev_status = res.status
+                  get_rev_data = json.loads(res.read().decode())
+                  print(f"HTTP Status: {get_rev_status}")
+                  print("Response Snippet:", json.dumps(get_rev_data)[:300])
+          except urllib.error.HTTPError as e:
+              get_rev_status = e.code
+              print(f"HTTP error: {e.code} - {e.read().decode()}")
+          except Exception as e:
+              print(f"FEHLER bei GET revenue: {e}")
+
+          # 6) Validierung
+          print("\n== 6) Verifikation der Akzeptanzkriterien ==")
+          success = True
+
+          if post_pub_status not in (200, 201):
+              print(f"FAIL: POST /publish lieferte Status {post_pub_status} statt 200/201")
+              success = False
+          if post_pub_data.get('sandbox') is not True:
+              print(f"FAIL: POST /publish Antwort enthält kein 'sandbox': true (bekommen: {post_pub_data.get('sandbox')})")
+              success = False
+
+          if get_pub_status not in (200, 201):
+              print(f"FAIL: GET /publish lieferte Status {get_pub_status} statt 200/201")
+              success = False
+          if get_pub_data.get('sandbox') is not True:
+              print(f"FAIL: GET /publish Antwort enthält kein 'sandbox': true (bekommen: {get_pub_data.get('sandbox')})")
+              success = False
+
+          if get_rev_status not in (200, 201):
+              print(f"FAIL: GET /revenue lieferte Status {get_rev_status} statt 200/201")
+              success = False
+          ideas = get_rev_data.get('ideas', [])
+          if len(ideas) != 3:
+              print(f"FAIL: GET /revenue lieferte {len(ideas)} Ideen statt 3")
+              success = False
+          else:
+              for idea in ideas:
+                  if not idea.get('price_eur') or idea.get('price_eur') <= 0:
+                      print(f"FAIL: Idea '{idea.get('name')}' hat ungültigen Preis: {idea.get('price_eur')}")
+                      success = False
+
+          print("\nHinweis zum Aufräumen: Kein DELETE-Endpunkt für Posts vorhanden; Testeinträge wurden in der 'posts'-Tabelle gespeichert (Villa nicht gelöscht).")
+
+          if success:
+              print("\nSUCCESS: Alle Smoke-Tests für Publishing-Sandbox und Revenue-Light erfolgreich bestanden!")
+          else:
+              print("\nFAIL: Einige Akzeptanzkriterien wurden nicht erfüllt.")
+              sys.exit(1)
+          PY
