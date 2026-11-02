@@ -80,3 +80,17 @@ Das Gate ist nicht mehr nur Prompt-Text, sondern im Endpunkt erzwungen.
 - Ehrlichkeits-Fix: eine defekte Bewertungsantwort erzeugt **keine** neutralen 5/5-Werte mehr. Der Vorschlag laeuft als `rated: false` mit `score: null` weiter, bleibt als offenes Votum dokumentiert, und es entsteht trotzdem eine Aufgabe, damit die Villa nicht stillsteht.
 - Bewertungen werden primaer ueber den Agentennamen zugeordnet, nicht ueber die Reihenfolge der Modellantwort.
 - Tests: 10 Faelle fuer Rubrik/Auswertung, 3 Faelle fuer Persistenz (inkl. Alt-Test `council2` auf die ehrliche Erwartung umgestellt). Suite: 440 Tests gruen.
+
+## Telemetrie: drei Kennzahlen sind jetzt messbar (02.11.2026)
+
+Die Kennzahlen aus dem ursprünglichen Konzept standen bisher nur im Dokument. Jetzt liefert `server/telemetry.mjs` sie aus echten Daten:
+
+- **build_green_rate** — Anteil Builds mit Status `ready` an allen protokollierten Builds. Ergebnisse landen in der neuen Tabelle `build_events` (Villa, Status, ok, Dauer, Abschlusszeit, Fehlertext), geschrieben am Ende jedes Builds in `server/builds.mjs`.
+- **time_to_first_working** — Zeit von `villas.created_at` bis zum ersten gruenen Build: Median, p90, schnellste und langsamste Villa. Villen ohne gruenen Build zaehlen nicht mit und verfaelschen die Kennzahl nicht.
+- **rework_quote** — Anteil Aufgaben mit Nacharbeit, gemessen an den vorhandenen Zaehlern `retry_count` und `assignments`.
+
+Grundsaetze: Jede Kennzahl nennt ihre Stichprobe (`samples`). Ohne Daten ist der Wert `null`, nicht `0` — eine 0 waere eine Behauptung, die die Daten nicht tragen. `telemetrySummary()` liefert `complete: false` und einen `notes`-Eintrag, solange eine Kennzahl keine Daten hat.
+
+Abruf: `GET /api/metrics/telemetry` (optional `?villaId=N`), angemeldet.
+
+Nachweis: 10 Logiktests (`server/tests/telemetry.test.mjs`) und 3 E2E-Faelle gegen den Hub (`server/tests/telemetry-e2e.test.mjs`), Suite 452 Tests gruen.

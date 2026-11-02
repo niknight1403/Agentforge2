@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import { recordBuildResult } from './telemetry.mjs';
 import { projectDirectory,verifyProjectRuntime } from './project-verification.mjs';
 /*
  * Produkt-Build-Pipeline (v1): Jede Villa liefert ein herunterladbares
@@ -420,6 +421,18 @@ export async function startBuild(villaId, { auto = false } = {}) {
       L(`ABGEBROCHEN: ${record.error}`);
     }
     record.finishedAt = now();
+    // Telemetrie: jedes Build-Ergebnis dauerhaft festhalten, damit
+    // build_green_rate und time_to_first_working messbar sind.
+    try {
+      recordBuildResult({
+        villaId: Number(villaId),
+        status: record.status,
+        ok: record.status === 'ready',
+        startedAt: record.startedAt,
+        finishedAt: record.finishedAt,
+        error: record.error || ''
+      });
+    } catch { /* Telemetrie stoert keinen Build */ }
     if (record.artifact && record.status === 'ready') {
       try { record.sizeBytes = statSync(join(OUT, record.artifact)).size; } catch { /* Groesse optional */ }
     }
