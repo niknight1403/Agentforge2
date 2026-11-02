@@ -21,6 +21,11 @@ process.chdir('/opt/villaforge');
 const {db, now} = await import('/opt/villaforge/server/db.mjs');
 const {verifyProjectRuntime, projectDirectory, verificationPlan, inspectProject} = await import('/opt/villaforge/server/project-verification.mjs');
 const {focusDecision, releaseFocusIfComplete} = await import('/opt/villaforge/server/project-focus.mjs');
+const {canUseTool} = await import('/opt/villaforge/server/packs.mjs');
+const DEVELOPMENT_TOOLS = ['project_tree', 'project_search', 'project_read', 'project_write', 'project_patch', 'project_run'];
+function toolReadiness() {
+  return DEVELOPMENT_TOOLS.map((name) => ({ name, enabled: canUseTool(name).allowed === true }));
+}
 
 const arg = (name, fallback) => {
   const treffer = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -158,8 +163,9 @@ function buildNachweis(id, ordner, stack) {
 function reparaturAuftrag(id, blocker) {
   if (DRY) { console.log('  [dry-run] wuerde Reparaturaufgabe anlegen/aktualisieren'); return null; }
   const titel = '[REPARATUR] Produktabnahme bestehen';
+  const unavailable = toolReadiness().filter((tool) => !tool.enabled).map((tool) => tool.name);
   const text = 'Der Sweep hat die Abnahme echt ausgefuehrt. Offene Befunde: ' + blocker.join('; ').slice(0, 900) +
-    '. MVP-RELEASE-FOKUS: Implementiere zuerst genau einen nutzbaren Ende-zu-Ende-Nutzerfluss im bestehenden Projekt. Bearbeite Quellcode, Tests und reale Build-Konfiguration statt neue Agenten, Ideen oder generische Planungsaufgaben anzulegen. Fuehre Build, Tests und Smoke echt aus; behebe konkrete Fehler im Produkt. Keine Platzhalter, keine simulierten Ergebnisse, keine Umgehung der Pruefung. Akzeptanz: nutzbarer MVP, build, tests und smoke am selben Quellstand bestanden und echtes Artefakt vorhanden.';
+    '. Werkzeugfolge: project_tree / project_search / project_read fuer Quellanalyse, dann project_patch oder project_write fuer echten Code, anschliessend project_run fuer Build, Test und Smoke. Fehlende freigegebene Werkzeuge: ' + (unavailable.length ? unavailable.join(', ') : 'keine') + '. Gesperrte Packs nicht umgehen; Blockade melden. MVP-RELEASE-FOKUS: Implementiere zuerst genau einen nutzbaren Ende-zu-Ende-Nutzerfluss im bestehenden Projekt. Bearbeite Quellcode, Tests und reale Build-Konfiguration statt neue Agenten, Ideen oder generische Planungsaufgaben anzulegen. Fuehre Build, Tests und Smoke echt aus; behebe konkrete Fehler im Produkt. Keine Platzhalter, keine simulierten Ergebnisse, keine Umgehung der Pruefung. Akzeptanz: nutzbarer MVP, build, tests und smoke am selben Quellstand bestanden und echtes Artefakt vorhanden.';
   const offen = db.prepare("SELECT id FROM tasks WHERE villa_id=? AND title=? AND status NOT IN ('DONE','FAILED')").get(id, titel);
   if (offen) {
     db.prepare('UPDATE tasks SET description=?, updated_at=? WHERE id=?').run(text, now(), offen.id);
@@ -213,6 +219,8 @@ for (const villa of kandidaten) {
   if (bearbeitet >= LIMIT) break;
   if (!DRY) releaseFocusIfComplete();
   if (!focusDecision(villa.id).allowed) continue;
+  const disabled = toolReadiness().filter((tool) => !tool.enabled).map((tool) => tool.name);
+  console.log(`  Entwickler-Werkzeuge: ${DEVELOPMENT_TOOLS.length - disabled.length}/${DEVELOPMENT_TOOLS.length} freigegeben${disabled.length ? '; gesperrt: ' + disabled.join(', ') : ''}`);
   const ordner = projectDirectory(villa.id);
   const stack = stackVon(ordner);
   console.log(`\n-- Villa ${villa.id} "${villa.name}" | ${stack} | bisher ${villa.pruefung} | ${villa.offen} offene Aufgaben`);
