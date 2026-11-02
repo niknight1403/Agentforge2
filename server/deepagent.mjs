@@ -95,6 +95,11 @@ function projectDir(id) {
   return join(DEEP_DIR, String(id));
 }
 
+/** Projektordner (Export fuer das Produkt-Gate). */
+export function deepProjectDir(id) {
+  return projectDir(Number(id));
+}
+
 /** Projekt-Kontext fuer den Deep Agent: Idee, Anhaenge, Verlauf, Gedaechtnis. */
 function buildContext(project, files) {
   const recent = db.prepare(

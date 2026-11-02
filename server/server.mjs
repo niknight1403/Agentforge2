@@ -28,7 +28,8 @@ import { maturity, developCycle, PHASES, proposalsToTasks } from './product.mjs'
 import { evolutionState, proposeForVilla, evolveAll, listVillaProposals, listAllPending, approveVillaProposal, rejectVillaProposal, KINDS as EVOLVE_KINDS } from './evolve.mjs';
 import { systemAudit, healTick, healActions } from './heal.mjs';
 import { startBuild, buildStatus, buildArtifact, previewInfo, previewFile, maybeAutoBuild } from './builds.mjs';
-import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
+import { productGateForProjectDir } from './deep-product-gate.mjs';
+import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
 import { studioStatus as routeStudioStatus, eliteRanking as routeEliteRanking, simulateChain as routeSimulateChain, saveChain as routeSaveChain, listChains as routeListChains, buildChainFromGoal as routeChainFromGoal, recordSimulation as routeRecordSim } from './route-studio.mjs';
@@ -1109,6 +1110,23 @@ async function api(req, res, url) {
             .map((message) => `${message.role === 'user' ? 'Nutzer' : 'Projekt-Experte'}: ${String(message.content).slice(0, 900)}`)
             .join('\n');
           const buildIdea = `${detail.project.idea}\n\nProjektanforderungen und DeepAgent-Plan:\n${context}`.slice(0, 9000);
+          // Produkt-Gate (Nikos Auftrag 2026-11-02): Die Villa entsteht erst,
+          // wenn das Projekt ein belegtes Produkt hervorgebracht hat. Fehlt ein
+          // Beleg, antwortet der Endpunkt mit den konkreten Blockern.
+          const gate = productGateForProjectDir(deepProjectDir(projectId));
+          if (!gate.ready) {
+            return json(res, 409, {
+              ok: false,
+              projectId,
+              villaId: 0,
+              gateBlocked: true,
+              checks: gate.checks,
+              blockers: gate.blockers,
+              message:
+                'Produkt-Gate nicht erfuellt: Die Villa entsteht erst, wenn das Projekt ein belegtes Produkt hat. ' +
+                'Fehlend: ' + gate.blockers.map((b) => b.label).join(', ') + '.'
+            });
+          }
           const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD' });
           villaId = linkDeepProjectVilla(projectId, built.villaId);
         }
