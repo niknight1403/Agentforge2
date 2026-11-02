@@ -11,7 +11,7 @@
  *     solange das Limit nicht erreicht ist, Autonomie fuer genau diese Villa.
  *
  * Aufruf auf dem Server (cwd /opt/villaforge):
- *   node scripts/ops/villa-sweep.mjs [--limit=2] [--auto-max=3] [--dry-run]
+ *   node scripts/ops/villa-sweep.mjs [--limit=2] [--auto-max=2] [--dry-run]
  */
 import {writeFileSync, existsSync, readdirSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -20,13 +20,14 @@ import {execFileSync} from 'node:child_process';
 process.chdir('/opt/villaforge');
 const {db, now} = await import('/opt/villaforge/server/db.mjs');
 const {verifyProjectRuntime, projectDirectory, verificationPlan, inspectProject} = await import('/opt/villaforge/server/project-verification.mjs');
+const {focusDecision, releaseFocusIfComplete} = await import('/opt/villaforge/server/project-focus.mjs');
 
 const arg = (name, fallback) => {
   const treffer = process.argv.find((a) => a.startsWith(`--${name}=`));
   return treffer ? treffer.split('=')[1] : fallback;
 };
 const LIMIT = Number(arg('limit', 2));
-const AUTO_MAX = Number(arg('auto-max', 3));
+const AUTO_MAX = Math.max(0, Math.min(2, Number(arg('auto-max', 2)) || 0));
 const DRY = process.argv.includes('--dry-run');
 
 const PY_BUILD = [
@@ -153,6 +154,7 @@ function buildNachweis(id, ordner, stack) {
 }
 
 function reparaturAuftrag(id, blocker) {
+  if (DRY) { console.log('  [dry-run] wuerde Reparaturaufgabe anlegen/aktualisieren'); return null; }
   const titel = '[REPARATUR] Produktabnahme bestehen';
   const text = 'Der Sweep hat die Abnahme echt ausgefuehrt. Offene Befunde: ' + blocker.join('; ').slice(0, 900) +
     '. Behebe die Ursache im Projekt, nicht die Pruefung. Akzeptanz: build, test und smoke laufen am unveraenderten Quellstand erfolgreich.';
@@ -173,6 +175,9 @@ function arbeitendeVillen() {
 }
 
 function autonomieFreigeben(id, name) {
+  if (!DRY) releaseFocusIfComplete();
+  const decision = focusDecision(id);
+  if (!decision.allowed) { console.log(`  Projektfokus: Villa ${id} nicht starten`); return false; }
   const aktiv = arbeitendeVillen();
   if (aktiv >= AUTO_MAX) {
     console.log(`  Autonomie bleibt aus (${aktiv}/${AUTO_MAX} Villen arbeiten)`);
@@ -203,6 +208,8 @@ let bearbeitet = 0;
 let arrest = 0;
 for (const villa of kandidaten) {
   if (bearbeitet >= LIMIT) break;
+  if (!DRY) releaseFocusIfComplete();
+  if (!focusDecision(villa.id).allowed) continue;
   const ordner = projectDirectory(villa.id);
   const stack = stackVon(ordner);
   console.log(`\n-- Villa ${villa.id} "${villa.name}" | ${stack} | bisher ${villa.pruefung} | ${villa.offen} offene Aufgaben`);
