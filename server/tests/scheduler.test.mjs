@@ -78,6 +78,27 @@ test('Doppeltes Einreihen startet nur einmal', async () => {
   assert.equal(calls, 1);
 });
 
+test('Warteschlange priorisiert den schnellsten belegbaren Produktabschluss', async () => {
+  _resetScheduler();
+  const activeA = villa('Aktiv A', 0, 10), activeB = villa('Aktiv B', 0, 10);
+  const earlyButRaw = villa('Frueh eingereiht', 1, 9);
+  const nearDone = villa('Fast fertig', 9, 1);
+  const started = [], releases = new Map();
+  configureScheduler({ start: (id) => new Promise((resolve) => {
+    started.push(id);
+    releases.set(id, resolve);
+  }) });
+  enqueueVillas([activeA, activeB, earlyButRaw, nearDone]);
+  assert.deepEqual(started, [activeA, activeB], 'laufende Slots werden nicht verdraengt');
+  assert.deepEqual(schedulerStatus().queue, [nearDone, earlyButRaw], 'wartende Villa mit hoechstem Abschlussgrad steht vorne');
+  releases.get(activeA)({ status: 'COMPLETED' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, [activeA, activeB, nearDone], 'naechster freier Slot erzeugt zuerst den schnellsten Abschluss');
+  for (const release of releases.values()) release({ status: 'COMPLETED' });
+  await new Promise((resolve) => setImmediate(resolve));
+  _resetScheduler();
+});
+
 test('produktionsfokus aktiviert CyberSarah und Revenue Engine, entfernt Legacy-Villen', async () => {
   _resetScheduler();
   const other = villa('Andere Villa', 2, 2);
