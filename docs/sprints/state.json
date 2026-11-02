@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceCommit": "87a3d40f00b66e4302bedd853aff873957a26782",
+  "sourceCommit": "1dd7989b5d7813c4f761d57a950fd31a1f4bf903",
   "design": "Aurora / sichtbare Variante 6",
   "completed": [
     "VF-0001",
@@ -15,19 +15,19 @@
   "current": "VF-0009",
   "next": "VF-0009",
   "blockers": [
-    "Frische Masterprobe: zuerst HTTP 200 ohne auftragsbezogene Antwort; ein begrenzter Kontrolllauf nach Deploy scheitert mit HTTP 503, BUSY am 32B-Knoten und Timeout am Oracle-Knoten. Kein weiterer blinder Gesamt-Retry.",
-    "Alle 16 Villen vollstaendig gelesen, aber keine bestandene Produktabnahme; Modell- und Artefaktnachweise bleiben getrennt.",
-    "Bild-/Bildbearbeitungs-/Video-/Audio-Rendering benoetigt autorisierte Providerkonfiguration; keine kostenpflichtige Ressource wurde eingerichtet.",
-    "Bestehende Android-Debug-Signatur ist noch keine dauerhaft verwaltete Produktionssignierung.",
-    "Projektbefehle laufen laut fs-tools direkt via execFile; isolierte Laufzeit generierten Codes ist nicht nachgewiesen."
+    "Deep Villa 34: build/smoke fail because next is unavailable; tests fail because jest is unavailable. Project dependency handling must stay isolated and may not execute unknown lifecycle code with production privileges.",
+    "Production audit at commit 1dd7989 reports 18/18 Villas blocked; no complete product acceptance.",
+    "Local browser audit cannot run because Chrome is unavailable; CI browser acceptance is required.",
+    "Image, image-editing, video and audio rendering still require authorized provider configuration.",
+    "Existing Android debug signature is not a managed production signing identity."
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
   "executionMode": "foreground-and-scheduled-iterations",
-  "workBranch": "fix/resource-constrained-villa-scheduling-20261102",
-  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/49",
+  "workBranch": "fix/deep-villa-dependency-preflight",
+  "pullRequest": null,
   "qualityBaseline": {
-    "tests": 487,
-    "pass": 487,
+    "tests": 489,
+    "pass": 489,
     "fail": 0,
     "browserE2E": 20,
     "browserAuditScopes": 9,
@@ -36,47 +36,41 @@
   "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden.",
   "integratedCommit": "6064f2f158a947e7a77e578cbd6c67a91a680d0b",
   "version": "1.60.8",
-  "pullRequestStatus": "open: local completion-contract extension verified; CI for extension pending",
+  "pullRequestStatus": "local fix verified; pull request not yet opened",
   "backgroundExecution": false,
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
-  "releaseStatus": "blocked: proposed scheduler commit not deployed; fresh production and per-villa product acceptance evidence pending",
-  "checkpointParent": "87a3d40f00b66e4302bedd853aff873957a26782",
-  "nextAction": "PR #49 nach CI integrieren; danach Deploy-Health, frische Master-Modellantwort ohne Nebenaktionen, Browserabnahme sowie echte Produktabnahmen und Artefakte der vereinbarten Villen pruefen.",
+  "releaseStatus": "blocked: integrated deployment, browser acceptance and product acceptance pending",
+  "checkpointParent": "1dd7989b5d7813c4f761d57a950fd31a1f4bf903",
+  "nextAction": "Fix fuer atomare Fokus-Startentscheidung integrieren und deployen; danach Produktionsinventar pruefen. Anschliessend genau den naechsten Deep-Villa-Blocker (fehlende next/jest-Projektabhaengigkeiten) isoliert bearbeiten.",
   "lastMaintenance": {
-    "baseCommit": "1de8c7b220e7ce7aaa048576f237d9803e3b438f",
+    "baseCommit": "1dd7989b5d7813c4f761d57a950fd31a1f4bf903",
     "pullRequests": [
-      49
+      22
     ],
-    "evidence": "docs/quality/two-villa-finish-first-2026-11-02.json",
-    "audit": null,
+    "evidence": "docs/quality/focus-start-atomicity-2026-11-02.json",
+    "audit": "https://github.com/niknight1403/Agentforge2/actions/runs/41492749657",
     "runtimeAutomation": {
       "available": true,
-      "mechanism": "existing scheduler and developCycle only; no duplicate scheduler",
-      "availableForVillas": 16,
-      "eligibleWithActiveVilla": 2
+      "mechanism": "existing scheduler only; activation moved behind focus decision",
+      "availableForVillas": 18,
+      "eligibleWithActiveVilla": 1
     }
   },
   "lastRealModelVerification": {
     "schemaVersion": 1,
-    "sprint": "VF-0004",
+    "sprint": "VF-0009",
     "status": "done",
     "production": true,
-    "version": "1.60.5",
-    "verifiedAt": "2026-11-01T00:15:22Z",
-    "runtimeCommit": "b7c3a43da5c661a31de7f6f61068ac93d18e74d1",
-    "routeRecoveryRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41255761579",
-    "verificationRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41249986255",
-    "verificationJob": 124698781023,
+    "version": "1.60.8",
+    "verifiedAt": "2026-11-02T17:36:50Z",
+    "runtimeCommit": "1dd7989b5d7813c4f761d57a950fd31a1f4bf903",
+    "verificationRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41492749667",
     "httpStatus": 200,
     "ok": true,
     "sideEffects": 0,
-    "latencySeconds": 33,
-    "enabledVerifiedRoutes": [
-      30,
-      31,
-      32
-    ],
-    "scope": "Echte Master-Modellantwort; keine Produktabnahme der Villen."
+    "latencySeconds": 6.1,
+    "route": "Cascade: Ollama CAX41 (7B schnell)",
+    "scope": "Fresh real Master response only; no Villa product acceptance."
   },
   "scheduledContinuation": {
     "enabled": true,
