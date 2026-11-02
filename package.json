@@ -23,6 +23,6 @@
     "node": ">=22"
   },
   "dependencies": {
-    "stripe": "23.0.1"
+    "stripe": "23.1.0"
   }
 }
