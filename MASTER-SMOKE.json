@@ -1,12 +1,9 @@
 {
-  "checked_at": "2026-11-01T23:07:56.853396+00:00",
-  "master_reply_ok": false,
-  "villa_created": false,
-  "villa_deleted": false,
-  "created_villa_id": null,
-  "master_reply": "Nicht abgeschlossen: Prompt: Text mit h\u00f6chstens 12000 Zeichen erforderlich.",
-  "errors": [
-    "Master-History hat keinen verifizierten Reply oder Villa-ID > 0. Text: Nicht abgeschlossen: Prompt: Text mit h\u00f6chstens 12000 Zeichen erforderlich.",
-    "4) Keine Villa deren Name 'Master-Rauchtest' enthaelt gefunden."
-  ]
+  "checked_at": "2026-11-02T05:06:37.494871+00:00",
+  "master_reply_ok": true,
+  "villa_created": true,
+  "villa_deleted": true,
+  "created_villa_id": 35,
+  "master_reply": "Villa #35 mit Projektauftrag angelegt. Start erst auf deinen Befehl.",
+  "errors": []
 }
