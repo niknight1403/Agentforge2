@@ -2,11 +2,10 @@ name: Villa-Sweep
 # Nimmt blockierte Villen automatisch nacheinander ab: echter Build-Nachweis,
 # echte Abnahme, bei Bedarf Reparaturaufgabe samt Autonomie-Freigabe.
 on:
-  push:
+  workflow_run:
+    workflows: [Hub-Deploy]
+    types: [completed]
     branches: [main]
-    paths:
-      - '.github/workflows/villa-sweep.yml'
-      - 'scripts/ops/villa-sweep.mjs'
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
@@ -30,6 +29,7 @@ concurrency:
 
 jobs:
   sweep:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
