@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "sprint": "VF-0015",
-  "status": "in_progress",
-  "sprintAcceptanceComplete": false,
+  "status": "done",
+  "sprintAcceptanceComplete": true,
   "sourceCommit": "b9c460dc267777ab2548635177b2b03b2f8756a9",
   "implementation": [
     "Generate a random, per-run CI-only JKS key in runner temp storage.",
@@ -14,7 +14,16 @@
     "androidSigningPolicyTests": 5,
     "passed": 5,
     "gradleBuild": "not available on local Windows host",
-    "linuxAndroidCi": "pending"
+    "linuxAndroidCi": "passed",
+    "failedWorkflowRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41524203852",
+    "correction": "Normalize SHA-256 fingerprints before validating and comparing them; release criteria are unchanged.",
+    "passingWorkflowRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41543065265",
+    "passingSteps": [
+      "Release build without production signing fails closed",
+      "Android lint, unit tests and debug build",
+      "Build and verify release signature with ephemeral CI-only key"
+    ],
+    "implementationCommit": "2439c9828b6fef0f6d55c8ba2ab37033432c6b8e"
   },
   "notProven": [
     "The ephemeral key is not a production signing identity.",

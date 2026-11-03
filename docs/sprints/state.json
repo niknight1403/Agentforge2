@@ -14,10 +14,11 @@
     "VF-0011",
     "VF-0012",
     "VF-0013",
-    "VF-0014"
+    "VF-0014",
+    "VF-0015"
   ],
-  "current": "VF-0015",
-  "next": "VF-0015",
+  "current": "VF-0009",
+  "next": "VF-0009",
   "blockers": [
     "Production project execution previously defaulted to host mode when VF_PROJECT_SANDBOX was unset. The bounded fix fails closed in NODE_ENV=production until a pinned isolated runner is explicitly configured.",
     "Deep Villa 34 still has no accepted usable product; build/smoke require next and tests require jest.",
@@ -41,7 +42,7 @@
   "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden.",
   "integratedCommit": "6aacb3e62ea4210eb8bc1d801c96783077115e2a",
   "version": "1.60.8",
-  "pullRequestStatus": "open; VF-0013 Android CI passed on 0d0cab35; VF-0014 real Docker preflight and isolation CI passed on b9c460d; VF-0015 ephemeral signing CI pending",
+  "pullRequestStatus": "closed, unmerged; VF-0013 Android CI passed on 0d0cab35; VF-0014 real Docker preflight and isolation CI passed on b9c460d; VF-0015 ephemeral signing CI passed on 2439c982 via run 41543065265",
   "backgroundExecution": false,
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
   "releaseStatus": "blocked: verified Villa product, production Docker sandbox and managed Android signing identity pending",

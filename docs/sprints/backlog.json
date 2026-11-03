@@ -422,12 +422,12 @@
       "risks": [
         "Ephemeraler CI-Schluessel prueft nur den Buildpfad; Produktionsschluessel, Identitaet und Update-Kontinuitaet muessen extern bestaetigt werden"
       ],
-      "status": "in_progress",
+      "status": "done",
       "scopeDefined": true,
       "evidence": [
         "docs/sprints/evidence/VF-0015-ephemeral-android-signing.json"
       ],
-      "implementationCommit": null
+      "implementationCommit": "2439c9828b6fef0f6d55c8ba2ab37033432c6b8e"
     },
     {
       "id": "VF-0016",
