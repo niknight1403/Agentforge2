@@ -15,7 +15,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: cargo test --locked
+      - run: cargo generate-lockfile\n      - run: cargo test --locked
       - run: npm test
       - run: npm run build
       - run: npm run smoke
