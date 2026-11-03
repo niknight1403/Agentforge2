@@ -373,3 +373,37 @@ test("Billing: subscription-event aktiviert nach unpaid Checkout bei bestaetigte
   assert.equal(result.ok, true);
   assert.equal(quotaFuer(db, 1).planKey, "pro");
 });
+
+
+test("Billing: verspaeteter unbezahlter Checkout setzt aktive Subscription nicht zurueck", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES (?,?,?)").run("order@firma.de", "x", Date.now());
+  db.prepare("INSERT INTO subscriptions(user_id,plan,status,stripe_customer,stripe_subscription,updated_at) VALUES (1,'pro','active','cus_order','sub_order',?)").run(Date.now());
+  const r = verarbeiteStripeEvent(db, {
+    id: "evt_late_unpaid", type: "checkout.session.completed",
+    data: { object: {
+      mode: "subscription", payment_status: "unpaid",
+      metadata: { user_id: "1", plan: "pro" },
+      customer: "cus_order", subscription: "sub_order"
+    } }
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.veraltet, true);
+  assert.equal(quotaFuer(db, 1).planKey, "pro");
+});
+
+test("Billing: verspaeteter bezahlter Checkout reaktiviert keine Kuendigung", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES (?,?,?)").run("cancelled@firma.de", "x", Date.now());
+  db.prepare("INSERT INTO subscriptions(user_id,plan,status,stripe_customer,stripe_subscription,updated_at) VALUES (1,'trial','cancelled','cus_order2','sub_order2',?)").run(Date.now());
+  const r = verarbeiteStripeEvent(db, {
+    id: "evt_late_paid", type: "checkout.session.completed",
+    data: { object: {
+      mode: "subscription", payment_status: "paid",
+      metadata: { user_id: "1", plan: "pro" },
+      customer: "cus_order2", subscription: "sub_order2"
+    } }
+  });
+  assert.equal(r.veraltet, true);
+  assert.equal(quotaFuer(db, 1).planKey, "trial");
+});
