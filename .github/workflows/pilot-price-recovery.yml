@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'ops/pilot-restore-stripe-prices.py'
+      - 'ops/tests/test_pilot_stripe_recovery.py'
       - '.github/workflows/pilot-price-recovery.yml'
   push:
     branches: [main]
@@ -21,7 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate recovery script syntax
-        run: python3 -m py_compile ops/pilot-restore-stripe-prices.py
+        run: |
+          python3 -m py_compile ops/pilot-restore-stripe-prices.py
+          python3 -m unittest discover -s ops/tests -p 'test_pilot_stripe_recovery.py' -v
   repair:
     needs: validation
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
