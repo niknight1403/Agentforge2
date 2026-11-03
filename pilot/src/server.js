@@ -254,6 +254,28 @@ export function createApp({ db = openDatabase(), llm = (m, o) => llmChat(m, o) }
     }
   });
 
+  // ---------- Stripe-Kundenportal (Kündigung, Rechnungen, Zahlungsdaten) ----------
+  app.post("/api/billing/portal", mitSession, async (req, res) => {
+    const stripe = stripeClient();
+    if (!stripe) return res.status(503).json({ error: "Zahlungen sind nicht konfiguriert" });
+    const sub = db.prepare("SELECT stripe_customer FROM subscriptions WHERE user_id = ?").get(req.nutzer.id);
+    if (!sub?.stripe_customer) return res.status(404).json({ error: "Noch kein Stripe-Kundenkonto vorhanden" });
+    // Nur die konfigurierte Produktadresse verwenden, nicht den manipulierbaren Host-Header.
+    const basis = process.env.BASIS_URL;
+    if (!basis || !/^https:\/\/[^/]+(?:\/[^?#]*)?$/.test(basis)) {
+      return res.status(503).json({ error: "Sichere Produktadresse fehlt (BASIS_URL)" });
+    }
+    try {
+      const portal = await stripe.billingPortal.sessions.create({
+        customer: sub.stripe_customer,
+        return_url: basis.replace(/\/$/, "") + "/app",
+      });
+      res.json({ url: portal.url });
+    } catch {
+      res.status(502).json({ error: "Kundenportal derzeit nicht erreichbar" });
+    }
+  });
+
   // ---------- Seiten ----------
   const seite = (datei) => {
     const inhalt = readFileSync(join(OEFFENTLICH, datei), "utf8");
