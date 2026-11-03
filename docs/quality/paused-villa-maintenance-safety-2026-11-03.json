@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-11-03T05:42:00Z",
+  "baseCommit": "784fa0035c35100506984dcff83ca39c065cd56c",
+  "scope": "Prevent the existing production Villa sweep from inspecting, restarting or re-enabling Villas that the owner paused or disabled.",
+  "blocker": "The maintenance sweep could set autonomy=1 and RUNNING, overriding a stored pause decision.",
+  "resolution": {
+    "module": "server/villa-maintenance-policy.mjs",
+    "integration": "scripts/ops/villa-sweep.mjs",
+    "behavior": [
+      "Maintenance candidates require autonomy=1.",
+      "PAUSED, STOPPING, ARCHIVED and COMPLETED Villas are excluded before project inspection.",
+      "The sweep never writes autonomy=1.",
+      "A fresh database check protects against a stop request arriving after candidate selection."
+    ]
+  },
+  "localVerification": {
+    "targetedTest": "node --test server/tests/villa-maintenance-policy.test.mjs",
+    "targetedResult": "3 passed, 0 failed",
+    "fullTests": "npm test",
+    "fullTestResult": "542 passed, 0 failed",
+    "syntax": "npm run check:syntax: 224 JavaScript files valid",
+    "secrets": "npm run check:secrets: passed",
+    "webBuild": "npm run build:web: version 1.60.10; 13 files built; 8 local HTML assets verified",
+    "diffCheck": "git diff --check: passed"
+  },
+  "productionVerification": "pending deployment of the integrated commit",
+  "limitations": [
+    "No unknown Villa project code was executed.",
+    "This safety fix does not satisfy product acceptance for blocked Villas.",
+    "Aurora design direction 6 and the existing scheduler/provider registry remain unchanged."
+  ]
+}

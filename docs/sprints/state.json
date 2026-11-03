@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceCommit": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
+  "sourceCommit": "784fa0035c35100506984dcff83ca39c065cd56c",
   "design": "Aurora / sichtbare Variante 6",
   "completed": [
     "VF-0001",
@@ -41,7 +41,21 @@
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810524",
   "releaseStatus": "blocked: Android and Web builds passed, but 19/19 Villas lack product acceptance; no GitHub release created",
   "checkpointParent": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
-  "nextAction": "VF-0009: in one bounded run, inspect Deep Villa 34 acceptance evidence and repair at most one verified build, test, smoke or quality blocker through the deployed Docker sandbox. Preserve paused Villa decisions and do not treat generated fixtures or build-ready metadata as a usable product.",
+  "nextAction": "After deploying the paused-Villa maintenance guard, verify production health and a fresh side-effect-free Master response, then run the read-only Villa product audit. VF-0009 remains blocked until a real Villa product passes build, test, smoke, quality and artifact acceptance.",
+  "currentRun": {
+    "baseCommit": "784fa0035c35100506984dcff83ca39c065cd56c",
+    "scope": "one reversible production safety blocker: maintenance must preserve owner pause and stop decisions",
+    "evidence": "docs/quality/paused-villa-maintenance-safety-2026-11-03.json",
+    "localChecks": {
+      "tests": "542 passed, 0 failed",
+      "policyTests": "3 passed, 0 failed",
+      "syntax": "224 files valid",
+      "secrets": "passed",
+      "webBuild": "13 files; 8 assets verified"
+    },
+    "production": "pending integration and deployment",
+    "productAcceptance": "still blocked; no completion claim"
+  },
   "lastMaintenance": {
     "baseCommit": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
     "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/70",

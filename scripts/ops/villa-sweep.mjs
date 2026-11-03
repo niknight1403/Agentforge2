@@ -22,6 +22,7 @@ const {db, now} = await import('/opt/villaforge/server/db.mjs');
 const {verifyProjectRuntime, projectDirectory, verificationPlan, inspectProject, sanitizeVerificationFailure, verificationRepairFindings} = await import('/opt/villaforge/server/project-verification.mjs');
 const {focusDecision, releaseFocusIfComplete} = await import('/opt/villaforge/server/project-focus.mjs');
 const {canUseTool} = await import('/opt/villaforge/server/packs.mjs');
+const {mayRunVillaMaintenance,runnableMaintenanceVillas} = await import('/opt/villaforge/server/villa-maintenance-policy.mjs');
 const DEVELOPMENT_TOOLS = ['project_tree', 'project_search', 'project_read', 'project_write', 'project_patch', 'project_run'];
 function toolReadiness() {
   return DEVELOPMENT_TOOLS.map((name) => ({ name, enabled: canUseTool(name).allowed === true }));
@@ -185,6 +186,11 @@ function arbeitendeVillen() {
 
 function autonomieFreigeben(id, name) {
   if (!DRY) releaseFocusIfComplete();
+  const current = db.prepare('SELECT autonomy,status FROM villas WHERE id=?').get(id);
+  if (!mayRunVillaMaintenance(current)) {
+    console.log(`  Villa ${id} bleibt gestoppt; Wartung respektiert die gespeicherte Start/Stop-Entscheidung`);
+    return false;
+  }
   const decision = focusDecision(id);
   if (!decision.allowed) { console.log(`  Projektfokus: Villa ${id} nicht starten`); return false; }
   const aktiv = arbeitendeVillen();
@@ -193,13 +199,13 @@ function autonomieFreigeben(id, name) {
     return false;
   }
   if (DRY) { console.log('  [dry-run] wuerde Autonomie freigeben'); return false; }
-  db.prepare("UPDATE villas SET autonomy=1, status='RUNNING', updated_at=? WHERE id=?").run(now(), id);
-  console.log(`  Autonomie freigegeben und gestartet (${aktiv + 1}/${AUTO_MAX}): ${name}`);
+  db.prepare("UPDATE villas SET status='RUNNING', updated_at=? WHERE id=? AND autonomy=1").run(now(), id);
+  console.log(`  Bereits freigegebene Autonomie fortgesetzt (${aktiv + 1}/${AUTO_MAX}): ${name}`);
   return true;
 }
 
 // ---- Auswahl: nie geprueft oder zuletzt blockiert, kleinste Id zuerst ----
-const kandidaten = db.prepare(`
+const kandidaten = runnableMaintenanceVillas(db.prepare(`
   SELECT v.id, v.name, v.status, v.autonomy,
          (SELECT status FROM project_verifications p WHERE p.villa_id = v.id) AS pruefung,
          (SELECT fingerprint FROM project_verifications p WHERE p.villa_id = v.id) AS stand,
@@ -209,7 +215,7 @@ const kandidaten = db.prepare(`
     AND (? = 0 OR v.id = ?)
     AND COALESCE((SELECT status FROM project_verifications p WHERE p.villa_id = v.id), 'offen') != 'passed'
   ORDER BY COALESCE((SELECT verified_at FROM project_verifications p WHERE p.villa_id = v.id), 0) ASC, v.id
-`).all(ONLY_VILLA, ONLY_VILLA);
+`).all(ONLY_VILLA, ONLY_VILLA));
 
 console.log(`== SWEEP: ${kandidaten.length} Villen offen, diese Runde ${Math.min(LIMIT, kandidaten.length)} (limit=${LIMIT}, auto-max=${AUTO_MAX}) ==`);
 
@@ -277,8 +283,8 @@ for (const villa of kandidaten) {
   autonomieFreigeben(villa.id, villa.name);
 }
 
-// Wenn kein Quellstand sich bewegt hat, wird genau eine Villa aufgeweckt:
-// bevorzugt die mit dem kuerzesten Weg zur Abnahme (nur noch smoke offen).
+// Wenn kein Quellstand sich bewegt hat, wird genau eine bereits vom Besitzer
+// freigegebene Villa fortgesetzt. Pausierte Villen bleiben unveraendert.
 if (bearbeitet === 0 && arrest === 0 && !DRY) {
   const beste = kandidaten
     .filter((v) => v.status !== 'ARCHIVED')
@@ -293,7 +299,7 @@ if (bearbeitet === 0 && arrest === 0 && !DRY) {
       return rang(a) - rang(b);
     })[0];
   if (beste) {
-    console.log(`\n== AUFWECKEN: Villa ${beste.id} "${beste.name}" (${beste.offen} offene Aufgaben) ==`);
+    console.log(`\n== FORTSETZEN: Villa ${beste.id} "${beste.name}" (${beste.offen} offene Aufgaben) ==`);
     if (autonomieFreigeben(beste.id, beste.name)) {
       const letzte = db.prepare('SELECT checks,blockers FROM project_verifications WHERE villa_id=?').get(beste.id);
       let pruefungen = {}, ursachen = [];
