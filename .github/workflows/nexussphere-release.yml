@@ -1,0 +1,59 @@
+name: NexusSphere Release
+on:
+  workflow_run:
+    workflows: ["NexusSphere CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: nexussphere-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout verified commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish verified image
+        id: publish
+        working-directory: nexussphere
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/nexussphere
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          IMAGE=$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          docker build --pull=false -t "$IMAGE:$SHA" .
+          docker push "$IMAGE:$SHA"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$SHA")
+          test -n "$DIGEST"
+          printf 'image=%s\n' "$IMAGE" >> "$GITHUB_OUTPUT"
+          printf 'digest=%s\n' "$DIGEST" >> "$GITHUB_OUTPUT"
+          printf 'commit=%s\n' "$SHA" >> "$GITHUB_OUTPUT"
+          {
+            echo '## NexusSphere immutable release'
+            echo
+            echo "- Commit: \`$SHA\`"
+            echo "- Image: \`$IMAGE:$SHA\`"
+            echo "- Digest: \`$DIGEST\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify published digest
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "$DIGEST"
+          docker image inspect "$DIGEST" >/dev/null
