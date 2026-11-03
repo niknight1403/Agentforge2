@@ -440,3 +440,29 @@ test("Billing: widerspruechliche User-Metadaten duerfen bestehendes Abo nicht ue
   assert.equal(db.prepare("SELECT stripe_subscription FROM subscriptions WHERE user_id=1").get().stripe_subscription, "sub_owner");
   assert.equal(db.prepare("SELECT COUNT(*) AS c FROM subscriptions WHERE user_id=2").get().c, 0);
 });
+
+
+test("Billing: Fehler beim Ereignisprotokoll rollt Abo-Aenderung zurueck", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES (?,?,?)").run("rollback@firma.de", "x", Date.now());
+  db.prepare("INSERT INTO subscriptions(user_id,plan,status,updated_at) VALUES (1,'trial','active',?)").run(Date.now());
+  db.exec(`CREATE TRIGGER billing_receipt_abort BEFORE INSERT ON billing_events
+    BEGIN SELECT RAISE(ABORT, 'test receipt unavailable'); END;`);
+  const event = {
+    id: "evt_rollback", type: "checkout.session.completed",
+    data: { object: {
+      mode: "subscription", payment_status: "paid",
+      metadata: { user_id: "1", plan: "pro" },
+      customer: "cus_rollback", subscription: "sub_rollback"
+    } }
+  };
+  assert.throws(() => verarbeiteStripeEvent(db, event), /test receipt unavailable/);
+  const after = db.prepare("SELECT plan, status, stripe_subscription FROM subscriptions WHERE user_id=1").get();
+  assert.equal(after.plan, "trial");
+  assert.equal(after.status, "active");
+  assert.equal(after.stripe_subscription, null);
+  assert.equal(db.prepare("SELECT COUNT(*) AS c FROM billing_events").get().c, 0);
+  db.exec("DROP TRIGGER billing_receipt_abort");
+  assert.equal(verarbeiteStripeEvent(db, event).ok, true);
+  assert.equal(db.prepare("SELECT plan FROM subscriptions WHERE user_id=1").get().plan, "pro");
+});
