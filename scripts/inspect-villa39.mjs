@@ -16,6 +16,13 @@ export async function inspectVilla({id=39,email,password,fetchImpl=fetch}={}){
  const [d,product,build,deliver,sched,routes]=await Promise.all([
   read('/api/villas/'+id),read('/api/villas/'+id+'/product'),read('/api/villas/'+id+'/build'),
   read('/api/villas/'+id+'/delivery-evidence'),read('/api/scheduler'),read('/api/llm/status')]);
+ const failures=await read('/api/villas/'+id+'/tasks?status=FAILED&limit=30');
+ const safeCodes=String.raw`LLM_UNAVAILABLE|RATE_LIMIT|429|TIMEOUT|ETIMEDOUT|ECONN|EAI_AGAIN|QUOTA|NO_ROUTE|SANDBOX|OOM|OUT_OF_MEMORY|EACCES|PERMISSION|COMMAND_FAILED|TOOL_ERROR|ENOSPC|PROJECT_DIRECTORY|PROJECT_WORKSPACE|NO_MODEL|INVALID_PATH`;
+ const failCodes=(Array.isArray(failures)?failures:[]).map(t=>({
+   taskId:t.id,updatedAt:t.updated_at,
+   hints:[...new Set((String(t.result||'')+' '+String(t.error||'')).toUpperCase().match(new RegExp(safeCodes,'g'))||[])].slice(0,8),
+   resultPresent:Boolean(t.result)
+ }));
  const tasks=Array.isArray(d.tasks)?d.tasks:[];
  const agentRows=Array.isArray(d.agents)?d.agents:[];
  const counts={};
@@ -27,6 +34,7 @@ export async function inspectVilla({id=39,email,password,fetchImpl=fetch}={}){
    unfinishedTasks:tasks.filter(t=>!['DONE','CANCELLED'].includes(t.status)).length,
    taskSummary:tasks.slice(0,30).map(t=>({id:t.id,status:t.status,role:t.role,priority:t.priority,updatedAt:t.updated_at}))},
   agentSummary:{total:agentRows.length,roles:agentRows.map(a=>a.role)},
+  failedTasks:failCodes,
   capability:d.capabilityAutopilot?{enabled:d.capabilityAutopilot.enabled,runsWithVilla:d.capabilityAutopilot.runsWithVilla,requests:d.capabilityAutopilot.requests?.map(x=>({id:x.id,status:x.status}))}:null,
   product:{score:product.score,verified:product.verified,blockers:product.blockers,readiness:product.readiness?.checks},
   build:{status:build.status,kind:build.kind,error:build.error,delivery:build.delivery},
