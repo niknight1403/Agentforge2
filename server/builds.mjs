@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {artifactContract} from './artifact-contract.mjs';
 import { recordBuildResult } from './telemetry.mjs';
 import { projectDirectory,verifyProjectRuntime } from './project-verification.mjs';
 /*
@@ -330,7 +331,7 @@ export function scaffoldAppShell(villa, dir, L = () => {}) {
 }
 
 export async function startBuild(villaId, { auto = false } = {}) {
-  const villa = db.prepare('SELECT id, name FROM villas WHERE id = ?').get(Number(villaId));
+  const villa = db.prepare('SELECT id, name, idea FROM villas WHERE id = ?').get(Number(villaId));
   if (!villa) throw new Error('Villa nicht gefunden');
   const old = state[String(villaId)];
   if (old && old.status === 'running') throw new Error('BUILD_LAEUFT');
@@ -412,9 +413,11 @@ export async function startBuild(villaId, { auto = false } = {}) {
       if (mode) perfManifest(dir, record, L); // Phase 3: vermessen statt nur bauen
       const verification=await verifyProjectRuntime(Number(villaId));
       record.verification=verification;
-      record.delivery=verification.ok?'verified-product':'source-package';
-      record.status = verification.ok ? 'ready' : 'unverified';
-      if(!verification.ok)record.error='Paket erstellt, Produktabnahme offen: '+verification.blockers.join('; ');
+      record.outputContract=artifactContract({idea:villa.idea,kind,artifactName:record.artifact,artifactType:record.artifactType});
+      const ready=verification.ok&&record.outputContract.ok;
+      record.delivery=ready?'verified-product':'source-package';
+      record.status=ready?'ready':'unverified';
+      if(!ready)record.error='Produktabnahme offen: '+[...(!verification.ok?verification.blockers:[]),...record.outputContract.blockers].join('; ');
     } catch (e) {
       record.status = 'failed';
       record.error = String(e.message || e).slice(0, 400);
