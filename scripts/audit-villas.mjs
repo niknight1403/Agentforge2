@@ -3,6 +3,40 @@ import {writeFileSync,mkdirSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {assessVillaConfiguration} from '../server/villa-configuration.mjs';
+
+const AUDIT_ENDPOINTS={
+ '/api/auth/login':'authentication',
+ '/api/health':'health',
+ '/api/villas':'Villa inventory',
+ '/api/villas/:id':'Villa detail',
+ '/api/villas/:id/product':'Villa product evidence',
+ '/api/evolution/villas/:id':'Villa evolution',
+ '/api/control/catalog':'control catalog',
+ '/api/tools':'tool inventory',
+ '/api/llm/status':'LLM status',
+ '/api/mcp':'capability audit'
+};
+
+export function formatAuditFailure(error){
+ const message=error instanceof Error?error.message:'';
+ const endpoint=message.match(/^Audit endpoint (\/api\/[a-z0-9/_-]+(?:\/\d+)?(?:\/product)?) HTTP ([1-5]\d{2})$/i);
+ if(endpoint){
+  const route=endpoint[1].replace(/\/\d+/g,'/:id'),label=AUDIT_ENDPOINTS[route];
+  if(label)return `Audit blocked at ${label}: HTTP ${endpoint[2]}.`;
+ }
+ const safeMessages=new Set([
+  'Audit requires an HTTPS origin.',
+  'Audit credentials missing.',
+  'Audit login did not return a session.',
+  'Audit response too large.',
+  'Villa inventory invalid or exceeds bounded audit capacity.',
+  'Tool inventory invalid.',
+  'Invalid Villa ID.'
+ ]);
+ if(safeMessages.has(message))return message;
+ return 'Villa audit failed before completing. No credentials, raw responses or Villa details were logged.';
+}
+
 export async function auditLiveVillas({baseUrl,email,password,fetchImpl=fetch}={}){
  const u=new URL(baseUrl);if(u.protocol!=='https:'||u.username||u.password||u.search||u.hash||u.pathname!=='/')throw Error('Audit requires an HTTPS origin.');
  if(!email||!password)throw Error('Audit credentials missing.');
@@ -35,5 +69,5 @@ export async function auditLiveVillas({baseUrl,email,password,fetchImpl=fetch}={
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const path=resolve(process.env.VF_AUDIT_OUTPUT||'artifacts/villa-configuration/report.json');
  try{const report=await auditLiveVillas({baseUrl:process.env.VF_AUDIT_BASE_URL||'https://hub.cybersarah-ki.com',email:process.env.VF_ADMIN_EMAIL,password:process.env.VF_ADMIN_PASSWORD});mkdirSync(dirname(path),{recursive:true});writeFileSync(path,JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({source:report.source,summary:report.summary,complete:report.complete}));process.exitCode=report.complete&&!report.summary.blocked&&!report.summary.needsReview&&!report.source.testFixture?0:1;}
- catch{console.error('Villa audit could not complete. No credentials or raw response were logged.');process.exitCode=2;}
+ catch(error){console.error(formatAuditFailure(error));process.exitCode=2;}
 }

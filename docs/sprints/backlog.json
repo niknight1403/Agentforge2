@@ -285,16 +285,24 @@
     {
       "id": "VF-0011",
       "area": "Produktionsblocker und Release-Gates",
-      "goal": null,
-      "benefit": "Produktionsblocker und Release-Gates",
+      "goal": "Geheimnisfreie Statusdiagnose fuer fehlgeschlagene autorisierte Villa-Audits",
+      "benefit": "Berechtigungs- und Endpoint-Blocker lassen sich unterscheiden, ohne Villa-Daten offenzulegen",
       "dependencies": [],
-      "modules": [],
-      "acceptanceCriteria": [],
-      "risks": [
-        "Scope vor Ausfuehrung anhand gemessener Ergebnisse festlegen"
+      "modules": [
+        "scripts/audit-villas.mjs",
+        "server/tests/audit-villas.test.mjs"
       ],
-      "status": "unscoped",
-      "scopeDefined": false,
+      "acceptanceCriteria": [
+        "Bekannte Audit-Endpunkte geben einen sicheren Kategorienamen und HTTP-Status aus",
+        "Villa-IDs, Credentials und Antwortkoerper erscheinen nicht in Diagnosemeldungen",
+        "Unbekannte Fehler bleiben geheimnisfrei und werden nicht als erfolgreiche Abnahme gewertet",
+        "Gezielte Tests bestehen"
+      ],
+      "risks": [
+        "Diagnose darf weder Credentials noch private Villa-Daten offenlegen"
+      ],
+      "status": "pending",
+      "scopeDefined": true,
       "evidence": [],
       "implementationCommit": null
     },
