@@ -70,14 +70,3 @@ test('Production deploy verifies and atomically enables stack-aware Docker proje
  assert.ok(workflow.indexOf(integrationTest)<workflow.indexOf(installDropin));
  assert.ok(workflow.indexOf(restart,workflow.indexOf(installDropin))>workflow.indexOf(installDropin));
 });
-/g)||[]).length>=2);
- assert.ok(workflow.includes(integrationTest));
- assert.ok(workflow.includes('docker run --rm --pull=never --network=none "$SANDBOX_RUST_IMAGE" cargo --version'));
- assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX=docker"'));
- assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX_IMAGE=%s"'));
- assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX_RUST_IMAGE=%s"'));
- assert.ok(workflow.includes('restore_sandbox_config'));
- assert.ok(workflow.includes('rm -f "$SANDBOX_DROPIN"'));
- assert.ok(workflow.indexOf(integrationTest)<workflow.indexOf(installDropin));
- assert.ok(workflow.indexOf(restart,workflow.indexOf(installDropin))>workflow.indexOf(installDropin));
-});
