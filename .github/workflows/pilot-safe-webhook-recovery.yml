@@ -26,6 +26,16 @@ jobs:
         run: |
           python3 -m py_compile ops/pilot-safe-webhook-repair.py
           python3 -m unittest discover -s ops/tests -p 'test_pilot_webhook_repair.py' -v
+      - name: Verify setup key via Stripe HTTPS without changing account
+        env:
+          STRIPE_SETUP_KEY: ${{ secrets.STRIPE_SETUP_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$STRIPE_SETUP_KEY" || { echo "::error::Stripe setup key missing"; exit 1; }
+          printf 'header = "Authorization: Bearer %s"\\n' "$STRIPE_SETUP_KEY" |
+            curl --silent --show-error --fail --max-time 20 --config - \
+              'https://api.stripe.com/v1/prices/price_1UWy5gAuUge07PL9OA0Y1W2t' > /tmp/pilot-stripe-price.json
+          python3 -c 'import json; p=json.load(open("/tmp/pilot-stripe-price.json")); assert p["livemode"] and p["unit_amount"] == 9900 and p["currency"] == "eur"; print("LIVE_STRIPE_SETUP_KEY_VERIFIED")'
   recovery:
     needs: validation
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
