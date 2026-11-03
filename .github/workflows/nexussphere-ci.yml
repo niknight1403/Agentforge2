@@ -1,0 +1,21 @@
+name: NexusSphere CI
+on:
+  push:
+    paths: ['nexussphere/**','.github/workflows/nexussphere-ci.yml']
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nexussphere
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo test --locked
+      - run: npm test
+      - run: npm run build
+      - run: npm run smoke
