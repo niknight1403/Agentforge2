@@ -301,10 +301,12 @@
       "risks": [
         "Diagnose darf weder Credentials noch private Villa-Daten offenlegen"
       ],
-      "status": "pending",
+      "status": "in_review",
       "scopeDefined": true,
-      "evidence": [],
-      "implementationCommit": null
+      "evidence": [
+        "docs/sprints/evidence/VF-0011.json"
+      ],
+      "implementationCommit": "0ad3e1758dbef11cc42031c838e1b0c36b55b359"
     },
     {
       "id": "VF-0012",

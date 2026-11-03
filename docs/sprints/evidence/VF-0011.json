@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "sprint": "VF-0011",
+  "status": "in_review",
+  "acceptanceComplete": true,
+  "exitCode": 0,
+  "testedCommit": "0ad3e1758dbef11cc42031c838e1b0c36b55b359",
+  "source": "https://github.com/niknight1403/Agentforge2/actions/runs/41632751918",
+  "scope": "Expose stage and HTTP status for allowlisted audit endpoints while suppressing IDs, credentials, response bodies, and unknown error text.",
+  "verification": {
+    "hubTests": "passed",
+    "apexUnitIntegration": "passed",
+    "browserAudit": "passed",
+    "codeQL": "passed",
+    "javascriptAnalysis": "passed",
+    "javaKotlinAnalysis": "passed"
+  },
+  "productionDataRead": false,
+  "releaseGateChanged": false,
+  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/119"
+}
