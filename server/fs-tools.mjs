@@ -139,6 +139,7 @@ const COMMAND_POLICY = {
   python3: 'SCRIPT',
   python: 'SCRIPT',
   gradle: ['test', 'build', 'assemble', 'check', 'tasks'],
+  cargo: ['test', 'build', 'check', 'clippy', 'fmt', 'metadata'],
   // Git fuer echte Commits aus der Villa heraus: bewusst KEIN push/pull/fetch/remote.
   git: ['status', 'diff', 'add', 'commit', 'log', 'restore', 'show', 'branch', 'rev-parse']
 };
@@ -151,7 +152,7 @@ const FORBIDDEN_ARGS = /(\|\||&&|;|`|\$\(|>|<|(^|\s)(--registry|--index-url|--ex
 
 
 /**
- * Globale Obergrenze fuer gleichzeitige Projektbefehle (npm/gradle/node ...).
+ * Globale Obergrenze fuer gleichzeitige Projektbefehle (npm/gradle/cargo/node ...).
  * Die Dauerentwicklung jeder Villa stoesst Builds und Tests an (bis 180 s).
  * Ohne Grenze verdraengen dutzende parallela Build-Prozesse auf wenigen
  * Kernen den Hub und Ollama. FIFO-Schlange, Default 1 gleichzeitig.
