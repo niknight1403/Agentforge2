@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceCommit": "527ea065d55c33b23dda973380ca5f6668210d18",
+  "sourceCommit": "2cd18591b33a9cfb9ccd18935163b4add5eec7b9",
   "design": "Aurora / sichtbare Variante 6",
   "completed": [
     "VF-0001",
@@ -12,8 +12,8 @@
     "VF-0007",
     "VF-0008"
   ],
-  "current": "VF-0009",
-  "next": "VF-0009",
+  "current": "VF-0015",
+  "next": "VF-0015",
   "blockers": [
     "Production project execution previously defaulted to host mode when VF_PROJECT_SANDBOX was unset. The bounded fix fails closed in NODE_ENV=production until a pinned isolated runner is explicitly configured.",
     "Deep Villa 34 still has no accepted usable product; build/smoke require next and tests require jest.",
@@ -23,44 +23,44 @@
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
   "executionMode": "foreground-and-scheduled-iterations",
-  "workBranch": "fix/production-project-execution-fail-closed",
+  "workBranch": "fix/production-project-sandbox",
   "pullRequest": null,
   "qualityBaseline": {
-    "tests": 491,
-    "pass": 491,
+    "tests": 493,
+    "pass": 493,
     "fail": 0,
     "browserE2E": 20,
     "browserAuditScopes": 9,
     "findings": 0
   },
   "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden.",
-  "integratedCommit": "527ea065d55c33b23dda973380ca5f6668210d18",
+  "integratedCommit": "2cd18591b33a9cfb9ccd18935163b4add5eec7b9",
   "version": "1.60.8",
-  "pullRequestStatus": "local safety blocker fix verified; pull request not yet opened",
+  "pullRequestStatus": "focused production Docker sandbox candidate prepared from current main; CI and production deployment pending",
   "backgroundExecution": false,
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
   "releaseStatus": "blocked: integrated deployment, browser acceptance and product acceptance pending",
-  "checkpointParent": "527ea065d55c33b23dda973380ca5f6668210d18",
-  "nextAction": "After this fail-closed change is merged and deployed, verify production health and a fresh side-effect-free Master response. In a later bounded run, configure and verify the already implemented pinned Docker project sandbox before any Deep Villa build/test/smoke execution.",
+  "checkpointParent": "2cd18591b33a9cfb9ccd18935163b4add5eec7b9",
+  "nextAction": "Open the focused production Docker sandbox PR, merge only after all checks pass, then require Hub-Deploy log evidence for DOCKER_SANDBOX_VERIFIED, the effective systemd sandbox environment, external health and a fresh side-effect-free Master response. Run no unknown Villa project code in this iteration.",
   "lastMaintenance": {
-    "baseCommit": "527ea065d55c33b23dda973380ca5f6668210d18",
-    "pullRequests": [
-      29,
-      30,
-      41
-    ],
-    "evidence": "docs/quality/production-project-execution-fail-closed-2026-11-02.json",
-    "productionChecks": {
-      "lastDeploy": "https://github.com/niknight1403/Agentforge2/actions/runs/41501655842",
-      "lastMasterProbe": "https://github.com/niknight1403/Agentforge2/actions/runs/41502633212",
-      "lastVillaSweep": "https://github.com/niknight1403/Agentforge2/actions/runs/41502633191",
-      "lastProductAudit": "https://github.com/niknight1403/Agentforge2/actions/runs/41502633354"
+    "baseCommit": "2cd18591b33a9cfb9ccd18935163b4add5eec7b9",
+    "closedCompetingPullRequest": 68,
+    "evidence": "docs/quality/production-project-sandbox-2026-11-03.json",
+    "scope": "configure and verify the existing pinned Docker project sandbox; no scheduler or provider registry added",
+    "localChecks": {
+      "tests": 493,
+      "pass": 493,
+      "fail": 0,
+      "syntaxFiles": 203,
+      "secrets": "clean",
+      "webBuildFiles": 13
     },
-    "runtimeAutomation": {
-      "mechanism": "existing scheduler and project runner only; no new scheduler or provider registry",
-      "focusedVilla": 34,
-      "safetyGate": "NODE_ENV=production without explicit VF_PROJECT_SANDBOX now returns PROJECT_SANDBOX_REQUIRED"
-    }
+    "productionChecks": {
+      "deploy": "pending",
+      "externalHealth": "pending",
+      "masterProbe": "pending"
+    },
+    "safetyGate": "production remains fail-closed until the verified systemd drop-in is deployed"
   },
   "lastRealModelVerification": {
     "schemaVersion": 1,

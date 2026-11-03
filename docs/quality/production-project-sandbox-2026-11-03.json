@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "sprint": "VF-0015",
+  "status": "candidate",
+  "baseCommit": "2cd18591b33a9cfb9ccd18935163b4add5eec7b9",
+  "goal": "Enable the existing digest-pinned Docker project runner only after its isolation test passes on the production host.",
+  "constraints": [
+    "one reversible blocker",
+    "existing project runner only",
+    "no scheduler or provider registry",
+    "no unknown Villa project code executed",
+    "no new paid service"
+  ],
+  "implementation": {
+    "workflow": ".github/workflows/hub-deploy.yml",
+    "runner": "server/project-execution.mjs",
+    "integrationTest": "scripts/test-project-sandbox.mjs",
+    "systemdDropIn": "project-sandbox.conf",
+    "rollback": "restore the previous drop-in or remove the new one, reload systemd and restart the previous source revision"
+  },
+  "localEvidence": [
+    {
+      "command": "npm test",
+      "exitCode": 0,
+      "tests": 493,
+      "pass": 493,
+      "fail": 0
+    },
+    {
+      "command": "npm run check:syntax",
+      "exitCode": 0,
+      "files": 203
+    },
+    {
+      "command": "npm run check:secrets",
+      "exitCode": 0,
+      "result": "clean"
+    },
+    {
+      "command": "npm run build:web",
+      "exitCode": 0,
+      "files": 13
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    }
+  ],
+  "requiredProductionEvidence": [
+    "Hub-Deploy contains DOCKER_SANDBOX_VERIFIED from the production host",
+    "effective systemd environment contains VF_PROJECT_SANDBOX=docker and an immutable image digest",
+    "external /api/health is green for the integrated commit",
+    "fresh Master response is real and has zero side effects"
+  ],
+  "productionStatus": "pending",
+  "overallStatus": "blocked until production evidence and product acceptance are green"
+}
