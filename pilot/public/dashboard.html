@@ -64,6 +64,13 @@
     </div>
   </div>
 
+  <section class="karte" style="margin-bottom:20px">
+    <h2 style="margin-top:0">Abonnement verwalten</h2>
+    <p style="color:var(--mute)">Rechnungen, Zahlungsmethode und Kündigung sicher über Stripe verwalten.</p>
+    <button id="billingPortal" type="button" class="leise">Stripe-Kundenportal öffnen</button>
+    <div class="msg" id="billingMsg" role="status" aria-live="polite"></div>
+  </section>
+
   <h2>Testkonsole</h2>
   <textarea id="nachricht" rows="4" placeholder="Kundenanfrage hier einfuegen …">Wir brauchen kurzfristig ein Angebot fuer 12 Telefonarbeitsplaetze. Was kostet das und wann koennen Sie installieren?</textarea>
   <div style="display:flex; gap:10px; margin-top:10px; align-items:center">
@@ -158,6 +165,27 @@ document.getElementById('keyAnlegen').onclick = async () => {
   document.getElementById('neuerKey').innerHTML =
     '<div class="neu"><strong>Neuer Schluessel:</strong> <code>' + d.key + '</code><br><span style="color:var(--mute);font-size:13px">' + d.hinweis + '</span></div>';
   lade();
+};
+
+document.getElementById('billingPortal').onclick = async () => {
+  const button = document.getElementById('billingPortal');
+  const status = document.getElementById('billingMsg');
+  button.disabled = true;
+  status.textContent = 'Kundenportal wird geöffnet …';
+  try {
+    const response = await fetch('./api/billing/portal', { method: 'POST' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Kundenportal nicht verfügbar');
+    const target = new URL(data.url);
+    if (target.protocol !== 'https:' || !target.hostname.endsWith('.stripe.com')) {
+      throw new Error('Ungültige Kundenportal-Adresse');
+    }
+    location.assign(target.href);
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 };
 
 document.getElementById('logout').onclick = async () => {
