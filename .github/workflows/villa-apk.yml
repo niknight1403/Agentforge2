@@ -48,7 +48,8 @@ jobs:
       - name: Web-Root fuer das APK herrichten
         run: |
           WWW=villa-apk-template/app/src/main/assets/www
-          rm -f $WWW/index.html
+          mkdir -p "$WWW"
+          find "$WWW" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           if [ -f /tmp/villa.zip ] && [ "$(stat -c%s /tmp/villa.zip)" -gt 100 ]; then
             mkdir -p /tmp/art && unzip -qo /tmp/villa.zip -d /tmp/art
             IDX=$(find /tmp/art -maxdepth 3 -name index.html | head -1)
@@ -60,8 +61,8 @@ jobs:
               if [ -n "$PKG" ]; then
                 cd "$(dirname "$PKG")"
                 echo "Baue npm-Projekt: $(pwd)"
-                npm install --no-audit --no-fund >/dev/null 2>&1 || true
-                npm run build >/dev/null 2>&1 || true
+                npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+                npm run build
                 DIST=$(find . -maxdepth 3 -type d -name dist | head -1)
                 [ -z "$DIST" ] && DIST=$(find . -maxdepth 3 -type d -name build | head -1)
                 if [ -n "$DIST" ] && [ -f "$DIST/index.html" ]; then
@@ -72,9 +73,10 @@ jobs:
             fi
           fi
           test -s "$WWW/index.html" || { echo "Kein lauffaehiges Villa-Webprodukt; APK-Release blockiert"; exit 1; }
+          if grep -q "Villa-Produkt wird geladen" "$WWW/index.html"; then echo "Template-Platzhalter ist kein Produkt"; exit 1; fi
           ls "$WWW" | head -5
 
-      - name: App-Name setzen, Icon-URL und Landing-Fallback vorbereiten
+      - name: App-Name setzen und Icon-URL vorbereiten
         env:
           VILLA_NAME: ${{ env.VILLA_NAME }}
           APP_NAME: ${{ inputs.app_name }}
