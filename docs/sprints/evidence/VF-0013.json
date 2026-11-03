@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "sprint": "VF-0013",
+  "status": "in_progress",
+  "acceptanceComplete": false,
+  "exitCode": null,
+  "testedCommit": null,
+  "source": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810597",
+  "scope": "Add deterministic allowlisted aggregate check-code/status counts to future read-only audit workflow logs. No Villa records or run artifacts were accessed.",
+  "sourceRunTotals": {
+    "workflow": "Villa-Prompt-Audit",
+    "branch": "main",
+    "headSha": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
+    "productionVersion": "1.60.8",
+    "conclusion": "failure (correctly fail-closed product acceptance result)",
+    "total": 19,
+    "passed": 0,
+    "blocked": 19,
+    "complete": true,
+    "checkCategoryCountsAvailable": false
+  },
+  "verification": {
+    "focusedDiagnostics": "Passed: 4/4 tests, including deterministic aggregation, privacy-safe CLI output, and missing/malformed report handling.",
+    "repositoryCheck": "Incomplete locally: syntax check passed for 227 JavaScript files and secret scan passed; the existing Node test-runner launch failed on Windows with ERR_UNSUPPORTED_ESM_URL_SCHEME for its absolute --import path.",
+    "pullRequestCi": "Pending"
+  },
+  "localTestRuntime": "Temporary checksum-verified Node 24.22.2 was removed after focused validation.",
+  "productionDataRead": false,
+  "productionAuditArtifactAccessed": false,
+  "auditReexecuted": false,
+  "acceptanceGateChanged": false,
+  "signingGateChanged": false,
+  "productionReadiness": "Not established; production acceptance remains blocked and production signing still requires owner-provided configuration.",
+  "pullRequest": null
+}
