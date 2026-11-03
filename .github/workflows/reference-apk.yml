@@ -1,0 +1,74 @@
+name: Verified Reference APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'reference-product/**'
+      - 'villa-apk-template/**'
+      - '.github/workflows/reference-apk.yml'
+  pull_request:
+    paths:
+      - 'reference-product/**'
+      - 'villa-apk-template/**'
+      - '.github/workflows/reference-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reference-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test offline product model
+        run: node --test reference-product/tests/*.test.mjs
+      - name: Validate actual product entry point
+        run: |
+          test -s reference-product/www/index.html
+          test -s reference-product/www/model.mjs
+          test -s reference-product/www/app.mjs
+          grep -q 'task-form' reference-product/www/index.html
+          grep -q 'localStorage' reference-product/www/app.mjs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Package actual offline app into Android WebView
+        run: |
+          cp -R reference-product/www/. villa-apk-template/app/src/main/assets/www/
+          sed -i 's/VILLA_APP_NAME/Villa Tasks/g' villa-apk-template/app/src/main/res/values/strings.xml
+          test -s villa-apk-template/app/src/main/assets/www/index.html
+          test -s villa-apk-template/app/src/main/assets/www/app.mjs
+      - name: Build installable APK
+        run: gradle -p villa-apk-template :app:assembleDebug --no-daemon --console=plain -PvillaId=9001
+      - name: Verify APK archive, Android manifest, bytecode and local assets
+        run: |
+          python3 - <<'PY'
+          import zipfile, os
+          f='villa-apk-template/app/build/outputs/apk/debug/app-debug.apk'
+          assert os.path.getsize(f)>10000, 'APK empty or too small'
+          with zipfile.ZipFile(f) as z:
+              names=set(z.namelist())
+              required={'AndroidManifest.xml','classes.dex','assets/www/index.html','assets/www/app.mjs','assets/www/model.mjs'}
+              missing=required-names
+              assert not missing, f'Missing real APK entries: {missing}'
+              assert z.testzip() is None, 'APK ZIP integrity failure'
+              assert b'task-form' in z.read('assets/www/index.html'), 'Product UI missing'
+          print('APK verified:',os.path.getsize(f),'bytes')
+          PY
+          sha256sum villa-apk-template/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: villa-tasks-reference-apk
+          path: villa-apk-template/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
