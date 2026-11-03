@@ -48,6 +48,10 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             [ "$VILLA_ID" = "38" ] && [ "$LIMIT" = "1" ] || { echo "Unsichere automatische Sweep-Konfiguration"; exit 3; }
           fi
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
+              "cd /opt/villaforge && sudo \$(command -v node || echo /usr/bin/node) --input-type=module -e \"import { setVillaFocus } from './server/project-focus.mjs'; console.log(JSON.stringify(setVillaFocus([38], { reason: 'NexusSphere Villa 38 gezielte Live-Abnahme' })))\""
+          fi
           ZUSATZ="--villa-id=$VILLA_ID"
           if [ "$DRY" = "true" ]; then ZUSATZ="$ZUSATZ --dry-run"; fi
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
