@@ -2,7 +2,7 @@ import {capabilityStatus,requestCapability,observeMissingTool,observeProjectFail
 import {missionContext,PROMPT_CONTRACT,promptHash} from './villa-configuration.mjs';
 import { studioStatus,proposeDesigns } from './studio.mjs';
 import { executeRemoteWorker } from './remote-worker.mjs';
-import { PROJECT_WORKSPACE,ownProjectDir,verifyProjectRuntime,ensureVerificationTasks } from './project-verification.mjs';
+import { PROJECT_WORKSPACE,ownProjectDir,projectDirectory,verifyProjectRuntime,ensureVerificationTasks } from './project-verification.mjs';
 import { db, now } from './db.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { maybeDeliverApk } from './builds.mjs';
@@ -655,9 +655,17 @@ export function toolSpecs() {
 
 /** Ermittelt den freigegebenen Quellordner einer Villa, falls vorhanden. */
 export function sourceRoot(villaId) {
-  const row = db.prepare('SELECT source_path FROM villas WHERE id = ?').get(villaId);
-  if (!row || !row.source_path) return null;
-  return resolve(row.source_path);
+  const row = db.prepare('SELECT source_path, mode FROM villas WHERE id = ?').get(villaId);
+  if (!row) return null;
+  if (row.source_path) return resolve(row.source_path);
+  // New idea-only BUILD Villas have no imported repository. Without a
+  // source_path every project_write/project_patch tool rejected the task.
+  // Restrict the repair to BUILD mode and never replace an existing source.
+  if (row.mode !== 'BUILD') return null;
+  const root = projectDirectory(Number(villaId));
+  mkdirSync(root, { recursive: true });
+  setSource(villaId, root);
+  return root;
 }
 
 export function setSource(villaId, path) {
@@ -1131,6 +1139,14 @@ export async function createVilla({ name, idea, agentCount: wanted = 12, sourceP
 
   const rootId = insertAgent(villaId, 'DeepAgent', 'ROOT', null, 1);
   emit('villa', { villaId, status: 'PLANNING' });
+
+  if (!sourcePath && mode === 'BUILD') {
+    // Start real development with a writable, isolated source directory.
+    // The plan itself is not a product; this only enables agent file writes.
+    const root = ownProjectDir(villaId);
+    mkdirSync(root, { recursive: true });
+    setSource(villaId, root);
+  }
 
   if (sourcePath) {
     setSource(villaId, sourcePath);
