@@ -10,7 +10,7 @@ on:
       prompt_path:
         description: 'Pfad zur Prompt-Datei im Repo'
         required: true
-        default: 'villa-prompts/villa-3-revenue-engine-v2.md'
+        default: 'villa-prompts/villa-3-revenue-engine-v3.md'
       idea_summary:
         description: 'Kurzfassung fuer das idea-Feld (leer = erste Zeile der Datei)'
         required: false
@@ -18,7 +18,7 @@ on:
       start:
         description: 'Villa nach dem Setzen starten (true/false)'
         required: true
-        default: 'true'
+        default: 'false'
 
 jobs:
   ausrollen:
