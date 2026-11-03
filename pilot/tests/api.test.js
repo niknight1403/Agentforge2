@@ -466,3 +466,32 @@ test("Billing: Fehler beim Ereignisprotokoll rollt Abo-Aenderung zurueck", () =>
   assert.equal(verarbeiteStripeEvent(db, event).ok, true);
   assert.equal(db.prepare("SELECT plan FROM subscriptions WHERE user_id=1").get().plan, "pro");
 });
+
+
+test("Billing: Kundenportal verlangt eine Anmeldung", async () => {
+  const { basis, server } = await starteApp();
+  try {
+    const res = await fetch(basis + "/api/billing/portal", { method: "POST" });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test("Billing: Kundenportal ohne Stripe-Kunden-ID ist nicht erreichbar", async () => {
+  const vorher = process.env.STRIPE_SECRET_KEY;
+  process.env.STRIPE_SECRET_KEY = "sk_test_portal_only_not_live";
+  const { basis, server } = await starteApp();
+  try {
+    const { cookie } = await registriere(basis, "portal-test@firma.de");
+    const res = await fetch(basis + "/api/billing/portal", {
+      method: "POST", headers: { cookie }
+    });
+    assert.equal(res.status, 404);
+    assert.match((await res.json()).error, /Stripe-Kundenkonto/);
+  } finally {
+    server.close();
+    if (vorher === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = vorher;
+  }
+});
