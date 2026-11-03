@@ -49,6 +49,10 @@ export async function erstelleCheckout({ stripe, db, user, planKey, basisUrl }) 
  * Event-ID: ein doppelt zugestelltes Event aendert nichts ein zweites Mal.
  */
 export function verarbeiteStripeEvent(db, event) {
+  return db.transaction(() => processStripeEvent(db, event))();
+}
+
+function processStripeEvent(db, event) {
   const schonDa = db.prepare("SELECT id FROM billing_events WHERE id = ?").get(event.id);
   if (schonDa) return { ok: true, doppelt: true };
 
