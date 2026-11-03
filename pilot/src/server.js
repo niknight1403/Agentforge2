@@ -246,7 +246,10 @@ export function createApp({ db = openDatabase(), llm = (m, o) => llmChat(m, o) }
     const stripe = stripeClient();
     if (!stripe) return res.status(503).json({ error: "Zahlungen sind noch nicht konfiguriert (STRIPE_SECRET_KEY fehlt)" });
     try {
-      const basis = process.env.BASIS_URL || `${req.protocol}://${req.get("host")}`;
+      const basis = process.env.BASIS_URL;
+      if (!basis || !/^https:\/\/[^/]+(?:\/[^?#]*)?$/.test(basis)) {
+        return res.status(503).json({ error: "Sichere Produktadresse fehlt (BASIS_URL)" });
+      }
       const session = await erstelleCheckout({ stripe, db, user: req.nutzer, planKey: String(req.body?.plan || ""), basisUrl: basis });
       res.json({ url: session.url });
     } catch (e) {
