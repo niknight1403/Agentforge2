@@ -50,6 +50,14 @@ jobs:
           echo "Checking service and webhook secret presence (without reading values)"
           ssh $SSH_OPTS ubuntu@92.5.177.159 'bash -se' <<'REMOTE'
           set -euo pipefail
+          echo "Stripe API network diagnostic (no credentials)"
+          if getent ahostsv4 api.stripe.com >/dev/null; then
+            echo "STRIPE_DNS_OK"
+          else
+            echo "::warning::STRIPE_DNS_FAILED"
+          fi
+          API_STATUS=$(curl --silent --show-error --max-time 12 --connect-timeout 6 --output /dev/null --write-out '%{http_code}' 'https://api.stripe.com/v1/prices/price_1UWy5gAuUge07PL9OA0Y1W2t' || true)
+          echo "STRIPE_UNAUTHENTICATED_API_HTTP_STATUS=$API_STATUS"
           systemctl is-active --quiet anfragepilot.service || { echo "::error::Pilot service not active"; exit 1; }
           sudo grep -q '^STRIPE_WEBHOOK_SECRET=whsec_' /opt/anfragepilot/pilot.env || {
             echo "::error::Stripe webhook signing secret absent"
