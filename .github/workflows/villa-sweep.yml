@@ -15,7 +15,7 @@ on:
         default: '2'
         required: false
       villa_id:
-        description: 'Nur diese Villa pruefen (0 = alle; Standard: Deep Villa #34)'
+        description: 'Nur diese Villa pruefen (0 = alle; NexusSphere = 38)'
         default: '34'
         required: false
       dry_run:
