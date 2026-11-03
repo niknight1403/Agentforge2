@@ -21,3 +21,9 @@ test('selfHostedOnly excludes cloud even when it has highest priority',async()=>
  await run([{role:'user',content:'test'}],{routeScope:'selfHostedOnly'});
  assert.deepEqual(used,['ollama-local']);
 });
+
+test('selfHostedOnly denies unapproved remote Ollama endpoints',async()=>{
+ const {run,used}=mockCascade([remote]);
+ await assert.rejects(run([{role:'user',content:'test'}],{routeScope:'selfHostedOnly'}),{code:'LLM_UNAVAILABLE'});
+ assert.deepEqual(used,[]);
+});
