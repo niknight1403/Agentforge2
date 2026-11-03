@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { openDatabase, monatJetzt, quotaFuer, verbrauche, PLANS } from "../src/db.js";
 import { verarbeiteStripeEvent, planAusPrice, erstelleCheckout } from "../src/billing.js";
 import { createApp } from "../src/server.js";
+import Stripe from "stripe";
 
 const ANTWORT = JSON.stringify({
   reply: "Guten Tag, fuer 12 Arbeitsplaetze benoetige ich die Anzahl der Nebenstellen und zwei Terminvorschlaege.",
@@ -518,5 +519,59 @@ test("Billing: Checkout verweigert unsichere oder fehlende Produktadresse", asyn
     else process.env.STRIPE_SECRET_KEY = vorherKey;
     if (vorherBasis === undefined) delete process.env.BASIS_URL;
     else process.env.BASIS_URL = vorherBasis;
+  }
+});
+
+
+test("Stripe HTTP: signierte Webhooks akzeptieren und doppelte Zustellung ignorieren", async () => {
+  const previousKey = process.env.STRIPE_SECRET_KEY;
+  const previousWebhook = process.env.STRIPE_WEBHOOK_SECRET;
+  process.env.STRIPE_SECRET_KEY = "sk_test_local_webhook_only";
+  process.env.STRIPE_WEBHOOK_SECRET = "whsec_local_integration_only";
+  const { basis, db, server } = await starteApp();
+  try {
+    db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES (?,?,?)")
+      .run("webhook@firma.de", "x", Date.now());
+    db.prepare("INSERT INTO subscriptions(user_id,plan,status,updated_at) VALUES (1,'trial','active',?)")
+      .run(Date.now());
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const event = {
+      id: "evt_webhook_http",
+      object: "event",
+      type: "checkout.session.completed",
+      data: { object: {
+        mode: "subscription", payment_status: "paid",
+        metadata: { user_id: "1", plan: "pro" },
+        customer: "cus_http", subscription: "sub_http"
+      } }
+    };
+    const payload = JSON.stringify(event);
+    const signature = stripe.webhooks.generateTestHeaderString({
+      payload, secret: process.env.STRIPE_WEBHOOK_SECRET
+    });
+    const send = (sig) => fetch(basis + "/api/billing/webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Stripe-Signature": sig },
+      body: payload
+    });
+    const invalid = await send("t=123,v1=invalid");
+    assert.equal(invalid.status, 400);
+    assert.equal(quotaFuer(db, 1).planKey, "trial");
+
+    const first = await send(signature);
+    assert.equal(first.status, 200);
+    assert.equal((await first.json()).received, true);
+    assert.equal(quotaFuer(db, 1).planKey, "pro");
+
+    const again = await send(signature);
+    assert.equal(again.status, 200);
+    assert.equal((await again.json()).doppelt, true);
+    assert.equal(db.prepare("SELECT COUNT(*) AS c FROM billing_events WHERE id='evt_webhook_http'").get().c, 1);
+  } finally {
+    server.close();
+    if (previousKey === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = previousKey;
+    if (previousWebhook === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
+    else process.env.STRIPE_WEBHOOK_SECRET = previousWebhook;
   }
 });
