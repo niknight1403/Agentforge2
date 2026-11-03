@@ -17,6 +17,7 @@ import time
 from urllib.request import Request, urlopen
 
 ENV = Path("/opt/anfragepilot/pilot.env")
+RUNTIME_KEY_FILE = Path("/run/pilot-stripe-runtime.key")
 PRICES = {
     "STRIPE_PRICE_STARTER": ("price_1UWy5fAuUge07PL9xtaKXMtw", 4900),
     "STRIPE_PRICE_PRO": ("price_1UWy5gAuUge07PL9OA0Y1W2t", 9900),
@@ -89,7 +90,7 @@ def main():
     original = ENV.read_text()
     entries = read_entries(original)
     current_key = entries.get("STRIPE_SECRET_KEY") or ""
-    incoming_file = Path("/run/pilot-stripe-runtime.key")
+    incoming_file = RUNTIME_KEY_FILE
     supplied_key = ""
     if incoming_file.is_file():
         try:
