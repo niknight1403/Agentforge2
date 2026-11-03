@@ -50,21 +50,17 @@ test('Production has one automatic writer and serializes optional recovery deplo
  }
 });
 
-test('Production deploy verifies and atomically enables stack-aware Docker project sandboxes',()=>{
+test('Production deploy verifies and atomically enables Docker project sandboxes',()=>{
  const workflow=readFileSync(join(ROOT,'.github/workflows/hub-deploy.yml'),'utf8');
  const integrationTest='VF_SANDBOX_TEST_IMAGE="$SANDBOX_IMAGE" "$NODEBIN" scripts/test-project-sandbox.mjs';
  const installDropin='install -m 0644 "$DROPIN_TMP" "$SANDBOX_DROPIN"';
  const restart='systemctl restart "$UNIT"';
  assert.ok(workflow.includes('docker pull node:24-bookworm-slim'));
- assert.ok(workflow.includes('docker pull rust:bookworm'));
  assert.ok(workflow.includes("SANDBOX_IMAGE=$(docker image inspect node:24-bookworm-slim"));
- assert.ok(workflow.includes("SANDBOX_RUST_IMAGE=$(docker image inspect rust:bookworm"));
- assert.ok(workflow.split("grep -Eq '^[^[:space:]]+@sha256:[0-9a-f]{64}$'").length>=3);
+ assert.ok(workflow.includes("grep -Eq '^[^[:space:]]+@sha256:[0-9a-f]{64}$'"));
  assert.ok(workflow.includes(integrationTest));
- assert.ok(workflow.includes('docker run --rm --pull=never --network=none "$SANDBOX_RUST_IMAGE" cargo --version'));
  assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX=docker"'));
  assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX_IMAGE=%s"'));
- assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX_RUST_IMAGE=%s"'));
  assert.ok(workflow.includes('restore_sandbox_config'));
  assert.ok(workflow.includes('rm -f "$SANDBOX_DROPIN"'));
  assert.ok(workflow.indexOf(integrationTest)<workflow.indexOf(installDropin));
