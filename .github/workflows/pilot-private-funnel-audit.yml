@@ -1,0 +1,30 @@
+name: AnfragePilot Private First Sale Audit
+on:
+  pull_request:
+    paths:
+      - 'ops/pilot-private-funnel-audit.py'
+      - '.github/workflows/pilot-private-funnel-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  production-counts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate no-write report
+        run: python3 -m py_compile ops/pilot-private-funnel-audit.py
+      - name: Run aggregate-only live audit
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$ORACLE_SSH_KEY"
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s' "$ORACLE_SSH_KEY" > "$HOME/.ssh/pilot_audit"
+          chmod 600 "$HOME/.ssh/pilot_audit"
+          SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -i $HOME/.ssh/pilot_audit"
+          scp $SSH_OPTS ops/pilot-private-funnel-audit.py ubuntu@92.5.177.159:/tmp/pilot-private-funnel-audit.py
+          ssh $SSH_OPTS ubuntu@92.5.177.159 'sudo python3 /tmp/pilot-private-funnel-audit.py'
