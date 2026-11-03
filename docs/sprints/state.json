@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceCommit": "2cd18591b33a9cfb9ccd18935163b4add5eec7b9",
+  "sourceCommit": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
   "design": "Aurora / sichtbare Variante 6",
   "completed": [
     "VF-0001",
@@ -12,69 +12,85 @@
     "VF-0007",
     "VF-0008"
   ],
-  "current": "VF-0015",
-  "next": "VF-0015",
+  "current": "VF-0009",
+  "next": "VF-0009",
   "blockers": [
-    "Production project execution previously defaulted to host mode when VF_PROJECT_SANDBOX was unset. The bounded fix fails closed in NODE_ENV=production until a pinned isolated runner is explicitly configured.",
-    "Deep Villa 34 still has no accepted usable product; build/smoke require next and tests require jest.",
-    "The pinned Docker project sandbox is not yet configured and verified on the production host; unknown project code must remain blocked until then.",
+    "Production audit reports 19 of 19 Villas blocked; no Villa currently has complete product acceptance evidence.",
+    "Deep Villa 34 has three open tasks and failed build, test, smoke and quality evidence.",
+    "The Android workflow built and attested APK/Web artifacts but correctly blocked the release because Villa product acceptance is red.",
     "Image, image-editing, video and audio rendering still require authorized provider configuration.",
     "Existing Android debug signature is not a managed production signing identity."
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
   "executionMode": "foreground-and-scheduled-iterations",
-  "workBranch": "fix/production-project-sandbox",
-  "pullRequest": null,
+  "workBranch": "main",
+  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/70",
   "qualityBaseline": {
-    "tests": 493,
-    "pass": 493,
+    "tests": 498,
+    "pass": 498,
     "fail": 0,
     "browserE2E": 20,
     "browserAuditScopes": 9,
     "findings": 0
   },
   "replanning": "VF-0005 bis VF-0008 unabhaengig vom externen Produktionsmodell vorgezogen; keine weiteren IDs als Aufgaben erfunden.",
-  "integratedCommit": "2cd18591b33a9cfb9ccd18935163b4add5eec7b9",
+  "integratedCommit": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
   "version": "1.60.8",
-  "pullRequestStatus": "focused production Docker sandbox candidate prepared from current main; CI and production deployment pending",
+  "pullRequestStatus": "merged; production Docker sandbox verified and active",
   "backgroundExecution": false,
-  "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41256970836",
-  "releaseStatus": "blocked: integrated deployment, browser acceptance and product acceptance pending",
-  "checkpointParent": "2cd18591b33a9cfb9ccd18935163b4add5eec7b9",
-  "nextAction": "Open the focused production Docker sandbox PR, merge only after all checks pass, then require Hub-Deploy log evidence for DOCKER_SANDBOX_VERIFIED, the effective systemd sandbox environment, external health and a fresh side-effect-free Master response. Run no unknown Villa project code in this iteration.",
+  "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810524",
+  "releaseStatus": "blocked: Android and Web builds passed, but 19/19 Villas lack product acceptance; no GitHub release created",
+  "checkpointParent": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
+  "nextAction": "VF-0009: in one bounded run, inspect Deep Villa 34 acceptance evidence and repair at most one verified build, test, smoke or quality blocker through the deployed Docker sandbox. Preserve paused Villa decisions and do not treat generated fixtures or build-ready metadata as a usable product.",
   "lastMaintenance": {
-    "baseCommit": "2cd18591b33a9cfb9ccd18935163b4add5eec7b9",
-    "closedCompetingPullRequest": 68,
+    "baseCommit": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
+    "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/70",
     "evidence": "docs/quality/production-project-sandbox-2026-11-03.json",
-    "scope": "configure and verify the existing pinned Docker project sandbox; no scheduler or provider registry added",
-    "localChecks": {
-      "tests": 493,
-      "pass": 493,
-      "fail": 0,
-      "syntaxFiles": 203,
-      "secrets": "clean",
-      "webBuildFiles": 13
+    "scope": "configured and verified the existing pinned Docker project sandbox; no scheduler or provider registry added",
+    "checks": {
+      "pullRequestCI": [
+        "Project Sandbox Integration",
+        "Hub-Tests",
+        "Live-Test & Design-Audit",
+        "APEX Omega CI",
+        "CodeQL Security Analysis"
+      ],
+      "productionTests": {
+        "tests": 498,
+        "pass": 498,
+        "fail": 0
+      },
+      "productionSandbox": "DOCKER_SANDBOX_VERIFIED",
+      "systemd": "VF_PROJECT_SANDBOX=docker with immutable digest",
+      "externalHealth": "HTTP 200; version 1.60.8; Master-Control active; 27 routes",
+      "masterProbe": "HTTP 200; real model; 10.5 seconds; zero side effects"
     },
-    "productionChecks": {
-      "deploy": "pending",
-      "externalHealth": "pending",
-      "masterProbe": "pending"
+    "runs": {
+      "deploy": "https://github.com/niknight1403/Agentforge2/actions/runs/41553250256",
+      "masterProbe": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810549",
+      "villaSweep": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810595",
+      "productAudit": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810597",
+      "androidGate": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810524"
     },
-    "safetyGate": "production remains fail-closed until the verified systemd drop-in is deployed"
+    "remainingEvidence": {
+      "villaAudit": "19 blocked, 0 passed",
+      "deepVilla34": "3 open tasks; build/test/smoke/quality failed",
+      "release": "blocked by product acceptance"
+    }
   },
   "lastRealModelVerification": {
     "schemaVersion": 1,
-    "sprint": "VF-0009",
+    "sprint": "VF-0015",
     "status": "done",
     "production": true,
     "version": "1.60.8",
-    "verifiedAt": "2026-11-02T17:36:50Z",
-    "runtimeCommit": "1dd7989b5d7813c4f761d57a950fd31a1f4bf903",
-    "verificationRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41492749667",
+    "verifiedAt": "2026-11-03T00:34:46Z",
+    "runtimeCommit": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
+    "verificationRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810549",
     "httpStatus": 200,
     "ok": true,
     "sideEffects": 0,
-    "latencySeconds": 6.1,
+    "latencySeconds": 10.5,
     "route": "Cascade: Ollama CAX41 (7B schnell)",
     "scope": "Fresh real Master response only; no Villa product acceptance."
   },
@@ -85,5 +101,7 @@
     "notifyOnlyWhenAllRequiredEvidencePasses": true,
     "continuousExecution": false
   },
-  "followUpPullRequest": "https://github.com/niknight1403/Agentforge2/pull/49"
+  "followUpPullRequest": "https://github.com/niknight1403/Agentforge2/pull/49",
+  "scoped": 10,
+  "reserved": 490
 }

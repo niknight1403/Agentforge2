@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "sprint": "VF-0015",
-  "status": "candidate",
+  "status": "done",
   "baseCommit": "2cd18591b33a9cfb9ccd18935163b4add5eec7b9",
   "goal": "Enable the existing digest-pinned Docker project runner only after its isolation test passes on the production host.",
   "constraints": [
@@ -52,6 +52,41 @@
     "external /api/health is green for the integrated commit",
     "fresh Master response is real and has zero side effects"
   ],
-  "productionStatus": "pending",
-  "overallStatus": "blocked until production evidence and product acceptance are green"
+  "productionStatus": "verified",
+  "overallStatus": "sandbox blocker resolved; overall release remains blocked because 19/19 Villas lack product acceptance",
+  "integratedCommit": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
+  "productionEvidence": {
+    "deployRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41553250256",
+    "tests": {
+      "total": 498,
+      "pass": 498,
+      "fail": 0
+    },
+    "sandbox": "DOCKER_SANDBOX_VERIFIED: nonroot, read-only host root, project writes, no network, timeout cleanup",
+    "systemd": "active; Docker sandbox with immutable digest",
+    "externalHealth": "HTTP 200; version 1.60.8; Master-Control active; 27 routes",
+    "masterProbeRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810549",
+    "masterProbe": {
+      "httpStatus": 200,
+      "route": "Cascade: Ollama CAX41 (7B schnell)",
+      "latencySeconds": 10.5,
+      "sideEffects": 0
+    }
+  },
+  "remainingBlockers": {
+    "productAudit": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810597",
+    "villaAudit": {
+      "total": 19,
+      "passed": 0,
+      "blocked": 19
+    },
+    "deepVilla34": {
+      "openTasks": 3,
+      "build": "failed",
+      "tests": "failed",
+      "smoke": "failed",
+      "quality": "failed"
+    },
+    "androidReleaseGate": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810524"
+  }
 }
