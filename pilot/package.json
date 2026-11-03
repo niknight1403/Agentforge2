@@ -7,8 +7,9 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test tests/*.test.js",
-    "check": "node --check src/server.js && node --check src/billing.js && node --check src/db.js && node --check src/auth.js && node --check tests/api.test.js && node --check src/apollo.js && node --check scripts/apollo-preview.mjs && node --check tests/apollo.test.js",
-    "apollo:preview": "node scripts/apollo-preview.mjs"
+    "check": "node --check src/server.js && node --check src/billing.js && node --check src/db.js && node --check src/auth.js && node --check tests/api.test.js && node --check src/apollo.js && node --check scripts/apollo-preview.mjs && node --check tests/apollo.test.js && node --check src/sales-report.js && node --check scripts/sales-report.mjs && node --check tests/sales-report.test.js",
+    "apollo:preview": "node scripts/apollo-preview.mjs",
+    "sales:report": "node scripts/sales-report.mjs"
   },
   "engines": {
     "node": ">=20"
