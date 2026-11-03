@@ -1,0 +1,1 @@
+import{withFallback}from"./routes.mjs";export class FreeRouteBridge{constructor({loadRoutes,invoke}){this.loadRoutes=loadRoutes;this.invoke=invoke}async complete(request){const routes=(await this.loadRoutes()).filter(r=>r.free===true&&r.enabled!==false);if(!routes.length)throw Error("NO_FREE_ROUTE");return withFallback(routes,r=>this.invoke(r,request))}}
