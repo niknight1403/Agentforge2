@@ -1,0 +1,37 @@
+name: AnfragePilot First Customer Journey Smoke
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pilot-first-customer-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  customer-journey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify public signup flow and live demo with synthetic message
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://hub.cybersarah-ki.com/pilot"
+          curl --fail --silent --show-error --max-time 18 "$BASE/" > /tmp/pilot-home.html
+          grep -q 'registrieren?plan=starter' /tmp/pilot-home.html
+          grep -q 'registrieren?plan=pro' /tmp/pilot-home.html
+          echo "PUBLIC_PRICING_CTA_OK"
+          curl --fail --silent --show-error --max-time 18 "$BASE/registrieren?plan=starter" > /tmp/pilot-signup.html
+          grep -q "endsWith('/registrieren')" /tmp/pilot-signup.html
+          grep -q "'./api/auth/registrieren'" /tmp/pilot-signup.html
+          echo "PUBLIC_SIGNUP_ROUTE_OK"
+          curl --fail --silent --show-error --max-time 18 "$BASE/api/plans" > /tmp/pilot-plans.json
+          node -e 'const p=require("/tmp/pilot-plans.json"); for(const key of ["starter","pro","business"])if(!p.plaene.some(x=>x.key===key&&x.kaufbar===true))throw Error("Paid tier not available: "+key); console.log("THREE_PAID_TIERS_READY")'
+          printf '%s' '{"nachricht":"Guten Tag, wir interessieren uns fuer die Wartung von zwei Heizungsanlagen. Welche Informationen brauchen Sie fuer ein Angebot?"}' > /tmp/pilot-demo-request.json
+          curl --silent --show-error --max-time 50             --header 'Content-Type: application/json'             --data-binary @/tmp/pilot-demo-request.json             --output /tmp/pilot-demo-response.json             --write-out '%{http_code}' "$BASE/api/public/demo" > /tmp/pilot-demo-status
+          STATUS=$(cat /tmp/pilot-demo-status)
+          echo "LIVE_DEMO_HTTP_STATUS=$STATUS"
+          if [ "$STATUS" != "200" ]; then
+            node -e 'const d=require("/tmp/pilot-demo-response.json"); console.log("LIVE_DEMO_ERROR_CODE="+String(d.code||d.error||"unknown").slice(0,90))'
+            exit 1
+          fi
+          node -e 'const d=require("/tmp/pilot-demo-response.json");if(!d.reply||d.reply.trim().length<45||!d.kategorie||!d.dringlichkeit)throw Error("Incomplete real AI demo result");console.log("LIVE_AI_DEMO_VALIDATED, reply_chars="+d.reply.length)'
