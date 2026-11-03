@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { openDatabase, monatJetzt, quotaFuer, verbrauche, PLANS } from "../src/db.js";
-import { verarbeiteStripeEvent, planAusPrice } from "../src/billing.js";
+import { verarbeiteStripeEvent, planAusPrice, erstelleCheckout } from "../src/billing.js";
 import { createApp } from "../src/server.js";
 
 const ANTWORT = JSON.stringify({
@@ -406,4 +406,37 @@ test("Billing: verspaeteter bezahlter Checkout reaktiviert keine Kuendigung", ()
   });
   assert.equal(r.veraltet, true);
   assert.equal(quotaFuer(db, 1).planKey, "trial");
+});
+
+test("Billing: aktives Abo darf nicht durch weiteren Checkout doppelt angelegt werden", async () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES (?,?,?)").run("active@firma.de", "x", Date.now());
+  db.prepare("INSERT INTO subscriptions(user_id,plan,status,stripe_customer,stripe_subscription,updated_at) VALUES (1,'pro','active','cus_active','sub_active',?)").run(Date.now());
+  process.env.STRIPE_PRICE_PRO = "price_pro_test";
+  let calls = 0;
+  const stripe = { checkout: { sessions: { create: async () => { calls++; return { url: "https://example.test/checkout" }; } } } };
+  await assert.rejects(
+    () => erstelleCheckout({ stripe, db, user: { id: 1, email: "active@firma.de" }, planKey: "pro", basisUrl: "https://app.example.test" }),
+    { status: 409 }
+  );
+  assert.equal(calls, 0);
+});
+
+test("Billing: widerspruechliche User-Metadaten duerfen bestehendes Abo nicht uebernehmen", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES (?,?,?)").run("first@firma.de", "x", Date.now());
+  db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES (?,?,?)").run("second@firma.de", "x", Date.now());
+  db.prepare("INSERT INTO subscriptions(user_id,plan,status,stripe_customer,stripe_subscription,updated_at) VALUES (1,'pro','active','cus_owner','sub_owner',?)").run(Date.now());
+  process.env.STRIPE_PRICE_PRO = "price_pro_owner";
+  const result = verarbeiteStripeEvent(db, {
+    id: "evt_conflict_owner", type: "customer.subscription.updated",
+    data: { object: {
+      id: "sub_owner", customer: "cus_owner", status: "active", metadata: { user_id: "2", plan: "pro" },
+      items: { data: [{ price: { id: "price_pro_owner" } }] }
+    } }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(db.prepare("SELECT COUNT(*) AS c FROM billing_events").get().c, 0);
+  assert.equal(db.prepare("SELECT stripe_subscription FROM subscriptions WHERE user_id=1").get().stripe_subscription, "sub_owner");
+  assert.equal(db.prepare("SELECT COUNT(*) AS c FROM subscriptions WHERE user_id=2").get().c, 0);
 });
