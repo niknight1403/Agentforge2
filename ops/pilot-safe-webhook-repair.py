@@ -59,8 +59,28 @@ def entries_from(text):
     return result
 
 
+def local_json(path, payload=None, signature=None):
+    """Use curl with proxy bypass for local service checks and show safe HTTP codes."""
+    command = ["curl", "--silent", "--show-error", "--noproxy", "*",
+               "--max-time", "12", "--write-out", chr(10) + "%{http_code}",
+               "http://127.0.0.1:3910" + path]
+    if payload is not None:
+        command.extend(["--request", "POST", "--header", "Content-Type: application/json",
+                        "--header", "Stripe-Signature: " + signature, "--data-binary", "@-"])
+    result = subprocess.run(command, input=payload, capture_output=True,
+                            timeout=17)
+    if result.returncode != 0:
+        raise RuntimeError("Local billing HTTP unavailable (curl " +
+                           str(result.returncode) + ")")
+    body, status = result.stdout.rsplit(bytes([10]), 1)
+    if status != b"200":
+        raise RuntimeError("Local billing HTTP returned status " +
+                           status.decode("ascii", errors="replace"))
+    return json.loads(body)
+
+
 def check_local_webhook(secret):
-    """Synthetic unsigned-payload-free probe; no customer/payment actions."""
+    """Synthetic signed event; never creates payment or customer records."""
     timestamp = str(int(time.time()))
     event = {"id": "evt_pilot_signing_probe_" + timestamp,
              "object": "event", "type": "pilot.signing_probe",
@@ -68,26 +88,18 @@ def check_local_webhook(secret):
     body = json.dumps(event, separators=(",", ":")).encode()
     signed = (timestamp + ".").encode() + body
     signature = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
-    req = Request(
-        "http://127.0.0.1:3910/api/billing/webhook",
-        data=body, method="POST",
-        headers={"Content-Type": "application/json",
-                 "Stripe-Signature": "t=" + timestamp + ",v1=" + signature},
-    )
-    with urlopen(req, timeout=10) as response:
-        reply = json.load(response)
-        if response.status != 200 or reply.get("received") is not True:
-            raise RuntimeError("Signing probe rejected")
+    response = local_json("/api/billing/webhook", body,
+                          "t=" + timestamp + ",v1=" + signature)
+    if response.get("received") is not True:
+        raise RuntimeError("Local Stripe signing probe was not accepted")
 
 
 def verify_paid_plans():
-    with urlopen("http://127.0.0.1:3910/api/plans", timeout=10) as response:
-        body = json.load(response)
+    body = local_json("/api/plans")
     plans = {p["key"]: p for p in body.get("plaene", [])}
     if not all(plans.get(key, {}).get("kaufbar") is True
                for key in ("starter", "pro", "business")):
         raise RuntimeError("Paid plans not ready after signing repair")
-
 
 def install_secret(original, secret, endpoint_id):
     # Never rewrite an unrelated signing secret; the preflight checks its absence.
