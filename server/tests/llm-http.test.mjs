@@ -53,7 +53,8 @@ test('Local discovery and completion share a single provider deadline',async()=>
   setTimeout(()=>send(res,200,req.url.endsWith('/models')?{data:[{id:'deadline-fixture'}]}:{choices:[{message:{content:'too late'}}]}),130);
  });
  db.exec('DELETE FROM routes');db.prepare('INSERT INTO routes(name,provider,base_url,model,priority) VALUES (?,?,?,?,?)').run('Shared deadline','ollama',endpoint,'auto',1);
- const started=Date.now();
+ // Both fixture responses need 130ms: an incorrect fresh 200ms completion deadline
+ // would succeed; a shared deadline must reject with TIMEOUT. Avoid flaky
+ // wall-clock limits when CI is running hundreds of tests concurrently.
  await assert.rejects(chat([{role:'user',content:'fixture'}],{timeoutMs:200}),e=>e.code==='LLM_UNAVAILABLE'&&e.attempts[0].code==='TIMEOUT');
- assert.ok(Date.now()-started<600,'model discovery must not create a second full timeout');
 });

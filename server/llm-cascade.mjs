@@ -63,7 +63,27 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
   const freeOnlyMode=typeof freeOnly==='function'?freeOnly():Boolean(freeOnly);
   const configuredRoutes=routes().filter(r=>(!r.key_env||key(r.key_env))&&(!freeOnlyMode||isFreeRoute(r))&&r.provider!=='offline');
   for(const r of configuredRoutes)if(Number(r.cooldown_until)>clock())earliestRetryAt=Math.min(earliestRetryAt,Number(r.cooldown_until));
-  const candidateRoutes=configuredRoutes.filter(r=>Number(r.cooldown_until||0)<=clock());
+  // Route scopes are enforced before ordering, retries and failover.
+  // offlineOnly accepts only loopback endpoints; selfHostedOnly permits trusted remote Ollama nodes.
+  const allowedRemoteHosts=new Set(String(process.env.VF_SELF_HOSTED_ALLOWED_HOSTS||'').split(',').map(h=>h.trim().toLowerCase()).filter(Boolean));
+  const isApprovedHost=(r)=>{
+   try {
+    const url=new URL(r.base_url);
+    const host=url.hostname.toLowerCase();
+    if(['localhost','127.0.0.1','::1','[::1]'].includes(host))return true;
+    // Remote endpoints must be explicitly approved by the operator and protected in transit.
+    return url.protocol==='https:'&&allowedRemoteHosts.has(host);
+   }catch{return false;}
+  };
+  const scopedRoutes=configuredRoutes.filter(r=>{
+   if(opts.routeScope==='selfHostedOnly')return isLocalRoute(r)&&isApprovedHost(r);
+   if(opts.routeScope==='offlineOnly'){
+    if(!isLocalRoute(r))return false;
+    try {const host=new URL(r.base_url).hostname.toLowerCase();return ['localhost','127.0.0.1','::1','[::1]'].includes(host);}catch{return false;}
+   }
+   return true;
+  });
+  const candidateRoutes=scopedRoutes.filter(r=>Number(r.cooldown_until||0)<=clock());
   const ordered=orderCascadeRoutes(candidateRoutes,{strategy:opts.strategy,role:opts.role,freeOnlyMode,preferredModel:String(opts.preferredModel||'').slice(0,120)});
   const deadline=clock()+finiteLimit(opts.totalTimeoutMs,120000,1000,600000);
   // Cloud time is consumed by cloud work, never by earlier local work.

@@ -146,12 +146,23 @@ function describeAttachments(attachments) {
   return out;
 }
 
+/** Routing policy for user prompts. Explicit offline/privacy requests never fall back to cloud. */
+export function deepAgentRoutePolicy(idea, message) {
+  const text=[idea,message].map(x=>String(x||'')).join(' ').toLowerCase();
+  const offline=/(?:\boffline\b|\bair.?gap(?:ped)?\b|\bohne internet\b|\bnur lokal\b|\bstrict(?:ly)? local\b)/i.test(text);
+  const privateTask=/(?:\berotik\b|\berotisch(?:e|en|er|es)?\b|\berotic\b|\badult content\b|\bnsfw\b|\bintim(?:e|en|er|es)? inhalte\b)/i.test(text);
+  return { routeScope: offline?'offlineOnly':privateTask?'selfHostedOnly':'any',
+    strategy: offline||privateTask?'LOCAL_FIRST':'FALLBACK',
+    reason:offline?'offline-request':privateTask?'private-content':'normal-development' };
+}
+
 export async function deepChat(projectId, userMessage, attachments = [], { chatFn = realChat } = {}) {
   const project = db.prepare('SELECT * FROM deep_projects WHERE id = ?').get(Number(projectId));
   if (!project) throw new Error('Projekt nicht gefunden');
   const files = db.prepare('SELECT name, mime, size FROM deep_files WHERE project_id = ? ORDER BY id DESC LIMIT 12').all(project.id);
   const history = db.prepare('SELECT role, content FROM deep_messages WHERE project_id = ? ORDER BY id DESC LIMIT 12').all(project.id).reverse();
 
+  const routePolicy = deepAgentRoutePolicy(project.idea, userMessage);
   const attLines = describeAttachments(attachments);
   const userContent = [
     ...(attLines.length ? ['ANHAENGE AN DIESER NACHRICHT:', ...attLines] : []),
@@ -171,7 +182,7 @@ export async function deepChat(projectId, userMessage, attachments = [], { chatF
           ...history.map((h) => ({ role: h.role, content: h.content })),
           { role: 'user', content: userContent }
         ],
-        { role: 'ARCHITECT', strategy: 'FALLBACK', maxTokens: 1800, timeoutMs: 60_000 }
+        { role: 'ARCHITECT', strategy: routePolicy.strategy, routeScope: routePolicy.routeScope, maxTokens: 1800, timeoutMs: 60_000 }
       );
       if (res && res.offline) {
         offline = true;
