@@ -98,8 +98,7 @@ export function createDeepMission(projectId) {
 export function transitionDeepMission(missionId, status, details = {}) {
   const current = db.prepare('SELECT * FROM deep_missions WHERE id=?').get(String(missionId || ''));
   if (!current) throw new Error('MISSION_NOT_FOUND');
-  if (!MISSION_TRANSITIONS[current.status]?.includes(status)) {
-    if (current.status === status) return current;
+  if (current.status !== status && !MISSION_TRANSITIONS[current.status]?.includes(status)) {
     throw new Error(`MISSION_TRANSITION_INVALID:${current.status}->${status}`);
   }
   db.prepare('UPDATE deep_missions SET status=?,villa_id=COALESCE(?,villa_id),error_code=?,updated_at=? WHERE id=?')
