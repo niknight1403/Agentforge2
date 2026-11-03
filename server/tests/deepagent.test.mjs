@@ -133,3 +133,12 @@ test('Mission-Status erlaubt keine unzulässigen Rückwärtsübergänge', async 
   assert.equal(row.status, 'BLOCKED');
   assert.throws(() => transitionDeepMission(row.id, 'COMPLETED'), /MISSION_TRANSITION_INVALID/);
 });
+
+
+test('RUNNING-Status aktualisiert die Villa-ID auch bei idempotenter Statusmeldung', async () => {
+  const project = await createDeepProject('Eine App mit aktiver Ausführungs-Villa', { chatFn: reply });
+  await runDeepProjectDevelopmentOnce(project.id, async () => ({ villaId: 91, started: true }));
+  const mission = latestDeepMission(project.id);
+  assert.equal(mission.status, 'RUNNING');
+  assert.equal(mission.villa_id, 91);
+});
