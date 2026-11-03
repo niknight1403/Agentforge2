@@ -1,0 +1,62 @@
+name: AnfragePilot Verified Webhook Recovery
+on:
+  pull_request:
+    paths:
+      - 'ops/pilot-safe-webhook-repair.py'
+      - 'ops/tests/test_pilot_webhook_repair.py'
+      - '.github/workflows/pilot-safe-webhook-recovery.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ops/pilot-safe-webhook-repair.py'
+      - 'ops/tests/test_pilot_webhook_repair.py'
+      - '.github/workflows/pilot-safe-webhook-recovery.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: anfragepilot-webhook-recovery
+  cancel-in-progress: false
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline secret handling and signing tests
+        run: |
+          python3 -m py_compile ops/pilot-safe-webhook-repair.py
+          python3 -m unittest discover -s ops/tests -p 'test_pilot_webhook_repair.py' -v
+  recovery:
+    needs: validation
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH key
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$ORACLE_SSH_KEY"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+      - name: Restore verified Stripe webhook signing on production VM
+        env:
+          STRIPE_SETUP_KEY: ${{ secrets.STRIPE_SETUP_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$STRIPE_SETUP_KEY" || { echo "::error::Setup key is unavailable"; exit 1; }
+          SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -i $HOME/.ssh/oracle_key"
+          scp $SSH_OPTS ops/pilot-safe-webhook-repair.py ubuntu@92.5.177.159:/tmp/pilot-safe-webhook-repair.py
+          printf '%s' "$STRIPE_SETUP_KEY" | ssh $SSH_OPTS ubuntu@92.5.177.159 \
+            'sudo sh -c "umask 077; cat > /run/pilot-stripe-webhook-setup.key"'
+          ssh $SSH_OPTS ubuntu@92.5.177.159 'sudo python3 /tmp/pilot-safe-webhook-repair.py'
+      - name: Public paid plans have an active signed webhook
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 20 \
+            'https://hub.cybersarah-ki.com/pilot/api/plans' > /tmp/plans.json
+          node -e "const p=require('/tmp/plans.json'); const tiers=['starter','pro','business']; if(tiers.some(k=>!p.plaene.some(x=>x.key===k && x.kaufbar===true))) throw Error('Paid tiers not ready'); console.log('SIGNED_STRIPE_BILLING_READY')"
