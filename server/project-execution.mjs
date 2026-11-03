@@ -12,7 +12,7 @@ export function projectExecution(root,binary,args,{mode=defaultMode(),image=proc
  if(mode==='host')return {binary,args};
  if(mode==='required')throw Error('PROJECT_SANDBOX_REQUIRED');
  if(mode!=='docker')throw Error('PROJECT_SANDBOX_MODE_INVALID');
- if(!/^[a-zA-Z0-9][a-zA-Z0-9._/:-]*@sha256:[a-f0-9]{64}$/.test(image))throw Error('PROJECT_SANDBOX_PINNED_IMAGE_REQUIRED');
+ if(!/^(?:[a-zA-Z0-9][a-zA-Z0-9._/:-]*@sha256:[a-f0-9]{64}|sha256:[a-f0-9]{64})$/.test(image))throw Error('PROJECT_SANDBOX_PINNED_IMAGE_REQUIRED');
  const source=realpathSync(root);
  if(source==='/'||/[\r\n,]/.test(source))throw Error('PROJECT_SANDBOX_WORKSPACE_INVALID');
  const uid=process.getuid?.()>0?process.getuid():1000;
