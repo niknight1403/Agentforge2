@@ -27,7 +27,17 @@ jobs:
           cache-dependency-path: pilot/package-lock.json
       - name: Install pinned dependencies
         run: npm ci
-      - name: Run project tests
-        run: npm test
+      - name: Run project tests and retain evidence
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-results.log
       - name: Validate server syntax
         run: npm run check
+      - name: Upload test evidence (including failures)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anfragepilot-test-results
+          path: pilot/test-results.log
+          if-no-files-found: warn
+          retention-days: 7
