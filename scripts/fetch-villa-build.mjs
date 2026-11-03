@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 /** Download only a ready Villa product; never package a replacement landing page. */
 import {appendFileSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
@@ -40,7 +41,13 @@ export async function fetchVillaBuild({baseUrl='https://hub.cybersarah-ki.com',e
   for(let i=0;i<maxPolls;i++){await sleep(5000);build=await request(path);if(['ready','failed'].includes(build.status))break;}
  }
  if(build.status!=='ready')throw Error(`Villa product is not ready (${String(build.status||'unknown').replace(/[^a-z_]/gi,'').slice(0,30)}); APK release blocked.`);
+ // The Hub must prove the archive is a verified product, not an unverified source package.
+ const evidence=await request(`/api/villas/${id}/delivery-evidence`);
+ if(evidence.verified!==true||evidence.downloadAvailable!==true||evidence.artifact?.url!==path+'/download')throw Error('Villa product has no verified delivery evidence; APK release blocked.');
+ if(!/^[a-f0-9]{64}$/i.test(String(evidence.artifact?.sha256||''))||!Number.isSafeInteger(evidence.artifact?.sizeBytes)||evidence.artifact.sizeBytes<22)throw Error('Villa delivery evidence contains invalid artifact metadata.');
+ if(!/\.zip$/i.test(String(evidence.artifact?.name||''))||String(evidence.artifact.mime)!=='application/zip')throw Error('Villa APK wrapper requires a verified ZIP web product.');
  const bytes=await request(path+'/download',null,true);
+ if(bytes.length!==evidence.artifact.sizeBytes||createHash('sha256').update(bytes).digest('hex')!==evidence.artifact.sha256.toLowerCase())throw Error('Villa artifact integrity check failed: SHA-256 or size mismatch.');
  return {name:String(villa.name||`Villa ${id}`).replace(/[\r\n\x00-\x1f\x7f]/g,' ').slice(0,160),bytes};
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
