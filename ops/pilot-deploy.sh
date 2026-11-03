@@ -36,8 +36,14 @@ echo "== [3/6] Umgebung vorbereiten =="
 touch "$ENV_DATEI"
 chmod 600 "$ENV_DATEI"
 if [ -f /opt/villaforge/hub.env ]; then
-  grep -hE '^(export )?(GROQ_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY|STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET)=' /opt/villaforge/hub.env \
-    | sed 's/^export //' > "$ENV_DATEI" || true
+  # Import only absent credentials. Overwriting pilot.env would silently
+  # remove STRIPE_PRICE_* and invalidate existing paid subscription plans.
+  while IFS= read -r zeile; do
+    schluessel=${zeile%%=*}
+    if ! grep -q "^\\${schluessel}=" "$ENV_DATEI"; then
+      printf '%s\\n' "$zeile" >> "$ENV_DATEI"
+    fi
+  done < <(grep -hE '^(export )?(GROQ_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY|STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET)=' /opt/villaforge/hub.env | sed 's/^export //' || true)
 fi
 grep -qE '^PORT=' "$ENV_DATEI"      || echo "PORT=$PORT" >> "$ENV_DATEI"
 grep -qE '^NODE_ENV=' "$ENV_DATEI"  || echo 'NODE_ENV=production' >> "$ENV_DATEI"
