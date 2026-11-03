@@ -165,7 +165,7 @@ function reparaturAuftrag(id, blocker) {
   console.log(`  Reparaturbefund: ${blocker.map((item) => String(item).slice(0, 380)).join(' | ').slice(0, 1200)}`);
   const titel = '[REPARATUR] Produktabnahme bestehen';
   const unavailable = toolReadiness().filter((tool) => !tool.enabled).map((tool) => tool.name);
-  const text = 'Der Sweep hat die Abnahme echt ausgefuehrt. Offene Befunde: ' + blocker.join('; ').slice(0, 900) +
+  const text = 'Rolle: INTEGRATOR. Der Sweep hat die Abnahme echt ausgefuehrt. Offene Befunde: ' + blocker.join('; ').slice(0, 900) +
     '. Werkzeugfolge: project_tree / project_search / project_read fuer Quellanalyse, dann project_patch oder project_write fuer echten Code, anschliessend project_run fuer Build, Test und Smoke. Fehlende freigegebene Werkzeuge: ' + (unavailable.length ? unavailable.join(', ') : 'keine') + '. Gesperrte Packs nicht umgehen; Blockade melden. MVP-RELEASE-FOKUS: Implementiere zuerst genau einen nutzbaren Ende-zu-Ende-Nutzerfluss im bestehenden Projekt. Bearbeite Quellcode, Tests und reale Build-Konfiguration statt neue Agenten, Ideen oder generische Planungsaufgaben anzulegen. Fuehre Build, Tests und Smoke echt aus; behebe konkrete Fehler im Produkt. Keine Platzhalter, keine simulierten Ergebnisse, keine Umgehung der Pruefung. Akzeptanz: nutzbarer MVP, build, tests und smoke am selben Quellstand bestanden und echtes Artefakt vorhanden.';
   const offen = db.prepare("SELECT id FROM tasks WHERE villa_id=? AND title=? AND status NOT IN ('DONE','FAILED')").get(id, titel);
   if (offen) {
