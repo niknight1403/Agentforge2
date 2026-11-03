@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexussphere
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: nexussphere}
+  template:
+    metadata:
+      labels: {app: nexussphere}
+    spec:
+      containers:
+        - name: nexussphere
+          image: nexussphere:latest
+          ports:
+            - containerPort: 8787
+          env:
+            - name: NEXUSSPHERE_API_TOKEN
+              valueFrom: {secretKeyRef: {name: nexussphere-secrets, key: api-token}}
+            - name: VILLAFORGE_HUB_URL
+              valueFrom: {configMapKeyRef: {name: nexussphere-config, key: hub-url}}
+            - name: VILLAFORGE_HUB_TOKEN
+              valueFrom: {secretKeyRef: {name: nexussphere-secrets, key: hub-token}}
+          readinessProbe:
+            httpGet: {path: /health, port: 8787}
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: 8787}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          volumeMounts:
+            - {name: state, mountPath: /app/data}
+      volumes:
+        - name: state
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexussphere
+spec:
+  selector: {app: nexussphere}
+  ports:
+    - {port: 8787, targetPort: 8787}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexussphere-config
+data:
+  hub-url: http://villaforge-hub:8787
