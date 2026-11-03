@@ -87,3 +87,25 @@ Neu auf `main`:
 
 Diese Fortschreibung ist eine Statusdokumentation und **keine**
 Produktionserfolgserklärung.
+
+
+## Fortschreibung: Schutz vor alten Abo-Ereignissen, 2026-11-03
+
+- `pilot/src/billing.js`: später eintreffende Kündigungen eines anderen
+  Stripe-Abonnements können ein inzwischen aktives anderes Abo nicht
+  mehr überschreiben. Fremde Subscription-Updates zum bereits aktiven
+  Nutzer werden zur manuellen Prüfung abgewiesen.
+- `pilot/tests/api.test.js`: zwei gezielte Regressionstests ergänzt.
+- JavaScript-Syntax der Dateien `pilot/src/billing.js`,
+  `pilot/src/server.js`, `pilot/src/db.js`, `pilot/src/auth.js`
+  und `pilot/tests/api.test.js` ohne Syntaxfehler geparst
+  (Modulimporte für die isolierte Syntaxprüfung entfernt).
+- Diese isolierte Syntaxprüfung ist **kein** ausgeführter Node-Testlauf,
+  kein Stripe-Testmode-End-to-End-Lauf und kein Produktionsnachweis.
+- GitHub Combined-Status lieferte keine Checks für den geprüften Commit;
+  der verfügbare Workflow-Run-Endpunkt erfasst nur PR-bezogene Runs und
+  ergab keinen Lauf. **CI bleibt NICHT_VERIFIZIERT.**
+
+Offen bleiben: vollständige `npm test`-Ausführung, sichere
+Deployment-Abnahme, Villa-#3-Hub-Status, Live-Stripe-Produktzuordnung
+und nachweislicher Zielumsatz.
