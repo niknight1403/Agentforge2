@@ -35,6 +35,8 @@ spec:
               valueFrom: {secretKeyRef: {name: nexussphere-secrets, key: hub-token}}
             - name: STRIPE_WEBHOOK_SECRET
               valueFrom: {secretKeyRef: {name: nexussphere-secrets, key: stripe-webhook-secret}}
+            - name: NEXUSSPHERE_PRINCIPAL_SECRET
+              valueFrom: {secretKeyRef: {name: nexussphere-secrets, key: principal-secret}}
           readinessProbe:
             httpGet: {path: /health, port: 8787}
             initialDelaySeconds: 3
