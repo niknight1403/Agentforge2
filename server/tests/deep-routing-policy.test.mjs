@@ -27,3 +27,10 @@ test('selfHostedOnly denies unapproved remote Ollama endpoints',async()=>{
  await assert.rejects(run([{role:'user',content:'test'}],{routeScope:'selfHostedOnly'}),{code:'LLM_UNAVAILABLE'});
  assert.deepEqual(used,[]);
 });
+
+test('DeepAgent classifies explicit offline and adult-content tasks',async()=>{
+ const {deepAgentRoutePolicy}=await import('../deepagent.mjs');
+ assert.equal(deepAgentRoutePolicy('Flutter app','Nur lokal, ohne Internet entwickeln').routeScope,'offlineOnly');
+ assert.equal(deepAgentRoutePolicy('Erotische Inhalte fuer Erwachsene','Video-App bauen').routeScope,'selfHostedOnly');
+ assert.equal(deepAgentRoutePolicy('Normale Buchhaltungs-App','Flutter mit Cloud').routeScope,'any');
+});
