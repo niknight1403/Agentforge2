@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';import {join} from 'node:path';import {execFileSy
 import {projectExecution} from '../server/project-execution.mjs';import {executeInvocation} from '../server/project-process.mjs';
 const root=mkdtempSync(join(tmpdir(),'vf-sandbox-'));chmodSync(root,0o777);
 const image=process.env.VF_SANDBOX_TEST_IMAGE;
-const rustImage=process.env.VF_SANDBOX_TEST_RUST_IMAGE;
+const rustImage=process.env.VF_SANDBOX_TEST_RUST_IMAGE||image;
 async function run(file,timeout){
  const stage=prepareProjectStage(root);
  const invocation=projectExecution(stage.work,'node',[file],{mode:'docker',image});
