@@ -109,3 +109,41 @@ Produktionserfolgserklärung.
 Offen bleiben: vollständige `npm test`-Ausführung, sichere
 Deployment-Abnahme, Villa-#3-Hub-Status, Live-Stripe-Produktzuordnung
 und nachweislicher Zielumsatz.
+
+
+## Produktionsnachweis vom 2026-11-03: AnfragePilot Stripe repariert
+
+Der aktuelle Betriebsnachweis beruht auf abgeschlossenen GitHub-Actions-Läufen,
+nicht nur auf eingecheckten Dateien:
+
+- **AnfragePilot CI:** 48/48 Tests, 0 Fehler im Revenue-Product-QA-Workflow
+  nach Ergänzung des Webhook-Readiness-Guards.
+- **Produktionscode:** `src/server.js`, `src/billing.js`, `src/db.js`
+  und `public/dashboard.html` stimmen SHA-256-genau mit dem geprüften
+  GitHub-Release überein. Nachweis:
+  https://github.com/niknight1403/Agentforge2/actions/runs/41586716006
+- **Live-Preise:** Die vorhandenen Stripe-Preise 49, 99 und 199 EUR/Monat
+  wurden verifiziert, die vorher fehlende sichere Laufzeitschlüssel- und
+  Tarifzuordnung wurde auf der VM wiederhergestellt. Nachweis:
+  https://github.com/niknight1403/Agentforge2/actions/runs/41585734847
+- **Webhook-Signing:** Signierte lokale Testzustellung (ohne Zahlungs-,
+  Kunden- oder Abodaten), Dienst-Health und öffentliche Kaufbarkeitsprüfung
+  erfolgreich. Neuer Stripe-Webhooks-Endpunkt aktiviert; der alte Endpunkt
+  und fehlgeschlagene Ersatz-Endpunkte sind deaktiviert. Nachweis:
+  https://github.com/niknight1403/Agentforge2/actions/runs/41588590158
+- **Stripe-Live-API:** Es wurde gesondert bestätigt, dass an
+  `https://hub.cybersarah-ki.com/pilot/api/billing/webhook` genau
+  ein aktivierter Webhook mit den fünf vorgesehenen Abo-/Zahlungsereignissen
+  existiert.
+
+**Freigabegrenze:** Dieser Befund bestätigt Webhook-Signaturverarbeitung
+und betriebliche Konfiguration, jedoch noch **keinen** vollständigen
+echten Stripe-End-to-End-Abonnementlebenszyklus (Checkout, tatsächliche
+Zahlungsbestätigung, Rechnung, Rückerstattung/Kündigung). Keine Test- oder
+simulierten Zahlungen als Live-Umsatz anrechnen.
+
+**Weiter offen:** Hub-Laufzeitstatus und tatsächlich angewandter Villa-3-
+Master-Prompt, verifizierte Kundengewinnung, reale aktive zahlende
+AnfragePilot-Abos, belastbare Brutto-/Netto-MRR-Berechnung sowie rechtliche
+und operative Produktfreigabe. Umsatz-Ziel 5.000–7.000 EUR/Monat
+ist **NICHT_VERIFIZIERT**.
