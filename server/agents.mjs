@@ -1886,6 +1886,8 @@ export function executeTaskOnce(villaId, task, executionOptions = {}) {
 export function guessRole(task) {
   const assigned=String(task.role||String(task.description||'').match(/\bRolle:\s*([A-Z_]+)/i)?.[1]||'').toUpperCase();
   if(ROLES.includes(assigned))return assigned;
+  const rawTitle=String(task.title||'');
+  if (/\[(?:REPARATUR|VERIFICATION|VERIFIKATION)\]/i.test(rawTitle) || /produktabnahme\s+bestehen/i.test(rawTitle)) return 'INTEGRATOR';
   const t = `${task.title} ${task.description}`.toLowerCase();
   if (/plan|anforder|ziel/.test(t)) return 'PLANNER';
   if (/umsatz|monetar|preis|zahl|geschaeft|business|erlös|erloes|marge/.test(t)) return 'BUSINESS';
