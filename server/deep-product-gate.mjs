@@ -138,7 +138,7 @@ function verificationCheck(verification) {
     && tests.failed === 0 && tests.skipped === 0 && typeof tests.runId === 'string' && tests.runId.trim().length > 0;
   const smokeOk = smoke.status === 'passed' && typeof smoke.runId === 'string' && smoke.runId.trim().length > 0;
   const downloadOk = download.status === 'passed' && typeof download.url === 'string'
-    && /^\\/(?:api\\/|downloads\\/)|^https:\\/\\//i.test(download.url)
+    && (download.url.startsWith('/api/') || download.url.startsWith('/downloads/') || download.url.startsWith('https://'))
     && sha256.test(String(download.sha256 || '')) && positiveBytes(download.bytes);
   const details = {
     build: build.status || 'missing',
@@ -154,7 +154,7 @@ function verificationCheck(verification) {
   const missing = [];
   if (!buildOk) missing.push('Build-Artefakt mit relativem Pfad, SHA-256 und Bytegroesse');
   if (!testsOk) missing.push('Testlauf-ID mit mindestens einem bestandenen, null fehlgeschlagenen und null uebersprungenen Tests');
-  if (!smokeOk) missing.push('bestandenener Smoke-/Nutzerfluss-Lauf mit Lauf-ID');
+  if (!smokeOk) missing.push('bestandener Smoke-/Nutzerfluss-Lauf mit Lauf-ID');
   if (!downloadOk) missing.push('erfolgreicher Download mit URL, SHA-256 und Bytegroesse');
   if (missing.length) {
     const failed = [build, tests, smoke, download].some((item) => item.status === 'failed');
