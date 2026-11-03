@@ -6,7 +6,7 @@
   "description": "KI-Anfragebeantwortung als API und Dashboard fuer deutsche KMU",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test tests/",
+    "test": "node --test tests/*.test.js",
     "check": "node --check src/server.js && node --check src/billing.js && node --check src/db.js && node --check src/auth.js && node --check tests/api.test.js"
   },
   "engines": {
