@@ -210,5 +210,6 @@ if __name__ == "__main__":
         main()
     except Exception as exc:
         # Never print API response bodies or secret-bearing request data.
-        print("WEBHOOK_RECOVERY_FAILED: " + type(exc).__name__, file=sys.stderr)
+        safe_detail = str(exc) if type(exc) is RuntimeError else type(exc).__name__
+        print("WEBHOOK_RECOVERY_FAILED: " + safe_detail, file=sys.stderr)
         sys.exit(1)
