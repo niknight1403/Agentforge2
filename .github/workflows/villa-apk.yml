@@ -109,7 +109,7 @@ jobs:
           APP="$APP_NAME"; [ -z "$APP" ] && APP="$VILLA_NAME"
           export APP
           SLUG=$(python3 -c "import re,os; print(re.sub(r'[^a-z0-9]+','-',os.environ['APP'].lower()).strip('-')[:30])")
-          TAG="villa-$VILLA_ID-$(date +%Y%m%d)"
+          TAG="villa-$VILLA_ID-$(date +%Y%m%d)-${GITHUB_RUN_ID}"
           OUT="Villa${VILLA_ID}-${SLUG}.apk"
           cp villa-apk-template/app/build/outputs/apk/debug/app-debug.apk "$OUT"
           echo "TAG=$TAG" >> $GITHUB_ENV
@@ -129,4 +129,4 @@ jobs:
           OUT: ${{ env.OUT }}
           VILLA_NAME: ${{ env.VILLA_NAME }}
         run: |
-          gh release create "$TAG" "$OUT" --title "Villa ${{ inputs.villa_id }}: $VILLA_NAME" --notes "Installierbares APK des Villa-Produkts '$VILLA_NAME' aus dem VillaForge Studio (Phase 2). WebView-Wrapper, Debug-signiert." || echo "Release vorhanden oder fehlgeschlagen - APK liegt als Workflow-Artefakt"
+          gh release create "$TAG" "$OUT" --title "Villa ${{ inputs.villa_id }}: $VILLA_NAME" --notes "APK des vom Hub verifizierten Villa-Webprodukts. WebView-Wrapper, Debug-signiert; Android-Geraete-Smoke-Test separat erforderlich."
