@@ -478,7 +478,7 @@ class HubClient(context: Context) {
 
     /** Übergibt das Projekt idempotent an die autonome Villa-/Build-Kette. */
     suspend fun deepDevelopProject(id: Long): JSONObject =
-        JSONObject(execute("POST", "/api/deep/projects/$id/develop", JSONObject()))
+        JSONObject(execute("POST", "/api/deep/projects/$id/bootstrap", JSONObject()))
 
     /** Löscht genau dieses Deep-Projekt samt Chat und Anhängen. */
     suspend fun deepDeleteProject(id: Long): JSONObject =
