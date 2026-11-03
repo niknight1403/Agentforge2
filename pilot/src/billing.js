@@ -93,6 +93,14 @@ export function verarbeiteStripeEvent(db, event) {
     // Erfolgreich bezahlte Sessions duerfen aktivieren; der Webhook bleibt
     // idempotent und das Abo kann spaeter weiter synchronisiert werden.
     const zahlungBestaetigt = obj.mode === "subscription" && obj.payment_status === "paid";
+    const bisher = db.prepare("SELECT stripe_subscription, status FROM subscriptions WHERE user_id = ?").get(userId);
+    // Eine vorhandene Subscription ist die autoritativere Quelle:
+    // alte Checkout-Events duerfen spaetere Statusaenderungen nicht ueberschreiben.
+    if (bisher?.stripe_subscription && bisher.stripe_subscription === obj.subscription &&
+        !["pending", "trial"].includes(bisher.status)) {
+      speichere.run(event.id, t, JSON.stringify(event), jetzt);
+      return { ok: true, typ: t, veraltet: true };
+    }
     const status = zahlungBestaetigt ? "active" : "pending";
     setzeAbo.run(userId, planKey, status, obj.customer || null, obj.subscription || null, null, jetzt);
   } else if (t === "customer.subscription.updated" || t === "customer.subscription.created") {
