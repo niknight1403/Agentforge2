@@ -1,0 +1,1 @@
+{"name":"nexussphere-web","private":true,"scripts":{"test":"node --test web/*.test.mjs","build":"node web/build.mjs","smoke":"node web/smoke.mjs"}}
