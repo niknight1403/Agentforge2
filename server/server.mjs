@@ -984,7 +984,7 @@ async function api(req, res, url) {
     }
     cancelScheduledVilla(id);
 
-    const targetTables = ['tasks', 'agents', 'memories', 'messages', 'audit', 'reports', 'council'];
+    const targetTables = ['tasks', 'agents', 'memories', 'messages', 'audit', 'reports', 'council', 'posts', 'revenue_ideas'];
     const counts = {};
 
     db.exec('BEGIN TRANSACTION;');
