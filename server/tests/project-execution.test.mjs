@@ -6,6 +6,11 @@ test('sandbox binds only workspace and excludes network, host env and privileges
  assert.equal(out.binary,'docker');assert.match(out.args.find(x=>x.startsWith('--user=')),/^--user=[1-9][0-9]*:[1-9][0-9]*$/);assert.deepEqual(out.cleanup.args,['rm','--force',out.args[out.args.indexOf('--name')+1]]);assert.ok(out.args.includes('type=bind,source='+realpathSync(tmpdir())+',target=/workspace'));assert.deepEqual(out.args.slice(-3),[image,'node','test.js']);
  assert.ok(!out.args.some(x=>/docker.sock|privileged|GITHUB_TOKEN|--env-file/.test(x)));
 });
+test('immutable local Docker image IDs are accepted while mutable tags stay forbidden',()=>{
+ const local='sha256:'+'b'.repeat(64);const out=projectExecution(tmpdir(),'cargo',['--version'],{mode:'docker',image:local});
+ assert.deepEqual(out.args.slice(-3),[local,'cargo','--version']);
+ assert.throws(()=>projectExecution(tmpdir(),'cargo',[],{mode:'docker',image:'villaforge-project-sandbox:release'}),/PINNED_IMAGE/);
+});
 test('invalid or unpinned sandbox configurations fail instead of running on host',()=>{
  assert.throws(()=>projectExecution(tmpdir(),'node',[],{mode:'docker',image:'node:latest'}),/PINNED_IMAGE/);
  assert.throws(()=>projectExecution('/','node',[],{mode:'docker',image}),/WORKSPACE/);
