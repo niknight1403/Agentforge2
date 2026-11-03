@@ -301,16 +301,26 @@
     {
       "id": "VF-0012",
       "area": "Produktionsblocker und Release-Gates",
-      "goal": null,
-      "benefit": "Produktionsblocker und Release-Gates",
+      "goal": "Produktionstaugliche Android-APK-Signierung erzwingen",
+      "benefit": "Nur eine APK mit exakt gepinntem Produktionszertifikat kann den Release-Gate passieren",
       "dependencies": [],
-      "modules": [],
-      "acceptanceCriteria": [],
-      "risks": [
-        "Scope vor Ausfuehrung anhand gemessener Ergebnisse festlegen"
+      "modules": [
+        "app/build.gradle.kts",
+        "scripts/check-android-apk-signing.mjs",
+        ".github/workflows/build-apk.yml",
+        ".github/workflows/android-check.yml"
       ],
-      "status": "unscoped",
-      "scopeDefined": false,
+      "acceptanceCriteria": [
+        "Release-APK wird niemals mit dem Debug-Schluessel signiert",
+        "Fehlende Signaturkonfiguration oder Zertifikat-Pin blockiert den Produktionsbuild vor dem APK-Bau",
+        "Vor Artefakt-Upload und GitHub-Release wird genau ein APK-Signer gegen den gepinnten SHA-256-Fingerabdruck geprueft",
+        "Fokussierte Tests belegen, dass fehlender Pin, Debug-Signer und abweichender Fingerabdruck scheitern und ein exakter Pin besteht"
+      ],
+      "risks": [
+        "Produktionskeystore, Passwoerter und verifizierter Zertifikat-Fingerabdruck muessen vom Repository-Eigentuemer als geschuetzte GitHub-Secrets beziehungsweise Variable hinterlegt werden"
+      ],
+      "status": "in_progress",
+      "scopeDefined": true,
       "evidence": [],
       "implementationCommit": null
     },
