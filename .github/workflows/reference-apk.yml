@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   reference-apk:
@@ -75,3 +75,27 @@ jobs:
           path: villa-apk-template/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish independently verifiable reference APK as durable GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          APK=villa-apk-template/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          TAG="villa-tasks-reference-${GITHUB_RUN_ID}"
+          OUT="VillaTasks-Reference-${GITHUB_RUN_ID}.apk"
+          cp "$APK" "$OUT"
+          cat > /tmp/reference-notes.md <<EOF
+          Offlinefaehige Villa Tasks Referenz-App mit lokaler Datenspeicherung.
+          Gebaut und ueberprueft im GitHub Actions Workflow ${GITHUB_RUN_ID}.
+          SHA-256: ${SHA}
+
+          Nachgewiesen: Unit-Tests, Gradle-Build, APK-Archiv, Manifest, DEX und eingebettete Produktdateien.
+          Nicht nachgewiesen: autonomer Prompt-zu-Villa-Live-Lauf oder Installation auf einem Android-Geraet.
+          Debug-signierte Test-APK; kein Play-Store-Produktionsrelease.
+          EOF
+          gh release create "$TAG" "$OUT" --title "Villa Tasks – verifizierte Referenz-APK (${GITHUB_RUN_ID})" --notes-file /tmp/reference-notes.md
+
