@@ -1,1 +1,1 @@
-import{mkdirSync,writeFileSync}from"node:fs";mkdirSync("nexussphere/dist",{recursive:true});writeFileSync("nexussphere/dist/index.html","<!doctype html><title>NexusSphere</title><main>NexusSphere control plane ready</main>");console.log("build ok");
+import{mkdirSync,writeFileSync}from"node:fs";mkdirSync("dist",{recursive:true});writeFileSync("dist/index.html","<!doctype html><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>NexusSphere</title><main>NexusSphere control plane ready</main>");console.log("build ok");
