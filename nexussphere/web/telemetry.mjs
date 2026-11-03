@@ -1,0 +1,1 @@
+export class Metrics{constructor(){this.c=new Map();this.events=[]}inc(name,n=1){this.c.set(name,(this.c.get(name)||0)+n)}event(type,data={}){this.events.push({type,...data})}snapshot(){return{counters:Object.fromEntries(this.c),events:[...this.events]}}}
