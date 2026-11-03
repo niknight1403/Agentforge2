@@ -1208,7 +1208,7 @@ async function api(req, res, url) {
       if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
       let villaId=Number(detail.project.villa_id||0);
       if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
-        const brief=[detail.project.idea,deepMissionBrief(detail.project.idea),villaLessonsContext()].join('\\n\\n').slice(0,9000);
+        const brief=[detail.project.idea,deepMissionBrief(detail.project.idea),villaLessonsContext()].join('\n\n').slice(0,9000);
         const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:brief,agentCount:12,mode:'BUILD'});
         villaId=linkDeepProjectVilla(projectId,built.villaId);
       }
