@@ -156,3 +156,13 @@ test('Bootstrap allows a new idea into development without prematurely declaring
   assert.equal(result.body.projectId,projectId);
  }
 });
+
+test('Projektanlage erkennt Build-Absicht und gibt echten Autostart-Status zurueck',async()=>{
+ const token=await tokenFor('auto-intent@example.com');
+ const created=await api('/api/deep/projects',{method:'POST',body:JSON.stringify({idea:'Entwickle eine Android App mit lokalem Inventarspeicher und Suche.'})},token);
+ assert.equal(created.status,200,JSON.stringify(created.body));
+ assert.equal(created.body.intent,'AUTO_BUILD');
+ assert.ok(created.body.development,JSON.stringify(created.body));
+ assert.equal(typeof created.body.development.ok,'boolean');
+ assert.ok(Number(created.body.id)>0);
+});
