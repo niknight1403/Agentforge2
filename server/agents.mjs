@@ -1798,7 +1798,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
   const maxSteps = Math.min(stepCeiling, ['CODER', 'ARCHITECT', 'INTEGRATOR'].includes(role) ? 8 : codeRole ? 6 : 5);
   const maxTokens = ['CODER', 'ARCHITECT', 'DOCUMENTER', 'INTEGRATOR'].includes(role) ? 3500 : 1400;
   let res;
-  const taskGate = /\[(REPARATUR|DELIVERY|VERIFIKATION|QUALITAET)\]/i.test(String(task.title || ''));
+  const taskGate = /\[(REPARATUR|DELIVERY|VERIFIKATION|VERIFICATION|QUALITAET)\]/i.test(String(task.title || ''));
   try { res = await runAgent(agent,prompt,{maxSteps,villaId,maxTokens,taskId:task.id,gate:taskGate,
     ...(executionOptions.promptHint ? {promptHint:executionOptions.promptHint} : {}),
     ...(executionOptions.fallbackModel ? {preferredModel:executionOptions.fallbackModel} : {})}); }
