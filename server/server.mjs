@@ -1301,10 +1301,10 @@ async function api(req, res, url) {
   }
   // The project creation/chat actions explicitly authorized here can start a Villa
   // without the separate "Autonom umsetzen" button. Existing projects are reused.
-  const autoStartDeepProject = async (projectId) => runDeepProjectDevelopmentOnce(projectId,async()=>{
+  const autoStartDeepProject = async (projectId) => runDeepProjectDevelopmentOnce(projectId,async({missionId})=>{
     try {
       const detail=deepProjectDetail(projectId);
-      if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
+      if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND',missionId};
       let villaId=Number(detail.project.villa_id||0);
       if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
         const brief=[detail.project.idea,deepMissionBrief(detail.project.idea),villaLessonsContext()].join('\n\n').slice(0,9000);
@@ -1313,8 +1313,8 @@ async function api(req, res, url) {
       }
       const scheduled=isRunning(villaId)?{active:[villaId],queue:[]}:scheduleVilla(villaId,{concurrency:2,maxRounds:12});
       const blocked=Number(scheduled.blockedVillaId||0)===villaId;
-      return {ok:!blocked,villaId,started:!blocked&&(scheduled.active||[]).includes(villaId),queued:!blocked&&(scheduled.queue||[]).includes(villaId),blocked,reason:scheduled.reason||null};
-    }catch(error){return {ok:false,code:error.code||'AUTO_START_FAILED',error:String(error.message||error).slice(0,250)};}
+      return {ok:!blocked,missionId,villaId,started:!blocked&&(scheduled.active||[]).includes(villaId),queued:!blocked&&(scheduled.queue||[]).includes(villaId),blocked,reason:scheduled.reason||null};
+    }catch(error){return {ok:false,missionId,code:error.code||'AUTO_START_FAILED',error:String(error.message||error).slice(0,250)};}
   });
   if (p === '/api/deep/projects' && m === 'POST') {
     try {
