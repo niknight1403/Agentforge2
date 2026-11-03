@@ -16,7 +16,9 @@ spec:
         fsGroup: 1000
       containers:
         - name: nexussphere
-          image: nexussphere:latest
+          # Release automation must replace this placeholder with the exact GHCR digest before apply.
+          image: ghcr.io/niknight1403/nexussphere@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8787
           securityContext:
