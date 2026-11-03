@@ -624,6 +624,15 @@ async function api(req, res, url) {
     if(parts[4]==='design-selection'&&m==='POST'){const body=await readBody(req);return json(res,200,selectDesign(id,Number(body.designId),Number(body.index)));}
     if(parts[4]==='preview-session'&&m==='POST')return json(res,200,createPreviewSession(id));
   }
+  if (p === '/api/nexussphere/complete' && m === 'POST') {
+    if (!user && !openMode) return json(res,401,{error:'Login erforderlich.'});
+    try {
+      const b=await readBody(req),prompt=String(b?.prompt||'').trim();
+      if(!prompt||prompt.length>20000)return json(res,400,{error:'PROMPT_INVALID'});
+      const out=await chat([{role:'user',content:prompt}],{maxTokens:Math.min(4096,Math.max(64,Number(b?.maxTokens)||1024))});
+      return json(res,200,{text:out?.text||out?.content||out?.message?.content||String(out||''),provider:out?.provider||null,route:out?.route||null});
+    } catch(e) { return json(res,503,{error:String(e?.message||e).slice(0,300)}); }
+  }
   if (p === '/api/llm/status' && m === 'GET') return json(res,200,routingStatus());
   if (p === '/api/routes' && m === 'GET') {
     const rows = db.prepare('SELECT * FROM routes ORDER BY priority ASC, id ASC').all();
