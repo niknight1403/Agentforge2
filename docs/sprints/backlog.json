@@ -319,9 +319,11 @@
       "risks": [
         "Produktionskeystore, Passwoerter und verifizierter Zertifikat-Fingerabdruck muessen vom Repository-Eigentuemer als geschuetzte GitHub-Secrets beziehungsweise Variable hinterlegt werden"
       ],
-      "status": "in_progress",
+      "status": "blocked",
       "scopeDefined": true,
-      "evidence": [],
+      "evidence": [
+        "docs/sprints/evidence/VF-0012-blocked.json"
+      ],
       "implementationCommit": null
     },
     {

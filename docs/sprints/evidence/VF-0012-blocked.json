@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "acceptanceComplete": false,
+  "exitCode": 1,
+  "sprint": "VF-0012",
+  "testedCommit": "7308916511cb0efba3fdf08807114e61ddafe25f",
+  "source": "https://github.com/niknight1403/Agentforge2/actions/runs/41636051343",
+  "result": "PRODUCTION_SIGNING_NOT_VERIFIED",
+  "checks": {
+    "signerGateTests": {
+      "total": 4,
+      "passed": 4
+    },
+    "androidLint": "passed",
+    "androidUnitTests": "passed",
+    "androidDebugBuild": "passed; no APK artifact was uploaded",
+    "productionSigner": "not tested; no owner-authorized signing material or verified certificate pin was available to this task",
+    "apkPublished": false,
+    "productionReleaseAttempted": false
+  },
+  "blocker": {
+    "requiredRepositoryVariable": "VF_ANDROID_SIGNING_CERT_SHA256",
+    "requiredRepositorySecrets": [
+      "VF_ANDROID_KEYSTORE_BASE64",
+      "VF_ANDROID_KEYSTORE_PASSWORD",
+      "VF_ANDROID_KEY_ALIAS",
+      "VF_ANDROID_KEY_PASSWORD"
+    ],
+    "resolution": "The repository owner must provide an authorized production keystore and independently verified certificate fingerprint before production signing can be accepted."
+  },
+  "releasePublished": false
+}
