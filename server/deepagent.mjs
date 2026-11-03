@@ -17,6 +17,7 @@
  * Strategie, Rolle ARCHITECT) und vollem Projekt-Kontext.
  */
 import { db, now } from './db.mjs';
+import { randomUUID } from 'node:crypto';
 import { deepMissionBrief } from './deep-mission.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { chat as realChat } from './llm.mjs';
@@ -54,6 +55,16 @@ db.exec(`
     villa_id INTEGER NOT NULL UNIQUE,
     created_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS deep_missions (
+    id TEXT PRIMARY KEY,
+    project_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    villa_id INTEGER,
+    error_code TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_deep_missions_project ON deep_missions(project_id, created_at DESC);
 `);
 
 /** Projektordner fuer Anhaenge (im Hub-Datenbereich). */
@@ -61,17 +72,77 @@ const DEEP_DIR = process.env.DEEP_DIR || '/opt/villaforge/deep';
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12 MB pro Anhang
 
 const deepDevelopmentJobs = new Map();
+const MISSION_TRANSITIONS = Object.freeze({
+  CREATED: ['RUNNING', 'FAILED'],
+  RUNNING: ['QUEUED', 'BLOCKED', 'FAILED', 'COMPLETED'],
+  QUEUED: ['RUNNING', 'BLOCKED', 'FAILED', 'COMPLETED'],
+  BLOCKED: ['RUNNING'],
+  FAILED: ['RUNNING'],
+  COMPLETED: []
+});
 
 export function isDeepProjectDeveloping(projectId) {
   return deepDevelopmentJobs.has(Number(projectId));
 }
 
-/** Parallele Taps/HTTP-Retries erzeugen höchstens eine Villa pro Deep-Projekt. */
+export function createDeepMission(projectId) {
+  const id = Number(projectId);
+  if (!Number.isSafeInteger(id) || id <= 0 || !db.prepare('SELECT id FROM deep_projects WHERE id=?').get(id)) {
+    throw new Error('Projekt nicht gefunden');
+  }
+  const missionId = randomUUID();
+  const ts = now();
+  db.prepare('INSERT INTO deep_missions(id,project_id,status,created_at,updated_at) VALUES (?,?,?,?,?)')
+    .run(missionId, id, 'CREATED', ts, ts);
+  return getDeepMission(missionId);
+}
+
+export function transitionDeepMission(missionId, status, details = {}) {
+  const current = db.prepare('SELECT * FROM deep_missions WHERE id=?').get(String(missionId || ''));
+  if (!current) throw new Error('MISSION_NOT_FOUND');
+  if (!MISSION_TRANSITIONS[current.status]?.includes(status)) {
+    if (current.status === status) return current;
+    throw new Error(`MISSION_TRANSITION_INVALID:${current.status}->${status}`);
+  }
+  db.prepare('UPDATE deep_missions SET status=?,villa_id=COALESCE(?,villa_id),error_code=?,updated_at=? WHERE id=?')
+    .run(status, Number(details.villaId) || null, details.errorCode ? String(details.errorCode).slice(0,80) : null, now(), current.id);
+  return getDeepMission(current.id);
+}
+
+export function getDeepMission(missionId) {
+  return db.prepare('SELECT * FROM deep_missions WHERE id=?').get(String(missionId || '')) || null;
+}
+
+export function latestDeepMission(projectId) {
+  return db.prepare('SELECT * FROM deep_missions WHERE project_id=? ORDER BY created_at DESC LIMIT 1').get(Number(projectId)) || null;
+}
+
+/** Parallele Taps/HTTP-Retries teilen denselben persistenten Missionsdatensatz. */
 export function runDeepProjectDevelopmentOnce(projectId, start) {
   const id = Number(projectId);
   const existing = deepDevelopmentJobs.get(id);
   if (existing) return existing;
-  const job = Promise.resolve().then(start).finally(() => deepDevelopmentJobs.delete(id));
+  const mission = createDeepMission(id);
+  const job = Promise.resolve().then(async () => {
+    transitionDeepMission(mission.id, 'RUNNING');
+    try {
+      const result = await start({ missionId: mission.id });
+      const current = getDeepMission(mission.id);
+      if (current?.status === 'RUNNING') {
+        if (result?.blocked) transitionDeepMission(mission.id, 'BLOCKED', { villaId: result.villaId });
+        else if (result?.queued) transitionDeepMission(mission.id, 'QUEUED', { villaId: result.villaId });
+        else if (result?.villaId) transitionDeepMission(mission.id, 'RUNNING', { villaId: result.villaId });
+        else transitionDeepMission(mission.id, 'COMPLETED');
+      }
+      return result;
+    } catch (error) {
+      const current = getDeepMission(mission.id);
+      if (current && ['RUNNING','QUEUED'].includes(current.status)) {
+        transitionDeepMission(mission.id, 'FAILED', { errorCode: error?.code || 'DEVELOPMENT_START_FAILED' });
+      }
+      throw error;
+    }
+  }).finally(() => deepDevelopmentJobs.delete(id));
   deepDevelopmentJobs.set(id, job);
   return job;
 }
