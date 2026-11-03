@@ -44,6 +44,10 @@ jobs:
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
           [[ "$VILLA_ID" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "Ungueltige Villa-ID"; exit 2; }
+          # Der automatische workflow_run ist absichtlich exklusiv auf NexusSphere begrenzt.
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            [ "$VILLA_ID" = "38" ] && [ "$LIMIT" = "1" ] || { echo "Unsichere automatische Sweep-Konfiguration"; exit 3; }
+          fi
           ZUSATZ="--villa-id=$VILLA_ID"
           if [ "$DRY" = "true" ]; then ZUSATZ="$ZUSATZ --dry-run"; fi
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
