@@ -501,7 +501,9 @@ test("Billing: Kundenportal ohne Stripe-Kunden-ID ist nicht erreichbar", async (
 test("Billing: Checkout verweigert unsichere oder fehlende Produktadresse", async () => {
   const vorherKey = process.env.STRIPE_SECRET_KEY;
   const vorherBasis = process.env.BASIS_URL;
+  const vorherWebhook = process.env.STRIPE_WEBHOOK_SECRET;
   process.env.STRIPE_SECRET_KEY = "sk_test_checkout_local_validation";
+  process.env.STRIPE_WEBHOOK_SECRET = "whsec_checkout_url_test_only";
   delete process.env.BASIS_URL;
   const { basis, server } = await starteApp();
   try {
@@ -519,6 +521,8 @@ test("Billing: Checkout verweigert unsichere oder fehlende Produktadresse", asyn
     else process.env.STRIPE_SECRET_KEY = vorherKey;
     if (vorherBasis === undefined) delete process.env.BASIS_URL;
     else process.env.BASIS_URL = vorherBasis;
+    if (vorherWebhook === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
+    else process.env.STRIPE_WEBHOOK_SECRET = vorherWebhook;
   }
 });
 
@@ -608,4 +612,41 @@ test("Billing: fremde Subscription-Aktualisierung ersetzt kein aktives Abo", () 
   assert.equal(result.ok, false);
   assert.equal(db.prepare("SELECT stripe_subscription FROM subscriptions WHERE user_id=1").get().stripe_subscription, "sub_current");
   assert.equal(db.prepare("SELECT COUNT(*) AS c FROM billing_events WHERE id='evt_other_sub'").get().c, 0);
+});
+
+
+test("Billing: bezahlte Tarife werden ohne Signatursecret nicht als kaufbar gemeldet", async () => {
+  const previous = {
+    key: process.env.STRIPE_SECRET_KEY,
+    secret: process.env.STRIPE_WEBHOOK_SECRET,
+    price: process.env.STRIPE_PRICE_PRO
+  };
+  process.env.STRIPE_SECRET_KEY = "sk_test_readiness_only";
+  process.env.STRIPE_PRICE_PRO = "price_test_readiness";
+  delete process.env.STRIPE_WEBHOOK_SECRET;
+  const { basis, server } = await starteApp();
+  try {
+    const res = await fetch(basis + "/api/plans");
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.plaene.find(p => p.key === "pro").kaufbar, false);
+    const { cookie } = await registriere(basis, "billing-guard@firma.de");
+    const checkout = await fetch(basis + "/api/billing/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", cookie },
+      body: JSON.stringify({ plan: "pro" })
+    });
+    assert.equal(checkout.status, 503);
+    assert.match((await checkout.json()).error, /Webhooks/);
+  } finally {
+    server.close();
+    for (const [name, value] of [
+      ["STRIPE_SECRET_KEY", previous.key],
+      ["STRIPE_WEBHOOK_SECRET", previous.secret],
+      ["STRIPE_PRICE_PRO", previous.price]
+    ]) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
 });

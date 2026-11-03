@@ -74,10 +74,15 @@ export function createApp({ db = openDatabase(), llm = (m, o) => llmChat(m, o) }
     res.json({ ok: true, service: "anfragepilot", version: "0.1.0", zeit: new Date().toISOString() });
   });
 
+  function billingBereit() {
+    return Boolean(process.env.STRIPE_SECRET_KEY &&
+      process.env.STRIPE_WEBHOOK_SECRET?.startsWith("whsec_"));
+  }
+
   app.get("/api/plans", (req, res) => {
     res.json({
       plaene: Object.entries(PLANS).map(([key, p]) => ({
-        key, label: p.label, preis: p.price, anfragenProMonat: p.quota, kaufbar: Boolean(stripePriceFuer(key)),
+        key, label: p.label, preis: p.price, anfragenProMonat: p.quota, kaufbar: key !== "trial" && billingBereit() && Boolean(stripePriceFuer(key)),
       })),
     });
   });
@@ -243,6 +248,7 @@ export function createApp({ db = openDatabase(), llm = (m, o) => llmChat(m, o) }
 
   // ---------- Billing ----------
   app.post("/api/billing/checkout", mitSession, async (req, res) => {
+    if (!billingBereit()) return res.status(503).json({ error: "Stripe-Webhooks sind noch nicht sicher konfiguriert" });
     const stripe = stripeClient();
     if (!stripe) return res.status(503).json({ error: "Zahlungen sind noch nicht konfiguriert (STRIPE_SECRET_KEY fehlt)" });
     try {
