@@ -1,5 +1,6 @@
 import { createPublishPost, listPublishPosts, getVillaRevenue } from './publishing.mjs';
 import {capabilityStatus,requestCapability} from './capability-autopilot.mjs';
+import {runtimeCapabilityInventory} from './runtime-capabilities.mjs';
 import {villaDiagnostics} from './villa-diagnostics.mjs';
 import { VERSION } from './version.mjs';
 import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStudioPreview } from './studio.mjs';
@@ -352,6 +353,7 @@ async function api(req, res, url) {
     }
     return rpcErr(-32601, `Unbekannte Methode: ${body.method}`);
   }
+  if (p === '/api/system/runtime-capabilities' && m === 'GET') return json(res,200,{capabilities:runtimeCapabilityInventory(),note:'Availability only; not proof of configured, tested or verified product output.'});
   if (p === '/api/system/audit') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     const audit = systemAudit();
