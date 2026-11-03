@@ -8,7 +8,13 @@ function defaultMode(){
  if(process.env.VF_PROJECT_SANDBOX)return process.env.VF_PROJECT_SANDBOX;
  return process.env.NODE_ENV==='production'?'required':'host';
 }
-export function projectExecution(root,binary,args,{mode=defaultMode(),image=process.env.VF_PROJECT_SANDBOX_IMAGE||''}={}){
+function imageFor(binary,image){
+ if(image)return image;
+ if(binary==='cargo'||binary==='rustc')return process.env.VF_PROJECT_SANDBOX_RUST_IMAGE||'';
+ return process.env.VF_PROJECT_SANDBOX_IMAGE||'';
+}
+export function projectExecution(root,binary,args,{mode=defaultMode(),image=''}={}){
+ image=imageFor(binary,image);
  if(mode==='host')return {binary,args};
  if(mode==='required')throw Error('PROJECT_SANDBOX_REQUIRED');
  if(mode!=='docker')throw Error('PROJECT_SANDBOX_MODE_INVALID');
