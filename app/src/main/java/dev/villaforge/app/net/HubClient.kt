@@ -765,4 +765,18 @@ class HubClient(context: Context) {
 }
 
 class HubException(val code: Int, val detail: String) :
-    Exception("Hub antwortet mit HTTP $code: $detail")
+    Exception("Hub antwortet mit HTTP $code: " + readableHubError(detail)) {
+    companion object {
+        private fun readableHubError(raw: String): String = runCatching {
+            val o = JSONObject(raw)
+            o.optString("message").ifBlank { o.optString("error") }.ifBlank {
+                val blockers = o.optJSONArray("blockers")
+                if (blockers != null && blockers.length() > 0) {
+                    (0 until blockers.length()).joinToString("; ") { i ->
+                        blockers.optJSONObject(i)?.optString("label").orEmpty()
+                    }.ifBlank { raw }
+                } else raw
+            }
+        }.getOrDefault(raw).take(220)
+    }
+}
