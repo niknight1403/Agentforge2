@@ -606,7 +606,14 @@ class HubClient(context: Context) {
                 status = v.optString("status"),
                 maxAgents = v.optInt("max_agents", 1000),
                 sourcePath = v.optString("source_path"),
-                mode = v.optString("mode", "BUILD")
+                mode = v.optString("mode", "BUILD"),
+                executing = v.optBoolean("executing", o.optBoolean("running", false)),
+                queued = v.optBoolean("queued", o.optBoolean("queued", false)),
+                runningTasks = v.optJSONArray("runningTasks")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
+                openCount = v.optInt("openCount", 0),
+                etaMin = v.optInt("etaMinutes", v.optInt("etaMin", 0)),
+                etaCapped = v.optBoolean("etaCapped", false),
+                vision = v.optString("vision")
             ),
             agents = agents(),
             tasks = tasks(),
