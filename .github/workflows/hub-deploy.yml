@@ -71,9 +71,23 @@ jobs:
           PREVIOUS_SHA=$(git rev-parse HEAD)
           SOURCE_UPDATED=0
           ROLLBACK_REQUIRED=0
+          SANDBOX_CONFIG_UPDATED=0
+          SANDBOX_DROPIN="/etc/systemd/system/${UNIT}.d/project-sandbox.conf"
+          SANDBOX_BACKUP=""
+          restore_sandbox_config() {
+            if [ "$SANDBOX_CONFIG_UPDATED" != "1" ]; then return; fi
+            if [ -n "$SANDBOX_BACKUP" ] && [ -f "$SANDBOX_BACKUP" ]; then
+              install -m 0644 "$SANDBOX_BACKUP" "$SANDBOX_DROPIN" || true
+            else
+              rm -f "$SANDBOX_DROPIN" || true
+            fi
+            systemctl daemon-reload || true
+            SANDBOX_CONFIG_UPDATED=0
+          }
           rollback_on_error() {
             status=$?
             trap - ERR
+            restore_sandbox_config
             if [ "$ROLLBACK_REQUIRED" = "1" ]; then
               echo "Deploy-Health fehlgeschlagen; stelle vorherigen Stand wieder her."
               git reset --hard "$PREVIOUS_SHA" || true
@@ -109,13 +123,38 @@ jobs:
           fi
           tail -n 12 "$TEST_LOG"
           rm -f "$TEST_LOG"
+          echo "== Isolierte Projektausfuehrung verifizieren =="
+          command -v docker >/dev/null
+          docker info >/dev/null
+          docker pull node:24-bookworm-slim
+          SANDBOX_IMAGE=$(docker image inspect node:24-bookworm-slim --format '{{index .RepoDigests 0}}')
+          if ! printf '%s\n' "$SANDBOX_IMAGE" | grep -Eq '^[^[:space:]]+@sha256:[0-9a-f]{64}$'; then
+            echo "Docker-Sandbox-Image besitzt keinen gueltigen unveraenderlichen Digest."
+            exit 5
+          fi
+          NODEBIN=$(command -v node)
+          VF_SANDBOX_TEST_IMAGE="$SANDBOX_IMAGE" "$NODEBIN" scripts/test-project-sandbox.mjs
+          mkdir -p "$(dirname "$SANDBOX_DROPIN")"
+          if [ -f "$SANDBOX_DROPIN" ]; then
+            SANDBOX_BACKUP=$(mktemp)
+            cp "$SANDBOX_DROPIN" "$SANDBOX_BACKUP"
+          fi
+          DROPIN_TMP=$(mktemp)
+          printf '[Service]\nEnvironment="VF_PROJECT_SANDBOX=docker"\nEnvironment="VF_PROJECT_SANDBOX_IMAGE=%s"\n' "$SANDBOX_IMAGE" > "$DROPIN_TMP"
+          install -m 0644 "$DROPIN_TMP" "$SANDBOX_DROPIN"
+          rm -f "$DROPIN_TMP"
+          SANDBOX_CONFIG_UPDATED=1
           echo "== Neustart mit gespeicherten Villen-Entscheidungen =="
           ROLLBACK_REQUIRED=1
-          systemctl daemon-reload || true
+          systemctl daemon-reload
           systemctl restart "$UNIT"
           sleep 6
           echo "== Dienststatus =="
           systemctl is-active "$UNIT"
+          UNIT_ENV=$(systemctl show "$UNIT" -p Environment --value)
+          printf '%s\n' "$UNIT_ENV" | grep -Fq 'VF_PROJECT_SANDBOX=docker'
+          printf '%s\n' "$UNIT_ENV" | grep -Fq "VF_PROJECT_SANDBOX_IMAGE=$SANDBOX_IMAGE"
+          echo "Projekt-Sandbox aktiv: Docker mit unveraenderlichem Image-Digest"
           echo "== Health/Version lokal =="
           PORT=$(systemctl show "$UNIT" -p Environment --value 2>/dev/null | grep -oE 'PORT=[0-9]+' | cut -d= -f2 || true)
           [ -n "$PORT" ] || PORT=3000
@@ -125,6 +164,8 @@ jobs:
           rm -f "$HEALTH_FILE"
           ROLLBACK_REQUIRED=0
           SOURCE_UPDATED=0
+          SANDBOX_CONFIG_UPDATED=0
+          if [ -n "$SANDBOX_BACKUP" ]; then rm -f "$SANDBOX_BACKUP"; fi
           trap - ERR
           echo "DEPLOY-ENDE"
           DEP
