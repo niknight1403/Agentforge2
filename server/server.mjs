@@ -38,7 +38,7 @@ import { deepMissionBrief } from './deep-mission.mjs';
 import { classifyDeepDevelopmentIntent } from './deep-intent.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
-import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
+import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce, transitionDeepMission, getDeepMission, latestDeepMission } from './deepagent.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
 import { studioStatus as routeStudioStatus, eliteRanking as routeEliteRanking, simulateChain as routeSimulateChain, saveChain as routeSaveChain, listChains as routeListChains, buildChainFromGoal as routeChainFromGoal, recordSimulation as routeRecordSim } from './route-studio.mjs';
@@ -1203,6 +1203,10 @@ async function api(req, res, url) {
   if (p === '/api/deep/projects' && m === 'GET') {
     return json(res, 200, listDeepProjects());
   }
+  if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'missions' && parts[3] && m === 'GET') {
+    const mission = getDeepMission(parts[3]);
+    return mission ? json(res, 200, mission) : json(res, 404, { error: 'Mission nicht gefunden' });
+  }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts.length === 4 && m === 'DELETE') {
     const projectId = Number(parts[3]);
     if (isDeepProjectDeveloping(projectId)) return json(res, 409, { error: 'Projekt wird gerade an die Entwicklungs-Villa übergeben.' });
@@ -1215,7 +1219,7 @@ async function api(req, res, url) {
     const bootstrap = parts[4] === 'bootstrap';
     const detail = deepProjectDetail(projectId);
     if (!detail) return json(res, 404, { error: 'Projekt nicht gefunden' });
-    return runDeepProjectDevelopmentOnce(projectId, async () => {
+    return runDeepProjectDevelopmentOnce(projectId, async ({ missionId }) => {
       try {
         const previousVillaId = Number(deepProjectDetail(projectId)?.project.villa_id || 0);
         let villaId = previousVillaId;
@@ -1234,6 +1238,7 @@ async function api(req, res, url) {
             return json(res, 409, {
               ok: false,
               projectId,
+              missionId,
               villaId: 0,
               gateBlocked: true,
               checks: gate.checks,
@@ -1251,6 +1256,7 @@ async function api(req, res, url) {
             return json(res, 409, {
               ok: false,
               projectId,
+              missionId,
               villaId: 0,
               gateBlocked: true,
               artifactBlocked: true,
@@ -1268,12 +1274,16 @@ async function api(req, res, url) {
           ? { active: [villaId], queue: [] }
           : scheduleVilla(villaId, { concurrency: 2, maxRounds: 12 });
         const blocked = Number(scheduled.blockedVillaId || 0) === villaId;
+        const started = !blocked && (scheduled.active || []).includes(villaId);
+        const queued = !blocked && (scheduled.queue || []).includes(villaId);
+        transitionDeepMission(missionId, blocked ? 'BLOCKED' : queued ? 'QUEUED' : 'RUNNING', { villaId, errorCode: blocked ? (scheduled.reason || 'VILLA_START_BLOCKED') : null });
         return json(res, 202, {
           ok: !blocked,
           projectId,
+          missionId,
           villaId,
-          started: !blocked && (scheduled.active || []).includes(villaId),
-          queued: !blocked && (scheduled.queue || []).includes(villaId),
+          started,
+          queued,
           blocked,
           reason: blocked ? scheduled.reason : undefined,
           message: blocked
@@ -1282,7 +1292,8 @@ async function api(req, res, url) {
             : 'Projekt an die autonome VillaForge-Entwicklungs- und Build-Kette übergeben.'
         });
       } catch (e) {
-        return json(res, 503, { error: String(e.message || e).slice(0, 400), code: e.code || 'DEVELOPMENT_START_FAILED' });
+        try { transitionDeepMission(missionId, 'FAILED', { errorCode: e.code || 'DEVELOPMENT_START_FAILED' }); } catch { /* mission may already be terminal */ }
+        return json(res, 503, { missionId, error: String(e.message || e).slice(0, 400), code: e.code || 'DEVELOPMENT_START_FAILED' });
       }
     });
   }
