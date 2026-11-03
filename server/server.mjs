@@ -32,6 +32,7 @@ import { maturity, developCycle, PHASES, proposalsToTasks } from './product.mjs'
 import { evolutionState, proposeForVilla, evolveAll, listVillaProposals, listAllPending, approveVillaProposal, rejectVillaProposal, KINDS as EVOLVE_KINDS } from './evolve.mjs';
 import { systemAudit, healTick, healActions } from './heal.mjs';
 import { startBuild, buildStatus, buildArtifact, previewInfo, previewFile, maybeAutoBuild } from './builds.mjs';
+import {deliveryEvidence} from './delivery-evidence.mjs';
 import { productGateForProjectDir } from './deep-product-gate.mjs';
 import { deepMissionBrief } from './deep-mission.mjs';
 import { classifyDeepDevelopmentIntent } from './deep-intent.mjs';
@@ -1086,6 +1087,11 @@ async function api(req, res, url) {
   }
 
   /* ---- Produkt-Build-Pipeline (v1.24): Status, Start, Download, Vorschau ---- */
+  if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'delivery-evidence' && m === 'GET') {
+    const id=Number(parts[2]);
+    if(!db.prepare('SELECT id FROM villas WHERE id=?').get(id))return json(res,404,{error:'Villa nicht gefunden'});
+    return json(res,200,await deliveryEvidence(id));
+  }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'build' && parts[4] === 'download' && m === 'GET') {
     const id = Number(parts[2]);
     const art = buildArtifact(id);
