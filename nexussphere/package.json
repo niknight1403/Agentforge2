@@ -4,7 +4,8 @@
   "scripts": {
     "test": "node --test web/*.test.mjs",
     "build": "node web/build.mjs",
-    "smoke": "node web/smoke.mjs"
+    "smoke": "node web/smoke.mjs",
+    "verify": "npm test && npm run build && npm run smoke"
   },
   "description": "NexusSphere CI verified product foundation"
 }
