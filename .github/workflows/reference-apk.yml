@@ -44,10 +44,12 @@ jobs:
           gradle-version: '8.7'
       - name: Package actual offline app into Android WebView
         run: |
+          node reference-product/bundle.mjs
+          node --check reference-product/www/app.bundle.js
           cp -R reference-product/www/. villa-apk-template/app/src/main/assets/www/
           sed -i 's/VILLA_APP_NAME/Villa Tasks/g' villa-apk-template/app/src/main/res/values/strings.xml
           test -s villa-apk-template/app/src/main/assets/www/index.html
-          test -s villa-apk-template/app/src/main/assets/www/app.mjs
+          test -s villa-apk-template/app/src/main/assets/www/app.bundle.js
       - name: Build installable APK
         run: gradle -p villa-apk-template :app:assembleDebug --no-daemon --console=plain -PvillaId=9001
       - name: Verify APK archive, Android manifest, bytecode and local assets
@@ -58,11 +60,12 @@ jobs:
           assert os.path.getsize(f)>10000, 'APK empty or too small'
           with zipfile.ZipFile(f) as z:
               names=set(z.namelist())
-              required={'AndroidManifest.xml','classes.dex','assets/www/index.html','assets/www/app.mjs','assets/www/model.mjs'}
+              required={'AndroidManifest.xml','classes.dex','assets/www/index.html','assets/www/app.bundle.js'}
               missing=required-names
               assert not missing, f'Missing real APK entries: {missing}'
               assert z.testzip() is None, 'APK ZIP integrity failure'
               assert b'task-form' in z.read('assets/www/index.html'), 'Product UI missing'
+              assert b'function addTask' in z.read('assets/www/app.bundle.js'), 'Functional bundled app missing'
           print('APK verified:',os.path.getsize(f),'bytes')
           PY
           sha256sum villa-apk-template/app/build/outputs/apk/debug/app-debug.apk
