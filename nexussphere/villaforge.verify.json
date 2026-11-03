@@ -1,0 +1,1 @@
+{"build":{"binary":"npm","args":["run","build"]},"tests":{"binary":"npm","args":["test"]},"smoke":{"binary":"npm","args":["run","smoke"]}}
