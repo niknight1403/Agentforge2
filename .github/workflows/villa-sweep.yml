@@ -52,6 +52,12 @@ jobs:
             ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
               "cd /opt/villaforge && sudo \$(command -v node || echo /usr/bin/node) --input-type=module -e \"import { setVillaFocus } from './server/project-focus.mjs'; console.log(JSON.stringify(setVillaFocus([38], { reason: 'NexusSphere Villa 38 gezielte Live-Abnahme' })))\""
           fi
+          # NexusSphere enthaelt einen echten Rust-Core. Der produktive Sweep muss
+          # deshalb dieselbe Systemvoraussetzung wie die NexusSphere-CI besitzen.
+          if [ "$VILLA_ID" = "38" ]; then
+            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
+              'if ! command -v cargo >/dev/null 2>&1; then sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cargo rustc; fi; cargo --version; rustc --version'
+          fi
           ZUSATZ="--villa-id=$VILLA_ID"
           if [ "$DRY" = "true" ]; then ZUSATZ="$ZUSATZ --dry-run"; fi
           ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
