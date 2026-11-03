@@ -51,6 +51,17 @@ class WebhookRecoveryTests(unittest.TestCase):
         self.assertIn("Authorization: Bearer sk_live_unit_test_only", kwargs["input"])
         self.assertIn("data = ", kwargs["input"])
 
+
+    def test_stripe_request_curl_config_has_real_line_breaks(self):
+        result = SimpleNamespace(returncode=0, stdout='{"id":"price_test"}')
+        with patch.object(module.subprocess, "run", return_value=result) as run:
+            module.request_stripe("sk_live_unit_test_only", "prices/price_test",
+                                  [("enabled_events[]", "checkout.session.completed")])
+        config = run.call_args.kwargs["input"]
+        self.assertEqual(config.count(chr(10)), 3)
+        self.assertEqual(config.splitlines()[0], 'header = "Authorization: Bearer sk_live_unit_test_only"')
+        self.assertIn('enabled_events%5B%5D', config)
+
     def test_signed_probe_is_valid_hmac_and_contains_no_payment(self):
         captured = []
         def fake_urlopen(request, timeout=0):
