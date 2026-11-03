@@ -88,7 +88,13 @@ export function verarbeiteStripeEvent(db, event) {
     const userId = Number(obj.metadata?.user_id || obj.client_reference_id);
     const planKey = obj.metadata?.plan;
     if (!Number.isSafeInteger(userId) || userId < 1 || !db.prepare("SELECT id FROM users WHERE id = ?").get(userId) || !PLANS[planKey] || planKey === "trial") return { ok: false, grund: "user_id oder plan fehlt" };
-    setzeAbo.run(userId, planKey, "active", obj.customer || null, obj.subscription || null, null, jetzt);
+    // Checkout-Abschluss ist kein Nachweis einer erfolgreichen Zahlung.
+    // Bei unbezahlten Sessions auf das signierte subscription-Event warten.
+    // Erfolgreich bezahlte Sessions duerfen aktivieren; der Webhook bleibt
+    // idempotent und das Abo kann spaeter weiter synchronisiert werden.
+    const zahlungBestaetigt = obj.mode === "subscription" && obj.payment_status === "paid";
+    const status = zahlungBestaetigt ? "active" : "pending";
+    setzeAbo.run(userId, planKey, status, obj.customer || null, obj.subscription || null, null, jetzt);
   } else if (t === "customer.subscription.updated" || t === "customer.subscription.created") {
     const userId = zugehoerigerUser(obj);
     const planKey = planAusPrice(obj.items?.data?.[0]?.price?.id) || obj.metadata?.plan;
