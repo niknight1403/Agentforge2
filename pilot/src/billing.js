@@ -118,11 +118,21 @@ function processStripeEvent(db, event) {
     const planKey = planAusPrice(obj.items?.data?.[0]?.price?.id) || obj.metadata?.plan;
     if (!userId) return { ok: false, grund: "Abonnement konnte keinem Benutzer zugeordnet werden" };
     if (!PLANS[planKey] || planKey === "trial") return { ok: false, grund: "Unbekannter bezahlter Preis" };
+    const current = db.prepare("SELECT stripe_subscription, status FROM subscriptions WHERE user_id = ?").get(userId);
+    if (current?.stripe_subscription && current.stripe_subscription !== obj.id &&
+        current.status !== "cancelled") {
+      return { ok: false, grund: "Andere laufende Subscription ist bereits zugeordnet" };
+    }
     const status = ["active", "trialing"].includes(obj.status) ? "active" : obj.status === "past_due" ? "past_due" : "inactive";
-    setzeAbo.run(userId, planKey || "trial", status, obj.customer || null, obj.id || null, obj.current_period_end ? obj.current_period_end * 1000 : null, jetzt);
+    setzeAbo.run(userId, planKey, status, obj.customer || null, obj.id || null, obj.current_period_end ? obj.current_period_end * 1000 : null, jetzt);
   } else if (t === "customer.subscription.deleted") {
     const userId = zugehoerigerUser(obj);
     if (!userId) return { ok: false, grund: "Abonnement konnte keinem Benutzer zugeordnet werden" };
+    const current = db.prepare("SELECT stripe_subscription FROM subscriptions WHERE user_id = ?").get(userId);
+    if (current?.stripe_subscription && current.stripe_subscription !== obj.id) {
+      speichere.run(event.id, t, JSON.stringify(event), jetzt);
+      return { ok: true, typ: t, veraltet: true };
+    }
     setzeAbo.run(userId, "trial", "cancelled", obj.customer || null, obj.id || null, null, jetzt);
   } else if (t === "invoice.payment_failed") {
     const subId = obj.subscription;
