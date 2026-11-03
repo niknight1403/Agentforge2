@@ -33,6 +33,8 @@ spec:
               valueFrom: {configMapKeyRef: {name: nexussphere-config, key: hub-url}}
             - name: VILLAFORGE_HUB_TOKEN
               valueFrom: {secretKeyRef: {name: nexussphere-secrets, key: hub-token}}
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom: {secretKeyRef: {name: nexussphere-secrets, key: stripe-webhook-secret}}
           readinessProbe:
             httpGet: {path: /health, port: 8787}
             initialDelaySeconds: 3
