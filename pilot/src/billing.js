@@ -32,6 +32,7 @@ export async function erstelleCheckout({ stripe, db, user, planKey, basisUrl }) 
     customer_email: sub?.stripe_customer ? undefined : user.email,
     client_reference_id: String(user.id),
     metadata: { user_id: String(user.id), plan: planKey },
+    subscription_data: { metadata: { user_id: String(user.id), plan: planKey } },
     allow_promotion_codes: true,
     success_url: `${basisUrl}/app?checkout=erfolg`,
     cancel_url: `${basisUrl}/preise?checkout=abgebrochen`,
@@ -48,6 +49,25 @@ export function verarbeiteStripeEvent(db, event) {
   if (schonDa) return { ok: true, doppelt: true };
 
   const jetzt = Date.now();
+  // Stripe kann bei Bestandsabos ohne subscription_data.metadata senden.
+  // Das bereits signaturgeprueft gespeicherte Abo ist dann die Zuordnungsquelle.
+  function zugehoerigerUser(obj) {
+    const ausMeta = Number(obj?.metadata?.user_id);
+    if (Number.isSafeInteger(ausMeta) && ausMeta > 0) {
+      const user = db.prepare("SELECT id FROM users WHERE id = ?").get(ausMeta);
+      if (user) return ausMeta;
+    }
+    const subscription = typeof obj?.id === "string" && obj.id.startsWith("sub_") ? obj.id : obj?.subscription;
+    if (subscription) {
+      const match = db.prepare("SELECT user_id FROM subscriptions WHERE stripe_subscription = ?").get(subscription);
+      if (match) return match.user_id;
+    }
+    if (obj?.customer) {
+      const match = db.prepare("SELECT user_id FROM subscriptions WHERE stripe_customer = ?").get(obj.customer);
+      if (match) return match.user_id;
+    }
+    return null;
+  }
   const speichere = db.prepare("INSERT INTO billing_events(id, typ, payload, created_at) VALUES (?,?,?,?)");
   const setzeAbo = db.prepare(`
     INSERT INTO subscriptions(user_id, plan, status, stripe_customer, stripe_subscription, current_period_end, updated_at)
@@ -67,21 +87,22 @@ export function verarbeiteStripeEvent(db, event) {
   if (t === "checkout.session.completed") {
     const userId = Number(obj.metadata?.user_id || obj.client_reference_id);
     const planKey = obj.metadata?.plan;
-    if (!userId || !planKey) return { ok: false, grund: "user_id oder plan fehlt" };
+    if (!Number.isSafeInteger(userId) || userId < 1 || !db.prepare("SELECT id FROM users WHERE id = ?").get(userId) || !PLANS[planKey] || planKey === "trial") return { ok: false, grund: "user_id oder plan fehlt" };
     setzeAbo.run(userId, planKey, "active", obj.customer || null, obj.subscription || null, null, jetzt);
   } else if (t === "customer.subscription.updated" || t === "customer.subscription.created") {
-    const userId = Number(obj.metadata?.user_id);
+    const userId = zugehoerigerUser(obj);
     const planKey = planAusPrice(obj.items?.data?.[0]?.price?.id) || obj.metadata?.plan;
-    if (!userId) return { ok: false, grund: "user_id fehlt" };
+    if (!userId) return { ok: false, grund: "Abonnement konnte keinem Benutzer zugeordnet werden" };
+    if (!PLANS[planKey] || planKey === "trial") return { ok: false, grund: "Unbekannter bezahlter Preis" };
     const status = ["active", "trialing"].includes(obj.status) ? "active" : obj.status === "past_due" ? "past_due" : "inactive";
     setzeAbo.run(userId, planKey || "trial", status, obj.customer || null, obj.id || null, obj.current_period_end ? obj.current_period_end * 1000 : null, jetzt);
   } else if (t === "customer.subscription.deleted") {
-    const userId = Number(obj.metadata?.user_id);
-    if (!userId) return { ok: false, grund: "user_id fehlt" };
+    const userId = zugehoerigerUser(obj);
+    if (!userId) return { ok: false, grund: "Abonnement konnte keinem Benutzer zugeordnet werden" };
     setzeAbo.run(userId, "trial", "cancelled", obj.customer || null, obj.id || null, null, jetzt);
   } else if (t === "invoice.payment_failed") {
     const subId = obj.subscription;
-    const row = subId ? db.prepare("SELECT user_id FROM subscriptions WHERE stripe_subscription = ?").get(subId) : null;
+    const row = subId ? db.prepare("SELECT user_id FROM subscriptions WHERE stripe_subscription = ?").get(subId) : (obj.customer ? db.prepare("SELECT user_id FROM subscriptions WHERE stripe_customer = ?").get(obj.customer) : null);
     if (row) setzeAbo.run(row.user_id, "trial", "past_due", obj.customer || null, subId, null, jetzt);
   } else {
     speichere.run(event.id, t, JSON.stringify(event), jetzt);
