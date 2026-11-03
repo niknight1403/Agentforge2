@@ -1,0 +1,52 @@
+name: AnfragePilot Runtime Release Evidence
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pilot-runtime-evidence.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/pilot-runtime-evidence.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runtime-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check deployed code and production service (read-only)
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORACLE_SSH_KEY" || { echo "::error::SSH secret missing"; exit 1; }
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -i $HOME/.ssh/oracle_key"
+          echo "Checking deployed source hashes against this GitHub commit"
+          for FILE in src/server.js src/billing.js src/db.js public/dashboard.html; do
+            LOCAL=$(sha256sum "pilot/$FILE" | cut -d' ' -f1)
+            REMOTE=$(ssh $SSH_OPTS ubuntu@92.5.177.159 "sha256sum /opt/anfragepilot/$FILE" | cut -d' ' -f1)
+            if [ "$LOCAL" = "$REMOTE" ]; then
+              echo "MATCH $FILE"
+            else
+              echo "::error::DEPLOY_DRIFT $FILE"
+              exit 1
+            fi
+          done
+          echo "Checking service and webhook secret presence (without reading values)"
+          ssh $SSH_OPTS ubuntu@92.5.177.159 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          systemctl is-active --quiet anfragepilot.service || { echo "::error::Pilot service not active"; exit 1; }
+          sudo grep -q '^STRIPE_WEBHOOK_SECRET=whsec_' /opt/anfragepilot/pilot.env || {
+            echo "::error::Stripe webhook signing secret absent"
+            exit 1
+          }
+          echo "SERVICE_ACTIVE_AND_WEBHOOK_SECRET_PRESENT"
+          REMOTE
+          echo "PILOT_DEPLOYED_CODE_MATCHES_GITHUB"
