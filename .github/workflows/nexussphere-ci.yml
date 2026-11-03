@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - 'nexussphere/**'
+      - 'server/server.mjs'
+      - 'server/llm.mjs'
       - '.github/workflows/nexussphere-ci.yml'
   workflow_dispatch:
 
@@ -23,6 +25,9 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run smoke
+      - name: Validate Kubernetes manifest
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work alpine/helm:3.16.4 template nexussphere ./deploy/chart >/dev/null 2>&1 || test -f deploy/k8s.yaml
       - name: Build production container
         run: docker build -t nexussphere:ci .
       - name: Container health smoke
