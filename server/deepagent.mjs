@@ -87,9 +87,7 @@ export function isDeepProjectDeveloping(projectId) {
 
 export function createDeepMission(projectId) {
   const id = Number(projectId);
-  if (!Number.isSafeInteger(id) || id <= 0 || !db.prepare('SELECT id FROM deep_projects WHERE id=?').get(id)) {
-    throw new Error('Projekt nicht gefunden');
-  }
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Projekt-ID ungueltig');
   const missionId = randomUUID();
   const ts = now();
   db.prepare('INSERT INTO deep_missions(id,project_id,status,created_at,updated_at) VALUES (?,?,?,?,?)')
