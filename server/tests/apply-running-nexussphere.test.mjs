@@ -38,3 +38,15 @@ test('ambiguous or unapproved proposals are rejected',()=>{
  db.exec("DELETE FROM proposals WHERE id=2; UPDATE proposals SET status='pending' WHERE id=1");
  assert.throws(()=>findNexusSphere(db),/approved villa/);
 });
+
+test('refuses backups inside the Git checkout',()=>{
+ const db=fixture();
+ assert.throws(()=>updateRunningVilla(db,'M'.repeat(700),{apply:true,backupPath:join(process.cwd(),'dangerous-backup.json')}),/outside the checkout/);
+ assert.equal(db.prepare('SELECT count(*) n FROM memories').get().n,0);
+});
+test('does not mutate an unlinked villa',()=>{
+ const db=fixture();
+ db.exec("UPDATE proposals SET villa_id=99 WHERE id=1");
+ assert.throws(()=>updateRunningVilla(db,'M'.repeat(700),{apply:true,backupPath:join(tmpdir(),'nexus-unused.json')}),/missing or name mismatch/);
+ assert.equal(db.prepare('SELECT count(*) n FROM memories').get().n,0);
+});
