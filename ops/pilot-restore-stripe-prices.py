@@ -17,6 +17,7 @@ import time
 from urllib.request import Request, urlopen
 
 ENV = Path("/opt/anfragepilot/pilot.env")
+RUNTIME_KEY_FILE = Path("/run/pilot-stripe-runtime.key")
 PRICES = {
     "STRIPE_PRICE_STARTER": ("price_1UWy5fAuUge07PL9xtaKXMtw", 4900),
     "STRIPE_PRICE_PRO": ("price_1UWy5gAuUge07PL9OA0Y1W2t", 9900),
@@ -88,11 +89,35 @@ def main():
         fail("Pilot environment file missing; no changes made")
     original = ENV.read_text()
     entries = read_entries(original)
-    verify_stripe_prices(entries.get("STRIPE_SECRET_KEY"))
+    current_key = entries.get("STRIPE_SECRET_KEY") or ""
+    incoming_file = RUNTIME_KEY_FILE
+    supplied_key = ""
+    if incoming_file.is_file():
+        try:
+            supplied_key = incoming_file.read_text().strip()
+        finally:
+            incoming_file.unlink(missing_ok=True)
+    # Prefer an already configured live runtime key. Do not use a setup key
+    # as a permanent application credential.
+    replace_key = not current_key.startswith(("sk_live_", "rk_live_"))
+    candidate_key = supplied_key if replace_key else current_key
+    if replace_key and not supplied_key:
+        fail("Missing live runtime key; configure GitHub secret STRIPE_SECRET_KEY")
+    verify_stripe_prices(candidate_key)
     for key, (price_id, _) in PRICES.items():
         if key in entries and entries[key] != price_id:
             fail("Existing " + key + " differs; manual reconciliation required")
     additions = [key + "=" + price_id for key, (price_id, _) in PRICES.items() if key not in entries]
+    if replace_key:
+        if "STRIPE_SECRET_KEY" in entries:
+            # Replace existing test/invalid key, retaining all unrelated settings.
+            original = re.sub(
+                r"^(?:export )?STRIPE_SECRET_KEY=.*$",
+                lambda _: "STRIPE_SECRET_KEY=" + candidate_key,
+                original, flags=re.MULTILINE,
+            )
+        else:
+            additions.insert(0, "STRIPE_SECRET_KEY=" + candidate_key)
     metadata = ENV.stat()
     backup = ENV.with_name(ENV.name + ".before-price-repair-" + str(os.getpid()))
     shutil.copy2(ENV, backup)
@@ -100,7 +125,7 @@ def main():
     tmp_name = None
     changed = False
     try:
-        if additions:
+        if additions or replace_key:
             with tempfile.NamedTemporaryFile(mode="w", dir=ENV.parent, prefix=".pilot-price-", delete=False) as tmp:
                 tmp_name = tmp.name
                 tmp.write(original.rstrip("\n") + "\n" + "\n".join(additions) + "\n")
