@@ -27,13 +27,14 @@ export function updateRunningVilla(db,master,{apply=false,backupPath=null}={}) {
   const info={villaId:villa.id,villaName:villa.name,villaStatus:villa.status,proposalId:proposal.id,sha256:createHash('sha256').update(handoff).digest('hex'),alreadyApplied:existing.some(x=>x.content===handoff),applied:false};
   if(!apply||info.alreadyApplied)return info;
   if(!backupPath)throw Error('Backup required');
+  if(resolve(backupPath).startsWith(resolve(process.cwd())+'/'))throw Error('Backup must be outside the checkout to protect project credentials and prompts');
   const prior=db.prepare('SELECT * FROM memories WHERE villa_id=? AND kind=?').all(villa.id,'CONSTRAINT');
   mkdirSync(dirname(resolve(backupPath)),{recursive:true});
   writeFileSync(resolve(backupPath),JSON.stringify({proposal,villa,root,prior},null,2),{flag:'wx',mode:0o600});
   db.exec('BEGIN IMMEDIATE');
   try {
     const current=findNexusSphere(db);
-    if(current.villa.id!==villa.id||current.proposal.masterprompt!==proposal.masterprompt)throw Error('Villa changed concurrently');
+    if(current.villa.id!==villa.id||current.proposal.masterprompt!==proposal.masterprompt||current.villa.idea!==villa.idea||current.root.id!==root.id||current.root.system_prompt!==root.system_prompt)throw Error('Villa or root agent changed concurrently');
     db.prepare('DELETE FROM memories WHERE villa_id=? AND kind=? AND title=?').run(villa.id,'CONSTRAINT',title);
     db.prepare('INSERT INTO memories(villa_id,agent_id,scope,kind,title,content,importance,created_at) VALUES (?,?,?,?,?,?,?,?)').run(villa.id,root.id,'villa','CONSTRAINT',title,handoff,10,Date.now());
     db.exec('COMMIT');
@@ -45,6 +46,6 @@ if(process.argv[1]&&resolve(process.argv[1])===resolve(new URL(import.meta.url).
   const apply=process.argv.includes('--apply');
   const master=readFileSync(resolve('villa-prompts/nexussphere-production-completion.md'),'utf8');
   const db=new DatabaseSync(resolve(process.env.VF_DB),{readOnly:!apply});
-  try{console.log(JSON.stringify(updateRunningVilla(db,master,{apply,backupPath:apply?resolve('backups/nexussphere/running-villa-'+Date.now()+'.json'):null}),null,2));}
+  try{console.log(JSON.stringify(updateRunningVilla(db,master,{apply,backupPath:apply?resolve(process.env.NEXUS_BACKUP_DIR || '/tmp/nexussphere-backups','running-villa-'+Date.now()+'.json'):null}),null,2));}
   finally{db.close();}
 }
