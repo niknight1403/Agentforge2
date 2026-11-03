@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - 'pilot/**'
+      - 'ops/pilot-deploy.sh'
       - '.github/workflows/pilot-revenue-qa.yml'
   pull_request:
     paths:
@@ -33,6 +34,9 @@ jobs:
           npm test 2>&1 | tee test-results.log
       - name: Validate server syntax
         run: npm run check
+      - name: Validate deployment shell syntax
+        working-directory: .
+        run: bash -n ops/pilot-deploy.sh
       - name: Upload test evidence (including failures)
         if: always()
         uses: actions/upload-artifact@v4
