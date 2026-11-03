@@ -43,14 +43,17 @@ for part in src public; do
   chown -R ubuntu:ubuntu "$ROOT/$part"
 done
 systemctl restart "$SERVICE"
+READY=0
 for attempt in $(seq 1 12); do
   if systemctl is-active --quiet "$SERVICE" &&
     curl --fail --silent --max-time 4 http://127.0.0.1:3910/api/health > /tmp/pilot-release-health.json &&
     curl --fail --silent --max-time 4 http://127.0.0.1:3910/api/plans > /tmp/pilot-release-plans.json; then
+    READY=1
     break
   fi
   sleep 2
 done
+test "$READY" -eq 1
 node -e "const h=require('/tmp/pilot-release-health.json');if(h.ok!==true||h.service!=='anfragepilot')throw Error('wrong health response');const p=require('/tmp/pilot-release-plans.json');if(!Array.isArray(p.plaene)||!p.plaene.some(x=>x.key==='trial'))throw Error('wrong plans response')"
 for file in src/server.js src/billing.js src/db.js public/dashboard.html; do
   sha256sum "$ROOT/$file"
