@@ -62,6 +62,7 @@ export async function launchChrome({ port = 0, width = 1440, height = 960, chrom
     '--no-sandbox',
     '--disable-dev-shm-usage',
     '--disable-gpu',
+    '--remote-debugging-address=127.0.0.1',
     '--no-first-run',
     '--no-default-browser-check',
     '--hide-scrollbars',
@@ -80,7 +81,7 @@ export async function launchChrome({ port = 0, width = 1440, height = 960, chrom
   proc.once('exit', () => { try { rmSync(profileDir, { recursive: true, force: true }); } catch {} });
 
   let base = port?`http://127.0.0.1:${port}`:null;
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 45_000;
   let version = null;
   while (Date.now() < deadline) {
     if(spawnError){try{rmSync(profileDir,{recursive:true,force:true});}catch{}throw new Error('Chrome konnte nicht gestartet werden: '+spawnError.code);}
