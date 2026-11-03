@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Villa Tasks – Offline</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,Arial,sans-serif;background:#080e1b;color:#ecf3ff}
+*{box-sizing:border-box}body{margin:0;min-height:100dvh;padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom)}
+main{max-width:680px;margin:auto;padding:35px 0}h1{font-size:2rem;margin:8px 0}.eyebrow{color:#5ef3d2;letter-spacing:.12em;text-transform:uppercase;font-size:.76rem;font-weight:800}
+p{color:#aebed5;line-height:1.5}.panel{background:#121d31;border:1px solid #2b3d56;border-radius:20px;padding:18px;margin:18px 0}
+form{display:flex;gap:9px;flex-wrap:wrap}input{flex:1 1 190px;background:#091222;color:white;border:1px solid #51627b;border-radius:12px;padding:14px;font-size:16px;min-width:0}
+button{border:0;border-radius:12px;background:#53e8c8;color:#04261d;padding:13px 17px;font-weight:800;cursor:pointer;font-size:15px}
+button.secondary{background:#263853;color:#e8f3ff}button:focus-visible,input:focus-visible{outline:3px solid #f4ce59;outline-offset:2px}
+ul{padding:0;margin:0;list-style:none}li{display:flex;align-items:center;gap:10px;padding:12px 3px;border-bottom:1px solid #2e405a}
+li:last-child{border:0}li span{flex:1;overflow-wrap:anywhere}li.done span{text-decoration:line-through;color:#8193aa}
+li button{padding:8px 12px}.small{font-size:.85rem}.count{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<main>
+<div class="eyebrow">VillaForge · Referenzprodukt</div>
+<h1>Villa Tasks</h1>
+<p>Deine Aufgaben – dauerhaft lokal auf dem Gerät. Kein Login, kein Cloud-Zugriff.</p>
+<section class="panel" aria-label="Neue Aufgabe">
+<form id="task-form">
+<label for="task-input" class="small">Neue Aufgabe</label>
+<input id="task-input" required maxlength="120" autocomplete="off" placeholder="Was steht heute an?">
+<button type="submit">Hinzufügen</button>
+</form><p id="feedback" role="status" aria-live="polite" class="small"></p>
+</section>
+<section class="panel" aria-label="Aufgabenliste">
+<h2>Meine Aufgaben <span class="count" id="counter"></span></h2>
+<ul id="tasks"></ul><p id="empty">Noch keine Aufgaben. Lege die erste an.</p>
+</section>
+<p class="small">Offline · Privat · Open Source · Test-Build</p>
+</main>
+<script defer src="./app.bundle.js"></script>
+</body></html>
