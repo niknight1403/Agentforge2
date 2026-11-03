@@ -36,9 +36,9 @@ jobs:
       - name: Villen abnehmen
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
-          LIMIT: ${{ github.event.inputs.limit || '2' }}
           DRY: ${{ github.event.inputs.dry_run || 'false' }}
-          VILLA_ID: ${{ github.event.inputs.villa_id || '34' }}
+          VILLA_ID: ${{ github.event_name == 'workflow_run' && '38' || github.event.inputs.villa_id || '34' }}
+          LIMIT: ${{ github.event_name == 'workflow_run' && '1' || github.event.inputs.limit || '2' }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
