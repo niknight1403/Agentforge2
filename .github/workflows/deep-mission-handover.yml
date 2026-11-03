@@ -1,0 +1,40 @@
+name: DeepAgent Mission Handover Acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'server/deepagent.mjs'
+      - 'server/server.mjs'
+      - 'server/tests/deepagent.test.mjs'
+      - '.github/workflows/deep-mission-handover.yml'
+  push:
+    branches: ['main', 'autonomous/10-sprints-media-acceptance']
+    paths:
+      - 'server/deepagent.mjs'
+      - 'server/server.mjs'
+      - 'server/tests/deepagent.test.mjs'
+      - '.github/workflows/deep-mission-handover.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-mission-handover-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mission-handover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Validate server syntax
+        run: node --check server/server.mjs && node --check server/deepagent.mjs
+      - name: Test persistent mission IDs, deduplication and lifecycle
+        run: node --import ./server/tests/_env.mjs --test --test-reporter=tap server/tests/deepagent.test.mjs
