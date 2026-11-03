@@ -287,3 +287,47 @@ test("Demo: zu kurze Eingabe wird abgewiesen und zaehlt nicht", async () => {
   assert.equal(status.frei, 3);
   server.close();
 });
+
+
+test("Billing: Abo-Aenderung ohne Stripe-Metadaten nutzt bestehende Subscription-ID", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO users(email, password_hash, created_at) VALUES (?,?,?)").run("billing@firma.de", "x", Date.now());
+  db.prepare("INSERT INTO subscriptions(user_id, plan, status, stripe_customer, stripe_subscription, updated_at) VALUES (1,'pro','active','cus_known','sub_known',?)").run(Date.now());
+  process.env.STRIPE_PRICE_STARTER = "price_starter_test";
+  const result = verarbeiteStripeEvent(db, {
+    id: "evt_no_metadata_updated",
+    type: "customer.subscription.updated",
+    data: { object: {
+      id: "sub_known", customer: "cus_known", status: "active",
+      items: { data: [{ price: { id: "price_starter_test" } }] }
+    } }
+  });
+  assert.equal(result.ok, true);
+  const sub = db.prepare("SELECT plan, stripe_subscription FROM subscriptions WHERE user_id=1").get();
+  assert.equal(sub.plan, "starter");
+  assert.equal(sub.stripe_subscription, "sub_known");
+});
+
+test("Billing: Kuendigung ohne Stripe-Metadaten wird zugeordnet", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO users(email, password_hash, created_at) VALUES (?,?,?)").run("cancel@firma.de", "x", Date.now());
+  db.prepare("INSERT INTO subscriptions(user_id, plan, status, stripe_customer, stripe_subscription, updated_at) VALUES (1,'pro','active','cus_cancel','sub_cancel',?)").run(Date.now());
+  const result = verarbeiteStripeEvent(db, {
+    id: "evt_no_metadata_deleted",
+    type: "customer.subscription.deleted",
+    data: { object: { id: "sub_cancel", customer: "cus_cancel" } }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(db.prepare("SELECT status FROM subscriptions WHERE user_id=1").get().status, "cancelled");
+});
+
+test("Billing: unbekannte Abo-Ereignisse werden nicht als verarbeitet quittiert", () => {
+  const db = openDatabase(":memory:");
+  const result = verarbeiteStripeEvent(db, {
+    id: "evt_unknown_subscription",
+    type: "customer.subscription.deleted",
+    data: { object: { id: "sub_unknown", customer: "cus_unknown" } }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(db.prepare("SELECT COUNT(*) AS c FROM billing_events").get().c, 0);
+});
