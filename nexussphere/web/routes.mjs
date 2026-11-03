@@ -1,0 +1,2 @@
+export function rankRoutes(routes){return [...routes].filter(r=>r.enabled!==false).sort((a,b)=>(a.cooldownUntil||0)-(b.cooldownUntil||0)||(a.priority??99)-(b.priority??99));}
+export async function withFallback(routes,call){let last;for(const r of rankRoutes(routes)){try{return await call(r)}catch(e){last=e;if(![408,429,500,502,503,504].includes(Number(e.status)))throw e}}throw last||new Error("NO_ROUTE_AVAILABLE")}
