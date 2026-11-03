@@ -1235,6 +1235,7 @@ async function api(req, res, url) {
           // Beleg, antwortet der Endpunkt mit den konkreten Blockern.
           const gate = productGateForProjectDir(deepProjectDir(projectId));
           if (!bootstrap && !gate.ready) {
+            transitionDeepMission(missionId, 'BLOCKED', { errorCode: 'PRODUCT_GATE_BLOCKED' });
             return json(res, 409, {
               ok: false,
               projectId,
@@ -1253,6 +1254,7 @@ async function api(req, res, url) {
           // entsteht keine Villa - der Endpunkt nennt die fehlenden Artefakte.
           const handover = scanHandoverArtifacts(deepProjectDir(projectId));
           if (!bootstrap && !handover.ready) {
+            transitionDeepMission(missionId, 'BLOCKED', { errorCode: 'HANDOVER_ARTIFACTS_MISSING' });
             return json(res, 409, {
               ok: false,
               projectId,
