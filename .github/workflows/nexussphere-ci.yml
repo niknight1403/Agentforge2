@@ -23,3 +23,16 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run smoke
+      - name: Build production container
+        run: docker build -t nexussphere:ci .
+      - name: Container health smoke
+        run: |
+          docker run -d --name nexussphere-ci -p 127.0.0.1:18787:8787 -e NEXUSSPHERE_API_TOKEN=ci-token nexussphere:ci
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:18787/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs nexussphere-ci
+          exit 1
+      - if: always()
+        run: docker rm -f nexussphere-ci || true
