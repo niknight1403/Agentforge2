@@ -137,16 +137,25 @@ jobs:
           # koennen; node:*-slim bringt es nicht mit. Gebaut wird lokal auf der VM,
           # gepinnt ueber die Image-ID (sha256:...) - dieselbe unveraenderliche Form,
           # die server/project-execution.mjs akzeptiert.
-          SANDBOX_DOCKERFILE=$(mktemp)
-          printf 'FROM %s\nUSER root\nRUN apt-get update && apt-get install -y --no-install-recommends cargo && apt-get clean && rm -f /var/lib/apt/lists/*\nUSER node\n' "$SANDBOX_BASE" > "$SANDBOX_DOCKERFILE"
-          if ! docker build --pull=false -t vf-project-sandbox:local -f "$SANDBOX_DOCKERFILE" /tmp >/tmp/sandbox-build.log 2>&1; then
-            echo "Sandbox-Image mit Cargo konnte nicht gebaut werden."
-            tail -n 20 /tmp/sandbox-build.log
-            rm -f "$SANDBOX_DOCKERFILE"
-            exit 5
+          SANDBOX_TAG="vf-project-sandbox:cargo"
+          SANDBOX_CACHED=0
+          if docker image inspect "$SANDBOX_TAG" >/dev/null 2>&1; then
+            if [ "$(docker image inspect "$SANDBOX_TAG" --format '{{index .Config.Labels "villaforge.base"}}' 2>/dev/null || true)" = "$SANDBOX_BASE" ]; then
+              SANDBOX_CACHED=1
+            fi
           fi
-          rm -f "$SANDBOX_DOCKERFILE"
-          SANDBOX_IMAGE=$(docker image inspect vf-project-sandbox:local --format '{{.Id}}')
+          if [ "$SANDBOX_CACHED" = "0" ]; then
+            SANDBOX_DOCKERFILE=$(mktemp)
+            printf 'FROM %s\nUSER root\nRUN apt-get update && apt-get install -y --no-install-recommends cargo && apt-get clean && find /var/lib/apt/lists -mindepth 1 -maxdepth 1 -type f -delete\nUSER node\n' "$SANDBOX_BASE" > "$SANDBOX_DOCKERFILE"
+            if ! docker build --pull=false --label "villaforge.base=$SANDBOX_BASE" -t "$SANDBOX_TAG" -f "$SANDBOX_DOCKERFILE" /tmp >/tmp/sandbox-build.log 2>&1; then
+              echo "Sandbox-Image mit Cargo konnte nicht gebaut werden."
+              tail -n 20 /tmp/sandbox-build.log
+              rm -f "$SANDBOX_DOCKERFILE"
+              exit 5
+            fi
+            rm -f "$SANDBOX_DOCKERFILE"
+          fi
+          SANDBOX_IMAGE=$(docker image inspect "$SANDBOX_TAG" --format '{{.Id}}')
           if ! printf '%s\n' "$SANDBOX_IMAGE" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
             echo "Docker-Sandbox-Image besitzt keine gueltige unveraenderliche Image-ID."
             exit 5
