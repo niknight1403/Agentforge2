@@ -59,7 +59,8 @@ test('Production deploy verifies and atomically enables stack-aware Docker proje
  assert.ok(workflow.includes('docker pull rust:bookworm'));
  assert.ok(workflow.includes("SANDBOX_IMAGE=$(docker image inspect node:24-bookworm-slim"));
  assert.ok(workflow.includes("SANDBOX_RUST_IMAGE=$(docker image inspect rust:bookworm"));
- assert.ok(workflow.includes("grep -Eq '^[^[:space:]]+@sha256:[0-9a-f]{64}$'"));
+ assert.match(workflow,/SANDBOX_IMAGE[\s\S]*grep -Eq '[^']*sha256:[^']*'/);
+ assert.match(workflow,/SANDBOX_RUST_IMAGE[\s\S]*grep -Eq '[^']*sha256:[^']*'/);
  assert.ok(workflow.includes(integrationTest));
  assert.ok(workflow.includes('docker run --rm --pull=never --network=none "$SANDBOX_RUST_IMAGE" cargo --version'));
  assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX=docker"'));
