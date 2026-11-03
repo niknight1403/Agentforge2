@@ -64,28 +64,43 @@ class WebhookRecoveryTests(unittest.TestCase):
 
     def test_signed_probe_is_valid_hmac_and_contains_no_payment(self):
         captured = []
-        def fake_urlopen(request, timeout=0):
-            captured.append(request)
-            return FakeResponse()
-        with patch.object(module, "urlopen", side_effect=fake_urlopen), \
+        def fake_run(command, **kwargs):
+            captured.append((command, kwargs))
+            return SimpleNamespace(returncode=0, stdout=b'{"received":true}' + bytes([10]) + b'200')
+        with patch.object(module.subprocess, "run", side_effect=fake_run), \
              patch.object(module.time, "time", return_value=1793700000):
             module.check_local_webhook("whsec_test_only")
         self.assertEqual(len(captured), 1)
-        request = captured[0]
-        payload = request.data
+        command, kwargs = captured[0]
+        self.assertIn("--noproxy", command)
+        self.assertIn("*", command)
+        payload = kwargs["input"]
         event = json.loads(payload)
         self.assertEqual(event["type"], "pilot.signing_probe")
         self.assertEqual(event["data"]["object"], {})
-        header = request.headers["Stripe-signature"]
-        stamp, signature = header.split(",")
+        header = command[command.index("--header") + 3]
+        self.assertTrue(header.startswith("Stripe-Signature: "))
+        _, raw = header.split(": ", 1)
+        stamp, signature = raw.split(",")
         timestamp = stamp.split("=")[1]
-        value = signature.split("=")[1]
+        actual = signature.split("=")[1]
         expected = hmac.new(
-            b"whsec_test_only",
-            (timestamp + ".").encode() + payload,
+            b"whsec_test_only", (timestamp + ".").encode() + payload,
             hashlib.sha256
         ).hexdigest()
-        self.assertEqual(value, expected)
+        self.assertEqual(actual, expected)
+
+    def test_local_check_rejects_non_200_http(self):
+        fake = SimpleNamespace(returncode=0, stdout=b'{"error":"bad"}' + bytes([10]) + b'422')
+        with patch.object(module.subprocess, "run", return_value=fake):
+            with self.assertRaisesRegex(RuntimeError, "status 422"):
+                module.local_json("/api/billing/webhook", b'{}', "fake")
+
+    def test_local_check_rejects_failed_connection(self):
+        fake = SimpleNamespace(returncode=7, stdout=b"")
+        with patch.object(module.subprocess, "run", return_value=fake):
+            with self.assertRaisesRegex(RuntimeError, "curl 7"):
+                module.local_json("/api/plans")
 
 
 if __name__ == "__main__":
