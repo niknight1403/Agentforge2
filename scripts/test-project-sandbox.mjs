@@ -27,7 +27,10 @@ try{
  socket.on('connect',()=>{console.error('unexpected network');process.exit(1)});
  socket.on('timeout',()=>{socket.destroy();console.log('network blocked')});
  socket.on('error',()=>{console.log('network blocked')});`);
- const normal=await run('check.js',15000);assert.equal(normal.error,null);assert.match(normal.stdout,/network blocked/);assert.equal(readFileSync(join(normal.artifacts.directory,'dist/build/result.txt'),'utf8'),'verified');
+ const normal=await run('check.js',15000);assert.equal(normal.error,null);
+ const cargo=projectExecution(root,'cargo',['--version'],{mode:'docker',image});
+ const cargoResult=await new Promise(resolve=>executeInvocation(cargo,{timeout:15000,maxBuffer:100000},(error,stdout)=>resolve({error,stdout})));
+ assert.equal(cargoResult.error,null);assert.match(cargoResult.stdout,/cargo\s+\d+/i);assert.match(normal.stdout,/network blocked/);assert.equal(readFileSync(join(normal.artifacts.directory,'dist/build/result.txt'),'utf8'),'verified');
  writeFileSync(join(root,'hang.js'),"process.on('SIGTERM',()=>{});setInterval(()=>{},1000);");
  const started=Date.now(),hung=await run('hang.js',500);assert.ok(hung.error);assert.ok(Date.now()-started<15000,'timeout cleanup must be bounded');
  console.log('DOCKER_SANDBOX_VERIFIED: nonroot, read-only host root, project writes, no network, timeout cleanup');
