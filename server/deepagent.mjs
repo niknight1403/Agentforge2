@@ -128,6 +128,7 @@ export function runDeepProjectDevelopmentOnce(projectId, start) {
       const current = getDeepMission(mission.id);
       if (current?.status === 'RUNNING') {
         if (result?.blocked) transitionDeepMission(mission.id, 'BLOCKED', { villaId: result.villaId });
+        else if (result?.ok === false) transitionDeepMission(mission.id, 'FAILED', { villaId: result.villaId, errorCode: result.code || 'DEVELOPMENT_START_FAILED' });
         else if (result?.queued) transitionDeepMission(mission.id, 'QUEUED', { villaId: result.villaId });
         else if (result?.villaId) transitionDeepMission(mission.id, 'RUNNING', { villaId: result.villaId });
         else transitionDeepMission(mission.id, 'COMPLETED');
