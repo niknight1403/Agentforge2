@@ -1,0 +1,55 @@
+name: AnfragePilot Live Stripe Price Recovery
+on:
+  pull_request:
+    paths:
+      - 'ops/pilot-restore-stripe-prices.py'
+      - '.github/workflows/pilot-price-recovery.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ops/pilot-restore-stripe-prices.py'
+      - '.github/workflows/pilot-price-recovery.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pilot-live-price-recovery
+  cancel-in-progress: false
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate recovery script syntax
+        run: python3 -m py_compile ops/pilot-restore-stripe-prices.py
+  repair:
+    needs: validation
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH access
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ORACLE_SSH_KEY" ]; then
+            echo "::error::ORACLE_SSH_KEY is not available; production not modified"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+      - name: Run safe price recovery on existing production VM
+        run: |
+          set -euo pipefail
+          SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -i $HOME/.ssh/oracle_key"
+          scp $SSH_OPTS ops/pilot-restore-stripe-prices.py ubuntu@92.5.177.159:/tmp/pilot-restore-stripe-prices.py
+          ssh $SSH_OPTS ubuntu@92.5.177.159 'sudo python3 /tmp/pilot-restore-stripe-prices.py'
+      - name: Verify public paid plans after recovery
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 20 'https://hub.cybersarah-ki.com/pilot/api/plans' > /tmp/pilot-plans.json
+          node -e "const p=require('/tmp/pilot-plans.json'); const want=['starter','pro','business'];const bad=want.filter(k=>!p.plaene?.some(x=>x.key===k && x.kaufbar===true));if(bad.length)throw Error('Unavailable paid plans: '+bad.join(','));console.log('ALL_PAID_PLANS_AVAILABLE: '+want.join(','))"
