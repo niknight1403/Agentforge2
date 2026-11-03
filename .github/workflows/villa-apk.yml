@@ -47,7 +47,7 @@ jobs:
 
       - name: Web-Root fuer das APK herrichten
         run: |
-          WWW=villa-apk-template/app/src/main/assets/www
+          WWW="$GITHUB_WORKSPACE/villa-apk-template/app/src/main/assets/www"
           mkdir -p "$WWW"
           find "$WWW" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           if [ -f /tmp/villa.zip ] && [ "$(stat -c%s /tmp/villa.zip)" -gt 100 ]; then
@@ -67,7 +67,7 @@ jobs:
                 [ -z "$DIST" ] && DIST=$(find . -maxdepth 3 -type d -name build | head -1)
                 if [ -n "$DIST" ] && [ -f "$DIST/index.html" ]; then
                   echo "Nutze Build-Output: $DIST"
-                  cp -r "$DIST"/. "$GITHUB_WORKSPACE/$WWW/"
+                  cp -r "$DIST"/. "$WWW/"
                 fi
               fi
             fi
