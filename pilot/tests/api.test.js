@@ -495,3 +495,28 @@ test("Billing: Kundenportal ohne Stripe-Kunden-ID ist nicht erreichbar", async (
     else process.env.STRIPE_SECRET_KEY = vorher;
   }
 });
+
+
+test("Billing: Checkout verweigert unsichere oder fehlende Produktadresse", async () => {
+  const vorherKey = process.env.STRIPE_SECRET_KEY;
+  const vorherBasis = process.env.BASIS_URL;
+  process.env.STRIPE_SECRET_KEY = "sk_test_checkout_local_validation";
+  delete process.env.BASIS_URL;
+  const { basis, server } = await starteApp();
+  try {
+    const { cookie } = await registriere(basis, "checkout-url@firma.de");
+    const res = await fetch(basis + "/api/billing/checkout", {
+      method: "POST",
+      headers: { cookie, "Content-Type": "application/json", Host: "malicious.example" },
+      body: JSON.stringify({ plan: "pro" })
+    });
+    assert.equal(res.status, 503);
+    assert.match((await res.json()).error, /BASIS_URL/);
+  } finally {
+    server.close();
+    if (vorherKey === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = vorherKey;
+    if (vorherBasis === undefined) delete process.env.BASIS_URL;
+    else process.env.BASIS_URL = vorherBasis;
+  }
+});
