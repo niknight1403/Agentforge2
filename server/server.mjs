@@ -32,6 +32,8 @@ import { evolutionState, proposeForVilla, evolveAll, listVillaProposals, listAll
 import { systemAudit, healTick, healActions } from './heal.mjs';
 import { startBuild, buildStatus, buildArtifact, previewInfo, previewFile, maybeAutoBuild } from './builds.mjs';
 import { productGateForProjectDir } from './deep-product-gate.mjs';
+import { deepMissionBrief } from './deep-mission.mjs';
+import { villaLessonsContext } from './villa-knowledge.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
 import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
@@ -1121,8 +1123,9 @@ async function api(req, res, url) {
       ? json(res, 200, { ok: true, deleted: true })
       : json(res, 404, { error: 'Projekt nicht gefunden' });
   }
-  if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'develop' && m === 'POST') {
+  if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && (parts[4] === 'develop' || parts[4] === 'bootstrap') && m === 'POST') {
     const projectId = Number(parts[3]);
+    const bootstrap = parts[4] === 'bootstrap';
     const detail = deepProjectDetail(projectId);
     if (!detail) return json(res, 404, { error: 'Projekt nicht gefunden' });
     return runDeepProjectDevelopmentOnce(projectId, async () => {
@@ -1135,12 +1138,12 @@ async function api(req, res, url) {
             .slice(-8)
             .map((message) => `${message.role === 'user' ? 'Nutzer' : 'Projekt-Experte'}: ${String(message.content).slice(0, 900)}`)
             .join('\n');
-          const buildIdea = `${detail.project.idea}\n\nProjektanforderungen und DeepAgent-Plan:\n${context}`.slice(0, 9000);
+          const buildIdea = `${detail.project.idea}\n\n${deepMissionBrief(detail.project.idea)}\n\n${villaLessonsContext()}\n\nProjektanforderungen und DeepAgent-Plan:\n${context}`.slice(0, 9000);
           // Produkt-Gate (Nikos Auftrag 2026-11-02): Die Villa entsteht erst,
           // wenn das Projekt ein belegtes Produkt hervorgebracht hat. Fehlt ein
           // Beleg, antwortet der Endpunkt mit den konkreten Blockern.
           const gate = productGateForProjectDir(deepProjectDir(projectId));
-          if (!gate.ready) {
+          if (!bootstrap && !gate.ready) {
             return json(res, 409, {
               ok: false,
               projectId,
@@ -1157,7 +1160,7 @@ async function api(req, res, url) {
           // Praeferenzprofil und die Wettbewerbsbeobachtung. Fehlen die Belege,
           // entsteht keine Villa - der Endpunkt nennt die fehlenden Artefakte.
           const handover = scanHandoverArtifacts(deepProjectDir(projectId));
-          if (!handover.ready) {
+          if (!bootstrap && !handover.ready) {
             return json(res, 409, {
               ok: false,
               projectId,
@@ -1188,6 +1191,7 @@ async function api(req, res, url) {
           reason: blocked ? scheduled.reason : undefined,
           message: blocked
             ? 'Projektplan und Villa wurden angelegt. Der konfigurierte Villen-Fokus blockiert derzeit den Start.'
+            : bootstrap ? 'Projekt-Villa zur Entwicklung gestartet oder eingeplant. Fertigmeldung erfordert weiterhin Build-, Test- und Produktnachweise.'
             : 'Projekt an die autonome VillaForge-Entwicklungs- und Build-Kette übergeben.'
         });
       } catch (e) {
