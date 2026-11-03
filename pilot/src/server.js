@@ -37,6 +37,7 @@ export function createApp({ db = openDatabase(), llm = (m, o) => llmChat(m, o) }
     }
     try {
       const ergebnis = verarbeiteStripeEvent(db, event);
+      if (!ergebnis.ok) return res.status(422).json({ received: false, error: ergebnis.grund || "Event nicht zugeordnet" });
       return res.json({ received: true, ...ergebnis });
     } catch (e) {
       return res.status(500).json({ error: "Event konnte nicht verarbeitet werden" });
