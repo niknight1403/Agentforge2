@@ -81,8 +81,7 @@ jobs:
           profile: pixel_3a
           script: |
             set -e
-            APK=villa-apk-template/app/build/outputs/apk/debug/app-debug.apk
-            adb install -r "$APK"
+            adb install -r villa-apk-template/app/build/outputs/apk/debug/app-debug.apk
             adb shell am start -W -n dev.villaforge.villa9001/dev.villaforge.wrapper.MainActivity
             sleep 8
             adb shell pidof dev.villaforge.villa9001 | grep -Eq '^[0-9]+'
