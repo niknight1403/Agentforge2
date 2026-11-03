@@ -13,7 +13,7 @@
     "VF-0008"
   ],
   "current": "VF-0013",
-  "next": "VF-0013",
+  "next": "VF-0014",
   "blockedSprints": [
     "VF-0009",
     "VF-0010"
@@ -47,13 +47,13 @@
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810524",
   "releaseStatus": "blocked: Android and Web builds passed, but 19/19 Villas lack product acceptance; no GitHub release created",
   "checkpointParent": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
-  "nextAction": "VF-0013 is in review on a draft PR for privacy-safe aggregate audit check diagnostics. VF-0011 failure-stage diagnostics and VF-0012 Android signing are separate, still-unmerged PR work. This does not change Villa acceptance or release gates; VF-0009 and VF-0010 remain blocked.",
+  "nextAction": "VF-0013 remains in review on its draft PR for privacy-safe aggregate audit check diagnostics. VF-0011 failure-stage diagnostics and VF-0012 Android signing are separate, still-unmerged PR work. Scope VF-0014 only after fresh evidence on main; it remains unscoped until then. VF-0009 and VF-0010 remain blocked, and no acceptance or release gate changed.",
   "activeSprint": {
     "id": "VF-0013",
     "status": "in_review",
     "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/121",
     "acceptanceComplete": false,
-    "ci": "pending"
+    "ci": "passed on implementation and state head 68aa018fe5263a50c13fe0702acfef6626ac2f8f"
   },
   "parallelSprintPullRequests": [
     {

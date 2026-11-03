@@ -22,7 +22,7 @@
   "verification": {
     "focusedDiagnostics": "Passed: 4/4 tests, including deterministic aggregation, privacy-safe CLI output, and missing/malformed report handling.",
     "repositoryCheck": "Incomplete locally: syntax check passed for 227 JavaScript files and secret scan passed; the existing Node test-runner launch failed on Windows with ERR_UNSUPPORTED_ESM_URL_SCHEME for its absolute --import path.",
-    "pullRequestCi": "Pending on the latest draft PR head."
+    "pullRequestCi": "Passed on draft PR head 68aa018fe5263a50c13fe0702acfef6626ac2f8f: APEX Omega CI verify (run 41640541251), Hub-Tests (run 41640541289), and CodeQL actions/java-kotlin/javascript-typescript (run 41640541239); CodeQL status check also passed."
   },
   "localTestRuntime": "Temporary checksum-verified Node 24.22.2 was removed after focused validation.",
   "productionDataRead": false,
