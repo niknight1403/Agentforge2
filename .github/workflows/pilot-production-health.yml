@@ -1,0 +1,52 @@
+name: AnfragePilot Production Health Evidence
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pilot-production-health.yml'
+  push:
+    paths:
+      - '.github/workflows/pilot-production-health.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Diagnose DNS and HTTPS without credentials
+        shell: bash
+        run: |
+          set -uo pipefail
+          HOST=hub.cybersarah-ki.com
+          echo "DNS result:"
+          if ! getent ahostsv4 "$HOST" | head -n 5; then
+            echo "::error::Public hostname DNS lookup failed"
+            exit 1
+          fi
+          echo "Check HTTPS /pilot/api/health"
+          http_status=$(curl --silent --show-error --max-time 20 --retry 1 --retry-delay 2 \
+            --output /tmp/anfragepilot-health.json --write-out '%{http_code}' \
+            "https://$HOST/pilot/api/health") || {
+              echo "::error::HTTPS request to AnfragePilot failed"
+              exit 1
+            }
+          echo "Health HTTP status: $http_status"
+          if [[ "$http_status" != "200" ]]; then
+            echo "::error::Health endpoint returned HTTP $http_status"
+            exit 1
+          fi
+          node -e "const fs=require('fs');const v=JSON.parse(fs.readFileSync('/tmp/anfragepilot-health.json'));if(v.ok!==true || v.service!=='anfragepilot'){throw Error('Incorrect service health response')}console.log('Verified: '+v.service+' health OK')"
+          echo "Check HTTPS /pilot/ landing page"
+          landing_status=$(curl --silent --show-error --max-time 20 --output /dev/null \
+            --write-out '%{http_code}' "https://$HOST/pilot/") || exit 1
+          echo "Landing HTTP status: $landing_status"
+          test "$landing_status" = 200
+          echo "Check public plan and demo APIs without invoking LLMs"
+          curl --fail --silent --show-error --max-time 20 "https://$HOST/pilot/api/plans" > /tmp/ap-plans.json
+          node -e "const p=require('/tmp/ap-plans.json'); if(!Array.isArray(p.plaene) || !p.plaene.some(x=>x.key==='trial')) throw Error('Missing plan metadata'); console.log('Plans endpoint OK; tiers: '+p.plaene.length)"
+          curl --fail --silent --show-error --max-time 20 "https://$HOST/pilot/api/public/demo/status" > /tmp/ap-demo.json
+          node -e "const d=require('/tmp/ap-demo.json'); if(!Number.isInteger(d.frei) || !Number.isInteger(d.limit)) throw Error('Invalid demo quota'); console.log('Demo status endpoint OK')"
+          login_status=$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "https://$HOST/pilot/login")
+          echo "Login page HTTP status: $login_status"
+          test "$login_status" = 200
