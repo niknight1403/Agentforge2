@@ -42,3 +42,11 @@ jobs:
             --write-out '%{http_code}' "https://$HOST/pilot/") || exit 1
           echo "Landing HTTP status: $landing_status"
           test "$landing_status" = 200
+          echo "Check public plan and demo APIs without invoking LLMs"
+          curl --fail --silent --show-error --max-time 20 "https://$HOST/pilot/api/plans" > /tmp/ap-plans.json
+          node -e "const p=require('/tmp/ap-plans.json'); if(!Array.isArray(p.plaene) || !p.plaene.some(x=>x.key==='trial')) throw Error('Missing plan metadata'); console.log('Plans endpoint OK; tiers: '+p.plaene.length)"
+          curl --fail --silent --show-error --max-time 20 "https://$HOST/pilot/api/public/demo/status" > /tmp/ap-demo.json
+          node -e "const d=require('/tmp/ap-demo.json'); if(!Number.isInteger(d.frei) || !Number.isInteger(d.limit)) throw Error('Invalid demo quota'); console.log('Demo status endpoint OK')"
+          login_status=$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "https://$HOST/pilot/login")
+          echo "Login page HTTP status: $login_status"
+          test "$login_status" = 200
