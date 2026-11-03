@@ -62,6 +62,24 @@ class WebhookRecoveryTests(unittest.TestCase):
         self.assertEqual(config.splitlines()[0], 'header = "Authorization: Bearer sk_live_unit_test_only"')
         self.assertIn('enabled_events%5B%5D', config)
 
+    def test_wait_until_node_health_is_available(self):
+        responses = [
+            RuntimeError("curl 7"),
+            {"ok": True, "service": "anfragepilot"},
+        ]
+        with patch.object(module, "local_json", side_effect=responses) as probe, \
+             patch.object(module.time, "sleep") as sleep:
+            module.wait_for_local_api()
+        self.assertEqual(probe.call_count, 2)
+        sleep.assert_called_once_with(1)
+
+    def test_wait_fails_when_node_never_becomes_ready(self):
+        with patch.object(module, "local_json", side_effect=RuntimeError("curl 7")) as probe, \
+             patch.object(module.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "did not become healthy"):
+                module.wait_for_local_api()
+        self.assertEqual(probe.call_count, 15)
+
     def test_signed_probe_is_valid_hmac_and_contains_no_payment(self):
         captured = []
         def fake_run(command, **kwargs):
