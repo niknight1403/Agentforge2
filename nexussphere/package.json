@@ -5,7 +5,8 @@
     "test": "node --test web/*.test.mjs",
     "build": "node web/build.mjs",
     "smoke": "node web/smoke.mjs",
-    "verify": "npm test && npm run build && npm run smoke"
+    "verify": "npm test && npm run build && npm run smoke",
+    "start": "node web/server.mjs"
   },
   "description": "NexusSphere CI verified product foundation"
 }
