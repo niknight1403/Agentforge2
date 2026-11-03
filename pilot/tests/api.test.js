@@ -650,3 +650,37 @@ test("Billing: bezahlte Tarife werden ohne Signatursecret nicht als kaufbar geme
     }
   }
 });
+
+
+test("Sales funnel: pricing selection survives signup and reaches authenticated checkout", async () => {
+  const { basis, server } = await starteApp();
+  try {
+    const homeRes = await fetch(basis + "/");
+    const home = await homeRes.text();
+    assert.equal(homeRes.status, 200);
+    for (const plan of ["starter", "pro", "business"]) {
+      assert.match(home, new RegExp('registrieren\\?plan=' + plan));
+    }
+
+    const signupRes = await fetch(basis + "/registrieren?plan=starter");
+    const signup = await signupRes.text();
+    assert.equal(signupRes.status, 200);
+    assert.match(signup, /\.\/api\/auth\/registrieren/);
+    assert.match(signup, /selectedPlan/);
+    assert.match(signup, /endsWith\('\/registrieren'\)/);
+    assert.doesNotMatch(signup, /fetch\('\/api\/auth/);
+
+    const dashboardRes = await fetch(basis + "/app", { redirect: "manual" });
+    assert.equal(dashboardRes.status, 302);
+    const { cookie } = await registriere(basis, "first-sale-funnel@firma.de");
+    const authenticated = await fetch(basis + "/app?plan=starter", { headers: { cookie } });
+    assert.equal(authenticated.status, 200);
+    const dashboard = await authenticated.text();
+    assert.match(dashboard, /data-plan="starter"/);
+    assert.match(dashboard, /data-plan="pro"/);
+    assert.match(dashboard, /\.\/api\/billing\/checkout/);
+    assert.match(dashboard, /Stripe-Bestellseite/);
+  } finally {
+    server.close();
+  }
+});

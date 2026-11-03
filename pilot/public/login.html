@@ -59,6 +59,8 @@ const msg = document.getElementById('msg');
 const form = document.getElementById('form');
 const absenden = document.getElementById('absenden');
 const firmaFeld = document.getElementById('firmaFeld');
+const requestedPlan = new URLSearchParams(location.search).get('plan');
+const selectedPlan = ['starter', 'pro', 'business'].includes(requestedPlan) ? requestedPlan : null;
 let modus = 'login';
 
 document.getElementById('tabLogin').onclick = () => setzeModus('login');
@@ -83,7 +85,7 @@ form.onsubmit = async (e) => {
   msg.textContent = ''; msg.className = 'msg';
   absenden.disabled = true;
   try {
-    const pfad = modus === 'login' ? '/api/auth/login' : '/api/auth/registrieren';
+    const pfad = modus === 'login' ? './api/auth/login' : './api/auth/registrieren';
     const koerper = {
       email: document.getElementById('email').value.trim(),
       passwort: document.getElementById('passwort').value,
@@ -94,7 +96,7 @@ form.onsubmit = async (e) => {
     if (!res.ok) throw new Error(daten.error || 'Anmeldung fehlgeschlagen');
     msg.className = 'msg ok';
     msg.textContent = modus === 'login' ? 'Angemeldet — weiter zum Dashboard …' : 'Konto angelegt — weiter zum Dashboard …';
-    setTimeout(() => { location.href = './app'; }, 500);
+    setTimeout(() => { location.href = './app' + (selectedPlan ? '?plan=' + encodeURIComponent(selectedPlan) : ''); }, 500);
   } catch (err) {
     msg.className = 'msg fehler';
     msg.textContent = err.message;
@@ -104,7 +106,7 @@ form.onsubmit = async (e) => {
 };
 
 // Direkt im Registrieren-Modus starten, wenn die URL /registrieren ist.
-if (location.pathname === '/registrieren') setzeModus('register');
+if (location.pathname.endsWith('/registrieren') || selectedPlan) setzeModus('register');
 </script>
 </body>
 </html>

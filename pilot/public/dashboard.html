@@ -64,6 +64,17 @@
     </div>
   </div>
 
+  <section class="karte" id="upgrade" style="margin-bottom:20px">
+    <h2 style="margin-top:0">AnfragePilot-Tarif aktivieren</h2>
+    <p style="color:var(--mute)">Wählen Sie Ihr monatliches Kontingent. Sie prüfen die Bestellung vor einer Zahlung sicher bei Stripe.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:16px 0">
+      <button type="button" class="leise" data-plan="starter">Starter · 49 € / Monat</button>
+      <button type="button" class="leise" data-plan="pro">Pro · 99 € / Monat</button>
+      <button type="button" class="leise" data-plan="business">Business · 199 € / Monat</button>
+    </div>
+    <div class="msg" id="upgradeMsg" role="status" aria-live="polite"></div>
+  </section>
+
   <section class="karte" style="margin-bottom:20px">
     <h2 style="margin-top:0">Abonnement verwalten</h2>
     <p style="color:var(--mute)">Rechnungen, Zahlungsmethode und Kündigung sicher über Stripe verwalten.</p>
@@ -90,12 +101,52 @@
 
 <script>
 const msg = document.getElementById('msg');
+const upgradeMessage = document.getElementById('upgradeMsg');
+const chosenPlan = new URLSearchParams(location.search).get('plan');
+const allowedPlans = ['starter', 'pro', 'business'];
+const requestedPlan = allowedPlans.includes(chosenPlan) ? chosenPlan : null;
+if (requestedPlan) {
+  const selected = document.querySelector('[data-plan="' + requestedPlan + '"]');
+  if (selected) {
+    selected.classList.remove('leise');
+    upgradeMessage.textContent = 'Tarif ausgewählt. Prüfen Sie bitte Ihre Bestellung bei Stripe.';
+  }
+}
+
+for (const button of document.querySelectorAll('[data-plan]')) {
+  button.onclick = async () => {
+    const plan = button.dataset.plan;
+    if (!allowedPlans.includes(plan)) return;
+    upgradeMessage.textContent = 'Sichere Stripe-Bestellseite wird vorbereitet …';
+    const buttons = document.querySelectorAll('[data-plan]');
+    buttons.forEach(b => b.disabled = true);
+    try {
+      const response = await fetch('./api/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Checkout derzeit nicht verfügbar');
+      const target = new URL(data.url);
+      if (target.protocol !== 'https:' || !target.hostname.endsWith('.stripe.com')) {
+        throw new Error('Ungültige Stripe-Zahlungsseite');
+      }
+      location.assign(target.href);
+    } catch (error) {
+      upgradeMessage.textContent = error.message;
+      buttons.forEach(b => b.disabled = false);
+    }
+  };
+}
+
 
 async function lade() {
   const res = await fetch('./api/dashboard');
   if (res.status === 401) { location.href = './login'; return; }
   const d = await res.json();
   document.getElementById('wer').textContent = d.nutzer.firma || d.nutzer.email;
+  document.getElementById('upgrade').hidden = d.plan.key !== 'trial';
   document.getElementById('tarif').textContent = d.plan.label + (d.plan.preis ? ' · ' + d.plan.preis + ' €' : '');
   document.getElementById('anzahl').textContent = d.verbrauch.verbraucht;
   document.getElementById('frei').textContent = d.verbrauch.frei;
