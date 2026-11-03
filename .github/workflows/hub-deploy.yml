@@ -127,9 +127,28 @@ jobs:
           command -v docker >/dev/null
           docker info >/dev/null
           docker pull node:24-bookworm-slim
-          SANDBOX_IMAGE=$(docker image inspect node:24-bookworm-slim --format '{{index .RepoDigests 0}}')
-          if ! printf '%s\n' "$SANDBOX_IMAGE" | grep -Eq '^[^[:space:]]+@sha256:[0-9a-f]{64}$'; then
-            echo "Docker-Sandbox-Image besitzt keinen gueltigen unveraenderlichen Digest."
+          SANDBOX_BASE=$(docker image inspect node:24-bookworm-slim --format '{{index .RepoDigests 0}}')
+          if ! printf '%s\n' "$SANDBOX_BASE" | grep -Eq '^[^[:space:]]+@sha256:[0-9a-f]{64}$'; then
+            echo "Docker-Basis-Image besitzt keinen gueltigen unveraenderlichen Digest."
+            exit 5
+          fi
+          # Sandbox-Image = gepinntes Node-Basis-Image plus Rust/Cargo. Der Projekt-
+          # runner muss laut scripts/test-project-sandbox.mjs auch Cargo ausfuehren
+          # koennen; node:*-slim bringt es nicht mit. Gebaut wird lokal auf der VM,
+          # gepinnt ueber die Image-ID (sha256:...) - dieselbe unveraenderliche Form,
+          # die server/project-execution.mjs akzeptiert.
+          SANDBOX_DOCKERFILE=$(mktemp)
+          printf 'FROM %s\nUSER root\nRUN apt-get update && apt-get install -y --no-install-recommends cargo && apt-get clean && rm -f /var/lib/apt/lists/*\nUSER node\n' "$SANDBOX_BASE" > "$SANDBOX_DOCKERFILE"
+          if ! docker build --pull=never -t vf-project-sandbox:local -f "$SANDBOX_DOCKERFILE" /tmp >/tmp/sandbox-build.log 2>&1; then
+            echo "Sandbox-Image mit Cargo konnte nicht gebaut werden."
+            tail -n 20 /tmp/sandbox-build.log
+            rm -f "$SANDBOX_DOCKERFILE"
+            exit 5
+          fi
+          rm -f "$SANDBOX_DOCKERFILE"
+          SANDBOX_IMAGE=$(docker image inspect vf-project-sandbox:local --format '{{.Id}}')
+          if ! printf '%s\n' "$SANDBOX_IMAGE" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "Docker-Sandbox-Image besitzt keine gueltige unveraenderliche Image-ID."
             exit 5
           fi
           NODEBIN=$(command -v node)

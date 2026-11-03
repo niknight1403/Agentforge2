@@ -27,9 +27,18 @@ db.exec(`
 `);
 try { db.exec("ALTER TABLE revenue_ideas ADD COLUMN source TEXT NOT NULL DEFAULT 'offline'"); } catch {}
 try { db.exec("ALTER TABLE revenue_ideas ADD COLUMN created_at INTEGER"); } catch {}
+// Sprint 8b: Vorschlaege haengen jetzt an der Villen-IDE, nicht nur am Namen.
+// Bei geaenderter Idee werden die Vorschlaege neu erzeugt (Hash-Vergleich).
+try { db.exec("ALTER TABLE revenue_ideas ADD COLUMN idea_hash TEXT"); } catch {}
 
 function getVilla(id) {
-  const v = db.prepare('SELECT id, name, idea, status FROM villas WHERE id = ?').get(id);
+  const villaId = Number(id);
+  if (!Number.isInteger(villaId) || villaId <= 0) {
+    const err = new Error('Villa nicht gefunden');
+    err.statusCode = 404;
+    throw err;
+  }
+  const v = db.prepare('SELECT id, name, idea, status FROM villas WHERE id = ?').get(villaId);
   if (!v) {
     const err = new Error('Villa nicht gefunden');
     err.statusCode = 404;
@@ -102,43 +111,127 @@ export function listPublishPosts(villaId) {
 }
 
 /**
- * Regelbasierte Erzeugung von 3 Monetarisierungs-Vorschlägen (Revenue-Light).
+ * Regelbasierte Kategorisierung der Villen-Idee (Stil: buildOfflineAnswer in llm.mjs —
+ * reine Stichwort-Heuristik, kein LLM, kein Netz).
+ */
+const REVENUE_CATALOG = [
+  {
+    id: 'api',
+    match: /api|sdk|saas|plattform|platform|backend|server|infrastruktur|infrastructure|datenbank|database|automatis|automation|agent/i,
+    name: (n) => `${n} API-Zugang (Developer-Abo)`,
+    price_eur: 29,
+    steps: (n) => [
+      `1. Kernfunktionen von ${n} als dokumentierte REST-API mit API-Keys und Rate-Limits bereitstellen`,
+      `2. Stripe-Abo (29 EUR/Monat) mit Nutzungs-Limits und Self-Service-Portal anbinden`,
+      `3. Quickstart-Doku plus Beispiel-Client veroeffentlichen und erste 10 Entwickler direkt ansprechen`
+    ]
+  },
+  {
+    id: 'service',
+    match: /studio|agentur|beratung|consult|service|support|betreuung|coaching|management|marketing|vertrieb/i,
+    name: (n) => `${n} Done-for-you Paket`,
+    price_eur: 499,
+    steps: () => [
+      '1. Ein klar umrissenes Ergebnis-Paket (Scope, Lieferzeit, Deliverables) auf einer Preisseite fixieren',
+      '2. Einen Referenz-Durchlauf kostenlos oder stark reduziert durchfuehren und als Case Study dokumentieren',
+      '3. Buchungs-Link plus 3 Ansprache-Vorlagen fuer Direktakquise aufsetzen und 20 Kontakte anschreiben'
+    ]
+  },
+  {
+    id: 'digital',
+    match: /kurs|course|tutorial|leitfaden|guide|ebook|buch|vorlage|template|workshop|schulung|lernen|learn|wissen/i,
+    name: (n) => `${n} Selbstlern-Kurs`,
+    price_eur: 49,
+    steps: () => [
+      '1. Die 5 haeufigsten Fragen der Zielgruppe als Modul-Gliederung festhalten',
+      '2. Module als kurze Videos plus Checklisten produzieren und auf einer Verkaufsseite buendeln',
+      '3. Fruehbucher-Aktion (49 EUR statt 89 EUR) an die eigene Kontaktliste und 2 Communities ausspielen'
+    ]
+  },
+  {
+    id: 'marketplace',
+    match: /marktplatz|marketplace|shop|store|handel|verkauf|reseller|affiliate|produkt|product/i,
+    name: (n) => `${n} Provision pro Vermittlung`,
+    price_eur: 19,
+    steps: () => [
+      '1. Angebots-Seite mit den 10 besten Partnern und klaren Preisen aufbauen',
+      '2. Tracking-Links und Cookie-Fenster je Partner einrichten, Provisionen schriftlich bestaetigen',
+      '3. Woechentlich einen Vergleichs- oder Bestenlisten-Beitrag veroeffentlichen, um Suchtraffic zu holen'
+    ]
+  },
+  {
+    id: 'community',
+    match: /community|podcast|youtube|newsletter|blog|content|social|forum|discord|stream|audio|video|musik|music/i,
+    name: (n) => `${n} Mitgliedschaft`,
+    price_eur: 9.9,
+    steps: () => [
+      '1. Ein woechentliches Premium-Format (Analyse, Live-Session oder Download) festlegen',
+      '2. Bezahl-Mitgliedschaft mit 9,90 EUR/Monat ueber Stripe oder Steady aufsetzen',
+      '3. Eine kostenlose Vorschau-Version veroeffentlichen und auf die Mitgliedschaft verlinken'
+    ]
+  },
+  {
+    id: 'hardware',
+    match: /hardware|geraet|device|3d|druck|print|bau|fertigung|sensor|robot/i,
+    name: (n) => `${n} Bausatz plus Anleitung`,
+    price_eur: 89,
+    steps: () => [
+      '1. Stueckliste und Bezugsquellen festlegen und ein Vorserien-Exemplar bauen',
+      '2. Bausatz mit bebilderter Anleitung als Kleinserie (89 EUR) kalkulieren und Vorbestellungen sammeln',
+      '3. Erst nach erreichter Mindestbestellmenge produzieren, um Lagerrisiko zu vermeiden'
+    ]
+  }
+];
+
+const DEFAULT_CATALOG_ENTRY = {
+  id: 'paid-tool',
+  name: (n) => `${n} Pro-Version`,
+  price_eur: 19,
+  steps: (n) => [
+    `1. Die 3 wertvollsten Funktionen von ${n} herausarbeiten und hinter eine Free-Limit-Grenze legen`,
+    '2. Bezahl-Freischaltung (19 EUR/Monat oder Einmalkauf) mit Stripe-Checkout anbinden',
+    '3. Upgrade-Hinweis an der Limit-Grenze einblenden und 10 Bestandsnutzer direkt auf den Mehrwert ansprechen'
+  ]
+};
+
+/** Waehlt 3 Katalog-Eintraege anhand der Villen-Idee (deterministisch). */
+function classifyRevenueCatalog(villa) {
+  const haystack = `${villa.name || ''} ${villa.idea || ''}`.toLowerCase();
+  const hits = REVENUE_CATALOG.filter((e) => e.match.test(haystack));
+  const chosen = [...hits];
+  // Mit generischen Verdienmodellen auffuellen, damit immer 3 Vorschlaege entstehen.
+  const fillers = [
+    REVENUE_CATALOG.find((e) => e.id === 'api'),
+    REVENUE_CATALOG.find((e) => e.id === 'service'),
+    REVENUE_CATALOG.find((e) => e.id === 'community')
+  ];
+  for (const f of fillers) {
+    if (chosen.length >= 3) break;
+    if (f && !chosen.includes(f)) chosen.push(f);
+  }
+  while (chosen.length < 3) chosen.push(DEFAULT_CATALOG_ENTRY);
+  return chosen.slice(0, 3);
+}
+
+/** Stabiler Hash ueber Name + Idee: aendert sich die Idee, werden Vorschlaege neu erzeugt. */
+function ideaFingerprint(villa) {
+  const raw = `${villa.name || ''}\u0000${villa.idea || ''}`;
+  let h = 5381;
+  for (let i = 0; i < raw.length; i += 1) h = ((h * 33) ^ raw.charCodeAt(i)) >>> 0;
+  return `v1:${h.toString(16)}:${raw.length}`;
+}
+
+/**
+ * Regelbasierte Erzeugung von 3 Monetarisierungs-Vorschlaegen aus der Villen-Idee.
  */
 export function generateOfflineRevenueIdeas(villa) {
-  const name = villa.name || 'Projekt';
-
-  return [
-    {
-      name: `${name} - API & Developer Subscription`,
-      price_eur: 29.00,
-      steps: [
-        `1. REST-API für ${name} mit Auth-Keys und Rate-Limiting absichern`,
-        `2. Stripe Checkout für monatliches API-Abo (29 EUR/Monat) anbinden`,
-        `3. Entwickler-Dokumentation & Self-Service Portal bereitstellen`
-      ],
-      source: 'offline'
-    },
-    {
-      name: `${name} - Enterprise Custom Solution`,
-      price_eur: 499.00,
-      steps: [
-        `1. Dedizierte Hosting-Pakete und Custom SLAs definieren`,
-        `2. Nahtlose Anbindung an bestehende Enterprise-Systeme anbieten`,
-        `3. B2B Vertriebskanal & Demo-Terminbuchung auf der Website einrichten`
-      ],
-      source: 'offline'
-    },
-    {
-      name: `${name} - Pay-per-Use Credits`,
-      price_eur: 9.90,
-      steps: [
-        `1. Mikrozahlungen für verbrauchsbasierte Abrechnung implementieren`,
-        `2. Guthaben-Verwaltung & automatisches Refill-System verankern`,
-        `3. Startguthaben-Aktion zur Neukunden-Konvertierung starten`
-      ],
-      source: 'offline'
-    }
-  ];
+  const name = String(villa.name || 'Projekt').trim() || 'Projekt';
+  return classifyRevenueCatalog(villa).map((entry) => ({
+    name: entry.name(name),
+    price_eur: entry.price_eur,
+    steps: entry.steps(name),
+    source: 'offline'
+  }));
 }
 
 /**
@@ -147,42 +240,44 @@ export function generateOfflineRevenueIdeas(villa) {
  */
 export function getVillaRevenue(villaId) {
   const villa = getVilla(villaId);
+  const fingerprint = ideaFingerprint(villa);
 
-  // Prüfen ob bereits Ideen existieren
-  const existing = db.prepare('SELECT id, villa_id, name, price_eur, steps, source, created_at FROM revenue_ideas WHERE villa_id = ? ORDER BY id ASC').all(villa.id);
+  const readRows = () => db
+    .prepare('SELECT id, villa_id, name, price_eur, steps, source, created_at FROM revenue_ideas WHERE villa_id = ? ORDER BY id ASC')
+    .all(villa.id);
 
-  if (existing.length >= 3) {
-    const formatted = existing.map((row) => ({
-      id: Number(row.id),
-      villa_id: Number(row.villa_id),
-      name: row.name,
-      price_eur: Number(row.price_eur),
-      steps: typeof row.steps === 'string' ? JSON.parse(row.steps) : row.steps,
-      source: row.source || 'offline',
-      created_at: Number(row.created_at)
-    }));
-    return {
-      ok: true,
-      villaId: villa.id,
-      ideas: formatted,
-      count: formatted.length,
-      source: 'offline'
-    };
+  const format = (rows) => rows.map((row) => ({
+    id: Number(row.id),
+    villa_id: Number(row.villa_id),
+    name: row.name,
+    price_eur: Number(row.price_eur),
+    steps: typeof row.steps === 'string' ? JSON.parse(row.steps) : row.steps,
+    source: row.source || 'offline',
+    created_at: Number(row.created_at)
+  }));
+
+  // Bereits erzeugte Vorschlaege werden nur wiederverwendet, solange die Idee gleich blieb.
+  const stored = db
+    .prepare('SELECT idea_hash FROM revenue_ideas WHERE villa_id = ? ORDER BY id ASC')
+    .all(villa.id);
+  const matching = stored.length >= 3 && stored.every((r) => r.idea_hash === fingerprint);
+
+  if (matching) {
+    const formatted = format(readRows());
+    return { ok: true, villaId: villa.id, ideas: formatted, count: formatted.length, source: 'offline' };
   }
 
-  // Generieren & Speichern
   const rawIdeas = generateOfflineRevenueIdeas(villa);
   const timestamp = now();
   const savedIdeas = [];
 
-  const stmt = db.prepare('INSERT INTO revenue_ideas (villa_id, name, price_eur, steps, source, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+  db.prepare('DELETE FROM revenue_ideas WHERE villa_id = ?').run(villa.id);
+  const stmt = db.prepare('INSERT INTO revenue_ideas (villa_id, name, price_eur, steps, source, created_at, idea_hash) VALUES (?, ?, ?, ?, ?, ?, ?)');
 
   for (const idea of rawIdeas) {
-    const stepsJson = JSON.stringify(idea.steps);
-    const res = stmt.run(villa.id, idea.name, idea.price_eur, stepsJson, 'offline', timestamp);
-    const ideaId = Number(res.lastInsertRowid);
+    const res = stmt.run(villa.id, idea.name, idea.price_eur, JSON.stringify(idea.steps), 'offline', timestamp, fingerprint);
     savedIdeas.push({
-      id: ideaId,
+      id: Number(res.lastInsertRowid),
       villa_id: villa.id,
       name: idea.name,
       price_eur: idea.price_eur,
@@ -192,11 +287,5 @@ export function getVillaRevenue(villaId) {
     });
   }
 
-  return {
-    ok: true,
-    villaId: villa.id,
-    ideas: savedIdeas,
-    count: savedIdeas.length,
-    source: 'offline'
-  };
+  return { ok: true, villaId: villa.id, ideas: savedIdeas, count: savedIdeas.length, source: 'offline' };
 }

@@ -1130,7 +1130,30 @@ async function requestPlan(idea,wanted){
  if(out.offline||!Array.isArray(plan?.tasks)||!plan.tasks.length||plan.tasks.some(t=>typeof t.title!=='string'||typeof t.description!=='string'))throw Object.assign(new Error('Kein gültiger LLM-Projektplan erhalten; keine Scheinaufgaben angelegt.'),{code:'LLM_PLAN_INVALID',statusCode:503});
  return plan;
 }
-export async function createVilla({ name, idea, agentCount: wanted = 12, sourcePath = '', mode = 'BUILD' }) {
+function normalizeVillaName(raw) {
+  return String(raw || 'Villa').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+export async function createVilla({ name, idea, agentCount: wanted = 12, sourcePath = '', mode = 'BUILD', force = false }) {
+  // Sprint 7 (Duplikat-Praevention): exakt gleicher Name (getrimmt, Whitespace
+  // zusammengefasst, case-insensitiv) wird wiederverwendet statt neu angelegt.
+  if (!force) {
+    const normNew = normalizeVillaName(name);
+    const existing = db.prepare('SELECT id, name FROM villas').all()
+      .find((v) => normalizeVillaName(v.name) === normNew);
+    if (existing) {
+      audit(existing.id, 0, 'createVilla', { name, idea }, 'Villa-Name bereits vorhanden - wiederverwendet', 1);
+      const root = db.prepare('SELECT id FROM agents WHERE villa_id = ? AND role = ?').get(existing.id, 'ROOT');
+      return {
+        villaId: existing.id,
+        rootId: root ? root.id : 0,
+        agents: agentCount(existing.id),
+        dedup: 'reused',
+        existingId: existing.id,
+        existingName: existing.name
+      };
+    }
+  }
   let plan = sourcePath ? null : await requestPlan(idea,wanted);
   const t = now();
   const villaId = db.prepare(

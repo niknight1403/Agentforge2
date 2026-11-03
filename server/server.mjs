@@ -151,11 +151,80 @@ function json(res, code, data) {
   res.end(body);
 }
 
+/* ------------------- v1.61.2 — RATE-LIMIT-HAERTUNG (CCC-Pattern) ------------------- */
+/* Drei Schutzschichten VOR dem Routing, damit Slash-/Query-Floods und Riesen-      */
+/* Bodies nie bis in die Handler (und damit in DB/LLM) durchkommen:                 */
+/*   1. URL-Laenge  > 2000 Zeichen        -> 414 (Query-String-Flood)               */
+/*   2. Burst-Slash 20+ Schreib-Requests  -> 429 + Retry-After: 30 (2-s-Fenster)    */
+/*   3. Body-Groesse > 512 KB             -> 413 (readBody bricht ab)               */
+/* Alles per Env justierbar, Defaults sind die harten Werte.                        */
+const MAX_URL_LENGTH = Number(process.env.VF_MAX_URL_LENGTH || 2000);
+const MAX_BODY_BYTES = Number(process.env.VF_MAX_BODY_BYTES || 512 * 1024);
+const BURST_WINDOW_MS = Number(process.env.VF_BURST_WINDOW_MS || 2000);
+const BURST_MAX_WRITES = Number(process.env.VF_BURST_MAX || 20);
+const BURST_RETRY_AFTER = Number(process.env.VF_BURST_RETRY_AFTER || 30);
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+/** Schreib-Zeitstempel je Client-IP (nur innerhalb des 2-s-Fensters gehalten). */
+const burstHits = new Map();
+
+/** Client-IP: hinter nginx kommt die echte IP aus X-Forwarded-For (erster Wert). */
+function clientIp(req) {
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return fwd || req.socket?.remoteAddress || 'unbekannt';
+}
+
+/** Burst-Circuit: 20+ Schreib-Anfragen derselben IP in 2 s = Slash-/Batch-Flood. */
+function burstCircuit(req) {
+  const method = String(req.method || '').toUpperCase();
+  if (!WRITE_METHODS.has(method)) return null;
+  const ip = clientIp(req);
+  const t = Date.now();
+  const hits = (burstHits.get(ip) || []).filter((x) => t - x < BURST_WINDOW_MS);
+  hits.push(t);
+  burstHits.set(ip, hits);
+  if (burstHits.size > 2000) {
+    for (const [key, list] of burstHits) {
+      if (!list.length || t - list[list.length - 1] > BURST_WINDOW_MS) burstHits.delete(key);
+    }
+  }
+  if (hits.length >= BURST_MAX_WRITES) return { retryAfter: BURST_RETRY_AFTER, hits: hits.length };
+  return null;
+}
+
+/** Gesperrte IPs fuer den Circuit offenlegen (Diagnose). */
+export function burstStatus() {
+  const t = Date.now();
+  const blocked = [];
+  for (const [ip, list] of burstHits) {
+    const live = list.filter((x) => t - x < BURST_WINDOW_MS).length;
+    if (live >= BURST_MAX_WRITES) blocked.push({ ip, hits: live });
+  }
+  return { blocked, windowMs: BURST_WINDOW_MS, maxWrites: BURST_MAX_WRITES, retryAfter: BURST_RETRY_AFTER };
+}
+
 function readBody(req) {
   return new Promise((resolveP, reject) => {
-    let raw = '';
-    req.on('data', (c) => { raw += c; if (raw.length > 5_000_000) req.destroy(); });
+    const chunks = [];
+    let size = 0;
+    let tooLarge = false;
+    req.on('data', (c) => {
+      if (tooLarge) return; // Rest verwerfen, nichts mehr puffern
+      size += c.length;
+      if (size > MAX_BODY_BYTES) {
+        tooLarge = true;
+        chunks.length = 0;
+        const err = new Error(`Anfrage zu gross: maximal ${Math.round(MAX_BODY_BYTES / 1024)} KB Body erlaubt.`);
+        err.statusCode = 413;
+        err.code = 'BODY_TOO_LARGE';
+        reject(err);
+        req.resume(); // restliche Bytes ohne Puffern abfliessen lassen
+        return;
+      }
+      chunks.push(c);
+    });
     req.on('end', () => {
+      if (tooLarge) return;
+      const raw = Buffer.concat(chunks).toString('utf8');
       if (!raw) return resolveP({});
       try { resolveP(JSON.parse(raw)); } catch (e) { reject(e); }
     });
@@ -1442,6 +1511,24 @@ async function internalMesh(req,res,url){
 export const server = http.createServer((req, res) => {
   const requestStarted=Date.now();
   res.once('finish',()=>{if(req.url?.startsWith('/api/'))recordHttpRequest(req.method,new URL(req.url,'http://localhost').pathname,res.statusCode,Date.now()-requestStarted);});
+  // v1.61.2 — vor dem Routing haerten (CCC-Pattern): Laenge, dann Burst-Circuit.
+  const rawUrl = String(req.url || '');
+  if (rawUrl.length > MAX_URL_LENGTH) {
+    return json(res, 414, {
+      error: `URL zu lang (${rawUrl.length} Zeichen, maximal ${MAX_URL_LENGTH}).`,
+      code: 'URI_TOO_LONG',
+      maxLength: MAX_URL_LENGTH
+    });
+  }
+  const burst = burstCircuit(req);
+  if (burst) {
+    res.setHeader('Retry-After', String(burst.retryAfter));
+    return json(res, 429, {
+      error: `Zu viele Schreib-Anfragen gleichzeitig (${burst.hits} in ${BURST_WINDOW_MS / 1000} s). Bitte ${burst.retryAfter} s warten.`,
+      code: 'BURST_LIMIT',
+      retryAfter: burst.retryAfter
+    });
+  }
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   if(serveStudioPreview(req,res,url))return;
   if(url.pathname.startsWith('/internal/')){
