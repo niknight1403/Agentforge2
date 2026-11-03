@@ -24,7 +24,11 @@ export async function erstelleCheckout({ stripe, db, user, planKey, basisUrl }) 
   const plan = PLANS[planKey];
   const priceId = stripePriceFuer(planKey);
   if (!plan || !priceId) throw Object.assign(new Error("Plan nicht kaufbar konfiguriert"), { status: 400 });
-  const sub = db.prepare("SELECT stripe_customer FROM subscriptions WHERE user_id = ?").get(user.id);
+  const sub = db.prepare("SELECT stripe_customer, stripe_subscription, status FROM subscriptions WHERE user_id = ?").get(user.id);
+  // Do not create a second recurring subscription for an already active account.
+  if (sub?.stripe_subscription && ["active", "past_due", "pending"].includes(sub.status)) {
+    throw Object.assign(new Error("Es existiert bereits ein Abonnement; bitte den Tarif im Kundenportal verwalten."), { status: 409 });
+  }
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
@@ -53,14 +57,16 @@ export function verarbeiteStripeEvent(db, event) {
   // Das bereits signaturgeprueft gespeicherte Abo ist dann die Zuordnungsquelle.
   function zugehoerigerUser(obj) {
     const ausMeta = Number(obj?.metadata?.user_id);
+    const subscription = typeof obj?.id === "string" && obj.id.startsWith("sub_") ? obj.id : obj?.subscription;
+    // Existing Stripe subscription binding takes precedence over metadata.
+    // Conflicting identifiers must be inspected rather than overwriting a user.
+    if (subscription) {
+      const match = db.prepare("SELECT user_id FROM subscriptions WHERE stripe_subscription = ?").get(subscription);
+      if (match) return Number.isSafeInteger(ausMeta) && ausMeta > 0 && ausMeta !== match.user_id ? null : match.user_id;
+    }
     if (Number.isSafeInteger(ausMeta) && ausMeta > 0) {
       const user = db.prepare("SELECT id FROM users WHERE id = ?").get(ausMeta);
       if (user) return ausMeta;
-    }
-    const subscription = typeof obj?.id === "string" && obj.id.startsWith("sub_") ? obj.id : obj?.subscription;
-    if (subscription) {
-      const match = db.prepare("SELECT user_id FROM subscriptions WHERE stripe_subscription = ?").get(subscription);
-      if (match) return match.user_id;
     }
     if (!subscription && obj?.customer) {
       const match = db.prepare("SELECT user_id FROM subscriptions WHERE stripe_customer = ?").get(obj.customer);
