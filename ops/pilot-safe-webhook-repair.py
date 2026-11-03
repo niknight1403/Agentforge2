@@ -79,6 +79,20 @@ def local_json(path, payload=None, signature=None):
     return json.loads(body)
 
 
+def wait_for_local_api():
+    """Allow systemd/Node startup; never accept a permanently unhealthy service."""
+    for attempt in range(15):
+        try:
+            health = local_json("/api/health")
+            if health.get("ok") is True and health.get("service") == "anfragepilot":
+                print("PILOT_SERVICE_READY")
+                return
+        except (RuntimeError, ValueError, json.JSONDecodeError):
+            pass
+        time.sleep(1)
+    raise RuntimeError("AnfragePilot did not become healthy after restart")
+
+
 def check_local_webhook(secret):
     """Synthetic signed event; never creates payment or customer records."""
     timestamp = str(int(time.time()))
@@ -167,6 +181,7 @@ def main():
         tmp_path = None
         did_install = True
         restart()
+        wait_for_local_api()
         check_local_webhook(signing)
         verify_paid_plans()
 
