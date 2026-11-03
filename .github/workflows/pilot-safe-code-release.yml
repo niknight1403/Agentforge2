@@ -1,0 +1,80 @@
+name: AnfragePilot Safe Production Code Release
+on:
+  pull_request:
+    paths:
+      - 'pilot/src/**'
+      - 'pilot/public/**'
+      - 'ops/pilot-safe-code-deploy.sh'
+      - '.github/workflows/pilot-safe-code-release.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'pilot/src/**'
+      - 'pilot/public/**'
+      - 'ops/pilot-safe-code-deploy.sh'
+      - '.github/workflows/pilot-safe-code-release.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: anfragepilot-production-code-release
+  cancel-in-progress: false
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: pilot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: pilot/package-lock.json
+      - name: Install and test product
+        run: |
+          npm ci
+          npm test
+          npm run check
+      - name: Validate safe deploy script
+        working-directory: .
+        run: bash -n ops/pilot-safe-code-deploy.sh
+  deploy:
+    needs: validation
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up protected SSH
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$ORACLE_SSH_KEY"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+      - name: Transfer and safely deploy tested application code
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/anfragepilot-source-release.tgz -C pilot src public
+          SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -i $HOME/.ssh/oracle_key"
+          scp $SSH_OPTS /tmp/anfragepilot-source-release.tgz ubuntu@92.5.177.159:/tmp/anfragepilot-source-release.tgz
+          scp $SSH_OPTS ops/pilot-safe-code-deploy.sh ubuntu@92.5.177.159:/tmp/pilot-safe-code-deploy.sh
+          ssh $SSH_OPTS ubuntu@92.5.177.159 'sudo bash /tmp/pilot-safe-code-deploy.sh'
+      - name: Check production source matches tested GitHub commit
+        run: |
+          set -euo pipefail
+          SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -i $HOME/.ssh/oracle_key"
+          for FILE in src/server.js src/billing.js src/db.js public/dashboard.html; do
+            LOCAL=$(sha256sum "pilot/$FILE" | cut -d' ' -f1)
+            REMOTE=$(ssh $SSH_OPTS ubuntu@92.5.177.159 "sha256sum /opt/anfragepilot/$FILE" | cut -d' ' -f1)
+            test "$LOCAL" = "$REMOTE" || { echo "::error::Deployed code differs: $FILE"; exit 1; }
+            echo "DEPLOY_MATCH $FILE"
+          done
+          curl --fail --silent --show-error --max-time 20 'https://hub.cybersarah-ki.com/pilot/api/health' |
+            node -e "let s='';process.stdin.on('data',x=>s+=x).on('end',()=>{const h=JSON.parse(s);if(!h.ok||h.service!=='anfragepilot')process.exit(1);console.log('PILOT_PUBLIC_HEALTH_OK')})"
