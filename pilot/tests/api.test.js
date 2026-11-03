@@ -575,3 +575,37 @@ test("Stripe HTTP: signierte Webhooks akzeptieren und doppelte Zustellung ignori
     else process.env.STRIPE_WEBHOOK_SECRET = previousWebhook;
   }
 });
+
+
+test("Billing: alte Kuendigung darf neues aktives Abo nicht beenden", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES (?,?,?)").run("newer@firma.de", "x", Date.now());
+  db.prepare("INSERT INTO subscriptions(user_id,plan,status,stripe_customer,stripe_subscription,updated_at) VALUES (1,'pro','active','cus_same','sub_new',?)").run(Date.now());
+  const result = verarbeiteStripeEvent(db, {
+    id: "evt_old_cancel", type: "customer.subscription.deleted",
+    data: { object: { id: "sub_old", customer: "cus_same", metadata: { user_id: "1" } } }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.veraltet, true);
+  const row = db.prepare("SELECT status,stripe_subscription FROM subscriptions WHERE user_id=1").get();
+  assert.equal(row.status, "active");
+  assert.equal(row.stripe_subscription, "sub_new");
+});
+
+test("Billing: fremde Subscription-Aktualisierung ersetzt kein aktives Abo", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES (?,?,?)").run("current@firma.de", "x", Date.now());
+  db.prepare("INSERT INTO subscriptions(user_id,plan,status,stripe_customer,stripe_subscription,updated_at) VALUES (1,'pro','active','cus_current','sub_current',?)").run(Date.now());
+  process.env.STRIPE_PRICE_PRO = "price_existing_pro";
+  const result = verarbeiteStripeEvent(db, {
+    id: "evt_other_sub", type: "customer.subscription.updated",
+    data: { object: {
+      id: "sub_other", customer: "cus_current", status: "active",
+      metadata: { user_id: "1", plan: "pro" },
+      items: { data: [{ price: { id: "price_existing_pro" } }] }
+    } }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(db.prepare("SELECT stripe_subscription FROM subscriptions WHERE user_id=1").get().stripe_subscription, "sub_current");
+  assert.equal(db.prepare("SELECT COUNT(*) AS c FROM billing_events WHERE id='evt_other_sub'").get().c, 0);
+});
