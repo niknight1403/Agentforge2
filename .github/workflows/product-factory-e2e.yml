@@ -1,0 +1,43 @@
+name: Product Factory - production prompt-to-product proof
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/verify-live-prompt-product.mjs'
+      - '.github/workflows/product-factory-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-factory-live-proof
+  cancel-in-progress: false
+
+jobs:
+  production-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify proof policy in unit tests
+        run: node --test server/tests/production-prompt-e2e.test.mjs
+      - name: Run real single-prompt Villa build and download proof
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+          VF_HUB_URL: https://hub.cybersarah-ki.com
+          VF_E2E_REPORT_PATH: product-factory-e2e-report.json
+        run: node scripts/verify-live-prompt-product.mjs
+      - name: Archive verified result or actual blockers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-product-proof-${{ github.run_id }}
+          path: product-factory-e2e-report.json
+          if-no-files-found: warn
+          retention-days: 14
