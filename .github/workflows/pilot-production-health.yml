@@ -1,0 +1,44 @@
+name: AnfragePilot Production Health Evidence
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pilot-production-health.yml'
+  push:
+    paths:
+      - '.github/workflows/pilot-production-health.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Diagnose DNS and HTTPS without credentials
+        shell: bash
+        run: |
+          set -uo pipefail
+          HOST=hub.cybersarah-ki.com
+          echo "DNS result:"
+          if ! getent ahostsv4 "$HOST" | head -n 5; then
+            echo "::error::Public hostname DNS lookup failed"
+            exit 1
+          fi
+          echo "Check HTTPS /pilot/api/health"
+          http_status=$(curl --silent --show-error --max-time 20 --retry 1 --retry-delay 2 \
+            --output /tmp/anfragepilot-health.json --write-out '%{http_code}' \
+            "https://$HOST/pilot/api/health") || {
+              echo "::error::HTTPS request to AnfragePilot failed"
+              exit 1
+            }
+          echo "Health HTTP status: $http_status"
+          if [[ "$http_status" != "200" ]]; then
+            echo "::error::Health endpoint returned HTTP $http_status"
+            exit 1
+          fi
+          node -e "const fs=require('fs');const v=JSON.parse(fs.readFileSync('/tmp/anfragepilot-health.json'));if(v.ok!==true || v.service!=='anfragepilot'){throw Error('Incorrect service health response')}console.log('Verified: '+v.service+' health OK')"
+          echo "Check HTTPS /pilot/ landing page"
+          landing_status=$(curl --silent --show-error --max-time 20 --output /dev/null \
+            --write-out '%{http_code}' "https://$HOST/pilot/") || exit 1
+          echo "Landing HTTP status: $landing_status"
+          test "$landing_status" = 200
