@@ -106,7 +106,7 @@ form.onsubmit = async (e) => {
 };
 
 // Direkt im Registrieren-Modus starten, wenn die URL /registrieren ist.
-if (location.pathname.replace(/\\/$/, '').endsWith('/registrieren') || selectedPlan) setzeModus('register');
+if (location.pathname.endsWith('/registrieren') || selectedPlan) setzeModus('register');
 </script>
 </body>
 </html>
