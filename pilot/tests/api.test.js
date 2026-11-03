@@ -200,7 +200,7 @@ test("Billing: Checkout-Session aktiviert den Plan", () => {
   const event = {
     id: "evt_1",
     type: "checkout.session.completed",
-    data: { object: { metadata: { user_id: "1", plan: "pro" }, customer: "cus_1", subscription: "sub_1" } },
+    data: { object: { mode: "subscription", payment_status: "paid", metadata: { user_id: "1", plan: "pro" }, customer: "cus_1", subscription: "sub_1" } },
   };
   const r = verarbeiteStripeEvent(db, event);
   assert.equal(r.ok, true);
@@ -330,4 +330,46 @@ test("Billing: unbekannte Abo-Ereignisse werden nicht als verarbeitet quittiert"
   });
   assert.equal(result.ok, false);
   assert.equal(db.prepare("SELECT COUNT(*) AS c FROM billing_events").get().c, 0);
+});
+
+
+test("Billing: unpaid Checkout gibt kein bezahltes Kontingent frei", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES (?,?,?)").run("unpaid@firma.de", "x", Date.now());
+  const event = {
+    id: "evt_checkout_unpaid", type: "checkout.session.completed",
+    data: { object: {
+      mode: "subscription", payment_status: "unpaid",
+      metadata: { user_id: "1", plan: "pro" },
+      customer: "cus_unpaid", subscription: "sub_unpaid"
+    } }
+  };
+  const result = verarbeiteStripeEvent(db, event);
+  assert.equal(result.ok, true);
+  assert.equal(db.prepare("SELECT status FROM subscriptions WHERE user_id=1").get().status, "pending");
+  assert.equal(quotaFuer(db, 1).planKey, "trial");
+  assert.equal(verarbeiteStripeEvent(db, event).doppelt, true);
+});
+
+test("Billing: subscription-event aktiviert nach unpaid Checkout bei bestaetigtem Abo", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO users(email,password_hash,created_at) VALUES (?,?,?)").run("later@firma.de", "x", Date.now());
+  verarbeiteStripeEvent(db, {
+    id: "evt_checkout_pending", type: "checkout.session.completed",
+    data: { object: {
+      mode: "subscription", payment_status: "unpaid",
+      metadata: { user_id: "1", plan: "pro" },
+      customer: "cus_later", subscription: "sub_later"
+    } }
+  });
+  process.env.STRIPE_PRICE_PRO = "price_pro_later";
+  const result = verarbeiteStripeEvent(db, {
+    id: "evt_subscription_later", type: "customer.subscription.updated",
+    data: { object: {
+      id: "sub_later", customer: "cus_later", status: "active",
+      items: { data: [{ price: { id: "price_pro_later" } }] }
+    } }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(quotaFuer(db, 1).planKey, "pro");
 });
