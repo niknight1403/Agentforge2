@@ -40,8 +40,8 @@ if [ -f /opt/villaforge/hub.env ]; then
   # remove STRIPE_PRICE_* and invalidate existing paid subscription plans.
   while IFS= read -r zeile; do
     schluessel=${zeile%%=*}
-    if ! grep -q "^\\${schluessel}=" "$ENV_DATEI"; then
-      printf '%s\\n' "$zeile" >> "$ENV_DATEI"
+    if ! grep -q "^${schluessel}=" "$ENV_DATEI"; then
+      printf '%s\n' "$zeile" >> "$ENV_DATEI"
     fi
   done < <(grep -hE '^(export )?(GROQ_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY|STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET)=' /opt/villaforge/hub.env | sed 's/^export //' || true)
 fi
