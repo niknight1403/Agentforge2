@@ -62,7 +62,7 @@ export function verarbeiteStripeEvent(db, event) {
       const match = db.prepare("SELECT user_id FROM subscriptions WHERE stripe_subscription = ?").get(subscription);
       if (match) return match.user_id;
     }
-    if (obj?.customer) {
+    if (!subscription && obj?.customer) {
       const match = db.prepare("SELECT user_id FROM subscriptions WHERE stripe_customer = ?").get(obj.customer);
       if (match) return match.user_id;
     }
