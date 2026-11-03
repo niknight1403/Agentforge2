@@ -4,6 +4,7 @@ import { studioStatus,proposeDesigns } from './studio.mjs';
 import { executeRemoteWorker } from './remote-worker.mjs';
 import { PROJECT_WORKSPACE,ownProjectDir,verifyProjectRuntime,ensureVerificationTasks } from './project-verification.mjs';
 import { db, now } from './db.mjs';
+import { villaLessonsContext } from './villa-knowledge.mjs';
 import { maybeDeliverApk } from './builds.mjs';
 import { skillInstructions, readConnector } from './control-store.mjs';
 import { resourceStatus, recommendedConcurrency } from './resource-agent.mjs';
@@ -918,8 +919,9 @@ export function memoryContext(villaId, agentId, limit = 6) {
   const rows = db.prepare(
     'SELECT kind, title, content FROM memories WHERE villa_id = ? ORDER BY importance DESC, id DESC LIMIT ?'
   ).all(villaId, limit);
-  if (!rows.length) return '';
-  return '\n\nBekanntes Gedaechtnis:\n' + rows.map((r) => `- [${r.kind}] ${r.title}: ${String(r.content || '').slice(0, 160)}`).join('\n');
+  const local=rows.length ? '\n\nBekanntes Gedaechtnis:\n' + rows.map((r) => `- [${r.kind}] ${r.title}: ${String(r.content || '').slice(0, 160)}`).join('\n') : '';
+  const shared=villaLessonsContext({excludeVillaId:villaId,limit:2});
+  return local+(shared?'\n\n'+shared:'');
 }
 
 function openTasks(villaId) {

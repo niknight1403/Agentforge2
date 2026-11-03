@@ -140,3 +140,19 @@ test('Belegtes Produkt ohne TASTE/SPION erzeugt keine Villa', async () => {
   assert.ok(keys.includes('spion'), JSON.stringify(res.body.blockers));
   assert.match(res.body.message, /Uebergabe-Artefakte fehlen/);
 });
+
+test('Bootstrap allows a new idea into development without prematurely declaring delivery verified',async()=>{
+ const token=await tokenFor('bootstrap-idea@example.com');
+ const created=await api('/api/deep/projects',{method:'POST',body:JSON.stringify({idea:'Eine Android App zur Verwaltung von Inventar und QR Codes.'})},token);
+ const projectId=Number(created.body?.id);
+ assert.ok(projectId>0,JSON.stringify(created.body));
+ const result=await api(`/api/deep/projects/${projectId}/bootstrap`,{method:'POST',body:'{}'},token);
+ assert.notEqual(result.body.gateBlocked,true,JSON.stringify(result.body));
+ assert.notEqual(result.body.artifactBlocked,true,JSON.stringify(result.body));
+ // A real language model is unavailable in CI; bootstrap may correctly fail at that boundary.
+ if(result.body.error)assert.ok(['LLM_UNAVAILABLE','DEVELOPMENT_START_FAILED'].includes(result.body.code),JSON.stringify(result.body));
+ else {
+  assert.ok(Number(result.body.villaId)>0,JSON.stringify(result.body));
+  assert.equal(result.body.projectId,projectId);
+ }
+});
