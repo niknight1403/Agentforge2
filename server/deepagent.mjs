@@ -149,8 +149,8 @@ function describeAttachments(attachments) {
 /** Routing policy for user prompts. Explicit offline/privacy requests never fall back to cloud. */
 export function deepAgentRoutePolicy(idea, message) {
   const text=[idea,message].map(x=>String(x||'')).join(' ').toLowerCase();
-  const offline=/(?:\\boffline\\b|\\bair.?gap(?:ped)?\\b|\\bohne internet\\b|\\bnur lokal\\b|\\bstrict(?:ly)? local\\b)/i.test(text);
-  const privateTask=/(?:\\berotik\\b|\\berotisch(?:e|en|er|es)?\\b|\\berotic\\b|\\badult content\\b|\\bnsfw\\b|\\bintim(?:e|en|er|es)? inhalte\\b)/i.test(text);
+  const offline=/(?:\boffline\b|\bair.?gap(?:ped)?\b|\bohne internet\b|\bnur lokal\b|\bstrict(?:ly)? local\b)/i.test(text);
+  const privateTask=/(?:\berotik\b|\berotisch(?:e|en|er|es)?\b|\berotic\b|\badult content\b|\bnsfw\b|\bintim(?:e|en|er|es)? inhalte\b)/i.test(text);
   return { routeScope: offline?'offlineOnly':privateTask?'selfHostedOnly':'any',
     strategy: offline||privateTask?'LOCAL_FIRST':'FALLBACK',
     reason:offline?'offline-request':privateTask?'private-content':'normal-development' };
