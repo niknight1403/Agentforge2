@@ -33,6 +33,7 @@ import { systemAudit, healTick, healActions } from './heal.mjs';
 import { startBuild, buildStatus, buildArtifact, previewInfo, previewFile, maybeAutoBuild } from './builds.mjs';
 import { productGateForProjectDir } from './deep-product-gate.mjs';
 import { deepMissionBrief } from './deep-mission.mjs';
+import { classifyDeepDevelopmentIntent } from './deep-intent.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
 import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
@@ -1199,10 +1200,30 @@ async function api(req, res, url) {
       }
     });
   }
+  // The project creation/chat actions explicitly authorized here can start a Villa
+  // without the separate "Autonom umsetzen" button. Existing projects are reused.
+  const autoStartDeepProject = async (projectId) => runDeepProjectDevelopmentOnce(projectId,async()=>{
+    try {
+      const detail=deepProjectDetail(projectId);
+      if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
+      let villaId=Number(detail.project.villa_id||0);
+      if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
+        const brief=[detail.project.idea,deepMissionBrief(detail.project.idea),villaLessonsContext()].join('\\n\\n').slice(0,9000);
+        const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:brief,agentCount:12,mode:'BUILD'});
+        villaId=linkDeepProjectVilla(projectId,built.villaId);
+      }
+      const scheduled=isRunning(villaId)?{active:[villaId],queue:[]}:scheduleVilla(villaId,{concurrency:2,maxRounds:12});
+      const blocked=Number(scheduled.blockedVillaId||0)===villaId;
+      return {ok:!blocked,villaId,started:!blocked&&(scheduled.active||[]).includes(villaId),queued:!blocked&&(scheduled.queue||[]).includes(villaId),blocked,reason:scheduled.reason||null};
+    }catch(error){return {ok:false,code:error.code||'AUTO_START_FAILED',error:String(error.message||error).slice(0,250)};}
+  });
   if (p === '/api/deep/projects' && m === 'POST') {
     try {
       const b = await readBody(req);
-      return json(res, 200, await createDeepProject(b?.idea));
+      const created=await createDeepProject(b?.idea);
+      const intent=classifyDeepDevelopmentIntent(b?.idea,{projectCreation:true});
+      const development=intent.action==='AUTO_BUILD'?await autoStartDeepProject(created.id):null;
+      return json(res,200,{...created,intent:intent.action,development});
     } catch (e) {
       return json(res, 400, { error: String(e.message || e).slice(0, 300) });
     }
@@ -1211,7 +1232,9 @@ async function api(req, res, url) {
     try {
       const b = await readBody(req);
       const r = await deepChat(Number(parts[3]), b?.message || '', Array.isArray(b?.attachments) ? b.attachments : []);
-      return json(res, 200, r);
+      const intent=classifyDeepDevelopmentIntent(b?.message);
+      const development=intent.action==='AUTO_BUILD'?await autoStartDeepProject(Number(parts[3])):null;
+      return json(res,200,{...r,intent:intent.action,development});
     } catch (e) {
       return json(res, 400, { error: String(e.message || e).slice(0, 300) });
     }
