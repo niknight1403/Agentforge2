@@ -56,7 +56,16 @@ test('Production deploy verifies and atomically enables the existing Docker proj
  const installDropin='install -m 0644 "$DROPIN_TMP" "$SANDBOX_DROPIN"';
  const restart='systemctl restart "$UNIT"';
  assert.ok(workflow.includes('docker pull node:24-bookworm-slim'));
- assert.ok(workflow.includes("grep -Eq '^[^[:space:]]+@sha256:[0-9a-f]{64}$'"));
+ assert.ok(workflow.includes('docker build --pull=false -t villaforge-project-sandbox:deploy -f docker/project-sandbox/Dockerfile .'));
+ assert.ok(workflow.includes("grep -Eq '^sha256:[0-9a-f]{64}
+ assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX=docker"'));
+ assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX_IMAGE=%s"'));
+ assert.ok(workflow.includes('restore_sandbox_config'));
+ assert.ok(workflow.includes('rm -f "$SANDBOX_DROPIN"'));
+ assert.ok(workflow.indexOf(integrationTest)<workflow.indexOf(installDropin));
+ assert.ok(workflow.indexOf(restart,workflow.indexOf(installDropin))>workflow.indexOf(installDropin));
+});
+"));
  assert.ok(workflow.includes(integrationTest));
  assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX=docker"'));
  assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX_IMAGE=%s"'));
