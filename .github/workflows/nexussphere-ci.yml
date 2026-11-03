@@ -20,6 +20,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Hub syntax gate
+        working-directory: .
+        run: node --check server/server.mjs && node --check server/llm.mjs
       - run: cargo generate-lockfile
       - run: cargo test --locked
       - run: npm test
