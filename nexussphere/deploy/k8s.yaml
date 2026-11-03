@@ -10,11 +10,22 @@ spec:
     metadata:
       labels: {app: nexussphere}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: nexussphere
           image: nexussphere:latest
           ports:
             - containerPort: 8787
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: "50m", memory: "64Mi"}
+            limits: {cpu: "500m", memory: "256Mi"}
           env:
             - name: NEXUSSPHERE_API_TOKEN
               valueFrom: {secretKeyRef: {name: nexussphere-secrets, key: api-token}}
@@ -34,7 +45,8 @@ spec:
             - {name: state, mountPath: /app/data}
       volumes:
         - name: state
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: nexussphere-state
 ---
 apiVersion: v1
 kind: Service
@@ -51,3 +63,13 @@ metadata:
   name: nexussphere-config
 data:
   hub-url: http://villaforge-hub:8787
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nexussphere-state
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
