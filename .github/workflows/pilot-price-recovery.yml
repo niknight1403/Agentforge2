@@ -43,10 +43,21 @@ jobs:
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
       - name: Run safe price recovery on existing production VM
+        env:
+          STRIPE_RUNTIME_SECRET: ${{ secrets.STRIPE_SECRET_KEY }}
         run: |
           set -euo pipefail
           SSH_OPTS="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -i $HOME/.ssh/oracle_key"
           scp $SSH_OPTS ops/pilot-restore-stripe-prices.py ubuntu@92.5.177.159:/tmp/pilot-restore-stripe-prices.py
+          # Transfer only the explicitly configured runtime secret, never a
+          # full-privilege Stripe setup key. Do not print or pass it in argv.
+          if [ -n "$STRIPE_RUNTIME_SECRET" ]; then
+            printf '%s' "$STRIPE_RUNTIME_SECRET" | ssh $SSH_OPTS ubuntu@92.5.177.159 \
+              'sudo sh -c "umask 077; cat > /run/pilot-stripe-runtime.key"'
+            echo "Runtime Stripe secret securely handed to the production repair"
+          else
+            echo "No GitHub STRIPE_SECRET_KEY; trying an existing secure VM runtime key"
+          fi
           ssh $SSH_OPTS ubuntu@92.5.177.159 'sudo python3 /tmp/pilot-restore-stripe-prices.py'
       - name: Verify public paid plans after recovery
         run: |
