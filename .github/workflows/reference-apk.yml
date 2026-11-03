@@ -20,7 +20,7 @@ permissions:
 jobs:
   reference-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -69,6 +69,23 @@ jobs:
           print('APK verified:',os.path.getsize(f),'bytes')
           PY
           sha256sum villa-apk-template/app/build/outputs/apk/debug/app-debug.apk
+      - name: Enable hardware acceleration for Android emulator
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; else echo 'KVM unavailable; emulator may use software acceleration'; fi
+      - name: Install and launch APK in a real Android emulator
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 29
+          target: default
+          arch: x86_64
+          profile: pixel_3a
+          script: |
+            set -e
+            adb install -r villa-apk-template/app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -W -n dev.villaforge.villa9001/dev.villaforge.wrapper.MainActivity
+            sleep 8
+            adb shell pidof dev.villaforge.villa9001 | grep -Eq '^[0-9]+'
+            echo 'ANDROID_EMULATOR_SMOKE_PASSED'
       - uses: actions/upload-artifact@v4
         with:
           name: villa-tasks-reference-apk
@@ -94,7 +111,8 @@ jobs:
           SHA-256: ${SHA}
 
           Nachgewiesen: Unit-Tests, Gradle-Build, APK-Archiv, Manifest, DEX und eingebettete Produktdateien.
-          Nicht nachgewiesen: autonomer Prompt-zu-Villa-Live-Lauf oder Installation auf einem Android-Geraet.
+          Nachgewiesen: Emulator-Installation und Start der Hauptaktivitaet.
+          Nicht nachgewiesen: autonomer Prompt-zu-Villa-Live-Lauf oder Test auf einem physischen Android-Geraet.
           Debug-signierte Test-APK; kein Play-Store-Produktionsrelease.
           EOF
           gh release create "$TAG" "$OUT" --title "Villa Tasks – verifizierte Referenz-APK (${GITHUB_RUN_ID})" --notes-file /tmp/reference-notes.md
