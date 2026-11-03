@@ -34,21 +34,21 @@ EVENTS = [
 
 
 def request_stripe(key, path, fields=None):
-    """Use curl for Stripe TLS/proxy compatibility without credentials in argv."""
-    config = 'header = "Authorization: Bearer ' + key + '"\\n'
+    """Use curl for TLS/proxy compatibility; authorization via stdin, not argv."""
+    config_lines = ['header = "Authorization: Bearer ' + key + '"']
     if fields is not None:
-        config += 'header = "Content-Type: application/x-www-form-urlencoded"\\n'
-        config += 'data = "' + urlencode(fields) + '"\\n'
+        config_lines.append('header = "Content-Type: application/x-www-form-urlencoded"')
+        config_lines.append('data = "' + urlencode(fields) + '"')
     result = subprocess.run(
         ["curl", "--silent", "--show-error", "--fail", "--max-time", "25",
          "--config", "-", "https://api.stripe.com/v1/" + path],
-        input=config, text=True, capture_output=True, timeout=30,
+        input=chr(10).join(config_lines) + chr(10),
+        text=True, capture_output=True, timeout=30,
     )
     if result.returncode != 0:
         raise RuntimeError("Stripe HTTPS request failed (curl exit " +
                            str(result.returncode) + ")")
     return json.loads(result.stdout)
-
 
 def entries_from(text):
     result = {}
