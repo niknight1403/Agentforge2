@@ -16,6 +16,13 @@ jobs:
     timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
+      - name: Audit available Stripe deployment secrets (names only)
+        env:
+          STRIPE_SETUP_KEY: ${{ secrets.STRIPE_SETUP_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+        run: |
+          if [ -n "$STRIPE_SETUP_KEY" ]; then echo "SETUP_KEY_AVAILABLE"; else echo "SETUP_KEY_MISSING"; fi
+          if [ -n "$STRIPE_WEBHOOK_SECRET" ]; then echo "WEBHOOK_SECRET_AVAILABLE"; else echo "WEBHOOK_SECRET_MISSING"; fi
       - name: Check deployed code and production service (read-only)
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
