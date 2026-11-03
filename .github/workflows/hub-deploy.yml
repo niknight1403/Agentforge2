@@ -139,7 +139,7 @@ jobs:
           # die server/project-execution.mjs akzeptiert.
           SANDBOX_DOCKERFILE=$(mktemp)
           printf 'FROM %s\nUSER root\nRUN apt-get update && apt-get install -y --no-install-recommends cargo && apt-get clean && rm -f /var/lib/apt/lists/*\nUSER node\n' "$SANDBOX_BASE" > "$SANDBOX_DOCKERFILE"
-          if ! docker build --pull=never -t vf-project-sandbox:local -f "$SANDBOX_DOCKERFILE" /tmp >/tmp/sandbox-build.log 2>&1; then
+          if ! docker build --pull=false -t vf-project-sandbox:local -f "$SANDBOX_DOCKERFILE" /tmp >/tmp/sandbox-build.log 2>&1; then
             echo "Sandbox-Image mit Cargo konnte nicht gebaut werden."
             tail -n 20 /tmp/sandbox-build.log
             rm -f "$SANDBOX_DOCKERFILE"
