@@ -334,12 +334,12 @@
       "risks": [
         "Diagnostik darf weder private Villa-Daten offenlegen noch Abnahme- oder Signatur-Gates aendern"
       ],
-      "status": "in_progress",
+      "status": "in_review",
       "scopeDefined": true,
       "evidence": [
         "docs/sprints/evidence/VF-0013.json"
       ],
-      "implementationCommit": null
+      "implementationCommit": "d37d72f2a39b434bc27d3b93c350c96d445911bd"
     },
     {
       "id": "VF-0014",

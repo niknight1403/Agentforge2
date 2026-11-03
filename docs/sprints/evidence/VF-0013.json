@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "sprint": "VF-0013",
-  "status": "in_progress",
+  "status": "in_review",
   "acceptanceComplete": false,
   "exitCode": null,
-  "testedCommit": null,
+  "testedCommit": "d37d72f2a39b434bc27d3b93c350c96d445911bd",
   "source": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810597",
   "scope": "Add deterministic allowlisted aggregate check-code/status counts to future read-only audit workflow logs. No Villa records or run artifacts were accessed.",
   "sourceRunTotals": {
@@ -22,7 +22,7 @@
   "verification": {
     "focusedDiagnostics": "Passed: 4/4 tests, including deterministic aggregation, privacy-safe CLI output, and missing/malformed report handling.",
     "repositoryCheck": "Incomplete locally: syntax check passed for 227 JavaScript files and secret scan passed; the existing Node test-runner launch failed on Windows with ERR_UNSUPPORTED_ESM_URL_SCHEME for its absolute --import path.",
-    "pullRequestCi": "Pending"
+    "pullRequestCi": "Pending on the latest draft PR head."
   },
   "localTestRuntime": "Temporary checksum-verified Node 24.22.2 was removed after focused validation.",
   "productionDataRead": false,
@@ -31,5 +31,5 @@
   "acceptanceGateChanged": false,
   "signingGateChanged": false,
   "productionReadiness": "Not established; production acceptance remains blocked and production signing still requires owner-provided configuration.",
-  "pullRequest": null
+  "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/121"
 }
