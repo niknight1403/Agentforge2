@@ -6,9 +6,13 @@ const mediaOutput=Object.freeze({
  'playable-audio': ['.mp3','.wav','.ogg','.m4a','.flac'],
  'image-file': ['.png','.jpg','.jpeg','.webp','.svg']
 });
-export function artifactContract({idea='',kind='',artifactName='',artifactType=''}={}){
+export function artifactContract({idea='',kind='',artifactName='',artifactType='',deliverable=''}={}){
  const profile=deepMissionProfile(idea);
- const required=profile.formats.filter(format=>format==='installable-apk'||Object.hasOwn(mediaOutput,format));
+ // Medienformate sind nur Lieferzwang, wenn das Produkt selbst Medien ist.
+ // Bei einem Software-Auftrag sind Woerter wie "Audio-Optimierung" oder
+ // "Video-Tutorial" beschreibend: ein fertig gebautes und geprueftes Projekt
+ // darf nicht daran scheitern (Villa 10: REQUIRED_ARTIFACT_MISSING playable-audio/video).
+ const required=deliverable==='software'?[]:profile.formats.filter(format=>format==='installable-apk'||Object.hasOwn(mediaOutput,format));
  // Source-backed Android projects must also yield APK rather than a ZIP fallback,
  // even where the idea has no explicit "Android" keyword.
  if(['android','android-cloud'].includes(kind)&&!required.includes('installable-apk'))required.push('installable-apk');

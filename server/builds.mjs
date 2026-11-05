@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {artifactContract} from './artifact-contract.mjs';
+import {classifyDeliverable} from './delivery-quality.mjs';
 import { recordBuildResult } from './telemetry.mjs';
 import { projectDirectory,verifyProjectRuntime } from './project-verification.mjs';
 /*
@@ -413,7 +414,7 @@ export async function startBuild(villaId, { auto = false } = {}) {
       if (mode) perfManifest(dir, record, L); // Phase 3: vermessen statt nur bauen
       const verification=await verifyProjectRuntime(Number(villaId));
       record.verification=verification;
-      record.outputContract=artifactContract({idea:villa.idea,kind,artifactName:record.artifact,artifactType:record.artifactType});
+      record.outputContract=artifactContract({idea:villa.idea,kind,artifactName:record.artifact,artifactType:record.artifactType,deliverable:classifyDeliverable(villa.idea)});
       const ready=verification.ok&&record.outputContract.ok;
       record.delivery=ready?'verified-product':'source-package';
       record.status=ready?'ready':'unverified';

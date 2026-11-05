@@ -29,3 +29,31 @@ test('image output requires a real image file',()=>{
  const r=artifactContract({idea:'Erstelle Bild',kind:'generic',artifactType:'zip',artifactName:'source.zip'});
  assert.equal(r.ok,false);
 });
+
+test('Software-Auftrag mit Medien-Woertern verlangt keine Mediendatei (Villa-10-Fall)',()=>{
+ // Idee nennt Audio und Video, das Produkt ist aber eine Controller-Software.
+ const r=artifactContract({
+  idea:'Ableton Push Controller Software: Audio-Optimierung, MIDI-Latenz, Video-Tutorials',
+  kind:'node',artifactType:'zip',artifactName:'villa-10.zip',deliverable:'software'
+ });
+ assert.equal(r.ok,true);
+ assert.deepEqual(r.blockers,[]);
+});
+test('Software-Auftrag auf Android liefert weiterhin eine APK statt ZIP',()=>{
+ const r=artifactContract({
+  idea:'Android Controller-App mit Audio-Optimierung',
+  kind:'android',artifactType:'zip',artifactName:'villa-10.zip',deliverable:'software'
+ });
+ assert.equal(r.ok,false);
+ assert.deepEqual(r.blockers,['REQUIRED_ARTIFACT_MISSING:installable-apk']);
+});
+test('Medien-Auftrag bleibt Lieferzwang auch ohne Lieferklasse',()=>{
+ const r=artifactContract({idea:'Erstelle Video mit Audio',kind:'generic',artifactType:'zip',artifactName:'render.zip'});
+ assert.equal(r.ok,false);
+ assert.ok(r.blockers.includes('REQUIRED_ARTIFACT_MISSING:playable-video'));
+});
+test('classifyDeliverable erkennt Software trotz Audio-/Video-Woertern',async()=>{
+ const {classifyDeliverable}=await import('../delivery-quality.mjs');
+ assert.equal(classifyDeliverable('Ableton Push Controller Software: Audio-Optimierung, Video-Tutorials'),'software');
+ assert.equal(classifyDeliverable('Erstelle ein Video ueber mein Produkt'),'video');
+});
