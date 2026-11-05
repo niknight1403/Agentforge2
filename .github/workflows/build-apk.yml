@@ -41,11 +41,74 @@ jobs:
         with:
           gradle-version: "8.7"
 
+      - name: Node 24 einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Produktionssignatur-Gate testen
+        run: node --test scripts/check-android-apk-signing.test.mjs
+
       - name: Lint und Unit-Tests
         run: gradle :app:lintDebug :app:testDebugUnitTest --no-daemon --stacktrace
 
+      - name: Produktionssignierer bereitstellen
+        env:
+          VF_ANDROID_SIGNING_CERT_SHA256: ${{ vars.VF_ANDROID_SIGNING_CERT_SHA256 }}
+          VF_ANDROID_KEYSTORE_BASE64: ${{ secrets.VF_ANDROID_KEYSTORE_BASE64 }}
+          VF_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.VF_ANDROID_KEYSTORE_PASSWORD }}
+          VF_ANDROID_KEY_ALIAS: ${{ secrets.VF_ANDROID_KEY_ALIAS }}
+          VF_ANDROID_KEY_PASSWORD: ${{ secrets.VF_ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for name in VF_ANDROID_SIGNING_CERT_SHA256 VF_ANDROID_KEYSTORE_BASE64 VF_ANDROID_KEYSTORE_PASSWORD VF_ANDROID_KEY_ALIAS VF_ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "Production APK signing is blocked: configure repository variable/secret $name."
+              missing=1
+            fi
+          done
+          test "$missing" -eq 0
+          if [[ ! "$VF_ANDROID_SIGNING_CERT_SHA256" =~ ^([[:xdigit:]]{2}:?){32}$ ]]; then
+            echo "Production APK signing is blocked: VF_ANDROID_SIGNING_CERT_SHA256 must be a SHA-256 fingerprint."
+            exit 1
+          fi
+
+          set +x
+          umask 077
+          KEYSTORE_FILE="$RUNNER_TEMP/villaforge-production-signing.keystore"
+          printf '%s' "$VF_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
+          test -s "$KEYSTORE_FILE" || {
+            echo "Production APK signing is blocked: the configured keystore is empty or invalid."
+            exit 1
+          }
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$SDK_ROOT" || {
+            echo "Production APK signing is blocked: Android SDK path is unavailable."
+            exit 1
+          }
+          APKSIGNER_PATH=$(find "$SDK_ROOT/build-tools" -type f -name apksigner -print -quit)
+          test -n "$APKSIGNER_PATH" || {
+            echo "Production APK signing is blocked: apksigner is unavailable."
+            exit 1
+          }
+          echo "VF_ANDROID_KEYSTORE_FILE=$KEYSTORE_FILE" >> "$GITHUB_ENV"
+          echo "APKSIGNER_PATH=$APKSIGNER_PATH" >> "$GITHUB_ENV"
+
       - name: Release-APK bauen (R8-minimiert)
+        env:
+          VF_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.VF_ANDROID_KEYSTORE_PASSWORD }}
+          VF_ANDROID_KEY_ALIAS: ${{ secrets.VF_ANDROID_KEY_ALIAS }}
+          VF_ANDROID_KEY_PASSWORD: ${{ secrets.VF_ANDROID_KEY_PASSWORD }}
         run: gradle :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Release-APK-Fingerabdruck gegen Produktions-Pin pruefen
+        env:
+          VF_ANDROID_SIGNING_CERT_SHA256: ${{ vars.VF_ANDROID_SIGNING_CERT_SHA256 }}
+        run: node scripts/check-android-apk-signing.mjs app/build/outputs/apk/release/app-release.apk
+
+      - name: Produktionskeystore aus Runner entfernen
+        if: always()
+        run: rm -f "$RUNNER_TEMP/villaforge-production-signing.keystore"
 
       - name: Release-Tag mit Android-Version abgleichen
         if: startsWith(github.ref, 'refs/tags/v')
@@ -64,11 +127,6 @@ jobs:
           name: villaforge-apk
           path: VillaForge.apk
           if-no-files-found: error
-
-      - name: Node 24 einrichten
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
 
       - name: Hub-Laufzeitabhaengigkeiten installieren
         run: npm ci --no-audit --no-fund

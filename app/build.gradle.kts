@@ -3,6 +3,17 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseStoreFile = providers.environmentVariable("VF_ANDROID_KEYSTORE_FILE").orNull
+val releaseStorePassword = providers.environmentVariable("VF_ANDROID_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("VF_ANDROID_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("VF_ANDROID_KEY_PASSWORD").orNull
+val hasProductionSigning = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "dev.villaforge.app"
     compileSdk = 34
@@ -15,17 +26,30 @@ android {
         versionName = "1.61.3"
     }
 
+    signingConfigs {
+        if (hasProductionSigning) {
+            create("production") {
+                storeFile = file(requireNotNull(releaseStoreFile))
+                storePassword = requireNotNull(releaseStorePassword)
+                keyAlias = requireNotNull(releaseKeyAlias)
+                keyPassword = requireNotNull(releaseKeyPassword)
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Optimierter Release-Build: R8 verkleinert+verschleiert, Ressourcen werden
-            // gestrippt. Debug-Signatur haelt die APK direkt installierbar.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasProductionSigning) {
+                signingConfigs.getByName("production")
+            } else {
+                null
+            }
         }
         debug {
             isMinifyEnabled = false

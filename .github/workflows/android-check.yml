@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'app/**'
+      - 'scripts/check-android-apk-signing*'
       - '*.gradle.kts'
       - 'gradle.properties'
       - '.github/workflows/android-check.yml'
@@ -25,10 +26,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Production-APK-Signaturgate testen
+        run: node --test scripts/check-android-apk-signing.test.mjs
       - name: Android lint, unit tests and debug build
         run: gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
-      - uses: actions/upload-artifact@v4
-        with:
-          name: villaforge-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
