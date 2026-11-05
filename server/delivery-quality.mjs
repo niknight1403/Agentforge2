@@ -48,7 +48,7 @@ const PROFILES = {
   ]}
 };
 const SOFTWARE_HINT = /\b(app|application|software|webseite|website|webapp|plattform|dashboard|api|saas|code|programm|tool|system|entwickel|implementier|generator)\b/i;
-function classify(idea='') {
+export function classifyDeliverable(idea='') {
   const s=String(idea);
   // Determine the requested deliverable, not a later feature/marketing subject.
   // An audio app needs software gates; a video about an app needs a video export.
@@ -76,7 +76,7 @@ function classify(idea='') {
 }
 export function deliveryProfile(villaId) {
   const villa=db.prepare('SELECT idea,name FROM villas WHERE id=?').get(Number(villaId));
-  const id=classify(villa?.idea || villa?.name || '');
+  const id=classifyDeliverable(villa?.idea || villa?.name || '');
   return { id, ...PROFILES[id] };
 }
 function outputs(villaId, profile) {
