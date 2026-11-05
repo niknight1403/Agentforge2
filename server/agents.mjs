@@ -24,6 +24,7 @@ import { withOtelSpan } from './otel.mjs';
 import { ROLES } from './agent-roles.mjs';
 import { medienAktion, medienInfo, medienAktionen } from './media-tools.mjs';
 import { normalizeSwarmBlueprint } from './swarm.mjs';
+import { villaLock } from './verification-lock.mjs';
 export { normalizeSwarmBlueprint } from './swarm.mjs';
 
 
@@ -683,6 +684,9 @@ function audit(villaId, agentId, tool, args, result, allowed = 1) {
     .run(now(), villaId, agentId, tool, String(JSON.stringify(args ?? null)).slice(0, 500), String(result).slice(0, 500), allowed);
 }
 
+/** Werkzeuge, die den Quellstand einer Villa veraendern. */
+const SOURCE_WRITE_TOOLS = new Set(['project_write', 'project_patch', 'code_write']);
+
 async function executeTool(ctx, name, args) {
   const tool = TOOLS[name];
   if (!tool) { observeMissingTool(ctx.villaId,name); audit(ctx.villaId, ctx.agentId, name, args, 'unbekanntes Werkzeug', 0); return `Unbekanntes Werkzeug: ${name}`; }
@@ -693,6 +697,19 @@ async function executeTool(ctx, name, args) {
     audit(ctx.villaId, ctx.agentId, name, args, `blockiert: ${gate.reason}`, 0);
     emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, blocked: true, reason: gate.reason });
     return `Werkzeug blockiert: ${gate.reason} Aktiviere das Pack in den Einstellungen.`;
+  }
+  // Waehrend einer Abnahme ist der Quellstand gesperrt: ein Schreibzugriff
+  // wuerde den Prueffingerprint mitten im Lauf aendern und den Nachweis
+  // entwerten. Der Agent bekommt eine klare Auskunft statt eines Fehlers.
+  if (SOURCE_WRITE_TOOLS.has(name)) {
+    const lock = villaLock(ctx.villaId);
+    if (lock) {
+      const seconds = Math.max(1, Math.round((Date.now() - lock.since) / 1000));
+      const reason = `Quellstand gesperrt: Abnahme laeuft (${lock.by}, seit ${seconds}s)`;
+      audit(ctx.villaId, ctx.agentId, name, args, `blockiert: ${reason}`, 0);
+      emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, blocked: true, reason: 'verification-lock' });
+      return `${reason}. Schreibe jetzt keine Projektdateien - warte kurz und versuche es erneut.`;
+    }
   }
   emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, args });
   try {

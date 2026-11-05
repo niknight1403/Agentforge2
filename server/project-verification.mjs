@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {calculateQualityGate,scoreStandaloneHtmlPerformance,scoreStandaloneHtmlSecurity} from './quality-gate.mjs';
 import {db,now} from './db.mjs';
 import {runCommand} from './fs-tools.mjs';
+import {lockVilla,unlockVilla} from './verification-lock.mjs';
 
 /**
  * Liefert eine kurze, geheimnisfreie Fehlerursache fuer einen fehlgeschlagenen
@@ -130,7 +131,12 @@ function saveVerification(id,project,checks,blockers){
 const verifying=new Map();
 export async function verifyProjectRuntime(id,{runner=runCommand}={}){
  if(verifying.has(id))return verifying.get(id);
+ // Abnahme sperrt den Quellstand: sonst schreibt die Autonomie mitten in die
+ // Pruefung und der Nachweis verfaellt (Villa 2: "Quellstand waehrend der
+ // Pruefung veraendert"). Schreibwerkzeuge pruefen dieselbe Sperre.
+ lockVilla(id,'verification');
  const job=(async()=>{
+  try{
   const project=inspectProject(id),checks={},blockers=[];
   if(project.error||!project.sourceFiles){blockers.push(project.error||'Keine ausführbare Implementierung');return saveVerification(id,project,checks,blockers);}
   const plan=verificationPlan(project.root);
@@ -159,6 +165,7 @@ export async function verifyProjectRuntime(id,{runner=runCommand}={}){
   const after=inspectProject(id);
   if(after.fingerprint!==project.fingerprint)blockers.push('Quellstand während der Prüfung verändert; erneut prüfen');
   return saveVerification(id,project,checks,blockers);
+  } finally { unlockVilla(id,'verification'); }
  })();
  verifying.set(id,job);try{return await job;}finally{verifying.delete(id);}
 }
