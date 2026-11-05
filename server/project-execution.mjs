@@ -18,5 +18,5 @@ export function projectExecution(root,binary,args,{mode=defaultMode(),image=proc
  const uid=process.getuid?.()>0?process.getuid():1000;
  const gid=process.getgid?.()>0?process.getgid():1000;
  const name='vf-project-'+randomUUID();
- return {cleanup:{binary:'docker',args:['rm','--force',name]},binary:'docker',args:['run','--name',name,'--rm','--pull=never','--network=none','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=128','--memory=1g','--cpus=1','--user='+uid+':'+gid,'--tmpfs=/tmp:rw,nosuid,nodev,size=256m','--mount','type=bind,source='+source+',target=/workspace','--workdir=/workspace','--env=CI=1','--env=HOME=/tmp',image,binary,...args]};
+ return {cleanup:{binary:'docker',args:['rm','--force',name]},binary:'docker',args:['run','--name',name,'--rm','--pull=never','--network=none','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges','--pids-limit=128','--memory=1g','--cpus=1','--user='+uid+':'+gid,'--tmpfs=/tmp:rw,nosuid,nodev,size=256m','--mount','type=bind,source='+source+',target=/workspace','--workdir=/workspace','--env=CI=1','--env=HOME=/tmp','--env=LANG=C.UTF-8','--env=PYTHONUNBUFFERED=1',image,binary,...args]};
 }
