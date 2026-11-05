@@ -97,6 +97,36 @@ function isNoOpScript(script){
  const inline=script.match(/^\s*(node(?:js)?|python3?)\s+(?:-e|--eval|-c)\s+(['"])([\s\S]*)\2\s*$/);
  return !!inline&&isNoOp(inline[1],['-e',inline[3]]);
 }
+/** Läufer, den ein npm-Skript tatsächlich aufruft (z. B. "jest --ci" -> "jest"). */
+export function npmScriptRunner(command) {
+ const text=String(command||'').trim();
+ if(!text)return null;
+ const tokens=text.split(/\s+/).filter(Boolean);
+ for(const token of tokens){
+  if(/^[A-Za-z_][A-Za-z0-9_]*=/.test(token))continue;
+  if(['cross-env','dotenv','env'].includes(token))continue;
+  return token.replace(/^["']|["']$/g,'');
+ }
+ return null;
+}
+
+/** Läufer, die ohne Projekt-Abhängigkeiten zur Verfügung stehen. */
+const BUILTIN_RUNNERS=new Set(['node','nodejs','npm','npx','python','python3','gradle','sh','bash','make']);
+
+/**
+ * Fehlt der Läufer im Projekt? Fremde Pakete dürfen im Gate bewusst nicht
+ * nachgeladen werden (fs-tools.blockt npm install). Ein Skript, das "jest"
+ * aufruft, während node_modules/.bin/jest fehlt, kann deshalb nie grün werden —
+ * ohne diese Vorprüfung endet jeder Anlauf in "Exit 127: jest: not found" und
+ * die Villa dreht dieselbe Runde erneut.
+ */
+export function missingScriptRunner(root,command){
+ const runner=npmScriptRunner(command);
+ if(!runner||BUILTIN_RUNNERS.has(runner))return null;
+ if(existsSync(join(root,'node_modules','.bin',runner)))return null;
+ return runner;
+}
+
 export function verificationPlan(root){
  let custom;
  try{custom=JSON.parse(readFileSync(join(root,'villaforge.verify.json'),'utf8'));}catch{}
@@ -111,7 +141,7 @@ export function verificationPlan(root){
  return Object.fromEntries(['build','tests','smoke'].map(kind=>{
   const script=kind==='tests'?'test':kind;
   const befehl=pkg?.scripts?.[script];
-  const ausPkg=typeof befehl==='string'?(isNoOpScript(befehl)?{invalid:`package.json: "${script}" ist ein Platzhalter ("${befehl.slice(0,90)}") und zaehlt nicht als Nachweis`}:{binary:'npm',args:['run',script]}):null;
+  const ausPkg=typeof befehl==='string'?(isNoOpScript(befehl)?{invalid:`package.json: "${script}" ist ein Platzhalter ("${befehl.slice(0,90)}") und zaehlt nicht als Nachweis`}:{binary:'npm',args:['run',script],script:befehl}):null;
   const explicit=custom?.[kind];
   const ausExplicit=explicit&&typeof explicit.binary==='string'&&Array.isArray(explicit.args)&&explicit.args.length<=20&&explicit.args.every(a=>typeof a==='string'&&a.length<=1000)
    ?(isNoOp(explicit.binary,explicit.args)?{invalid:`villaforge.verify.json: "${[explicit.binary,...explicit.args].join(' ').slice(0,90)}" ist ein Platzhalter und zaehlt nicht als Nachweis`}:explicit)
@@ -143,6 +173,15 @@ export async function verifyProjectRuntime(id,{runner=runCommand}={}){
   for(const kind of ['build','tests','smoke']){
    if(plan[kind]?.invalid){checks[kind]={status:'missing',reason:plan[kind].invalid};blockers.push(`${kind}: ${plan[kind].invalid}`);continue;}
    if(!plan[kind]){checks[kind]={status:'missing',reason:'Prüfbefehl fehlt (package.json oder villaforge.verify.json)'};blockers.push(`${kind}: Prüfbefehl fehlt (package.json oder villaforge.verify.json)`);continue;}
+   if(plan[kind].script){
+    const fehlt=missingScriptRunner(project.root,plan[kind].script);
+    if(fehlt){
+     const hinweis=`${kind}: Prüfbefehl nutzt "${fehlt}", das im Projekt nicht vorhanden ist (node_modules/.bin/${fehlt} fehlt). Fremde Pakete dürfen nicht nachgeladen werden. Liefere eine Variante ohne diese Abhängigkeit, z. B. "node tests/run.mjs" mit node:test, und trage sie in package.json ein.`;
+     checks[kind]={status:'environment',reason:hinweis,command:['npm',...plan[kind].args],runner:fehlt};
+     blockers.push(hinweis);
+     continue;
+    }
+   }
    const {binary,args}=plan[kind];let result;
    try{result=await runner(project.root,binary,args,180000);}catch{result={ok:false,error:'Prüfprozess nicht ausführbar'};}
    checks[kind]={status:result.ok?'passed':'failed',command:[binary,...args],...(result.artifacts?{artifacts:result.artifacts}:{}),output:String(result.output||result.error||'').slice(-2000)};
