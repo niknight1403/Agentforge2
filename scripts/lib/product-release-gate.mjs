@@ -1,4 +1,5 @@
 /** Real product acceptance is independent of model and hub availability. */
+import {isPlayableArtifact} from '../../server/media-artifact.mjs';
 export function inspectProductZip(bytes){
  const b=Buffer.from(bytes);if(b.length<22||b.readUInt32LE(0)!==0x04034b50)throw Error('PRODUCT_ARCHIVE_INVALID');
  let end=-1;for(let i=b.length-22;i>=Math.max(0,b.length-65557);i--)if(b.readUInt32LE(i)===0x06054b50&&i+22+b.readUInt16LE(i+20)===b.length){end=i;break;}
@@ -30,7 +31,16 @@ export async function verifyProductAcceptance({requestJson,download,preferredVil
   const id=Number(villa.id),product=await requestJson(`/api/villas/${id}/product`);
   if(product.verified!==true||!Array.isArray(product.blockers)||product.blockers.length)continue;
   const build=await requestJson(`/api/villas/${id}/build`);if(build.status!=='ready')continue;
-  const archive=inspectProductZip(await download(`/api/villas/${id}/build/download`));
+  const bytes=await download(`/api/villas/${id}/build/download`);
+  // Medien-Produkte liefern die Datei selbst, keine Quell-ZIP. Geprueft wird
+  // dann der echte Container (ftyp/RIFF/OggS ...), nicht die Endung.
+  const artifact=String(build.artifact||'');
+  const extension=artifact.includes('.')?artifact.slice(artifact.lastIndexOf('.')).toLowerCase():'';
+  if(build.artifactType==='media'||(extension&&['.mp4','.webm','.mov','.m4v','.mp3','.wav','.ogg','.m4a','.flac','.png','.jpg','.jpeg','.webp','.svg'].includes(extension))){
+   if(!isPlayableArtifact(bytes,extension))continue;
+   return {villaId:id,verified:true,media:{extension,bytes:Buffer.from(bytes).length}};
+  }
+  const archive=inspectProductZip(bytes);
   return {villaId:id,verified:true,archive};
  }
  throw Error('PRODUCT_ACCEPTANCE_MISSING: no verified Villa app with a ready downloadable build.');

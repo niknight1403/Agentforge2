@@ -74,6 +74,12 @@ export function classifyDeliverable(idea='') {
   if (/\b(bild|bilder|bilderstellung|bildgenerierung|kampagnenbild|grafik|illustration|logo|poster|cover|thumbnail|visual|kunstwerk|artwork)\b/i.test(s) && !SOFTWARE_HINT.test(s)) return 'image';
   return 'software';
 }
+/** Erwartete Datei-Endungen je Lieferklasse (leer bei Software). */
+export function deliverableExtensions(id) {
+  const profile = PROFILES[id];
+  return Array.isArray(profile?.extensions) ? [...profile.extensions] : [];
+}
+
 export function deliveryProfile(villaId) {
   const villa=db.prepare('SELECT idea,name FROM villas WHERE id=?').get(Number(villaId));
   const id=classifyDeliverable(villa?.idea || villa?.name || '');

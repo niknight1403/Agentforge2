@@ -169,6 +169,22 @@ jobs:
             } catch (e) { console.log('Quellpfade: ' + e.message); }
             process.exit(0);
           }
+          if (mode === 'render_setup') {
+            // Schreibt ein Video-Manifest in die Villa, damit der Build eine
+            // echte MP4 rendern kann (lokaler ffmpeg-Renderer im Hub-Code).
+            const idsR = (idsArg || '').split(',').map((x) => Number(x.trim())).filter(Boolean);
+            if (!idea.trim()) { console.log('RENDER_SETUP_OHNE_MANIFEST'); process.exit(1); }
+            let manifest;
+            try { manifest = JSON.parse(idea); } catch (e) { console.log('RENDER_SETUP_JSON_UNGUELTIG: ' + e.message); process.exit(1); }
+            if (!Array.isArray(manifest.scenes) || !manifest.scenes.length) { console.log('RENDER_SETUP_OHNE_SZENEN'); process.exit(1); }
+            for (const id of idsR) {
+              const dir = '/opt/villaforge/workspace/villa-' + id;
+              if (!existsSync(dir)) { console.log(`RENDER [${id}] kein Projektordner: ${dir}`); continue; }
+              writeFileSync(dir + '/villaforge.render.json', JSON.stringify(manifest, null, 2));
+              console.log(`RENDER [${id}] Manifest geschrieben: ${manifest.scenes.length} Szenen -> ${dir}/villaforge.render.json`);
+            }
+            process.exit(0);
+          }
           if (mode === 'status') {
             console.log('== STATUS ALLER VILLEN ==');
             list([]);
