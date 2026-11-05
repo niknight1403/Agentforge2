@@ -333,15 +333,22 @@ export function scaffoldAppShell(villa, dir, L = () => {}) {
   return true;
 }
 
+/** Ein Lauf, der seit mehr als 20 Minuten "running" ist, gilt als abgebrochen. */
+export const BUILD_STALE_MS = 20 * 60 * 1000;
+export function isStaleBuild(record, at = Date.now()) {
+  if (!record || record.status !== 'running') return false;
+  const started = typeof record.startedAt === 'number' ? record.startedAt : Number(record.startedAt) || Date.parse(record.startedAt || '') || 0;
+  if (!started) return true;
+  return at - started > BUILD_STALE_MS;
+}
+
 export async function startBuild(villaId, { auto = false } = {}) {
   const villa = db.prepare('SELECT id, name, idea FROM villas WHERE id = ?').get(Number(villaId));
   if (!villa) throw new Error('Villa nicht gefunden');
   const old = state[String(villaId)];
   // Ein haengender Lauf darf die Villa nicht dauerhaft sperren: nach 20 Minuten
   // gilt der alte Stand als abgebrochen und ein neuer Lauf uebernimmt.
-  const staleMs = 20 * 60 * 1000;
-  const stale = !!old && old.status === 'running' && Date.now() - Date.parse(old.startedAt || 0) > staleMs;
-  if (old && old.status === 'running' && !stale) throw new Error('BUILD_LAEUFT');
+  if (old && old.status === 'running' && !isStaleBuild(old)) throw new Error('BUILD_LAEUFT');
   const dir = villaDir(villaId);
   const kind = detectProject(dir);
   const record = { status: 'running', kind, auto: !!auto, startedAt: now(), log: [`Villa "${villa.name}" - Bauprojekt erkannt: ${kind}`] };

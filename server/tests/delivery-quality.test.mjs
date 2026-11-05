@@ -104,3 +104,12 @@ test('haengender Build sperrt die Villa nicht dauerhaft', async () => {
   buildStateForTest(villa.id, {status: 'running', startedAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(), log: []});
   assert.equal(typeof startBuild, 'function');
 });
+
+test('haengender Lauf gilt nach 20 Minuten als abgebrochen', async () => {
+  const {isStaleBuild} = await import('../builds.mjs');
+  const jetzt = Date.now();
+  assert.equal(isStaleBuild({status: 'running', startedAt: jetzt - 60_000}, jetzt), false);
+  assert.equal(isStaleBuild({status: 'running', startedAt: jetzt - 25 * 60_000}, jetzt), true);
+  assert.equal(isStaleBuild({status: 'ready', startedAt: jetzt - 60 * 60_000}, jetzt), false);
+  assert.equal(isStaleBuild({status: 'running', startedAt: new Date(jetzt - 25 * 60_000).toISOString()}, jetzt), true);
+});
