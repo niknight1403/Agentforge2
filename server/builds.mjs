@@ -415,19 +415,23 @@ export async function startBuild(villaId, { auto = false } = {}) {
       // Medien-Produkt: die echte Datei ist das Artefakt, nicht das Quellpaket.
       // Fehlt sie, wird das ehrlich als Blocker gemeldet - und fuer Video aus
       // einem deklarierten Manifest (villaforge.render.json) lokal gerendert.
-      const deliverable = classifyDeliverable(villa.idea);
-      const mediaExtensions = deliverable === 'software' ? [] : deliverableExtensions(deliverable).filter((e) => e !== '.zip');
-      if (mediaExtensions.length) {
-        const manifest = renderManifestPath(dir);
-        if (manifest && mediaExtensions.includes('.mp4')) {
-          L('Video-Manifest gefunden - rendere lokale MP4.');
-          try {
-            const rendered = await renderVillaVideo(dir, JSON.parse(readFileSync(manifest, 'utf8')), {log: (line) => L(line)});
-            L(`Video gerendert: ${rendered.seconds}s, ${rendered.bytes} B, ${rendered.codec}`);
-          } catch (error) {
-            L(`Video-Rendering fehlgeschlagen: ${error.message}`);
-          }
+      let deliverable = classifyDeliverable(villa.idea);
+      let mediaExtensions = deliverable === 'software' ? [] : deliverableExtensions(deliverable).filter((e) => e !== '.zip');
+      // Ein deklariertes Video-Manifest ist die verbindliche Produktaussage der
+      // Villa: es schlaegt eine Textklassifikation, die z. B. nur "Audio" erkennt.
+      const manifest = renderManifestPath(dir);
+      if (manifest) {
+        L('Video-Manifest gefunden - rendere lokale MP4.');
+        try {
+          const rendered = await renderVillaVideo(dir, JSON.parse(readFileSync(manifest, 'utf8')), {log: (line) => L(line)});
+          L(`Video gerendert: ${rendered.seconds}s, ${rendered.bytes} B, ${rendered.codec}`);
+          deliverable = 'video';
+          mediaExtensions = ['.mp4', '.webm'];
+        } catch (error) {
+          L(`Video-Rendering fehlgeschlagen: ${error.message}`);
         }
+      }
+      if (mediaExtensions.length) {
         const media = findMediaArtifact(dir, mediaExtensions);
         if (!media) {
           throw new Error(`MEDIA_DELIVERABLE_MISSING: kein ${deliverable}-Artefakt (${mediaExtensions.join(', ')}) im Projekt gefunden.`);
@@ -443,7 +447,7 @@ export async function startBuild(villaId, { auto = false } = {}) {
       if (mode) perfManifest(dir, record, L); // Phase 3: vermessen statt nur bauen
       const verification=await verifyProjectRuntime(Number(villaId));
       record.verification=verification;
-      record.outputContract=artifactContract({idea:villa.idea,kind,artifactName:record.artifact,artifactType:record.artifactType,deliverable:classifyDeliverable(villa.idea)});
+      record.outputContract=artifactContract({idea:villa.idea,kind,artifactName:record.artifact,artifactType:record.artifactType,deliverable:record.media?.deliverable||classifyDeliverable(villa.idea)});
       const ready=verification.ok&&record.outputContract.ok;
       record.delivery=ready?'verified-product':'source-package';
       record.status=ready?'ready':'unverified';
