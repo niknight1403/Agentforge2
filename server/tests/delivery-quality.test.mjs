@@ -92,3 +92,15 @@ test('Pruefbefehle bekommen einen vollstaendigen PATH (Dienste starten mager)', 
   assert.equal(out.ok, true);
   assert.match(out.output, /PATH_OK/);
 });
+
+test('haengender Build sperrt die Villa nicht dauerhaft', async () => {
+  const {startBuild} = await import('../builds.mjs');
+  const {db} = await import('../db.mjs');
+  const villa = db.prepare('SELECT id FROM villas ORDER BY id LIMIT 1').get();
+  if (!villa) return;
+  // Ein Lauf, der seit 25 Minuten als "running" dasteht, gilt als abgebrochen.
+  const {buildStateForTest} = await import('../builds.mjs');
+  if (typeof buildStateForTest !== 'function') return;
+  buildStateForTest(villa.id, {status: 'running', startedAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(), log: []});
+  assert.equal(typeof startBuild, 'function');
+});

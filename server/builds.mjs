@@ -337,7 +337,11 @@ export async function startBuild(villaId, { auto = false } = {}) {
   const villa = db.prepare('SELECT id, name, idea FROM villas WHERE id = ?').get(Number(villaId));
   if (!villa) throw new Error('Villa nicht gefunden');
   const old = state[String(villaId)];
-  if (old && old.status === 'running') throw new Error('BUILD_LAEUFT');
+  // Ein haengender Lauf darf die Villa nicht dauerhaft sperren: nach 20 Minuten
+  // gilt der alte Stand als abgebrochen und ein neuer Lauf uebernimmt.
+  const staleMs = 20 * 60 * 1000;
+  const stale = !!old && old.status === 'running' && Date.now() - Date.parse(old.startedAt || 0) > staleMs;
+  if (old && old.status === 'running' && !stale) throw new Error('BUILD_LAEUFT');
   const dir = villaDir(villaId);
   const kind = detectProject(dir);
   const record = { status: 'running', kind, auto: !!auto, startedAt: now(), log: [`Villa "${villa.name}" - Bauprojekt erkannt: ${kind}`] };

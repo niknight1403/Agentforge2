@@ -65,7 +65,8 @@ jobs:
           for(let i=0;i<60;i++){
             await sleep(15000);
             state=await call(`/api/villas/${villa}/build`);
-            console.log(`[${i+1}] status=${state.status} ${state.error?('error='+String(state.error).slice(0,120)):''}`);
+            const logTail=Array.isArray(state.log)?state.log.slice(-3).join(' | '):'';
+          console.log(`[${i+1}] status=${state.status} ${state.error?('error='+String(state.error).slice(0,160)):''}${logTail?' log: '+logTail.slice(0,400):''}`);
             if(state.status==='ready'||state.status==='unverified'||state.status==='failed')break;
           }
           console.log('Build-Log (letzte Zeilen):');
