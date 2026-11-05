@@ -1,6 +1,8 @@
 import {createHash} from 'node:crypto';
 import {artifactContract} from './artifact-contract.mjs';
-import {classifyDeliverable} from './delivery-quality.mjs';
+import {classifyDeliverable, deliverableExtensions} from './delivery-quality.mjs';
+import {findMediaArtifact} from './media-artifact.mjs';
+import {renderVillaVideo, renderManifestPath} from './video-render.mjs';
 import { recordBuildResult } from './telemetry.mjs';
 import { projectDirectory,verifyProjectRuntime } from './project-verification.mjs';
 /*
@@ -409,6 +411,33 @@ export async function startBuild(villaId, { auto = false } = {}) {
         record.artifact = artifactType === 'tar.gz' ? `villa-${villaId}.tar.gz` : `villa-${villaId}.zip`;
         if (kind === 'expo') L('Hinweis: Expo-Projekt - echte APK via "npx eas build -p android" aus dem Paket (EAS-Konto noetig).');
         L('Produkt-Paket bereit.');
+      }
+      // Medien-Produkt: die echte Datei ist das Artefakt, nicht das Quellpaket.
+      // Fehlt sie, wird das ehrlich als Blocker gemeldet - und fuer Video aus
+      // einem deklarierten Manifest (villaforge.render.json) lokal gerendert.
+      const deliverable = classifyDeliverable(villa.idea);
+      const mediaExtensions = deliverable === 'software' ? [] : deliverableExtensions(deliverable).filter((e) => e !== '.zip');
+      if (mediaExtensions.length) {
+        const manifest = renderManifestPath(dir);
+        if (manifest && mediaExtensions.includes('.mp4')) {
+          L('Video-Manifest gefunden - rendere lokale MP4.');
+          try {
+            const rendered = await renderVillaVideo(dir, JSON.parse(readFileSync(manifest, 'utf8')), {log: (line) => L(line)});
+            L(`Video gerendert: ${rendered.seconds}s, ${rendered.bytes} B, ${rendered.codec}`);
+          } catch (error) {
+            L(`Video-Rendering fehlgeschlagen: ${error.message}`);
+          }
+        }
+        const media = findMediaArtifact(dir, mediaExtensions);
+        if (!media) {
+          throw new Error(`MEDIA_DELIVERABLE_MISSING: kein ${deliverable}-Artefakt (${mediaExtensions.join(', ')}) im Projekt gefunden.`);
+        }
+        const output = join(OUT, `villa-${villaId}${media.extension}`);
+        copyFileSync(media.path, output);
+        record.artifactType = 'media';
+        record.artifact = `villa-${villaId}${media.extension}`;
+        record.media = {extension: media.extension, bytes: media.bytes, deliverable};
+        L(`Medien-Artefakt bereit: ${media.extension} (${media.bytes} B).`);
       }
       if (!mode) throw new Error('Villa-Workspace ist leer - erst Entwicklungsaufgaben ausfuehren lassen.');
       if (mode) perfManifest(dir, record, L); // Phase 3: vermessen statt nur bauen
