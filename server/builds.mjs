@@ -452,7 +452,7 @@ export async function startBuild(villaId, { auto = false } = {}) {
       const silent=!verification.ok&&['build','tests','smoke'].every((k)=>{const c=verification.checks?.[k];return c&&c.status!=='passed'&&!String(c.output||'').trim();});
       if(silent){L('Abnahme ohne Ausgabe fehlgeschlagen - Wiederholungslauf.');verification=await verifyProjectRuntime(Number(villaId));}
       record.verification=verification;
-      if(!verification.ok)for(const kind of ['build','tests','smoke']){const c=verification.checks?.[kind];if(c&&c.status!=='passed')L(`Pruefung ${kind}: ${c.status} ${String(c.output||c.reason||'').replace(/\s+/g,' ').slice(-400)}`);}
+      if(!verification.ok)for(const kind of ['build','tests','smoke']){const c=verification.checks?.[kind];if(c&&c.status!=='passed')L(`Pruefung ${kind}: ${c.status} ${String(c.output||c.reason||'').replace(/\s+/g,' ').slice(-900)}`);}
       record.outputContract=artifactContract({idea:villa.idea,kind,artifactName:record.artifact,artifactType:record.artifactType,deliverable:record.media?.deliverable||classifyDeliverable(villa.idea)});
       const ready=verification.ok&&record.outputContract.ok;
       record.delivery=ready?'verified-product':'source-package';

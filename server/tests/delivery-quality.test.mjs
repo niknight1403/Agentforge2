@@ -80,3 +80,15 @@ test('Video-Produkt verlangt eine Videodatei, keine Tonspur (Villa 8)', async ()
   assert.equal(audioOnly.ok, false);
   assert.ok(audioOnly.blockers.includes('REQUIRED_ARTIFACT_MISSING:playable-audio'));
 });
+
+test('Pruefbefehle bekommen einen vollstaendigen PATH (Dienste starten mager)', async () => {
+  const {runCommand} = await import('../fs-tools.mjs');
+  const {mkdtempSync, writeFileSync} = await import('node:fs');
+  const {tmpdir} = await import('node:os');
+  const {join} = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'vf-path-'));
+  writeFileSync(join(dir, 'probe.js'), 'console.log(process.env.PATH.includes("/usr/bin") ? "PATH_OK" : "PATH_MAGER")');
+  const out = await runCommand(dir, 'node', ['probe.js'], 30_000);
+  assert.equal(out.ok, true);
+  assert.match(out.output, /PATH_OK/);
+});

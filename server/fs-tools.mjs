@@ -225,7 +225,13 @@ export function runCommand(root, binary, args = [], timeoutMs = 120_000) {
         cwd:stage?.work||cwd,
         timeout: timeoutMs,
         maxBuffer: 2_000_000,
-        env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV, CI: '1' }
+        // Dienste starten mit magerem PATH (pm2/systemd): dann findet die
+        // Pruefung python3 und Co. nicht, obwohl sie installiert sind. Die
+        // Standardverzeichnisse stehen deshalb immer vorn.
+        env: {
+          PATH: [process.env.PATH, '/usr/local/sbin', '/usr/local/bin', '/usr/sbin', '/usr/bin', '/sbin', '/bin'].filter(Boolean).join(':'),
+          HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV, LANG: process.env.LANG || 'C.UTF-8', CI: '1'
+        }
       }, (err, stdout, stderr) => {
 
         let artifacts=null;
