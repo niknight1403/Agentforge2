@@ -177,8 +177,10 @@ jobs:
             let manifest;
             try { manifest = JSON.parse(idea); } catch (e) { console.log('RENDER_SETUP_JSON_UNGUELTIG: ' + e.message); process.exit(1); }
             if (!Array.isArray(manifest.scenes) || !manifest.scenes.length) { console.log('RENDER_SETUP_OHNE_SZENEN'); process.exit(1); }
+            process.chdir('/opt/villaforge');
+            const { projectDirectory } = await import('/opt/villaforge/server/project-verification.mjs');
             for (const id of idsR) {
-              const dir = '/opt/villaforge/workspace/villa-' + id;
+              const dir = projectDirectory(id);
               if (!existsSync(dir)) { console.log(`RENDER [${id}] kein Projektordner: ${dir}`); continue; }
               writeFileSync(dir + '/villaforge.render.json', JSON.stringify(manifest, null, 2));
               console.log(`RENDER [${id}] Manifest geschrieben: ${manifest.scenes.length} Szenen -> ${dir}/villaforge.render.json`);
