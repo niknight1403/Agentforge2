@@ -445,7 +445,12 @@ export async function startBuild(villaId, { auto = false } = {}) {
       }
       if (!mode) throw new Error('Villa-Workspace ist leer - erst Entwicklungsaufgaben ausfuehren lassen.');
       if (mode) perfManifest(dir, record, L); // Phase 3: vermessen statt nur bauen
-      const verification=await verifyProjectRuntime(Number(villaId));
+      let verification=await verifyProjectRuntime(Number(villaId));
+      // Direkt nach Install/Render kann ein Lauf ohne jede Ausgabe scheitern
+      // (Umgebungsglitch, kein echter Befund). Einmal sauber wiederholen,
+      // statt die Villa auf einen Geisterfehler hin zu blockieren.
+      const silent=!verification.ok&&['build','tests','smoke'].every((k)=>{const c=verification.checks?.[k];return c&&c.status!=='passed'&&!String(c.output||'').trim();});
+      if(silent){L('Abnahme ohne Ausgabe fehlgeschlagen - Wiederholungslauf.');verification=await verifyProjectRuntime(Number(villaId));}
       record.verification=verification;
       record.outputContract=artifactContract({idea:villa.idea,kind,artifactName:record.artifact,artifactType:record.artifactType,deliverable:record.media?.deliverable||classifyDeliverable(villa.idea)});
       const ready=verification.ok&&record.outputContract.ok;

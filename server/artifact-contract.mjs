@@ -12,7 +12,11 @@ export function artifactContract({idea='',kind='',artifactName='',artifactType='
  // Bei einem Software-Auftrag sind Woerter wie "Audio-Optimierung" oder
  // "Video-Tutorial" beschreibend: ein fertig gebautes und geprueftes Projekt
  // darf nicht daran scheitern (Villa 10: REQUIRED_ARTIFACT_MISSING playable-audio/video).
- const required=deliverable==='software'?[]:profile.formats.filter(format=>format==='installable-apk'||Object.hasOwn(mediaOutput,format));
+ // Ist eine Medienklasse bestimmt, zaehlt genau deren Format: ein Video-Produkt
+ // braucht ein Video, nicht zusaetzlich die Tonspur, die die Idee nur erwaehnt.
+ const deliverableFormat={'video':'playable-video','audio':'playable-audio','image':'image-file'}[deliverable];
+ let required=deliverable==='software'?[]:profile.formats.filter(format=>format==='installable-apk'||Object.hasOwn(mediaOutput,format));
+ if(deliverableFormat)required=required.includes(deliverableFormat)?[deliverableFormat]:[];
  // Source-backed Android projects must also yield APK rather than a ZIP fallback,
  // even where the idea has no explicit "Android" keyword.
  if(['android','android-cloud'].includes(kind)&&!required.includes('installable-apk'))required.push('installable-apk');

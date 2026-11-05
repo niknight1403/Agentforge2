@@ -69,3 +69,14 @@ test('Programme, Tools und Mediengeneratoren benoetigen Software-Abnahme',()=>{
  for(const idea of ['Build a logo generator','Erstelle ein Programm, das ein Logo erzeugt','Create a tool that renders a video','Baue einen Bildgenerator','Build an audio editor','Erstelle einen Generator fuer Bilder'])assert.equal(deliveryProfile(villa(idea)).id,'software',idea);
  assert.equal(deliveryProfile(villa('Erstelle ein Video ueber unser Programm')).id,'video');
 });
+
+test('Video-Produkt verlangt eine Videodatei, keine Tonspur (Villa 8)', async () => {
+  const {artifactContract} = await import('../artifact-contract.mjs');
+  const idea = 'Comedy Mashup Abend mit Musik, Audio und Video: zwei Shows werden zu einem Abend gemischt.';
+  const video = artifactContract({idea, kind: 'node', artifactName: 'villa-8.mp4', artifactType: 'media', deliverable: 'video'});
+  assert.equal(video.ok, true, 'MP4 muss als Video-Produkt bestehen');
+  assert.deepEqual(video.expected, ['playable-video']);
+  const audioOnly = artifactContract({idea, kind: 'node', artifactName: 'villa-8.mp4', artifactType: 'media', deliverable: 'audio'});
+  assert.equal(audioOnly.ok, false);
+  assert.ok(audioOnly.blockers.includes('REQUIRED_ARTIFACT_MISSING:playable-audio'));
+});
