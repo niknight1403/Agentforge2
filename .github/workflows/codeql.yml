@@ -54,7 +54,7 @@ jobs:
         if: matrix.language == 'java-kotlin'
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '9.8.2'
 
       - name: CodeQL initialisieren
         uses: github/codeql-action/init@v4
