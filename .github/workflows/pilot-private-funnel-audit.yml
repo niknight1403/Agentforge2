@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate no-write report
         run: python3 -m py_compile ops/pilot-private-funnel-audit.py
       - name: Run aggregate-only live audit

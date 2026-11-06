@@ -20,7 +20,7 @@ jobs:
   validation:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate recovery script syntax
         run: |
           python3 -m py_compile ops/pilot-restore-stripe-prices.py
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure SSH access
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
