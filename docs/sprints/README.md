@@ -8,6 +8,14 @@ Ein Abschluss wird nur mit echtem Implementierungs-Commit und bestandener Eviden
 
 `node scripts/sprint-ledger.mjs complete VF-NNNN COMMIT_SHA docs/sprints/evidence/VF-NNNN.json`
 
+`state.current` identifies an in-progress or in-review sprint. `state.next` skips blocked and active sprints and points to the earliest unblocked scope whose dependencies are complete; `state.blockedSprints` keeps blocked IDs visible.
+
+## Aktueller Stand 03.11.2026
+
+VF-0009 bleibt wegen fehlender autorisierter Villa-Abnahme blockiert; der unauthentifizierte Inventarzugriff antwortete mit HTTP 401. VF-0010 bleibt abhaengig davon und von einer verifizierten Produktionssignierung blockiert. Es wurden keine privaten Villa-Daten gelesen und kein Release publiziert.
+
+VF-0011 verbessert ausschliesslich die geheimnisfreie Diagnose des read-only Audits und ist auf PR #119 in Review. Die Diagnostik ersetzt keine Produktabnahme. VF-0012 ist der naechste Slot; sein Umfang wird erst aus frischer Evidenz auf `main` abgeleitet.
+
 Rote Produktionsnachweise bleiben Blocker. Kein angeblich laufender Hintergrundprozess wird durch diesen Plan gestartet. Keine konkurrierenden Deployments. Ein UI-Screenshot belegt kein fertiges Produkt.
 
 ## Produktions-Checkpoint 29.10.2026

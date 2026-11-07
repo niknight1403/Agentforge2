@@ -14,3 +14,16 @@ test('Sprint ledger recovers progress from its authoritative backlog after an in
   const broken=JSON.parse(readFileSync(join(root,'docs/sprints/backlog.json')));broken.sprints[499].id='VF-9999';save('backlog',broken);assert.throws(()=>readLedger(root),/ordered/);
  }finally{rmSync(root,{recursive:true,force:true});}
 });
+test('Sprint ledger keeps blocked items visible without hiding an active review or next ready scope',()=>{
+ const root=mkdtempSync(join(tmpdir(),'vf-ledger-blocked-'));mkdirSync(join(root,'docs/sprints'),{recursive:true});
+ const sprints=Array.from({length:500},(_,i)=>({id:'VF-'+String(i+1).padStart(4,'0'),scopeDefined:false,goal:null,acceptanceCriteria:[],status:'unscoped',dependencies:[],evidence:[],implementationCommit:null}));
+ sprints[0].status='blocked';sprints[1].status='blocked';sprints[2].status='in_review';sprints[3].status='pending';
+ try{
+  writeFileSync(join(root,'docs/sprints/backlog.json'),JSON.stringify({schemaVersion:1,sprints}));
+  writeFileSync(join(root,'docs/sprints/state.json'),JSON.stringify({schemaVersion:1,current:'VF-0001',next:'VF-0001',completed:[]}));
+  const {state}=readLedger(root);
+  assert.deepEqual(state.blockedSprints,['VF-0001','VF-0002']);
+  assert.equal(state.current,'VF-0003');
+  assert.equal(state.next,'VF-0004');
+ }finally{rmSync(root,{recursive:true,force:true});}
+});

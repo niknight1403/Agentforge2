@@ -12,14 +12,20 @@
     "VF-0007",
     "VF-0008"
   ],
-  "current": "VF-0009",
-  "next": "VF-0009",
+  "current": "VF-0011",
+  "next": "VF-0012",
+  "blockedSprints": [
+    "VF-0009",
+    "VF-0010"
+  ],
   "blockers": [
     "Production audit reports 19 of 19 Villas blocked; no Villa currently has complete product acceptance evidence.",
     "Deep Villa 34 has three open tasks and failed build, test, smoke and quality evidence.",
     "The Android workflow built and attested APK/Web artifacts but correctly blocked the release because Villa product acceptance is red.",
     "Image, image-editing, video and audio rendering still require authorized provider configuration.",
-    "Existing Android debug signature is not a managed production signing identity."
+    "Existing Android debug signature is not a managed production signing identity.",
+    "VF-0009 remains blocked: the unauthenticated Villa inventory request returned HTTP 401; no private Villa data was read.",
+    "VF-0010 remains blocked because product acceptance and production signing are not verified; no release was published."
   ],
   "resumeCommand": "node scripts/sprint-ledger.mjs status",
   "executionMode": "foreground-and-scheduled-iterations",
@@ -41,7 +47,12 @@
   "releaseRun": "https://github.com/niknight1403/Agentforge2/actions/runs/41553810524",
   "releaseStatus": "blocked: Android and Web builds passed, but 19/19 Villas lack product acceptance; no GitHub release created",
   "checkpointParent": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
-  "nextAction": "VF-0009: in one bounded run, inspect Deep Villa 34 acceptance evidence and repair at most one verified build, test, smoke or quality blocker through the deployed Docker sandbox. Preserve paused Villa decisions and do not treat generated fixtures or build-ready metadata as a usable product.",
+  "nextAction": "VF-0009 and VF-0010 remain blocked pending authorized product acceptance and release evidence. VF-0011 is in review on PR #119; its read-only audit diagnostics do not unblock product acceptance. Scope VF-0012 only from fresh evidence on current main, in a separate PR branch.",
+  "activeSprint": {
+    "id": "VF-0011",
+    "status": "in_review",
+    "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/119"
+  },
   "lastMaintenance": {
     "baseCommit": "5d6d43f5a04dcba6b9cb759f3b6245d741e0bdf8",
     "pullRequest": "https://github.com/niknight1403/Agentforge2/pull/70",
@@ -102,6 +113,6 @@
     "continuousExecution": false
   },
   "followUpPullRequest": "https://github.com/niknight1403/Agentforge2/pull/49",
-  "scoped": 10,
-  "reserved": 490
+  "scoped": 11,
+  "reserved": 489
 }
