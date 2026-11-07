@@ -317,18 +317,29 @@
     {
       "id": "VF-0013",
       "area": "Produktionsblocker und Release-Gates",
-      "goal": null,
-      "benefit": "Produktionsblocker und Release-Gates",
+      "goal": "Geheimnisfreie Aggregate der Villa-Audit-Checkcodes und Statuswerte",
+      "benefit": "Haeufige Abnahmeblocker lassen sich unterscheiden, ohne private Villa-Daten offenzulegen",
       "dependencies": [],
-      "modules": [],
-      "acceptanceCriteria": [],
-      "risks": [
-        "Scope vor Ausfuehrung anhand gemessener Ergebnisse festlegen"
+      "modules": [
+        "scripts/villa-audit-diagnostics.mjs",
+        ".github/workflows/villa-prompt-audit.yml"
       ],
-      "status": "unscoped",
-      "scopeDefined": false,
-      "evidence": [],
-      "implementationCommit": null
+      "acceptanceCriteria": [
+        "Nur allowlist-basierte Checkcodes, Statuswerte und Aggregate erscheinen im Audit-Log",
+        "Unbekannte Codes und Statuswerte werden zu einem sicheren other-Bucket zusammengefasst",
+        "Villa-IDs, Projekttexte, Prompts, Credentials und Antwortinhalte erscheinen nicht im Log",
+        "Fehlende oder fehlerhafte Reports scheitern explizit; Audit-Abnahmeverhalten bleibt unveraendert",
+        "Gezielte Diagnostiktests bestehen"
+      ],
+      "risks": [
+        "Diagnostik darf weder private Villa-Daten offenlegen noch Abnahme- oder Signatur-Gates aendern"
+      ],
+      "status": "in_review",
+      "scopeDefined": true,
+      "evidence": [
+        "docs/sprints/evidence/VF-0013.json"
+      ],
+      "implementationCommit": "d37d72f2a39b434bc27d3b93c350c96d445911bd"
     },
     {
       "id": "VF-0014",
