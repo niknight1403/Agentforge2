@@ -50,12 +50,13 @@ test('Production has one automatic writer and serializes optional recovery deplo
  }
 });
 
-test('Production deploy verifies and atomically enables the existing Docker project sandbox',()=>{
+test('Production deploy verifies and atomically enables Docker project sandboxes',()=>{
  const workflow=readFileSync(join(ROOT,'.github/workflows/hub-deploy.yml'),'utf8');
  const integrationTest='VF_SANDBOX_TEST_IMAGE="$SANDBOX_IMAGE" "$NODEBIN" scripts/test-project-sandbox.mjs';
  const installDropin='install -m 0644 "$DROPIN_TMP" "$SANDBOX_DROPIN"';
  const restart='systemctl restart "$UNIT"';
  assert.ok(workflow.includes('docker pull node:24-bookworm-slim'));
+ assert.ok(workflow.includes("SANDBOX_IMAGE=$(docker image inspect node:24-bookworm-slim"));
  assert.ok(workflow.includes("grep -Eq '^[^[:space:]]+@sha256:[0-9a-f]{64}$'"));
  assert.ok(workflow.includes(integrationTest));
  assert.ok(workflow.includes('Environment="VF_PROJECT_SANDBOX=docker"'));
