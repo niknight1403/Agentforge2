@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';import {join} from 'node:path';import {execFileSy
 import {projectExecution} from '../server/project-execution.mjs';import {executeInvocation} from '../server/project-process.mjs';
 const root=mkdtempSync(join(tmpdir(),'vf-sandbox-'));chmodSync(root,0o777);
 const image=process.env.VF_SANDBOX_TEST_IMAGE;
+const rustImage=process.env.VF_SANDBOX_TEST_RUST_IMAGE||image;
 async function run(file,timeout){
  const stage=prepareProjectStage(root);
  const invocation=projectExecution(stage.work,'node',[file],{mode:'docker',image});
@@ -28,7 +29,7 @@ try{
  socket.on('timeout',()=>{socket.destroy();console.log('network blocked')});
  socket.on('error',()=>{console.log('network blocked')});`);
  const normal=await run('check.js',15000);assert.equal(normal.error,null);
- const cargo=projectExecution(root,'cargo',['--version'],{mode:'docker',image});
+ const cargo=projectExecution(root,'cargo',['--version'],{mode:'docker',image:rustImage});
  const cargoResult=await new Promise(resolve=>executeInvocation(cargo,{timeout:15000,maxBuffer:100000},(error,stdout)=>resolve({error,stdout})));
  assert.equal(cargoResult.error,null);assert.match(cargoResult.stdout,/cargo\s+\d+/i);assert.match(normal.stdout,/network blocked/);assert.equal(readFileSync(join(normal.artifacts.directory,'dist/build/result.txt'),'utf8'),'verified');
  writeFileSync(join(root,'hang.js'),"process.on('SIGTERM',()=>{});setInterval(()=>{},1000);");
