@@ -120,18 +120,51 @@ export function evaluateProductGate({ files = [], verification = null } = {}) {
 
 function verificationCheck(verification) {
   if (!verification || typeof verification !== 'object') {
-    return unknown('Verifikationslauf belegt', 'kein verification.json mit Build-, Test- und Nutzerfluss-Ergebnis');
+    return unknown('Verifikationslauf belegt', 'verification.json mit Build-, Test-, Smoke- und Download-Belegen fehlt');
   }
-  const build = verification.build?.status;
-  const tests = verification.tests?.status;
-  const flow = verification.userFlow?.status;
-  const details = { build, tests, userFlow: flow };
-  if (build === 'passed' && tests === 'passed' && flow === 'passed') {
-    return entry(true, 'Verifikationslauf belegt', details);
+  const build = verification.build || {};
+  const tests = verification.tests || {};
+  const flow = verification.userFlow || {};
+  const artifact = build.artifact || {};
+  const smoke = flow.smoke || {};
+  const download = flow.download || {};
+  const sha256 = /^[a-f0-9]{64}$/i;
+  const positiveBytes = (value) => Number.isSafeInteger(value) && value > 0;
+  const safeRelativePath = (value) => typeof value === 'string' && value.length > 0
+    && !value.startsWith('/') && !value.split(/[\\\\/]/).includes('..');
+  const buildOk = build.status === 'passed' && safeRelativePath(artifact.path)
+    && sha256.test(String(artifact.sha256 || '')) && positiveBytes(artifact.bytes);
+  const testsOk = tests.status === 'passed' && Number.isSafeInteger(tests.passed) && tests.passed > 0
+    && tests.failed === 0 && tests.skipped === 0 && typeof tests.runId === 'string' && tests.runId.trim().length > 0;
+  const smokeOk = smoke.status === 'passed' && typeof smoke.runId === 'string' && smoke.runId.trim().length > 0;
+  const downloadOk = download.status === 'passed' && typeof download.url === 'string'
+    && (download.url.startsWith('/api/') || download.url.startsWith('/downloads/') || download.url.startsWith('https://'))
+    && sha256.test(String(download.sha256 || '')) && positiveBytes(download.bytes);
+  const details = {
+    build: build.status || 'missing',
+    buildArtifact: buildOk ? { path: artifact.path, bytes: artifact.bytes, sha256: artifact.sha256 } : 'missing-or-invalid',
+    tests: tests.status || 'missing',
+    testCounts: { passed: tests.passed ?? null, failed: tests.failed ?? null, skipped: tests.skipped ?? null, runId: tests.runId || null },
+    smoke: smoke.status || 'missing',
+    smokeRunId: smoke.runId || null,
+    download: download.status || 'missing',
+    downloadUrl: download.url || null,
+    downloadBytes: download.bytes ?? null,
+  };
+  const missing = [];
+  if (!buildOk) missing.push('Build-Artefakt mit relativem Pfad, SHA-256 und Bytegroesse');
+  if (!testsOk) missing.push('Testlauf-ID mit mindestens einem bestandenen, null fehlgeschlagenen und null uebersprungenen Tests');
+  if (!smokeOk) missing.push('bestandener Smoke-/Nutzerfluss-Lauf mit Lauf-ID');
+  if (!downloadOk) missing.push('erfolgreicher Download mit URL, SHA-256 und Bytegroesse');
+  if (missing.length) {
+    const failed = [build, tests, smoke, download].some((item) => item.status === 'failed');
+    return {
+      status: failed ? 'failed' : 'unknown',
+      label: 'Verifikationslauf belegt',
+      evidence: { missing, ...details },
+    };
   }
-  const failed = ['build', 'tests', 'userFlow'].filter((k) => verification[k]?.status === 'failed');
-  if (failed.length) return entry(false, 'Verifikationslauf belegt', { failed, ...details });
-  return unknown('Verifikationslauf belegt', { ...details, hint: 'Build, Tests und Nutzerfluss muessen belegt sein' });
+  return entry(true, 'Verifikationslauf belegt', details);
 }
 
 function detectStartCommand(readmeContent) {

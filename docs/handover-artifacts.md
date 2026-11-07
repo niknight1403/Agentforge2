@@ -105,3 +105,15 @@ Endpunkt nur die Produkt-Blocker (`artifactBlocked` fehlt dann).
   bleibt aber sichtbar.
 - Secrets in den Artefakten erzeugen einen zusätzlichen `blocked`-Eintrag
   `artifact_secrets`
+
+
+## Sprint 4: Verifikationsbelege statt Statusbehauptungen
+
+`verification.json` darf das Produkt-Gate nur passieren, wenn alle vier Nachweise vorliegen:
+
+- **Build:** `status: passed`, relativer Artefaktpfad, 64-stelliger SHA-256 und positive Bytegroesse.
+- **Tests:** `status: passed`, mindestens ein bestandener Test, exakt null fehlgeschlagene und null uebersprungene Tests sowie eine Lauf-ID.
+- **Smoke/Nutzerfluss:** `userFlow.smoke.status: passed` und eine Lauf-ID.
+- **Download:** `userFlow.download.status: passed`, eine relative API-/Download-URL oder HTTPS-URL, SHA-256 und positive Bytegroesse.
+
+Fehlende oder ungueltige Angaben ergeben `unknown` und blockieren die Uebergabe. Ein explizit fehlgeschlagener Teilnachweis bleibt `failed`. Ein Statusfeld allein ist kein Nachweis. Die Pruefung bestaetigt die Form und Konsistenz der mitgelieferten Belege; die tatsaechliche Ausfuehrung der Build-/Smoke-/Download-Pipeline muss weiterhin durch CI bzw. den Villa-Release-Prozess erfolgen.

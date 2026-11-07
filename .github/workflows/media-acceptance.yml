@@ -1,0 +1,52 @@
+name: Media-Tools Acceptance (real FFmpeg fixtures)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'server/media-tools.mjs'
+      - 'server/tests/media-tools.test.mjs'
+      - '.github/workflows/media-acceptance.yml'
+  push:
+    branches:
+      - main
+      - 'autonomous/**'
+    paths:
+      - 'server/media-tools.mjs'
+      - 'server/tests/media-tools.test.mjs'
+      - '.github/workflows/media-acceptance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: media-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ffmpeg-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install real media tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ffmpeg
+          ffmpeg -version
+          ffprobe -version
+      - name: Run real image and audio processing tests
+        run: |
+          set -euo pipefail
+          LOG=$(mktemp)
+          trap 'rm -f "$LOG"' EXIT
+          node --import ./server/tests/_env.mjs --test --test-reporter=tap server/tests/media-tools.test.mjs | tee "$LOG"
+          grep -Eq '^# pass [1-9][0-9]*$' "$LOG"
+          grep -Eq '^# fail 0$' "$LOG"
+          grep -Eq '^# skipped 0$' "$LOG"
+      - name: Verify generated fixtures were not committed
+        run: git diff --exit-code

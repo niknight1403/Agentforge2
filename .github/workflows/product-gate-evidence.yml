@@ -1,0 +1,40 @@
+name: Product Gate Evidence Acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'server/deep-product-gate.mjs'
+      - 'server/tests/deep-product-gate*.test.mjs'
+      - 'docs/handover-artifacts.md'
+      - '.github/workflows/product-gate-evidence.yml'
+  push:
+    branches: ['main', 'autonomous/10-sprints-media-acceptance']
+    paths:
+      - 'server/deep-product-gate.mjs'
+      - 'server/tests/deep-product-gate*.test.mjs'
+      - 'docs/handover-artifacts.md'
+      - '.github/workflows/product-gate-evidence.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-gate-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  product-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Validate gate syntax
+        run: node --check server/deep-product-gate.mjs
+      - name: Run unit and HTTP handover acceptance tests
+        run: node --import ./server/tests/_env.mjs --test --test-reporter=tap server/tests/deep-product-gate.test.mjs server/tests/deep-product-gate-e2e.test.mjs

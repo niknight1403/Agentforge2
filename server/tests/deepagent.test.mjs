@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { TMP } from './_env.mjs';
 
 process.env.DEEP_DIR = join(TMP, 'deep-files');
-const { createDeepProject, deepChat, addDeepFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping } = await import('../deepagent.mjs');
+const { createDeepProject, deepChat, addDeepFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping, latestDeepMission, getDeepMission, transitionDeepMission } = await import('../deepagent.mjs');
 const reply = async () => ({ content: 'Bauplan: MVP, Tests und Startanleitung.' });
 
 test('Deep Agent übergibt lesbare Textanhänge mit klarer Datenabgrenzung', async () => {
@@ -92,4 +92,53 @@ test('Parallele Deep-Projekt-Übergaben teilen denselben Entwicklungsauftrag', a
   assert.deepEqual(await second, { villaId: 99 });
   assert.equal(count, 1);
   assert.equal(isDeepProjectDeveloping(7001), false);
+});
+
+
+test('DeepAgent-Handover erhält eine persistente Mission-ID und Statusübergänge', async () => {
+  const project = await createDeepProject('Eine App mit persistenter Missionsverfolgung', { chatFn: reply });
+  let receivedMissionId = '';
+  const result = await runDeepProjectDevelopmentOnce(project.id, async ({ missionId }) => {
+    receivedMissionId = missionId;
+    const current = latestDeepMission(project.id);
+    assert.equal(current.id, missionId);
+    assert.equal(current.status, 'RUNNING');
+    return { villaId: 84, queued: true };
+  });
+  assert.equal(result.villaId, 84);
+  assert.ok(receivedMissionId);
+  const mission = getDeepMission(receivedMissionId);
+  assert.equal(mission.project_id, project.id);
+  assert.equal(mission.status, 'QUEUED');
+  assert.equal(mission.villa_id, 84);
+  assert.equal(latestDeepMission(project.id).id, receivedMissionId);
+});
+
+test('Fehlgeschlagene DeepAgent-Übergabe bleibt mit Fehlercode nachvollziehbar', async () => {
+  const project = await createDeepProject('Eine App mit nachvollziehbarem Übergabefehler', { chatFn: reply });
+  const failure = Object.assign(new Error('scheduler offline'), { code: 'SCHEDULER_OFFLINE' });
+  await assert.rejects(runDeepProjectDevelopmentOnce(project.id, async () => { throw failure; }), /scheduler offline/);
+  const mission = latestDeepMission(project.id);
+  assert.equal(mission.status, 'FAILED');
+  assert.equal(mission.error_code, 'SCHEDULER_OFFLINE');
+});
+
+test('Mission-Status erlaubt keine unzulässigen Rückwärtsübergänge', async () => {
+  const project = await createDeepProject('Eine App mit validiertem Missionsstatus', { chatFn: reply });
+  const mission = await runDeepProjectDevelopmentOnce(project.id, async ({ missionId }) => {
+    transitionDeepMission(missionId, 'BLOCKED', { errorCode: 'MISSING_PRODUCT_EVIDENCE' });
+    return { blocked: true };
+  });
+  const row = latestDeepMission(project.id);
+  assert.equal(row.status, 'BLOCKED');
+  assert.throws(() => transitionDeepMission(row.id, 'COMPLETED'), /MISSION_TRANSITION_INVALID/);
+});
+
+
+test('RUNNING-Status aktualisiert die Villa-ID auch bei idempotenter Statusmeldung', async () => {
+  const project = await createDeepProject('Eine App mit aktiver Ausführungs-Villa', { chatFn: reply });
+  await runDeepProjectDevelopmentOnce(project.id, async () => ({ villaId: 91, started: true }));
+  const mission = latestDeepMission(project.id);
+  assert.equal(mission.status, 'RUNNING');
+  assert.equal(mission.villa_id, 91);
 });
