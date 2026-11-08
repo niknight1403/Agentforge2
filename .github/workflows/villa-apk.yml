@@ -116,6 +116,27 @@ jobs:
           echo "OUT=$OUT" >> $GITHUB_ENV
           echo "APK: $OUT ($(stat -c%s $OUT) Bytes)"
 
+      - name: Paket aus APK und Quell-ZIP bauen (ZIP mit APK)
+        continue-on-error: true
+        env:
+          OUT: ${{ env.OUT }}
+          VILLA_ID: ${{ inputs.villa_id }}
+        run: |
+          # Nutzeranforderung: Auslieferung soll die APK IN der ZIP enthalten,
+          # nicht nur daneben im Release.
+          mkdir -p /tmp/bundle
+          cp "$OUT" /tmp/bundle/
+          if [ -s /tmp/villa.zip ]; then
+            cp /tmp/villa.zip /tmp/bundle/quelle.zip
+          else
+            echo "Quell-ZIP fehlt - Paket enthaelt nur die APK"
+          fi
+          printf '%s\n' 'Installation' '1. Villa<ID>-*.apk auf dem Android-Geraet installieren (Unbekannte Quellen zulassen).' '2. quelle.zip enthaelt den Quellstand des Webprodukts (npm install && npm test).' > /tmp/bundle/INSTALL.txt
+          (cd /tmp/bundle && zip -q -r "/tmp/Villa${VILLA_ID}-mit-apk.zip" .)
+          cp "/tmp/Villa${VILLA_ID}-mit-apk.zip" "Villa${VILLA_ID}-mit-apk.zip"
+          echo "BUNDLE=Villa${VILLA_ID}-mit-apk.zip" >> $GITHUB_ENV
+          ls -la "Villa${VILLA_ID}-mit-apk.zip"
+
       - uses: actions/upload-artifact@v4
         with:
           name: villa-apk-${{ inputs.villa_id }}
@@ -128,5 +149,8 @@ jobs:
           TAG: ${{ env.TAG }}
           OUT: ${{ env.OUT }}
           VILLA_NAME: ${{ env.VILLA_NAME }}
+          BUNDLE: ${{ env.BUNDLE }}
         run: |
-          gh release create "$TAG" "$OUT" --title "Villa ${{ inputs.villa_id }}: $VILLA_NAME" --notes "APK des vom Hub verifizierten Villa-Webprodukts. WebView-Wrapper, Debug-signiert; Android-Geraete-Smoke-Test separat erforderlich."
+          ASSETS="$OUT"
+          if [ -n "${BUNDLE:-}" ] && [ -f "$BUNDLE" ]; then ASSETS="$OUT $BUNDLE"; fi
+          gh release create "$TAG" $ASSETS --title "Villa ${{ inputs.villa_id }}: $VILLA_NAME" --notes "APK des vom Hub verifizierten Villa-Webprodukts. WebView-Wrapper, Debug-signiert; Android-Geraete-Smoke-Test separat erforderlich. Die Datei Villa${{ inputs.villa_id }}-mit-apk.zip enthaelt APK und Quellpaket gemeinsam."
