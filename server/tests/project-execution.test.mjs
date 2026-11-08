@@ -27,3 +27,12 @@ test('production fails closed when no project sandbox is configured',()=>{
   if(beforeSandbox===undefined)delete process.env.VF_PROJECT_SANDBOX;else process.env.VF_PROJECT_SANDBOX=beforeSandbox;
  }
 });
+
+test('rust commands select the dedicated immutable sandbox image',()=>{
+ const before=process.env.VF_PROJECT_SANDBOX_RUST_IMAGE;
+ try{
+  const rust='rust@sha256:'+'c'.repeat(64);process.env.VF_PROJECT_SANDBOX_RUST_IMAGE=rust;
+  const out=projectExecution(tmpdir(),'cargo',['test'],{mode:'docker'});
+  assert.deepEqual(out.args.slice(-3),[rust,'cargo','test']);
+ }finally{if(before===undefined)delete process.env.VF_PROJECT_SANDBOX_RUST_IMAGE;else process.env.VF_PROJECT_SANDBOX_RUST_IMAGE=before;}
+});
