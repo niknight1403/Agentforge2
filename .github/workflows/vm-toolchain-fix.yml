@@ -1,0 +1,131 @@
+name: VM Toolchain-Fix (Q-Gate Heilung)
+# Idempotente Heilung der Q-Gate-Umgebungsfehler:
+#   Villa 3  -> 'sh: 1: python3: not found' (Exit 127)
+#   Villa 38 -> 'sh: 1: jest: not found'    (Exit 127)
+# Das Qualitaetstor blockiert Aufgaben als UMWELT-Fehler, obwohl der Code steht.
+# Stellt python3/pip3, Jest und Rust systemweit auf der Hub-VM bereit.
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  toolchain-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+
+      - name: Toolchain pruefen und heilen
+        run: |
+          /tmp/sshcmd 'bash -s' <<'EOS'
+          set -uo pipefail
+          NEED_APT=0
+          MISSING=""
+
+          echo "== Bestandsaufnahme =="
+          # python3 inkl. funktionierendem 'sh -c python3' (Q-Gate nutzt sh, nicht bash)
+          if sh -c 'python3 --version' >/dev/null 2>&1; then
+            echo "python3: OK ($(sh -c 'python3 --version' 2>&1))"
+          else
+            echo "python3: FEHLT"; NEED_APT=1; MISSING="$MISSING python3"
+          fi
+
+          # pip3 fuer Fallback-Installationen
+          if sh -c 'pip3 --version' >/dev/null 2>&1; then
+            echo "pip3: OK"
+          else
+            echo "pip3: FEHLT"; NEED_APT=1
+          fi
+
+          # pytest (Villa 3 Testrunner)
+          if sh -c 'python3 -m pytest --version' >/dev/null 2>&1; then
+            echo "pytest: OK ($(sh -c 'python3 -m pytest --version' 2>&1 | head -1))"
+          else
+            echo "pytest: FEHLT"; NEED_APT=1
+          fi
+
+          # node/npm (Jest laeuft ueber npx)
+          if sh -c 'node --version' >/dev/null 2>&1; then
+            echo "node: OK ($(sh -c 'node --version' 2>&1))"
+          else
+            echo "node: FEHLT"; NEED_APT=1
+          fi
+          if sh -c 'npm --version' >/dev/null 2>&1; then
+            echo "npm: OK ($(sh -c 'npm --version' 2>&1))"
+          else
+            echo "npm: FEHLT"; NEED_APT=1
+          fi
+
+          # jest global (Villa 38 Testrunner, 'sh: 1: jest: not found')
+          if sh -c 'command -v jest' >/dev/null 2>&1; then
+            echo "jest: OK ($(sh -c 'jest --version' 2>&1))"
+          else
+            echo "jest: FEHLT"
+          fi
+
+          # cargo/rustc (Villa 38 Rust-Komponenten)
+          if sh -c 'command -v cargo' >/dev/null 2>&1; then
+            echo "cargo: OK ($(sh -c 'cargo --version' 2>&1))"
+          else
+            echo "cargo: FEHLT"
+          fi
+
+          echo
+          if [ "$NEED_APT" = "1" ]; then
+            echo "== apt-Installation der fehlenden Basispakete =="
+            sudo apt-get update -qq || true
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+              python3 python3-pip python3-venv nodejs npm >/tmp/toolchain-apt.log 2>&1 \
+              && echo "apt: ok" || { echo "apt: teilweise fehlgeschlagen"; tail -n 8 /tmp/toolchain-apt.log; }
+          fi
+
+          # pytest sicherstellen (apt-Paket oder pip-Fallback)
+          if ! sh -c 'python3 -m pytest --version' >/dev/null 2>&1; then
+            echo "== pytest via pip =="
+            sudo apt-get install -y python3-pytest >>/tmp/toolchain-apt.log 2>&1 \
+              || sudo pip3 install --break-system-packages pytest >/dev/null 2>&1 \
+              || echo "pytest: Installation fehlgeschlagen"
+          fi
+
+          # Jest global bereitstellen, damit 'sh: 1: jest' aufloest
+          if ! sh -c 'command -v jest' >/dev/null 2>&1; then
+            echo "== jest global via npm =="
+            sudo npm install -g jest >/tmp/toolchain-npm.log 2>&1 \
+              && echo "jest: installiert" || { echo "jest: npm-Install fehlgeschlagen"; tail -n 8 /tmp/toolchain-npm.log; }
+            # PATH fuer systemd-Prozesse sichtbar machen
+            NODEBIN=$(npm bin -g 2>/dev/null || echo /usr/local/bin)
+            if [ -n "$NODEBIN" ] && [ -d "$NODEBIN" ]; then
+              for L in /usr/local/bin /usr/bin; do
+                [ -e "$L/jest" ] || sudo ln -sf "$NODEBIN/jest" "$L/jest" 2>/dev/null || true
+              done
+            fi
+          fi
+
+          # Rust-Toolchain (Villa 38 baut Rust-Komponenten)
+          if ! sh -c 'command -v cargo' >/dev/null 2>&1; then
+            echo "== Rust via apt =="
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y cargo rustc >/tmp/toolchain-rust.log 2>&1 \
+              && echo "cargo: installiert" || { echo "cargo: apt-Install fehlgeschlagen (nicht release-blockierend)"; tail -n 5 /tmp/toolchain-rust.log; }
+          fi
+
+          echo
+          echo "== VERIFIKATION (aus sh, wie das Q-Gate aufruft) =="
+          sh -c 'python3 --version' 2>&1 | sed 's/^/  python3: /'
+          sh -c 'python3 -m pytest --version' 2>&1 | head -1 | sed 's/^/  pytest:  /'
+          sh -c 'command -v jest && jest --version' 2>&1 | tail -1 | sed 's/^/  jest:    /'
+          sh -c 'node --version' 2>&1 | sed 's/^/  node:    /'
+          sh -c 'cargo --version' 2>&1 | sed 's/^/  cargo:   /'
+          echo "== fertig =="
+          EOS
