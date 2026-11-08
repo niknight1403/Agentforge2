@@ -8,10 +8,18 @@ export function readLedger(root=defaultRoot){
  const state=JSON.parse(readFileSync(resolve(root,'docs/sprints/state.json'),'utf8'));
  if(backlog.schemaVersion!==1||state.schemaVersion!==1||backlog.sprints.length!==500)throw Error('Invalid sprint ledger schema.');
  const ids=new Set();let index=0;for(const s of backlog.sprints){if(s?.id!=='VF-'+String(++index).padStart(4,'0'))throw Error('Sprint IDs must be ordered VF-0001 through VF-0500.');if(!/^VF-\d{4}$/.test(s.id)||ids.has(s.id))throw Error('Invalid or duplicate sprint ID.');ids.add(s.id);if(s.status==='done'&&(!s.scopeDefined||!s.goal||!s.acceptanceCriteria.length||!s.evidence.length||!/^[a-f0-9]{40}$/.test(s.implementationCommit||'')))throw Error('Completed sprint requires scoped acceptance, commit and evidence.');}
- state.completed=backlog.sprints.filter(s=>s.status==='done').map(s=>s.id);
- state.next=backlog.sprints.find(s=>s.status!=='done')?.id||null;
- if(state.current&&state.completed.includes(state.current))state.current=null;
+ synchronizeState(backlog,state);
  return {backlog,state};
+}
+function synchronizeState(backlog,state){
+ const byId=new Map(backlog.sprints.map(s=>[s.id,s]));
+ state.completed=backlog.sprints.filter(s=>s.status==='done').map(s=>s.id);
+ state.blockedSprints=backlog.sprints.filter(s=>s.status==='blocked').map(s=>s.id);
+ state.current=backlog.sprints.find(s=>['in_progress','in_review'].includes(s.status))?.id||null;
+ state.next=backlog.sprints.find(s=>
+  !['done','blocked','in_progress','in_review'].includes(s.status)&&
+  (s.dependencies||[]).every(id=>byId.get(id)?.status==='done')
+ )?.id||null;
 }
 export function completeSprint({root=defaultRoot,id,commit,evidencePath}){
  const {backlog,state}=readLedger(root),s=backlog.sprints.find(x=>x.id===id);
@@ -21,7 +29,7 @@ export function completeSprint({root=defaultRoot,id,commit,evidencePath}){
  const evidence=resolve(root,evidencePath||'');if(!evidence.startsWith(resolve(root,'docs/sprints/evidence')+'/')||!existsSync(evidence))throw Error('Evidence file is required within docs/sprints/evidence.');
  const result=JSON.parse(readFileSync(evidence,'utf8'));if(result.exitCode!==0||result.acceptanceComplete!==true)throw Error('Evidence gate did not pass.');
  s.status='done';s.implementationCommit=commit;s.evidence=[evidencePath];
- state.completed=backlog.sprints.filter(x=>x.status==='done').map(x=>x.id);state.current=null;state.next=backlog.sprints.find(x=>x.status!=='done')?.id||null;
+ synchronizeState(backlog,state);
  for(const [name,data] of [['backlog',backlog],['state',state]]){const path=resolve(root,`docs/sprints/${name}.json`);writeFileSync(path+'.tmp',JSON.stringify(data,null,2)+'\n');renameSync(path+'.tmp',path);}
  return state;
 }
