@@ -47,10 +47,13 @@ jobs:
                   rv, rv_err = get('https://hub.cybersarah-ki.com/api/villas',
                                    {'Authorization': 'Bearer ' + tok}, 12)
                   villas = json.load(rv) if rv else []
-                  running = sum(1 for v in villas if str(v.get('status', '')).lower() in ('running', 'aktiv', 'active'))
-                  agents = sum(int(v.get('agent_count') or v.get('agents') or 0) for v in villas)
+                  running = sum(1 for v in villas if v.get('executing') or v.get('queued') or str(v.get('status', '')).lower() in ('running', 'aktiv', 'active', 'waiting_for_model'))
+                  agents = sum(int(v.get('agents_count') or v.get('agent_count') or 0) for v in villas)
                   hub = {'state': 'UP', 'version': s.get('version'), 'routes': s.get('routes'),
-                         'villas': len(villas), 'running': running, 'agents': agents}
+                         'villas': len(villas), 'running': running, 'agents': agents,
+                         'executing': sum(1 for v in villas if v.get('executing')),
+                         'queued': sum(1 for v in villas if v.get('queued')),
+                         'open_tasks': sum(int(v.get('openCount') or 0) for v in villas)}
               else:
                   hub = {'state': 'DOWN', 'error': err[:120]}
           else:

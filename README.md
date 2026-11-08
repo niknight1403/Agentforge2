@@ -10,10 +10,10 @@
 
 ## Villa-Steuerung 1.48.0
 
-- Drei Villen können standardmäßig parallel laufen. Bei höherer Auslastung werden weitere Starts sichtbar und fair vorgemerkt.
+- Zwei Villen laufen standardmäßig parallel. Bei höherer Auslastung werden weitere Starts sichtbar und fair vorgemerkt.
 - Jede wartende Villa lässt sich einzeln wieder aus der Warteschlange nehmen; ein laufender Stopp setzt nur diese Villa auf Pause.
 - Der Start aktiviert die Autonomie wieder, auch wenn die Villa zuvor über den Master-Agenten pausiert wurde.
-- Die Anzahl gleichzeitiger Villen ist auf mindestens drei eingestellt, damit gespeicherte alte Ein- oder Zwei-Slot-Werte den Parallelstart nicht still blockieren.
+- Die Anzahl gleichzeitiger Villen ist fest auf zwei begrenzt (Einstellung `villaSlots`, gültig 1-2); größere Altwerte in der Datenbank werden auf zwei gekappt, damit die Anzeige dem tatsächlichen Verhalten entspricht.
 
 VillaForge ist ein privates System zum Erstellen von **Deep Agents**, die eine Idee in einer
 **Villa mit bis zu 1000 Agenten** autonom planen, umsetzen und abschließen.
@@ -550,8 +550,8 @@ GET    /api/master/duplicates         Vorschau genauer Duplikate
 POST   /api/master/duplicates/archive reversible Bereinigung; Aufgaben und Verläufe bleiben erhalten
 ```
 
-Manuelle Starts erlauben standardmäßig mindestens drei gleichzeitig laufende
-Villen (Vorgabe: 3). Weitere Villen bleiben sichtbar in der Warteschlange und
+Manuelle Starts erlauben standardmäßig zwei gleichzeitig laufende
+Villen (Vorgabe: 2). Weitere Villen bleiben sichtbar in der Warteschlange und
 rücken automatisch nach, sobald ein Slot frei wird. Wartende Starts können
 einzeln abgebrochen werden; ein Stopp pausiert nur die ausgewählte Villa. Die Web-Oberfläche zeigt
 Empfehlungen aus Aufgabenstatus, Fehlern, Fortschritt, Agentenauslastung,
