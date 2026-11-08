@@ -1,0 +1,43 @@
+name: VM PATH-Probe (Hub-Prozess Umgebung)
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH-Zugang einrichten
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          printf '%s\n' 'exec ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "$@"' > /tmp/sshcmd
+          chmod +x /tmp/sshcmd
+      - name: Umgebung des Hub-Prozesses pruefen
+        run: |
+          /tmp/sshcmd 'bash -s' <<'EOS'
+          set -uo pipefail
+          echo "== systemd-Unit PATH/Environment =="
+          systemctl show villaforge-hub.service -p Environment -p EnvironmentFiles 2>/dev/null | head -20
+          systemctl cat villaforge-hub.service 2>/dev/null | grep -iE "path|environment|workingdir" | head -20
+          echo
+          echo "== PATH im laufenden Hub-Prozess =="
+          PID=$(systemctl show -p MainPID --value villaforge-hub.service 2>/dev/null)
+          echo "MainPID=$PID"
+          if [ -n "$PID" ] && [ "$PID" != "0" ]; then
+            sudo tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | grep -E '^PATH=|^NODE|^HOME=' | head -10
+          fi
+          echo
+          echo "== Auflösung wie aus dem Hub-Prozess =="
+          if [ -n "$PID" ] && [ "$PID" != "0" ]; then
+            HPATH=$(sudo tr '\0' '\n' < /proc/$PID/environ 2>/dev/null | sed -n 's/^PATH=//p')
+            echo "Hub-PATH=$HPATH"
+            sudo env PATH="$HPATH" sh -c 'command -v python3 || echo "python3 NICHT AUFLOESBAR"'
+            sudo env PATH="$HPATH" sh -c 'command -v jest || echo "jest NICHT AUFLOESBAR"'
+            sudo env PATH="$HPATH" sh -c 'command -v node || echo "node NICHT AUFLOESBAR"'
+          fi
+          EOS
