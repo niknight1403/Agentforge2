@@ -19,9 +19,11 @@ jobs:
         run: |
           docker pull node:24-bookworm-slim
           docker build --pull=false -t villaforge-project-sandbox:ci -f docker/project-sandbox/Dockerfile .
-          image=$(docker image inspect villaforge-project-sandbox:ci --format '{{.Id}}')
-          echo "VF_SANDBOX_TEST_IMAGE=$image" >> "$GITHUB_ENV"
+          node_image=$(docker image inspect node:24-bookworm-slim --format '{{.Id}}')
+          rust_image=$(docker image inspect villaforge-project-sandbox:ci --format '{{.Id}}')
+          echo "VF_SANDBOX_TEST_IMAGE=$node_image" >> "$GITHUB_ENV"
+          echo "VF_SANDBOX_TEST_RUST_IMAGE=$rust_image" >> "$GITHUB_ENV"
       - name: Execute isolation and timeout tests in real Docker
         run: node scripts/test-project-sandbox.mjs
       - name: Verify root host still uses an unprivileged writable isolated copy
-        run: sudo env VF_SANDBOX_TEST_IMAGE="$VF_SANDBOX_TEST_IMAGE" "$(command -v node)" scripts/test-project-sandbox.mjs
+        run: sudo env VF_SANDBOX_TEST_IMAGE="$VF_SANDBOX_TEST_IMAGE" VF_SANDBOX_TEST_RUST_IMAGE="$VF_SANDBOX_TEST_RUST_IMAGE" "$(command -v node)" scripts/test-project-sandbox.mjs
