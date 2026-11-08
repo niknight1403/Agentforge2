@@ -1,13 +1,11 @@
 name: Villa-Sweep
-# Nimmt blockierte Villen automatisch nacheinander ab: echter Build-Nachweis,
+# Nimmt blockierte Villen auf ausdruecklichen Start hin ab: echter Build-Nachweis,
 # echte Abnahme, bei Bedarf Reparaturaufgabe samt Autonomie-Freigabe.
+# Start nur manuell. Frueher hing der Lauf zusaetzlich am Hub-Deploy und setzte dabei
+# einen Projekt-Fokus auf Villa 38; dieser Fokus wies alle anderen Villen mit
+# HTTP 409 FOCUS_ACTIVE ab und leerte die Warteschlange. Der 30-Minuten-Cron entfaellt
+# ebenfalls, damit kein Sweep unerwartet Villen anhaelt.
 on:
-  workflow_run:
-    workflows: [Hub-Deploy]
-    types: [completed]
-    branches: [main]
-  schedule:
-    - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
       limit:
@@ -29,7 +27,6 @@ concurrency:
 
 jobs:
   sweep:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -37,21 +34,15 @@ jobs:
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
           DRY: ${{ github.event.inputs.dry_run || 'false' }}
-          VILLA_ID: ${{ github.event_name == 'workflow_run' && '38' || github.event.inputs.villa_id || '34' }}
-          LIMIT: ${{ github.event_name == 'workflow_run' && '1' || github.event.inputs.limit || '2' }}
+          VILLA_ID: ${{ github.event.inputs.villa_id || '34' }}
+          LIMIT: ${{ github.event.inputs.limit || '2' }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
           [[ "$VILLA_ID" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "Ungueltige Villa-ID"; exit 2; }
-          # Der automatische workflow_run ist absichtlich exklusiv auf NexusSphere begrenzt.
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            [ "$VILLA_ID" = "38" ] && [ "$LIMIT" = "1" ] || { echo "Unsichere automatische Sweep-Konfiguration"; exit 3; }
-          fi
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
-              "cd /opt/villaforge && sudo \$(command -v node || echo /usr/bin/node) --input-type=module -e \"import { setVillaFocus } from './server/project-focus.mjs'; console.log(JSON.stringify(setVillaFocus([38], { reason: 'NexusSphere Villa 38 gezielte Live-Abnahme' })))\""
-          fi
+          # Kein Projekt-Fokus in diesem Workflow: der Sweep prueft einzelne Villen,
+          # darf die uebrigen aber nicht mit 409 FOCUS_ACTIVE aussperren.
           # NexusSphere enthaelt einen echten Rust-Core. Der produktive Sweep muss
           # deshalb dieselbe Systemvoraussetzung wie die NexusSphere-CI besitzen.
           if [ "$VILLA_ID" = "38" ]; then
