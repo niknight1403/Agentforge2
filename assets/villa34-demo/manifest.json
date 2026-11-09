@@ -1,0 +1,51 @@
+{
+  "project": "Villa 34 demo assets",
+  "fictionalAdultsOnly": true,
+  "assets": [
+    {
+      "id": "elena",
+      "type": "profile-photo",
+      "name": "Elena",
+      "age": 29,
+      "file": "profile-elena.jpg",
+      "alt": "Porträt einer fiktiven erwachsenen Frau mit langen dunklen Wellen, cremefarbener Bluse und dunkelgrünem Blazer."
+    },
+    {
+      "id": "mira",
+      "type": "profile-photo",
+      "name": "Mira",
+      "age": 32,
+      "file": "profile-mira.jpg",
+      "alt": "Porträt einer fiktiven erwachsenen Frau mit kastanienbraunem Haar, grünem Pullover und heller Schürze."
+    },
+    {
+      "id": "sora",
+      "type": "profile-photo",
+      "name": "Sora",
+      "age": 28,
+      "file": "profile-sora.jpg",
+      "alt": "Porträt einer fiktiven erwachsenen Frau mit kurzem schwarzem Bob, runder Brille und grauer Strickjacke."
+    },
+    {
+      "id": "reading-lounge",
+      "type": "scene",
+      "name": "Lese-Lounge",
+      "file": "set-reading-lounge.jpg",
+      "alt": "Gemütliche Lese-Lounge mit Bücherregalen, Sessel, Pflanzen und nächtlichem Stadtblick."
+    },
+    {
+      "id": "greenhouse",
+      "type": "scene",
+      "name": "Gewächshaus",
+      "file": "set-greenhouse.jpg",
+      "alt": "Helles Gewächshaus mit üppigen Pflanzen, Sitzgruppe und warmem Abendlicht."
+    },
+    {
+      "id": "art-studio",
+      "type": "scene",
+      "name": "Kunststudio",
+      "file": "set-art-studio.jpg",
+      "alt": "Lichtdurchflutetes Kunststudio mit Staffelei, Leinwand und Malutensilien."
+    }
+  ]
+}
