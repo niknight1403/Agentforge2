@@ -1,0 +1,151 @@
+name: Deep Villa Delivery
+
+# Autonome Lieferkette fuer die Deep Villa (#34, Name "Deep · ..."):
+#   status  = read-only Lagebild (Villa, Tasks, Build, Produkt-Gate, Fokus, Scheduler)
+#   apply   = exklusiver Fokus + Konkurrenz-Villen anhalten + runToCompletion
+#   build   = Web-Build im Hub anstossen (POST /api/villas/34/build)
+#   apk     = APK-Baustrasse: Web-Build-Artefakt holen, in villa-apk-template
+#             wrappen, Gradle-Build, Debug-APK als Artefakt + Pruefbericht
+#
+# Alles laeuft ueber die offizielle Hub-API mit den Repo-Secrets
+# VF_ADMIN_EMAIL / VF_ADMIN_PASSWORD. Keine erfundene Evidenz: jeder Schritt
+# endet mit einer Pruefung, die bei Nichterfuellung rot wird.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "status | apply | build | apk"
+        required: true
+        default: "status"
+      app_name:
+        description: "APK-Anzeigename (leer = Villa-Name)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deep-villa-delivery-${{ github.event.inputs.mode }}
+  cancel-in-progress: false
+
+jobs:
+  status:
+    if: github.event.inputs.mode == 'status'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lagebild der Deep Villa lesen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: python3 scripts/ops/deep_delivery.py status
+
+  apply:
+    if: github.event.inputs.mode == 'apply'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deep Villa exklusiv starten
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/deep_delivery.py apply
+      - name: Nachweis nach dem Start
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: python3 scripts/ops/deep_delivery.py status
+
+  build:
+    if: github.event.inputs.mode == 'build'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Web-Build im Hub anstossen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: python3 scripts/ops/deep_delivery.py build
+
+  apk:
+    if: github.event.inputs.mode == 'apk'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle einrichten
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.8.2"
+
+      - name: Villa-Daten und Web-Build-Artefakt laden
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+          VILLA_ID: "34"
+          APP_NAME: ${{ github.event.inputs.app_name }}
+        run: python3 scripts/ops/deep_delivery.py apk-fetch
+
+      - name: Web-Root herrichten und Platzhalter ausschliessen
+        run: |
+          set -euo pipefail
+          WWW="$GITHUB_WORKSPACE/villa-apk-template/app/src/main/assets/www"
+          mkdir -p "$WWW"
+          find "$WWW" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          rm -rf /tmp/art && mkdir -p /tmp/art
+          unzip -qo /tmp/villa.zip -d /tmp/art
+          IDX=$(find /tmp/art -maxdepth 4 -name index.html | head -1)
+          test -n "$IDX" || { echo "Kein index.html im Artefakt"; find /tmp/art -maxdepth 3 | head -40; exit 1; }
+          echo "Web-Root: $IDX"
+          cp -r "$(dirname "$IDX")"/. "$WWW/"
+          test -s "$WWW/index.html"
+          if grep -qi "Villa-Produkt wird geladen" "$WWW/index.html"; then echo "Nur Template-Platzhalter"; exit 1; fi
+          python3 - <<'PY'
+          import glob, os, re
+          www = os.path.join(os.environ['GITHUB_WORKSPACE'], 'villa-apk-template/app/src/main/assets/www')
+          files = [p for p in glob.glob(os.path.join(www, '**', '*'), recursive=True) if os.path.isfile(p)]
+          print('Web-Dateien:', len(files), 'Bytes:', sum(os.path.getsize(p) for p in files))
+          html = open(os.path.join(www, 'index.html'), encoding='utf-8', errors='replace').read()
+          print('Titel:', (re.search(r'<title>(.*?)</title>', html, re.S) or [None, '?'])[1][:80])
+          print('HTML-Bytes:', len(html))
+          PY
+
+      - name: APK bauen
+        env:
+          APP_NAME: ${{ github.event.inputs.app_name }}
+          VILLA_NAME: ${{ env.VILLA_NAME }}
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          export VILLA_NAME="${APP_NAME:-${VILLA_NAME:-Deep Villa}}"
+          python3 scripts/villa_apk_prepare.py
+          cd villa-apk-template
+          gradle --no-daemon assembleDebug
+          APK=$(find . -name "*.apk" -path "*debug*" | head -1)
+          test -n "$APK"
+          cp "$APK" "$GITHUB_WORKSPACE/deep-villa.apk"
+          ls -l "$GITHUB_WORKSPACE/deep-villa.apk"
+
+      - name: APK pruefen (Paket, Signatur, Web-Root im APK)
+        run: python3 scripts/ops/deep_delivery.py apk-verify deep-villa.apk
+
+      - name: APK hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: deep-villa-apk
+          path: deep-villa.apk
+          if-no-files-found: error
