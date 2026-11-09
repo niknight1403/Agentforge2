@@ -58,7 +58,10 @@ jobs:
 
           CCC_DIR=/opt/ccc
           sudo mkdir -p "$CCC_DIR"
-          sudo chown ubuntu:ubuntu "$CCC_DIR"
+          # Rekursiv: ein frueherer Lauf hat Teile von repo/ als root hinterlassen.
+          # Ohne das scheitert git fetch mit "cannot lock ref ... Permission denied"
+          # und der gesamte Deploy bricht VOR Build/Migration ab.
+          sudo chown -R ubuntu:ubuntu "$CCC_DIR"
 
           echo "== [1/7] Postgres installieren (falls fehlt) =="
           if ! command -v psql >/dev/null 2>&1; then
