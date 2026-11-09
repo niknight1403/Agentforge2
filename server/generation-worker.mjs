@@ -80,7 +80,7 @@ async function generate({prompt,taskId,projectId}) {
  const active=db.prepare('SELECT attempts FROM generation_jobs WHERE request_id=?').get(taskId);
  const attempt=Number(active?.attempts||1);
  if(attempt>MAX_ATTEMPTS) {
-  db.prepare("UPDATE generation_jobs SET status='FAILED',error_code='GENERATION_RETRY_EXHAUSTED',updated_at=? WHERE request_id=?").run(now(),taskId);
+  db.prepare("UPDATE generation_jobs SET status='FAILED',error_code='GENERATION_RETRY_EXHAUSTED',updated_at=?,lease_owner=NULL WHERE request_id=? AND lease_owner=?").run(now(),taskId,leaseOwner);
   try { await publish('STREAM_COMPLETE',taskId,{status:'FAILED',errorCode:'GENERATION_RETRY_EXHAUSTED'}); } catch {}
   return true;
  }
