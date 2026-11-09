@@ -5,7 +5,7 @@ The opt-in worker consumes generation requests from Redis Streams and writes iso
 ## Start
 
 ```bash
-REDIS_URL=redis://127.0.0.1:6379 VF_PROJECT_SANDBOX=docker npm run worker:generation
+REDIS_URL=redis://127.0.0.1:6379 VF_PROJECT_SANDBOX=docker VF_NPM_CACHE_DIR=/srv/agentforge/npm-cache npm run worker:generation
 ```
 
 Default stream: `agentforge:events:stream`; consumer group: `fullstack-generation-v1`.
@@ -51,8 +51,9 @@ or model responses. The initial request event necessarily carries the user promp
   fails closed if the pinned Docker sandbox is not configured.
 - Dependencies are installed with `npm install --offline --ignore-scripts` inside one
   pinned, network-isolated Docker stage, followed by build and tests in that same stage.
-  The sandbox image must contain the required npm cache; no package downloads or lifecycle
-  scripts are allowed. A cache miss fails the quality gate closed.
+  The host must provide a prewarmed cache directory via VF_NPM_CACHE_DIR, mounted into the
+  container at /npm-cache. No package downloads or lifecycle scripts are allowed. A cache
+  miss fails the quality gate closed.
 - A failed event remains pending for bounded stale-consumer recovery. Duplicate completed
   request IDs are idempotently acknowledged.
 
