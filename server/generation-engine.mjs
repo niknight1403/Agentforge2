@@ -58,9 +58,9 @@ export function generationPrompt(prompt, previousFailure='') {
 }
 
 export function generationEvent(type, taskId, metadata={}) {
-  const safe={};
+  const safe={}, allowed=new Set(['projectId','files','bytes','status','workspace','checkpointId','step','build','tests','repairApplied','workerCommit','deployManifest','errorCode']);
   for(const [key,value] of Object.entries(metadata)) {
-    if(value==null) continue;
+    if(!allowed.has(key) || value==null) continue;
     if(typeof value==='string') safe[key]=value.slice(0,180);
     else if(typeof value==='number' && Number.isFinite(value)) safe[key]=value;
     else if(typeof value==='boolean') safe[key]=value;
