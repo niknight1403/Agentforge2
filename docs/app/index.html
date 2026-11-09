@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MyBabes Studio</title>
+<meta name="description" content="Eigene Begleiterinnen mit Gedaechtnis, Geschichten, Galerie und Generator-Oberflaechen. Nur fuer Erwachsene.">
+<style>
+  :root{--bg:#0d0d12;--card:#1a1a22;--card2:#22222c;--line:#33333f;--text:#f2f2f6;--muted:#a0a0b0;--pink:#ff3366;--pink-dim:#a32144;--ok:#39d98a;--warn:#ffb020}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  a{color:var(--pink)}
+  header{position:sticky;top:0;z-index:20;background:rgba(13,13,18,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .bar{display:flex;align-items:center;gap:14px;padding:12px 16px;flex-wrap:wrap;max-width:1180px;margin:0 auto}
+  .logo{font-weight:800;letter-spacing:.4px;font-size:18px}
+  .logo span{color:var(--pink)}
+  nav{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+  nav button{background:transparent;border:1px solid transparent;color:var(--muted);padding:8px 11px;border-radius:9px;font-size:13px;cursor:pointer}
+  nav button:hover{color:var(--text);border-color:var(--line)}
+  nav button.active{background:var(--pink);border-color:var(--pink);color:#fff;font-weight:600}
+  main{max-width:1180px;margin:0 auto;padding:22px 16px 80px}
+  h1{font-size:clamp(22px,4vw,32px);margin:0 0 6px}
+  h2{font-size:17px;margin:0 0 10px}
+  p.lead{color:var(--muted);margin:0 0 18px;max-width:70ch;line-height:1.55}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr))}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+  .card .meta{color:var(--muted);font-size:12px}
+  .card h3{margin:0;font-size:15px}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 9px;font-size:11px;color:var(--muted)}
+  button.btn{background:var(--pink);border:1px solid var(--pink);color:#fff;padding:9px 14px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer}
+  button.btn:hover{background:var(--pink-dim)}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--text);padding:9px 14px;border-radius:10px;font-size:13px;cursor:pointer}
+  button.ghost:hover{border-color:var(--pink)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  input,select,textarea{background:var(--card2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;width:100%}
+  textarea{min-height:84px;resize:vertical}
+  label{font-size:12px;color:var(--muted);display:block;margin:0 0 4px}
+  .field{margin-bottom:12px;min-width:0}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+  .split{display:grid;gap:16px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  @media(max-width:820px){.split{grid-template-columns:minmax(0,1fr)}}
+  .chatlog{height:340px;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px;background:#131319;border:1px solid var(--line);border-radius:12px}
+  .msg{max-width:86%;padding:9px 12px;border-radius:12px;font-size:13px;line-height:1.45;white-space:pre-wrap}
+  .msg.me{align-self:flex-end;background:var(--pink);color:#fff}
+  .msg.bot{align-self:flex-start;background:var(--card2);border:1px solid var(--line)}
+  .msg.sys{align-self:center;background:transparent;border:1px dashed var(--line);color:var(--muted);font-size:11px}
+  .note{border-left:3px solid var(--warn);background:#241f14;color:#f4e0b6;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.5}
+  .ok{color:var(--ok)}.muted{color:var(--muted)}.warn{color:var(--warn)}
+  .gallery{display:flex;gap:8px;overflow:auto;padding-bottom:4px}
+  .thumb{width:74px;height:74px;border-radius:10px;border:1px solid var(--line);background:#15151c;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);flex:0 0 auto;text-align:center;padding:4px}
+  .tabs2{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .tabs2 button{background:var(--card2);border:1px solid var(--line);color:var(--muted);padding:7px 12px;border-radius:999px;font-size:12px;cursor:pointer}
+  .tabs2 button.active{background:var(--pink);color:#fff;border-color:var(--pink)}
+  .gate{position:fixed;inset:0;background:rgba(8,8,12,.96);z-index:60;display:flex;align-items:center;justify-content:center;padding:20px}
+  .gate .box{max-width:460px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
+  .kv{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .kv:last-child{border-bottom:0}
+  footer{border-top:1px solid var(--line);color:var(--muted);font-size:12px;padding:18px 16px;text-align:center;line-height:1.6}
+  .hidden{display:none!important}
+  .badge{font-size:10px;border:1px solid var(--pink);color:var(--pink);border-radius:999px;padding:2px 7px}
+</style>
+</head>
+<body>
+
+<div class="gate" id="ageGate">
+  <div class="box">
+    <h2>Nur fuer Erwachsene (18+)</h2>
+    <p class="lead" style="margin-bottom:14px">Diese Anwendung enthaelt Inhalte fuer ein erwachsenes Publikum. Bitte bestaetige, dass du mindestens 18 Jahre alt bist.</p>
+    <div class="row">
+      <button class="btn" id="ageYes">Ich bin 18 oder aelter</button>
+      <button class="ghost" id="ageNo">Verlassen</button>
+    </div>
+    <p class="muted" style="font-size:11px;margin-top:14px">Die Bestaetigung wird nur lokal im Browser gespeichert.</p>
+  </div>
+</div>
+
+<header>
+  <div class="bar">
+    <div class="logo">My<span>Babes</span> Studio</div>
+    <nav id="nav"></nav>
+  </div>
+</header>
+
+<main id="main"></main>
+
+<footer>
+  MyBabes Studio ist eine eigene Demo-Umsetzung. Keine Inhalte, Namen oder Daten von anderen Anbietern uebernommen.
+  <br>Chat antwortet ueber eine lokale Regel-Engine; Bild- und Videogenerator brauchen einen konfigurierten Anbieter und sagen das offen. Kein Zahlungsanbieter angebunden.
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------------------------------------------------------------- Zustand
+  var KEY = "mybabes.studio.v1";
+  var seed = [
+    {id:"luna", name:"Luna", age:27, style:"realistisch", tags:["Girlfriend","Fantasy"], look:"lange dunkle Haare, warme Augen", backstory:"Musikerin, die nachts Songs schreibt und morgens verschlaeft.", personality:"ruhig, trocken, aufmerksam", speech:"kurze Saetze, trockener Humor", anchors:"dunkle Haare, warme Augen, Silberkette", public:true, own:false},
+    {id:"mira", name:"Mira", age:31, style:"realistisch", tags:["Milf","Roommate"], look:"schulterlange rote Haare, Sommersprossen", backstory:"Architektin, die zu viele Kaffees trinkt und Plaene sammelt.", personality:"direkt, fuerrsorglich, neugierig", speech:"erklaert gern, stellt Rueckfragen", anchors:"rote Haare, Sommersprossen", public:true, own:false},
+    {id:"yuki", name:"Yuki", age:24, style:"anime", tags:["Anime","Roommate"], look:"hellblauer Bob, grosse Augen", backstory:"Zeichnerin, die ihre Skizzen nie fertig macht.", personality:"verspielt, schuechtern am Anfang", speech:"begeistert, viele Ausrufe", anchors:"hellblauer Bob", public:true, own:false},
+    {id:"nova", name:"Nova", age:29, style:"anime", tags:["Fantasy","Anime"], look:"weisse Straehnen, silberne Augen", backstory:"Pilotin auf einer Station am Rand des Systems.", personality:"sachlich, loyal, trocken", speech:"knapp, technisch", anchors:"weisse Straehnen, silberne Augen", public:true, own:false},
+    {id:"ivy", name:"Ivy", age:35, style:"realistisch", tags:["MILF","Girlfriend"], look:"dunkle Locken, gruene Augen", backstory:"Betreibt ein kleines Cafe und kennt jeden Stammgast.", personality:"herzlich, neugierig, geduldig", speech:"erzaehlt kleine Geschichten", anchors:"dunkle Locken, gruene Augen", public:true, own:false},
+    {id:"sasha", name:"Sasha", age:22, style:"anime", tags:["Anime","Fitness"], look:"kurzer Zopf, sportlich", backstory:"Trainerin, die immer zu frueh im Studio steht.", personality:"motivierend, energisch", speech:"kurz, anfeuernd", anchors:"kurzer Zopf", public:true, own:false}
+  ];
+
+  function leer(){
+    return {age:false, characters:seed, chats:{}, stories:[], media:[], tokens:{balance:120, spent:0}, provider:{image:false, video:false}};
+  }
+  var S = load();
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(KEY);
+      if(!raw) return leer();
+      var d = JSON.parse(raw);
+      var base = leer();
+      d.characters = Array.isArray(d.characters) && d.characters.length ? d.characters : base.characters;
+      d.chats = d.chats && typeof d.chats === "object" ? d.chats : {};
+      d.stories = Array.isArray(d.stories) ? d.stories : [];
+      d.media = Array.isArray(d.media) ? d.media : [];
+      d.tokens = d.tokens && typeof d.tokens.balance === "number" ? d.tokens : base.tokens;
+      d.provider = d.provider || base.provider;
+      return d;
+    }catch(e){ return leer(); }
+  }
+  function save(){
+    try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+  }
+
+  var view = "explore";
+  var exploreSection = "babes";
+  var filterStyle = "alle";
+  var filterTag = "alle";
+  var search = "";
+  var activeChat = null;
+  var storyChar = null;
+
+  function $(sel, root){ return (root||document).querySelector(sel); }
+  function el(tag, cls, text){
+    var n = document.createElement(tag);
+    if(cls) n.className = cls;
+    if(text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+  function esc(t){ return String(t===undefined||t===null?"":t); }
+  function charById(id){
+    for(var i=0;i<S.characters.length;i++){ if(S.characters[i].id===id) return S.characters[i]; }
+    return null;
+  }
+  function chatOf(id){
+    if(!S.chats[id]) S.chats[id] = {messages:[], memory:[]};
+    if(!Array.isArray(S.chats[id].messages)) S.chats[id].messages = [];
+    if(!Array.isArray(S.chats[id].memory)) S.chats[id].memory = [];
+    return S.chats[id];
+  }
+
+  // ---------------------------------------------------------------- Navigation
+  var TABS = [
+    ["explore","Explore"],["chat","Chat"],["builder","Charakter-Builder"],
+    ["generate","Bildgenerator"],["video","Video & Reels"],["story","Story-Creator"],
+    ["creator","Creator"],["konto","Konto & Token"],["legal","Rechtliches"]
+  ];
+  function renderNav(){
+    var n = $("#nav");
+    n.textContent = "";
+    TABS.forEach(function(t){
+      var b = el("button", t[0]===view?"active":"", t[1]);
+      b.onclick = function(){ view = t[0]; render(); };
+      n.appendChild(b);
+    });
+  }
+
+  // ---------------------------------------------------------------- Explore
+  function matches(c){
+    if(filterStyle !== "alle" && c.style !== filterStyle) return false;
+    if(filterTag !== "alle" && c.tags.indexOf(filterTag) === -1) return false;
+    if(search){
+      var hay = (c.name+" "+c.tags.join(" ")+" "+c.backstory+" "+c.personality+" "+c.look).toLowerCase();
+      if(hay.indexOf(search.toLowerCase()) === -1) return false;
+    }
+    return true;
+  }
+  var ALL_TAGS = ["Girlfriend","MILF","Roommate","Anime","Fantasy","Fitness"];
+
+  function viewExplore(){
+    var wrap = el("section");
+    wrap.appendChild(el("h1", null, "Explore"));
+    wrap.appendChild(el("p","lead","Charaktere, Bilder, Videos und Geschichten an einem Ort. Filter und Suche wirken sofort auf die Karten; eigene Charaktere erscheinen hier ebenfalls."));
+
+    var tabs = el("div","tabs2");
+    [["babes","Charaktere"],["images","Bilder"],["videos","Videos"],["stories","Geschichten"]].forEach(function(s){
+      var b = el("button", s[0]===exploreSection?"active":"", s[1]);
+      b.onclick = function(){ exploreSection = s[0]; render(); };
+      tabs.appendChild(b);
+    });
+    wrap.appendChild(tabs);
+
+    var controls = el("div","panel");
+    var r = el("div","row");
+    var sIn = el("input"); sIn.placeholder = "Suche nach Name, Eigenschaft, Stichwort"; sIn.value = search;
+    sIn.style.maxWidth = "340px";
+    sIn.oninput = function(){ search = sIn.value; render(); };
+    r.appendChild(sIn);
+
+    var sel = el("select"); sel.style.maxWidth = "190px";
+    ["alle","realistisch","anime"].forEach(function(v){
+      var o = el("option", null, "Stil: "+v); o.value = v; if(filterStyle===v) o.selected = true; sel.appendChild(o);
+    });
+    sel.onchange = function(){ filterStyle = sel.value; render(); };
+    r.appendChild(sel);
+
+    var tsel = el("select"); tsel.style.maxWidth = "190px";
+    ["alle"].concat(ALL_TAGS).forEach(function(v){
+      var o = el("option", null, "Tag: "+v); o.value = v; if(filterTag===v) o.selected = true; tsel.appendChild(o);
+    });
+    tsel.onchange = function(){ filterTag = tsel.value; render(); };
+    r.appendChild(tsel);
+    controls.appendChild(r);
+    wrap.appendChild(controls);
+
+    if(exploreSection === "babes"){
+      var list = S.characters.filter(matches);
+      var g = el("div","grid");
+      if(!list.length) g.appendChild(el("p","muted","Kein Charakter passt zu Suche und Filter."));
+      list.forEach(function(c){
+        var card = el("div","card");
+        var h = el("h3", null, c.name+" · "+c.age);
+        card.appendChild(h);
+        card.appendChild(el("div","meta", (c.style==="anime"?"Anime":"Realistisch")+" · "+c.tags.join(", ")));
+        card.appendChild(el("div","muted", c.personality));
+        var pills = el("div","row");
+        c.tags.forEach(function(t){ pills.appendChild(el("span","pill",t)); });
+        if(c.own) pills.appendChild(el("span","badge","eigener Charakter"));
+        if(c.own && c.public) pills.appendChild(el("span","badge","oeffentlich"));
+        card.appendChild(pills);
+        var btns = el("div","row");
+        var b1 = el("button","btn","Chat starten");
+        b1.onclick = function(){ activeChat = c.id; view = "chat"; render(); };
+        btns.appendChild(b1);
+        var b2 = el("button","ghost","Details");
+        b2.onclick = function(){
+          alert(c.name+"\n\nAussehen: "+c.look+"\nBackstory: "+c.backstory+"\nPersoenlichkeit: "+c.personality+"\nSprechstil: "+c.speech+"\nVisuelle Merkmale: "+c.anchors);
+        };
+        btns.appendChild(b2);
+        card.appendChild(btns);
+        g.appendChild(card);
+      });
+      wrap.appendChild(g);
+    } else if(exploreSection === "images"){
+      var imgs = S.media.filter(function(m){ return m.kind==="image"; });
+      if(!imgs.length){
+        wrap.appendChild(el("div","note","Noch keine Bilder. Der Bildgenerator sagt offen, wenn kein Anbieter konfiguriert ist; vorhandene Bilder erscheinen hier."));
+      } else {
+        var g2 = el("div","grid");
+        imgs.forEach(function(m){
+          var c = el("div","card");
+          c.appendChild(el("h3", null, esc(m.title||"Bild")));
+          c.appendChild(el("div","meta", esc(m.charName||"ohne Charakter")+" · "+esc(m.date)));
+          g2.appendChild(c);
+        });
+        wrap.appendChild(g2);
+      }
+    } else if(exploreSection === "videos"){
+      if(!S.media.filter(function(m){ return m.kind==="video"; }).length){
+        wrap.appendChild(el("div","note","Noch keine Videos. Reels zeigt dieselbe Liste, sobald Videos vorhanden sind."));
+      }
+    } else {
+      if(!S.stories.length){
+        wrap.appendChild(el("div","note","Noch keine Geschichten. Im Story-Creator anlegen; sie erscheinen dann hier."));
+      } else {
+        var g3 = el("div","grid");
+        S.stories.forEach(function(st){
+          var c = el("div","card");
+          c.appendChild(el("h3", null, st.title));
+          c.appendChild(el("div","meta", st.charName+" · "+st.chapters.length+" Kapitel"));
+          g3.appendChild(c);
+        });
+        wrap.appendChild(g3);
+      }
+    }
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------- Chat
+  var ENGINE_NOTE = "Lokale Regel-Engine. Kein Modell-Endpunkt konfiguriert, deshalb keine echten Modellantworten.";
+
+  function reply(c, text, chat){
+    var t = text.toLowerCase();
+    var mem = chat.memory;
+    var name = c.name;
+    var parts = [];
+    if(/hallo|hi|hey|servus/.test(t)) parts.push("Hey. Schoen, dass du da bist.");
+    if(/wie geht|how are/.test(t)) parts.push(c.style==="anime" ? "Gut! Und bei dir? Ich hab gerade an einer Skizze gesessen." : "Ganz gut. Ich sortiere gerade meinen Tag.");
+    if(/erinner|weisst du|remember/.test(t)) parts.push(mem.length ? "Klar: "+mem.slice(-3).join(", ")+"." : "Ich habe mir noch nichts gemerkt. Erzaehl mir etwas, dann behalte ich es.");
+    if(/name|wer bist/.test(t)) parts.push("Ich bin "+name+". "+c.backstory);
+    if(/story|geschichte/.test(t)) parts.push("Dann bauen wir das im Story-Creator weiter, Kapitel fuer Kapitel.");
+    if(/bild|foto|image/.test(t)) parts.push("Bilder gehen ueber den Bildgenerator. Ohne konfigurierten Anbieter bleibt es bei der Oberflaeche.");
+    if(!parts.length){
+      var openers = ["Erzaehl weiter.","Das klingt nach mehr.","Und dann?","Bleib kurz bei dem Punkt."];
+      parts.push(openers[Math.floor(Math.random()*openers.length)]);
+      if(mem.length) parts.push("Was ich mir gemerkt habe: "+mem.slice(-2).join(", ")+".");
+    }
+    return parts.join(" ");
+  }
+
+  function viewChat(){
+    var wrap = el("section");
+    wrap.appendChild(el("h1", null, "Chat"));
+    wrap.appendChild(el("p","lead","Verlauf und Gedaechtnis liegen je Charakter im Browser. Der Verlauf ueberlebt ein Neuladen, das Gedaechtnis versorgt die Regel-Engine mit Kontext."));
+
+    var split = el("div","split");
+
+    // linke Spalte: Charakterwahl
+    var left = el("div","panel");
+    left.appendChild(el("h2", null, "Charaktere"));
+    S.characters.forEach(function(c){
+      var row = el("div","kv");
+      var n = el("span", null, c.name);
+      if(c.own) n.appendChild(el("span","badge","eigen"));
+      row.appendChild(n);
+      var b = el("button", (activeChat===c.id?"btn":"ghost"), c.name=== (activeChat&&charById(activeChat)? charById(activeChat).name : "") ? "ausgewaehlt" : "oeffnen");
+      b.onclick = function(){ activeChat = c.id; render(); };
+      row.appendChild(b);
+      left.appendChild(row);
+    });
+    var prov = el("div","note");
+    prov.textContent = ENGINE_NOTE;
+    left.appendChild(prov);
+    split.appendChild(left);
+
+    // rechte Spalte: Chatfenster
+    var right = el("div","panel");
+    var c = activeChat ? charById(activeChat) : null;
+    if(!c){
+      right.appendChild(el("h2", null, "Kein Charakter gewaehlt"));
+      right.appendChild(el("p","muted","Waehle links einen Charakter."));
+      split.appendChild(right);
+      wrap.appendChild(split);
+      return wrap;
+    }
+    var chat = chatOf(c.id);
+    right.appendChild(el("h2", null, "Chat mit "+c.name));
+    var log = el("div","chatlog");
+    if(!chat.messages.length) log.appendChild(el("div","msg sys","Noch keine Nachrichten."));
+    chat.messages.slice(-200).forEach(function(m){
+      log.appendChild(el("div","msg "+(m.role==="me"?"me":"bot"), m.text));
+    });
+    right.appendChild(log);
+
+    // Galerie zum Chat
+    var galTitle = el("h2", null, "Galerie");
+    galTitle.style.marginTop = "14px";
+    right.appendChild(galTitle);
+    var gal = el("div","gallery");
+    var mine = S.media.filter(function(m){ return m.charId === c.id; });
+    if(!mine.length){
+      gal.appendChild(el("div","thumb","leer"));
+    } else {
+      mine.forEach(function(m){
+        var t = el("div","thumb", (m.kind==="image"?"Bild":"Video")+"\n"+m.date);
+        t.title = m.title || "";
+        gal.appendChild(t);
+      });
+    }
+    right.appendChild(gal);
+    if(mine.length){
+      var clear = el("button","ghost","Galerie leeren");
+      clear.style.marginTop = "8px";
+      clear.onclick = function(){
+        S.media = S.media.filter(function(m){ return m.charId !== c.id; });
+        save(); render();
+      };
+      right.appendChild(clear);
+    }
+
+    var input = el("textarea");
+    input.placeholder = "Nachricht schreiben ...";
+    input.style.marginTop = "14px";
+    right.appendChild(input);
+
+    var row = el("div","row");
+    row.style.marginTop = "8px";
+    var send = el("button","btn","Senden");
+    function doSend(){
+      var txt = input.value.trim();
+      if(!txt) return;
+      chat.messages.push({role:"me", text:txt});
+      // Gedaechtnis: kurze Merksaetze aus der Nachricht ableiten
+      if(/ich (mag|liebe|hasse|bin|arbeite|wohne)/i.test(txt)){
+        var merke = txt.slice(0,120);
+        if(chat.memory.indexOf(merke) === -1) chat.memory.push(merke);
+        if(chat.memory.length > 8) chat.memory = chat.memory.slice(-8);
+      }
+      var antwort = reply(c, txt, chat);
+      chat.messages.push({role:"bot", text:antwort});
+      save(); render();
+    }
+    send.onclick = doSend;
+    row.appendChild(send);
+
+    var speak = el("button","ghost","Vorlesen");
+    speak.onclick = function(){
+      if(!("speechSynthesis" in window)){ alert("Sprachausgabe ist in diesem Browser nicht verfuegbar."); return; }
+      var last = chat.messages.filter(function(m){ return m.role==="bot"; }).slice(-1)[0];
+      if(!last){ alert("Noch keine Antwort zum Vorlesen."); return; }
+      var u = new SpeechSynthesisUtterance(last.text);
+      u.lang = "de-DE";
+      window.speechSynthesis.speak(u);
+    };
+    row.appendChild(speak);
+
+    var mic = el("button","ghost","Spracheingabe");
+    mic.onclick = function(){
+      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if(!SR){ alert("Spracheingabe ist in diesem Browser nicht verfuegbar."); return; }
+      var r = new SR();
+      r.lang = "de-DE";
+      r.onresult = function(ev){ input.value = ev.results[0][0].transcript; };
+      r.onerror = function(){ alert("Spracheingabe abgebrochen."); };
+      r.start();
+    };
+    row.appendChild(mic);
+
+    var reset = el("button","ghost","Verlauf loeschen");
+    reset.onclick = function(){
+      chat.messages = []; chat.memory = []; save(); render();
+    };
+    row.appendChild(reset);
+    right.appendChild(row);
+
+    if(chat.memory.length){
+      var memBox = el("div","panel");
+      memBox.style.marginTop = "12px";
+      memBox.appendChild(el("h2", null, "Gedaechtnis"));
+      chat.memory.slice(-5).forEach(function(m){ memBox.appendChild(el("div","kv",m)); });
+      right.appendChild(memBox);
+    }
+
+    split.appendChild(right);
+    wrap.appendChild(split);
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------- Builder
+  function viewBuilder(){
+    var wrap = el("section");
+    wrap.appendChild(el("h1", null, "Charakter-Builder"));
+    wrap.appendChild(el("p","lead","Eigene Charaktere mit Aussehen, Backstory, Persoenlichkeit und Sprechstil. Die visuellen Merkmale wirken als Identitaetsanker fuer generierte Medien."));
+
+    var panel = el("div","panel");
+    var f = {};
+    function field(id, label, opts){
+      var d = el("div","field");
+      d.appendChild(el("label", null, label));
+      var i;
+      if(opts && opts.textarea){ i = el("textarea"); }
+      else if(opts && opts.select){
+        i = el("select");
+        opts.select.forEach(function(v){ var o = el("option", null, v); o.value = v; i.appendChild(o); });
+      } else { i = el("input"); }
+      i.id = "f_"+id;
+      d.appendChild(i);
+      f[id] = i;
+      return d;
+    }
+    var two = el("div","split");
+    var a = el("div"), b = el("div");
+    a.appendChild(field("name","Name"));
+    a.appendChild(field("age","Alter",{}));
+    a.appendChild(field("style","Stil",{select:["realistisch","anime"]}));
+    a.appendChild(field("tags","Tags (Komma getrennt)"));
+    b.appendChild(field("personality","Persoenlichkeit"));
+    b.appendChild(field("speech","Sprechstil"));
+    b.appendChild(field("anchors","Visuelle Merkmale (Identitaetsanker)"));
+    two.appendChild(a); two.appendChild(b);
+    panel.appendChild(two);
+    panel.appendChild(field("look","Aussehen"));
+    panel.appendChild(field("backstory","Backstory",{textarea:true}));
+
+    var row = el("div","row");
+    var tpl = el("button","ghost","Vorlage einsetzen");
+    tpl.onclick = function(){
+      f.name.value = "Neue Begleiterin";
+      f.age.value = "27";
+      f.style.value = "realistisch";
+      f.tags.value = "Girlfriend, Fantasy";
+      f.personality.value = "aufmerksam, ruhig, neugierig";
+      f.speech.value = "kurze Saetze, stellt Rueckfragen";
+      f.anchors.value = "dunkle Haare, gruene Augen, Silberkette";
+      f.look.value = "dunkle Haare, gruene Augen";
+      f.backstory.value = "Arbeitet in einer Buchhandlung und sammelt alte Karten.";
+    };
+    row.appendChild(tpl);
+
+    var saveBtn = el("button","btn","Charakter speichern");
+    saveBtn.onclick = function(){
+      var name = f.name.value.trim();
+      var age = parseInt(f.age.value, 10);
+      if(name.length < 2){ alert("Bitte einen Namen mit mindestens zwei Zeichen."); return; }
+      if(!(age >= 18 && age <= 99)){ alert("Bitte ein Alter zwischen 18 und 99 angeben."); return; }
+      if(f.personality.value.trim().length < 3){ alert("Bitte eine Persoenlichkeit angeben."); return; }
+      var tags = f.tags.value.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+      var c = {
+        id: "own-"+Date.now(),
+        name: name, age: age,
+        style: f.style.value,
+        tags: tags.length ? tags : ["Eigener"],
+        look: f.look.value.trim(),
+        backstory: f.backstory.value.trim(),
+        personality: f.personality.value.trim(),
+        speech: f.speech.value.trim(),
+        anchors: f.anchors.value.trim(),
+        public: false, own: true
+      };
+      S.characters.push(c);
+      save();
+      alert("Gespeichert: "+c.name+". Der Charakter steht jetzt im Explore und im Chat.");
+      view = "explore"; render();
+    };
+    row.appendChild(saveBtn);
+    panel.appendChild(row);
+    wrap.appendChild(panel);
+
+    var mine = S.characters.filter(function(c){ return c.own; });
+    wrap.appendChild(el("h2", null, "Eigene Charaktere ("+mine.length+")"));
+    if(!mine.length) wrap.appendChild(el("p","muted","Noch keine eigenen Charaktere."));
+    mine.forEach(function(c){
+      var p = el("div","kv");
+      p.appendChild(el("span", null, c.name+" · "+c.age+" · "+c.style));
+      var del = el("button","ghost","entfernen");
+      del.onclick = function(){
+        S.characters = S.characters.filter(function(x){ return x.id !== c.id; });
+        delete S.chats[c.id];
+        save(); render();
+      };
+      p.appendChild(del);
+      wrap.appendChild(p);
+    });
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------- Generatoren
+  function viewGenerate(){
+    var wrap = el("section");
+    wrap.appendChild(el("h1", null, "Bildgenerator"));
+    wrap.appendChild(el("p","lead","Prompt, Stil und Aufloesung. Die Erzeugung laeuft ueber einen Anbieter-Adapter; ohne konfigurierten Schluessel bleibt es bei der Oberflaeche, es entsteht kein Platzhalter, der wie ein Ergebnis aussieht."));
+
+    var p = el("div","panel");
+    p.appendChild(el("h2", null, "Prompt"));
+    var prompt = el("textarea"); prompt.placeholder = "Motiv, Licht, Stimmung ...";
+    p.appendChild(prompt);
+    var row = el("div","row"); row.style.marginTop = "10px";
+    var style = el("select"); style.style.maxWidth="180px";
+    ["realistisch","anime","filmisch"].forEach(function(v){ var o = el("option",null,v); o.value=v; style.appendChild(o); });
+    row.appendChild(style);
+    var q = el("select"); q.style.maxWidth="140px";
+    ["Standard","2K"].forEach(function(v){ var o = el("option",null,v); o.value=v; q.appendChild(o); });
+    row.appendChild(q);
+    var who = el("select"); who.style.maxWidth="200px";
+    S.characters.forEach(function(c){ var o = el("option", null, c.name); o.value = c.id; who.appendChild(o); });
+    row.appendChild(who);
+    p.appendChild(row);
+
+    var out = el("div","note"); out.style.marginTop = "12px";
+    out.textContent = "Zustand: Anbieter nicht konfiguriert. Es wird nichts erzeugt und nichts berechnet.";
+    p.appendChild(out);
+
+    var row2 = el("div","row"); row2.style.marginTop = "10px";
+    var go = el("button","btn","Bild erzeugen");
+    go.onclick = function(){
+      if(!prompt.value.trim()){ alert("Bitte einen Prompt eingeben."); return; }
+      out.textContent = "Anbieter nicht konfiguriert: kein Bild erzeugt. Token bleiben unberuehrt (Guthaben "+S.tokens.balance+" Tokens).";
+    };
+    row2.appendChild(go);
+    var cost = el("span","muted","Kosten: 10 Tokens je Bild (nur bei konfiguriertem Anbieter)");
+    row2.appendChild(cost);
+    p.appendChild(row2);
+    wrap.appendChild(p);
+
+    var p2 = el("div","panel");
+    p2.appendChild(el("h2", null, "Token"));
+    p2.appendChild(el("div","kv","Guthaben: "+S.tokens.balance));
+    p2.appendChild(el("div","kv","Verbraucht: "+S.tokens.spent));
+    p2.appendChild(el("div","kv","Anbieter Bild: "+(S.provider.image?"konfiguriert":"nicht konfiguriert")));
+    p2.appendChild(el("div","kv","Anbieter Video: "+(S.provider.video?"konfiguriert":"nicht konfiguriert")));
+    wrap.appendChild(p2);
+    return wrap;
+  }
+
+  function viewVideo(){
+    var wrap = el("section");
+    wrap.appendChild(el("h1", null, "Video & Reels"));
+    wrap.appendChild(el("p","lead","Videoerzeugung mit Modellwahl und eine Reels-Ansicht fuer vorhandene Clips. Beides nutzt denselben Anbieter-Adapter wie der Bildgenerator."));
+
+    var p = el("div","panel");
+    p.appendChild(el("h2", null, "Video erzeugen"));
+    var prompt = el("textarea"); prompt.placeholder = "Szene, Kamera, Dauer ...";
+    p.appendChild(prompt);
+    var row = el("div","row"); row.style.marginTop="10px";
+    var model = el("select"); model.style.maxWidth="220px";
+    ["WAN (Modell A)","Seedance (Modell B)"].forEach(function(v){ var o=el("option",null,v); o.value=v; model.appendChild(o); });
+    row.appendChild(model);
+    var dur = el("select"); dur.style.maxWidth="140px";
+    ["4 s","8 s","12 s"].forEach(function(v){ var o=el("option",null,v); o.value=v; dur.appendChild(o); });
+    row.appendChild(dur);
+    p.appendChild(row);
+    var out = el("div","note"); out.style.marginTop="12px";
+    out.textContent = "Zustand: Anbieter nicht konfiguriert. Kein Video erzeugt.";
+    p.appendChild(out);
+    var go = el("button","btn","Video erzeugen"); go.style.marginTop="10px";
+    go.onclick = function(){
+      if(!prompt.value.trim()){ alert("Bitte einen Prompt eingeben."); return; }
+      out.textContent = "Anbieter nicht konfiguriert: kein Video erzeugt. Modellwahl war "+model.value+", Dauer "+dur.value+".";
+    };
+    p.appendChild(go);
+    wrap.appendChild(p);
+
+    var p2 = el("div","panel");
+    p2.appendChild(el("h2", null, "Reels"));
+    var vids = S.media.filter(function(m){ return m.kind==="video"; });
+    if(!vids.length){
+      p2.appendChild(el("div","note","Noch keine Videos. Reels zeigt hier eine Sequenz, sobald Clips vorhanden sind."));
+    } else {
+      vids.forEach(function(v){ p2.appendChild(el("div","kv", v.title+" · "+v.date)); });
+    }
+    wrap.appendChild(p2);
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------- Story
+  function viewStory(){
+    var wrap = el("section");
+    wrap.appendChild(el("h1", null, "Story-Creator"));
+    wrap.appendChild(el("p","lead","Fortlaufende Handlung in Kapiteln. Charakter und visuelle Merkmale bleiben ueber alle Kapitel gleich, damit die Figur erkennbar bleibt."));
+
+    var p = el("div","panel");
+    p.appendChild(el("h2", null, "Neue Geschichte"));
+    var row = el("div","row");
+    var who = el("select"); who.style.maxWidth="220px";
+    S.characters.forEach(function(c){ var o=el("option",null,c.name); o.value=c.id; who.appendChild(o); });
+    row.appendChild(who);
+    var title = el("input"); title.placeholder="Titel der Geschichte"; title.style.maxWidth="320px";
+    row.appendChild(title);
+    p.appendChild(row);
+    var first = el("textarea"); first.style.marginTop="10px"; first.placeholder="Erstes Kapitel: Stichpunkte oder Text ...";
+    p.appendChild(first);
+    var add = el("button","btn","Geschichte anlegen"); add.style.marginTop="10px";
+    add.onclick = function(){
+      if(!title.value.trim()){ alert("Bitte einen Titel angeben."); return; }
+      var c = charById(who.value);
+      S.stories.unshift({
+        id:"st-"+Date.now(), title:title.value.trim(), charId:c.id, charName:c.name,
+        anchors:c.anchors, chapters:[{title:"Kapitel 1", text:first.value.trim(), date:new Date().toISOString().slice(0,10)}]
+      });
+      save(); title.value=""; first.value=""; render();
+    };
+    p.appendChild(add);
+    wrap.appendChild(p);
+
+    if(!S.stories.length){ wrap.appendChild(el("p","muted","Noch keine Geschichten.")); return wrap; }
+    S.stories.forEach(function(st){
+      var box = el("div","panel");
+      box.appendChild(el("h2", null, st.title));
+      box.appendChild(el("div","meta", st.charName+" · Anker: "+st.anchors));
+      st.chapters.forEach(function(ch){
+        var kv = el("div","kv");
+        kv.appendChild(el("span", null, ch.title+": "+ch.text.slice(0,90)+(ch.text.length>90?" ...":"")));
+        kv.appendChild(el("span","muted", ch.date));
+        box.appendChild(kv);
+      });
+      var more = el("textarea"); more.placeholder="Naechstes Kapitel ..."; more.style.marginTop="8px";
+      box.appendChild(more);
+      var r2 = el("div","row"); r2.style.marginTop="8px";
+      var cont = el("button","btn","Kapitel anlegen");
+      cont.onclick = function(){
+        if(!more.value.trim()){ alert("Bitte Text fuer das Kapitel."); return; }
+        st.chapters.push({title:"Kapitel "+(st.chapters.length+1), text:more.value.trim(), date:new Date().toISOString().slice(0,10)});
+        save(); render();
+      };
+      r2.appendChild(cont);
+      var del = el("button","ghost","Geschichte loeschen");
+      del.onclick = function(){ S.stories = S.stories.filter(function(x){ return x.id!==st.id; }); save(); render(); };
+      r2.appendChild(del);
+      box.appendChild(r2);
+      wrap.appendChild(box);
+    });
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------- Creator
+  function viewCreator(){
+    var wrap = el("section");
+    wrap.appendChild(el("h1", null, "Creator"));
+    wrap.appendChild(el("p","lead","Eigene Charaktere als oeffentlich markieren oder zurueckziehen. Veroeffentlichen heisst hier: der Charakter erscheint im Explore-Bereich als oeffentlich, ohne Server-Upload."));
+
+    var mine = S.characters.filter(function(c){ return c.own; });
+    if(!mine.length){
+      wrap.appendChild(el("div","note","Noch keine eigenen Charaktere. Im Charakter-Builder anlegen, danach hier veroeffentlichen."));
+      return wrap;
+    }
+    var p = el("div","panel");
+    mine.forEach(function(c){
+      var kv = el("div","kv");
+      kv.appendChild(el("span", null, c.name+" · "+(c.public?"oeffentlich":"privat")));
+      var b = el("button", c.public?"ghost":"btn", c.public?"zurueckziehen":"veroeffentlichen");
+      b.onclick = function(){ c.public = !c.public; save(); render(); };
+      kv.appendChild(b);
+      p.appendChild(kv);
+    });
+    wrap.appendChild(p);
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------- Konto
+  function viewKonto(){
+    var wrap = el("section");
+    wrap.appendChild(el("h1", null, "Konto & Token"));
+    wrap.appendChild(el("p","lead","Kostenloser Einstieg mit Token-Guthaben. Pakete sind hier gelistet, ein Verkauf findet ohne angebundenen Zahlungsanbieter nicht statt."));
+
+    var p = el("div","panel");
+    p.appendChild(el("h2", null, "Guthaben"));
+    p.appendChild(el("div","kv","Token: "+S.tokens.balance));
+    p.appendChild(el("div","kv","Verbraucht: "+S.tokens.spent));
+    p.appendChild(el("div","kv","Status: "+(S.provider.image||S.provider.video?"Anbieter verbunden":"kein Anbieter verbunden")));
+    wrap.appendChild(p);
+
+    var packs = [["Start",120,"kostenlos"],["Plus",800,"9,99 EUR / Monat"],["Studio",2400,"24,99 EUR / Monat"]];
+    var g = el("div","grid");
+    packs.forEach(function(pk){
+      var c = el("div","card");
+      c.appendChild(el("h3", null, pk[0]));
+      c.appendChild(el("div","meta", pk[1]+" Tokens"));
+      c.appendChild(el("div","muted", pk[2]));
+      var b = el("button","ghost","nicht verfuegbar");
+      b.disabled = true;
+      c.appendChild(b);
+      g.appendChild(c);
+    });
+    wrap.appendChild(g);
+    var note = el("div","note");
+    note.style.marginTop = "14px";
+    note.textContent = "Kein Zahlungsanbieter angebunden: Die Pakete zeigen nur den geplanten Umfang. Es wird nichts berechnet und nichts freigeschaltet.";
+    wrap.appendChild(note);
+
+    var reset = el("button","ghost","Lokale Daten zuruecksetzen");
+    reset.style.marginTop = "16px";
+    reset.onclick = function(){
+      if(!confirm("Alle lokalen Daten (Charaktere, Chats, Geschichten) loeschen?")) return;
+      try{ localStorage.removeItem(KEY); }catch(e){}
+      S = leer(); activeChat = null; render();
+    };
+    wrap.appendChild(reset);
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------- Rechtliches
+  function viewLegal(){
+    var wrap = el("section");
+    wrap.appendChild(el("h1", null, "Rechtliches"));
+    var docs = [
+      ["Nutzungsbedingungen","Nutzung ab 18 Jahren. Keine Inhalte von Dritten, keine Weitergabe von Zugangsdaten. Diese Fassung ist ein Entwurf fuer die Demo und ersetzt keine Rechtsberatung."],
+      ["Datenschutz","Alle Daten liegen lokal im Browser (localStorage). Es gibt keinen Server-Account und keine Uebertragung an Dritte. Zuruecksetzen jederzeit ueber Konto."],
+      ["Gesperrte Inhalte","Nicht zulaessig sind Inhalte mit Minderjaehrigen, ohne Einwilligung abgebildeten Personen, Gewaltverherrlichung oder strafbaren Handlungen. Solche Inhalte werden nicht erzeugt und nicht angezeigt."],
+      ["Entfernung von Inhalten","Betroffene koennen die Entfernung eigener Darstellungen verlangen. Im Demo-Stand gibt es keine Veroeffentlichung auf einem Server, deshalb genuegt das Zurueckziehen im Creator-Bereich."],
+      ["Altersverifikation","Die Altersabfrage ist eine Selbstauskunft und im Browser gespeichert. Eine belastbare Verifikation braucht einen Anbieter; sie ist hier nicht angebunden und wird auch nicht behauptet."]
+    ];
+    docs.forEach(function(d){
+      var p = el("div","panel");
+      p.appendChild(el("h2", null, d[0]));
+      p.appendChild(el("p","muted", d[1]));
+      wrap.appendChild(p);
+    });
+    return wrap;
+  }
+
+  // ---------------------------------------------------------------- Render
+  function render(){
+    renderNav();
+    var m = $("#main");
+    m.textContent = "";
+    var node;
+    if(view==="explore") node = viewExplore();
+    else if(view==="chat") node = viewChat();
+    else if(view==="builder") node = viewBuilder();
+    else if(view==="generate") node = viewGenerate();
+    else if(view==="video") node = viewVideo();
+    else if(view==="story") node = viewStory();
+    else if(view==="creator") node = viewCreator();
+    else if(view==="konto") node = viewKonto();
+    else node = viewLegal();
+    m.appendChild(node);
+    window.scrollTo(0,0);
+  }
+
+  // Fehler sichtbar machen: bei einem Skriptfehler steht ERR im Titel.
+  window.addEventListener("error", function(e){ document.title = "ERR: "+e.message; });
+
+  // Test-Haken fuer die Baupruefung: ?test=1&view=chat rendert eine Ansicht
+  // ohne Altersabfrage, damit die Strecke jede Ansicht pruefen kann.
+  var qs = new URLSearchParams(location.search);
+  if(qs.get("test") === "1"){
+    S.age = true;
+    var wunsch = qs.get("view");
+    if(wunsch && TABS.some(function(t){ return t[0]===wunsch; })) view = wunsch;
+    if(qs.get("char")) activeChat = qs.get("char");
+  }
+
+  // Altersabfrage
+  var gate = $("#ageGate");
+  if(S.age){ gate.classList.add("hidden"); } else { gate.classList.remove("hidden"); }
+  $("#ageYes").onclick = function(){ S.age = true; save(); gate.classList.add("hidden"); render(); };
+  $("#ageNo").onclick = function(){
+    document.body.innerHTML = '<div style="padding:40px;color:#f2f2f6;font-family:system-ui">Zugang nur ab 18 Jahren. Du kannst das Fenster schliessen.</div>';
+  };
+
+  render();
+
+  // Selbsttest der Bedienung (nur mit ?selftest=1): klickt echte Knoepfe und
+  // prueft das Ergebnis im lokalen Zustand. Kein Teil der normalen Ansicht.
+  function selftest(){
+    var qs2 = new URLSearchParams(location.search);
+    if(qs2.get("selftest") !== "1") return;
+    var lines = [], fails = 0;
+    function check(name, cond){
+      lines.push((cond?"PASS ":"FAIL ")+name);
+      if(!cond) fails++;
+    }
+    var echtAlert = window.alert, echtConfirm = window.confirm;
+    window.alert = function(){}; window.confirm = function(){ return true; };
+
+    // A: Chat senden, Gedaechtnis, Antwort
+    view = "chat"; activeChat = "luna"; render();
+    var box = $(".chatlog") ? null : null;
+    var ta = $("textarea");
+    ta.value = "Ich liebe Jazz und arbeite in Hamburg";
+    var sendBtn = null;
+    Array.prototype.forEach.call(document.querySelectorAll("button"), function(b){ if(b.textContent==="Senden") sendBtn = b; });
+    if(sendBtn) sendBtn.click();
+    var ch = S.chats["luna"] || {messages:[],memory:[]};
+    check("Chat: Nachricht gespeichert", ch.messages.some(function(m){ return m.role==="me"; }));
+    check("Chat: Antwort erzeugt", ch.messages.some(function(m){ return m.role==="bot" && m.text.length>5; }));
+    check("Chat: Gedaechtnis gefuellt", ch.memory.length>0);
+
+    // B: Charakter speichern
+    view = "builder"; render();
+    var ids = ["name","age","personality","tags"];
+    var vals = {name:"Testa", age:"30", personality:"ruhig und direkt", tags:"Girlfriend"};
+    ids.forEach(function(k){ var n = document.getElementById("f_"+k); if(n) n.value = vals[k]; });
+    var saveBtn = null;
+    Array.prototype.forEach.call(document.querySelectorAll("button"), function(b){ if(b.textContent==="Charakter speichern") saveBtn = b; });
+    var vorher = S.characters.length;
+    if(saveBtn) saveBtn.click();
+    check("Builder: Charakter gespeichert", S.characters.length === vorher+1 && S.characters.some(function(c){ return c.name==="Testa" && c.own; }));
+
+    // C: Geschichte anlegen
+    view = "story"; render();
+    var tIn = document.querySelector('input[placeholder="Titel der Geschichte"]');
+    var stIn = document.querySelector("textarea");
+    if(tIn) tIn.value = "Teststory";
+    if(stIn) stIn.value = "Erstes Kapitel";
+    var anlegen = null;
+    Array.prototype.forEach.call(document.querySelectorAll("button"), function(b){ if(b.textContent==="Geschichte anlegen") anlegen = b; });
+    var sVorher = S.stories.length;
+    if(anlegen) anlegen.click();
+    check("Story: Geschichte angelegt", S.stories.length === sVorher+1);
+
+    // D: Bildgenerator ohne Anbieter erzeugt nichts und kostet nichts
+    view = "generate"; render();
+    var pIn = document.querySelector("textarea");
+    if(pIn) pIn.value = "Testmotiv";
+    var tokVorher = S.tokens.balance;
+    var goBtn = null;
+    Array.prototype.forEach.call(document.querySelectorAll("button"), function(b){ if(b.textContent==="Bild erzeugen") goBtn = b; });
+    if(goBtn) goBtn.click();
+    check("Generator: keine Token ohne Anbieter", S.tokens.balance === tokVorher);
+    check("Generator: Zustand sichtbar", document.body.textContent.indexOf("nicht konfiguriert") !== -1);
+
+    // E: Creator veroeffentlicht eigenen Charakter
+    view = "creator"; render();
+    var pub = null;
+    Array.prototype.forEach.call(document.querySelectorAll("button"), function(b){ if(b.textContent==="veroeffentlichen") pub = b; });
+    if(pub) pub.click();
+    check("Creator: Veroeffentlichung wirkt", S.characters.some(function(c){ return c.own && c.public; }));
+
+    window.alert = echtAlert; window.confirm = echtConfirm;
+
+    var pre = document.createElement("pre");
+    pre.id = "selftest";
+    pre.style.cssText = "position:fixed;inset:auto 0 0 0;max-height:45vh;overflow:auto;background:#000;color:#0f0;font-size:11px;z-index:99;padding:8px;margin:0";
+    pre.textContent = lines.join("\n") + "\n" + (fails? ("SELFTEST FAIL "+fails) : "SELFTEST OK");
+    document.body.appendChild(pre);
+    document.title = fails ? "SELFTEST FAIL" : "SELFTEST OK";
+  }
+  try{ selftest(); }catch(e){ document.title = "ERR: "+e.message; }
+})();
+</script>
+</body>
+</html>
