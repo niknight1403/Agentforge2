@@ -144,8 +144,11 @@ jobs:
           TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq '.sha' 2>/dev/null || true)
           printf '%s' "$TAG_SHA" | grep -Eq '^[0-9a-f]{40}$' || TAG_SHA=""
           if [ -n "$TAG_SHA" ] && [ "$TAG_SHA" != "$VF_BUILD_SHA" ]; then
-            echo "Release tag $TAG gehoert zu $TAG_SHA, dieser Build ist $VF_BUILD_SHA; Artefakte des anderen Commits bleiben unangetastet."
-            exit 1
+            # Kein Fehler: derselbe Versionsstand kann mehrere Commits haben
+            # (Doku-, Ops- oder Workflow-Aenderungen heben versionName nicht an).
+            # Der fremde Release bleibt unangetastet, die Artefakte liegen am Lauf.
+            echo "::notice::Release $TAG gehoert zu $TAG_SHA; dieser Build ist $VF_BUILD_SHA. Kein Upload, Artefakte bleiben am Lauf."
+            exit 0
           fi
           NOTES="docs/releases/${TAG}.md"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
