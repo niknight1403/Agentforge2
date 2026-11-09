@@ -12,17 +12,35 @@ const CONSUMER=String(process.env.AGENTFORGE_GENERATION_CONSUMER||`${hostname().
 const WORKSPACE=resolve(process.env.AGENTFORGE_GENERATION_WORKSPACE||'server/data/generated');
 const sleep=ms=>new Promise(resolveP=>setTimeout(resolveP,ms));
 
+const LEASE_MS = Math.max(90_000, Number(process.env.AGENTFORGE_GENERATION_LEASE_MS) || 180_000);
+const HEARTBEAT_MS = Math.max(10_000, Math.min(30_000, Math.floor(LEASE_MS / 4)));
+const MAX_ATTEMPTS = Math.max(1, Number(process.env.AGENTFORGE_GENERATION_MAX_ATTEMPTS) || 5);
+
 db.exec(`
  CREATE TABLE IF NOT EXISTS generation_jobs (
   id TEXT PRIMARY KEY, request_id TEXT UNIQUE, project_id TEXT, status TEXT NOT NULL,
   workspace TEXT NOT NULL, manifest TEXT, error_code TEXT, commit_sha TEXT,
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+  attempts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
  );
  CREATE TABLE IF NOT EXISTS generation_checkpoints (
   id TEXT PRIMARY KEY, job_id TEXT NOT NULL, stage TEXT NOT NULL, metadata TEXT NOT NULL,
   created_at INTEGER NOT NULL
  );
 `);
+try { db.exec('ALTER TABLE generation_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0'); } catch { /* already migrated */ }
+
+function isRetryableGenerationError(error) {
+ const status=Number(error?.status||error?.statusCode||0);
+ const code=String(error?.code||'').toUpperCase();
+ if(error?.retryable===true || error?.busy===true) return true;
+ if(status===408 || status===425 || status===429 || status>=500) return true;
+ return [
+  'GENERATION_EVENT_PUBLISH_FAILED','GENERATION_REDIS_UNAVAILABLE','REDIS_UNAVAILABLE',
+  'RATE_WINDOW_BUSY','CIRCUIT_OPEN','ECONNRESET','ECONNREFUSED','ETIMEDOUT',
+  'EAI_AGAIN','ENETUNREACH','EHOSTUNREACH','UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_SOCKET','GENERATION_PROVIDER_UNAVAILABLE'
+ ].includes(code);
+}
 
 async function publish(type,taskId,metadata={}) {
  const event=generationEvent(type,taskId,metadata);
@@ -52,12 +70,29 @@ async function generate({prompt,taskId,projectId}) {
  if(existing?.status==='COMPLETED') { await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace:existing.workspace}); return true; }
  const jobId=existing?.id||randomUUID();
  const workspace=join(WORKSPACE,jobId);
- if(existing?.status==='RUNNING' && now()-Number(existing.updated_at)<10*60_000) return false;
+ const startedAt=now();
+ // Atomic lease acquisition prevents two consumers from deleting/writing the same workspace.
+ const claim=db.prepare(`INSERT INTO generation_jobs(id,request_id,project_id,status,workspace,attempts,created_at,updated_at)
+ VALUES(?,?,?,'RUNNING',?,1,?,?)
+ ON CONFLICT(request_id) DO UPDATE SET
+  status='RUNNING',manifest=NULL,error_code=NULL,attempts=generation_jobs.attempts+1,updated_at=excluded.updated_at
+ WHERE generation_jobs.status!='RUNNING' OR generation_jobs.updated_at<=?`)
+ .run(jobId,taskId,projectId,workspace,startedAt,startedAt,startedAt-LEASE_MS);
+ if(!claim.changes) return false;
+ const active=db.prepare('SELECT attempts FROM generation_jobs WHERE request_id=?').get(taskId);
+ const attempt=Number(active?.attempts||1);
+ if(attempt>MAX_ATTEMPTS) {
+  db.prepare("UPDATE generation_jobs SET status='FAILED',error_code='GENERATION_RETRY_EXHAUSTED',updated_at=? WHERE request_id=?").run(now(),taskId);
+  try { await publish('STREAM_COMPLETE',taskId,{status:'FAILED',errorCode:'GENERATION_RETRY_EXHAUSTED'}); } catch {}
+  return true;
+ }
  if(existing && existing.status!=='COMPLETED') rmSync(workspace,{recursive:true,force:true});
  mkdirSync(workspace,{recursive:true});
- db.prepare(`INSERT INTO generation_jobs(id,request_id,project_id,status,workspace,created_at,updated_at)
- VALUES(?,?,?,'RUNNING',?,?,?) ON CONFLICT(request_id) DO UPDATE SET status='RUNNING',manifest=NULL,error_code=NULL,updated_at=excluded.updated_at`)
- .run(jobId,taskId,projectId,workspace,now(),now());
+ const leaseTimer=setInterval(()=>{
+  try { db.prepare("UPDATE generation_jobs SET updated_at=? WHERE request_id=? AND status='RUNNING'").run(now(),taskId); }
+  catch(error) { console.error('[generation-worker] lease heartbeat failed',{code:error?.code||'DB_ERROR'}); }
+ },HEARTBEAT_MS);
+ leaseTimer.unref?.();
  try {
   let generated=null,lastFailure='';
   for(let attempt=1;attempt<=3;attempt++) {
@@ -111,9 +146,19 @@ async function generate({prompt,taskId,projectId}) {
   return true;
  } catch(error) {
   const code=String(error?.code||'GENERATION_FAILED').slice(0,100);
-  db.prepare("UPDATE generation_jobs SET status='FAILED',error_code=?,updated_at=? WHERE id=?").run(code,now(),jobId);
-  await publish('STREAM_COMPLETE',taskId,{status:'FAILED',errorCode:code});
+  const retryable=isRetryableGenerationError(error);
+  const terminal=!retryable || attempt>=MAX_ATTEMPTS;
+  db.prepare("UPDATE generation_jobs SET status=?,error_code=?,updated_at=? WHERE id=?")
+   .run(terminal?'FAILED':'PENDING',terminal?code:(`RETRYABLE:${code}`).slice(0,100),now(),jobId);
+  if(terminal) {
+   try { await publish('STREAM_COMPLETE',taskId,{status:'FAILED',errorCode:code}); }
+   catch(publishError) { console.error('[generation-worker] terminal status event could not be published',{code:publishError?.code||'PUBLISH_FAILED'}); }
+  } else {
+   console.warn('[generation-worker] transient failure retained for retry',{code,attempt,maxAttempts:MAX_ATTEMPTS});
+  }
   throw error;
+ } finally {
+  clearInterval(leaseTimer);
  }
 }
 
