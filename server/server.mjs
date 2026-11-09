@@ -1592,7 +1592,7 @@ async function api(req, res, url) {
 
 async function internalMesh(req,res,url){
   const expected=String(process.env.VF_AGENT_RUNTIME_TOKEN||'');
-  const supplied=String(req.headers.authorization||'').replace(/^Bearer\\s+/i,'');
+  const supplied=String(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
   const a=Buffer.from(supplied),b=Buffer.from(expected);
   if(expected.length<32||a.length!==b.length||!timingSafeEqual(a,b))return json(res,401,{error:'Unauthorized'});
   if(url.pathname==='/internal/mesh/generate'&&req.method==='POST'){
@@ -1606,7 +1606,7 @@ async function internalMesh(req,res,url){
     if(!messageId)return json(res,503,{error:'Generation queue unavailable.',code:'GENERATION_QUEUE_UNAVAILABLE'});
     return json(res,202,{status:'ACCEPTED',taskId});
   }
-  const generationStatus=url.pathname.match(/^\\/internal\\/mesh\\/generate\\/([0-9a-f-]{36})$/i);
+  const generationStatus=url.pathname.match(/^\/internal\/mesh\/generate\/([0-9a-f-]{36})$/i);
   if(req.method==='GET'&&generationStatus){
     try{
       const job=db.prepare('SELECT status,manifest,error_code,workspace,project_id FROM generation_jobs WHERE request_id=?').get(generationStatus[1]);
