@@ -70,25 +70,25 @@ def main():
     print(f"VILLA {villa.get('id')} {villa.get('name')} status={villa.get('status')}", file=sys.stderr)
     print(f"handoverReady {daten.get('handoverReady')}", file=sys.stderr)
     for name, pruefung in handover.items():
-        print(f"  HANDOVER {name}: {pruefung.get('status')} - {pruefung.get('evidence')}")
+        print(f"  HANDOVER {name}: {pruefung.get('status')} - {pruefung.get('evidence')}", file=sys.stderr)
 
     if not handover:
         print("Keine Uebergabe-Pruefungen im Bericht", file=sys.stderr)
         if pruefen:
-            print("HANDOVER-NICHT-BEWERTBAR")
+            print("HANDOVER-NICHT-BEWERTBAR", file=sys.stderr)
             return 1
         print("DEEP_DIR=" + ordner)
         return 0
 
     offen = [n for n, p in handover.items() if p.get("status") != "passed"]
     if offen:
-        print("HANDOVER-OFFEN " + ",".join(offen))
+        print("HANDOVER-OFFEN " + ",".join(offen), file=sys.stderr)
         if pruefen:
             return 1
         print("DEEP_DIR=" + ordner)
         return 0
 
-    print("HANDOVER-ALLE-BESTANDEN " + str(len(handover)))
+    print("HANDOVER-ALLE-BESTANDEN " + str(len(handover)), file=sys.stderr)
     print("DEEP_DIR=" + ordner)
     return 0
 
