@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { safeGeneratedPath, parseGenerationOutput, generationEvent, GENERATION_STREAM } from '../generation-engine.mjs';
+import { runGenerationChecks } from '../fs-tools.mjs';
 
 test('generation stream has the documented default',()=>assert.equal(GENERATION_STREAM,'agentforge:events:stream'));
 test('rejects traversal, absolute paths and git metadata',()=>{
@@ -18,4 +19,17 @@ test('rejects duplicate paths and oversized file sets',()=>{
 test('event payloads contain only bounded scalar metadata',()=>{
  const event=generationEvent('PROJECT_PLANNED','task-1',{files:4,prompt:'must not leak',status:'RUNNING'});
  assert.equal(event.files,4); assert.equal(event.prompt,undefined); assert.equal(event.status,'RUNNING');
+});
+
+test('generated build execution fails closed without Docker sandbox',async()=>{
+ const previous=process.env.VF_PROJECT_SANDBOX;
+ delete process.env.VF_PROJECT_SANDBOX;
+ try {
+  const result=await runGenerationChecks(process.cwd());
+  assert.equal(result.ok,false);
+  assert.equal(result.error,'GENERATION_DOCKER_SANDBOX_REQUIRED');
+ } finally {
+  if(previous===undefined) delete process.env.VF_PROJECT_SANDBOX;
+  else process.env.VF_PROJECT_SANDBOX=previous;
+ }
 });
