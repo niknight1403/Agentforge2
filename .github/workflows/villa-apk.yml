@@ -52,6 +52,11 @@ jobs:
           find "$WWW" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           if [ -f /tmp/villa.zip ] && [ "$(stat -c%s /tmp/villa.zip)" -gt 100 ]; then
             mkdir -p /tmp/art && unzip -qo /tmp/villa.zip -d /tmp/art
+            # The source ZIP is attached to a public GitHub release; sanitize it first.
+            bash scripts/sanitize-villa-source.sh /tmp/art
+            rm -f /tmp/villa-sanitized.zip
+            (cd /tmp/art && zip -qr /tmp/villa-sanitized.zip .)
+            mv /tmp/villa-sanitized.zip /tmp/villa.zip
             IDX=$(find /tmp/art -maxdepth 3 -name index.html | head -1)
             if [ -n "$IDX" ]; then
               echo "Nutze Web-Root: $IDX"
