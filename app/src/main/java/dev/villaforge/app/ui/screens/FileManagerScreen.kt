@@ -79,7 +79,10 @@ fun FileManagerScreen() {
             listOf("video", "film", "mp4").any(q::contains) -> files.filter { it.mime.startsWith("video/") }
             listOf("musik", "audio", "mp3").any(q::contains) -> files.filter { it.mime.startsWith("audio/") }
             listOf("spiel", "game", "apk").any(q::contains) -> files.filter { it.name.endsWith(".apk", true) || it.name.contains("game", true) }
-            else -> files.filter { it.name.contains(q, true) }
+            else -> {
+                val needle = q.replace(Regex("^(bitte\\s+)?(lösche|loesche|entferne|zeige|finde|suche|sortiere|ordne|verschiebe)\\s+(die\\s+)?(datei|dateien)?\\s*"), "").trim()
+                files.filter { it.name.contains(needle.ifBlank { q }, true) }
+            }
         }
         when {
             q.contains("duplikat") || q.contains("doppelt") -> {
@@ -87,8 +90,10 @@ fun FileManagerScreen() {
                     busy = true
                     val groups = withContext(Dispatchers.IO) { findDuplicates(context, files) }
                     val duplicates = groups.flatMap { it.drop(1) }
-                    result = if (duplicates.isEmpty()) "Keine inhaltlich identischen Dateien gefunden." else "${duplicates.size} Duplikate in ${groups.size} Gruppen gefunden."
-                    pending = if (duplicates.isEmpty()) null else FileAction("Duplikate prüfen (Originale bleiben erhalten)", duplicates)
+                    result = if (duplicates.isEmpty()) "Keine inhaltlich identischen Dateien gefunden." else "${duplicates.size} Duplikate in ${groups.size} Gruppen gefunden: " + duplicates.take(8).joinToString { it.name }
+                    if (q.contains("lösch") || q.contains("entfern") || q.contains("delete")) {
+                        pending = if (duplicates.isEmpty()) null else FileAction("${duplicates.size} erkannte Duplikate löschen", duplicates, delete = true)
+                    }
                     busy = false
                 }
             }
@@ -106,7 +111,10 @@ fun FileManagerScreen() {
                 if (selected.isEmpty()) result = "Keine passenden Dateien gefunden."
                 else pending = FileAction("${selected.size} Dateien löschen", selected, delete = true)
             }
-            else -> result = "Befehl erkannt? Beispiele: „Finde Duplikate“, „Sortiere Bilder“, „Zeige Videos“, „Lösche Datei Urlaub.jpg“."
+            q.startsWith("zeige") || q.startsWith("finde") || q.startsWith("suche") -> {
+                result = "${selected.size} passende Dateien: " + selected.take(12).joinToString { it.name }
+            }
+            else -> result = "Befehl nicht eindeutig. Beispiele: „Finde Duplikate“, „Sortiere Bilder“, „Zeige Videos“, „Lösche Urlaub.jpg“."
         }
     }
 
