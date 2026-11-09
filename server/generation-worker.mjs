@@ -131,12 +131,19 @@ export async function startGenerationWorker({signal}={}) {
    if(!['PROJECT_GENERATION_REQUESTED','project.generate'].includes(event.type)) { await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); continue; }
    try { const finished=await generate(inputFrom(event)); if(finished!==false) await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); }
    catch(error) {
-    console.error('[generation-worker] task failed',{code:error?.code||'GENERATION_FAILED'});
+    const code=String(error?.code||'GENERATION_FAILED');
+    console.error('[generation-worker] task failed',{code});
+    // Invalid payloads cannot become valid through retry. Acknowledge them
+    // instead of reclaiming the same poison message forever.
+    if(['PROMPT_OR_TASK_ID_MISSING','PROMPT_TOO_LONG'].includes(code)) {
+     await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id);
+     continue;
+    }
     try {
      const parsed=inputFrom(event);
      const terminal=db.prepare("SELECT status FROM generation_jobs WHERE request_id=?").get(parsed.taskId);
      if(terminal?.status==='FAILED') await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id);
-    } catch { /* leave malformed or transiently incomplete work pending for recovery */ }
+    } catch { /* leave transiently incomplete work pending for recovery */ }
    }
   }
  }
