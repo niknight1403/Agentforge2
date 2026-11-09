@@ -102,6 +102,7 @@ fun FileManagerScreen() {
                     selected.all { it.mime.startsWith("image/") } -> "Bilder"
                     selected.all { it.mime.startsWith("video/") } -> "Videos"
                     selected.all { it.mime.startsWith("audio/") } -> "Audio"
+                    q.contains("spiel") || q.contains("game") || q.contains("apk") -> "Spiele"
                     else -> "Sortiert"
                 }
                 if (selected.isEmpty()) result = "Keine passenden Dateien gefunden."
@@ -150,7 +151,7 @@ fun FileManagerScreen() {
         AlertDialog(
             onDismissRequest = { pending = null },
             title = { Text(action.title) },
-            text = { Column { Text("Bitte prüfe die betroffenen Dateien. Es wird nichts ohne deine Bestätigung geändert."); action.files.take(12).forEach { Text("• ${it.name}") }; if (action.files.size > 12) Text("… und ${action.files.size - 12} weitere") } },
+            text = { Column { Text("Bitte prüfe die betroffenen Dateien. Es wird nichts ohne deine Bestätigung geändert. Hinweis: Löschen kann endgültig sein und ist nicht über die App rückgängig zu machen."); action.files.take(12).forEach { Text("• ${it.name}") }; if (action.files.size > 12) Text("… und ${action.files.size - 12} weitere") } },
             confirmButton = {
                 TextButton(onClick = {
                     pending = null
