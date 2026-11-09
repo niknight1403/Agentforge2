@@ -70,7 +70,7 @@ async function generate({prompt,taskId,projectId}) {
    mkdirSync(dirname(target),{recursive:true});
    writeFileSync(target,file.content,{encoding:'utf8',flag:'wx'});
   }
-  writeFileSync(join(workspace,'project_manifest.json'),JSON.stringify({...generated.manifest,requestId:taskId,projectId,generatedAt:new Date().toISOString()},null,2)+'\\n',{flag:'wx'});
+  writeFileSync(join(workspace,'project_manifest.json'),JSON.stringify({...generated.manifest,requestId:taskId,projectId,generatedAt:new Date().toISOString()},null,2)+'\n',{flag:'wx'});
   await publish('SCAFFOLD_GENERATED',taskId,{projectId,files:generated.files.length,bytes:generated.bytes});
   await checkpoint(jobId,'SCAFFOLD_GENERATED',{files:generated.files.length,bytes:generated.bytes});
   const packageJson=join(workspace,'package.json');
@@ -79,7 +79,7 @@ async function generate({prompt,taskId,projectId}) {
   if(existsSync(packageJson)) {
    const pkg=JSON.parse((await import('node:fs')).readFileSync(packageJson,'utf8'));
    if(pkg.scripts?.build) build=await runCommand(workspace,'npm',['run','build'],120000);
-   if(pkg.scripts?.test) tests=await runCommand(workspace,'npm',['test','--','--runInBand'],120000);
+   if(pkg.scripts?.test) tests=await runCommand(workspace,'npm',['test'],120000);
   }
   if(build.ok && tests.ok) {
    await publish('CONTAINER_TEST_PASSED',taskId,{projectId});
@@ -87,7 +87,7 @@ async function generate({prompt,taskId,projectId}) {
    const failure=[build.error,tests.error].filter(Boolean).join(' | ').slice(0,700)||'BUILD_OR_TEST_NOT_CONFIGURED';
    await publish('CONTAINER_TEST_FAILED',taskId,{projectId,errorCode:failure.slice(0,120)});
    // No blind mutation: return the bounded diagnostics to the PEER reviewer in a fresh LLM repair request.
-   const repair=await chat([{role:'system',content:'Du bist Reviewer. Gib ausschließlich ein JSON-Objekt mit files:[{path,content}] zurück. Korrigiere nur Build-/Testfehler. Keine Secrets, keine Installationsskripte.'},{role:'user',content:`Fehler: ${failure}\\nProjektdateien: ${generated.files.map(f=>f.path).join(', ')}\\nAufgabe: ${prompt.slice(0,3000)}`}],{role:'REVIEWER',priority:'background'});
+   const repair=await chat([{role:'system',content:'Du bist Reviewer. Gib ausschließlich ein JSON-Objekt mit files:[{path,content}] zurück. Korrigiere nur Build-/Testfehler. Keine Secrets, keine Installationsskripte.'},{role:'user',content:`Fehler: ${failure}\nProjektdateien: ${generated.files.map(f=>f.path).join(', ')}\nAufgabe: ${prompt.slice(0,3000)}`}],{role:'REVIEWER',priority:'background'});
    let patch;
    try { patch=parseGenerationOutput(JSON.stringify({files:JSON.parse(String(repair?.content||'{}')).files})); }
    catch { throw Object.assign(new Error('REVIEW_REPAIR_OUTPUT_INVALID'),{code:'REVIEW_REPAIR_OUTPUT_INVALID'}); }
@@ -106,7 +106,7 @@ async function generate({prompt,taskId,projectId}) {
   }
   if(!build.ok || !tests.ok) throw Object.assign(new Error('GENERATION_BUILD_OR_TEST_NOT_VERIFIED'),{code:'GENERATION_BUILD_OR_TEST_NOT_VERIFIED'});
   const deployManifest={status:'NOT_DEPLOYED',reason:'Deployment requires an explicitly configured target and verified production credentials.',workspace,projectId,workerCommit:process.env.GITHUB_SHA||null,build:'passed',tests:'passed',createdAt:new Date().toISOString()};
-  writeFileSync(join(workspace,'deploy-manifest.json'),JSON.stringify(deployManifest,null,2)+'\\n',{flag:'wx'});
+  writeFileSync(join(workspace,'deploy-manifest.json'),JSON.stringify(deployManifest,null,2)+'\n',{flag:'wx'});
   const result={manifest:generated.manifest,workspace,projectId,build:'passed',tests:'passed',deployManifest};
   db.prepare("UPDATE generation_jobs SET status='COMPLETED',manifest=?,updated_at=? WHERE id=?").run(JSON.stringify(result),now(),jobId);
   await checkpoint(jobId,'COMPLETED',{build:result.build,tests:result.tests});
