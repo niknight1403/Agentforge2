@@ -36,8 +36,13 @@ export function createGenerationTaskExecutor({ hubUrl, token, fetcher = fetch }:
           signal:AbortSignal.any([context.signal,AbortSignal.timeout(10_000)])
         });
         if (statusResponse.ok) {
-          const status = await statusResponse.json() as { status?:string; result?:unknown; errorCode?:string };
-          if (status.status === 'COMPLETED') return { result:status.result ?? null, steps:[{
+          const status = await statusResponse.json() as { status?:string; result?:unknown; errorCode?:string; checkpoints?:Array<{stage:string;metadata:Record<string,unknown>}> };
+          const steps = (status.checkpoints || []).map(checkpoint => ({
+            toolName:'generation.' + String(checkpoint.stage).toLowerCase(),
+            arguments:{ taskId }, result:checkpoint.metadata,
+            state:{ taskId, stage:checkpoint.stage, metadata:checkpoint.metadata }
+          }));
+          if (status.status === 'COMPLETED') return { result:status.result ?? null, steps:steps.length ? steps : [{
             toolName:'agentforge.fullstack.generate', arguments:{ taskId }, result:status.result ?? null,
             state:{ status:'COMPLETED', taskId }
           }] };
