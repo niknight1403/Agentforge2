@@ -2,7 +2,8 @@ import {prepareProjectStage,collectProjectStage,disposeProjectStage} from './pro
 import {executeInvocation} from './project-process.mjs';
 import {projectExecution} from './project-execution.mjs';
 import { execFile } from 'node:child_process';
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { readdirSync, readFileSync, statSync, existsSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, extname } from 'node:path';
 
 /**
@@ -251,3 +252,64 @@ export function runCommand(root, binary, args = [], timeoutMs = 120_000) {
 }
 
 export const ALLOWED = Object.entries(COMMAND_POLICY).map(([bin, subs]) => Array.isArray(subs) ? `${bin} (${subs.join('|')})` : `${bin} (Skriptdatei im Projekt)`);
+
+/**
+ * One pinned, network-isolated Docker container performs offline dependency
+ * installation, build and tests. A trusted runner is written only into the
+ * temporary stage, and invokes npm with shell:false. The npm cache must be
+ * preloaded in the pinned image or available in the stage cache.
+ */
+export async function runGenerationChecks(root, timeoutMs = 120_000) {
+  if (process.env.VF_PROJECT_SANDBOX !== 'docker') return { ok:false, error:'GENERATION_DOCKER_SANDBOX_REQUIRED' };
+  if (!process.env.VF_NPM_CACHE_DIR) return { ok:false, error:'GENERATION_NPM_CACHE_REQUIRED' };
+  const packagePath = join(resolve(root), 'package.json');
+  if (!existsSync(packagePath)) return { ok:false, error:'NO_PACKAGE_MANIFEST' };
+  let pkg;
+  try { pkg=JSON.parse(readFileSync(packagePath,'utf8')); }
+  catch { return { ok:false, error:'PACKAGE_MANIFEST_INVALID' }; }
+  if (!pkg.scripts?.build || !pkg.scripts?.test) return { ok:false, error:'BUILD_OR_TEST_SCRIPT_MISSING' };
+  await cmdAcquire();
+  let stage=null;
+  try {
+    stage=prepareProjectStage(root);
+    const runnerName='.vf-generation-runner-'+randomUUID()+'.cjs';
+    const runnerPath=join(stage.work,runnerName);
+    const runner=String.raw`const { spawnSync } = require('node:child_process');
+const env = { ...process.env, HOME: '/tmp', CI: '1', npm_config_cache: '/npm-cache' };
+const commands = [
+  ['install', ['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--no-progress', '--cache=/npm-cache']],
+  ['build', ['run', 'build']],
+  ['test', ['test']]
+];
+for (const [label, args] of commands) {
+  process.stdout.write('[generation-check] ' + label + '\\n');
+  const result = spawnSync('npm', args, { cwd: '/workspace', env, stdio: 'inherit', shell: false });
+  if (result.error) { process.stderr.write(String(result.error.message || result.error)); process.exit(1); }
+  if (result.status !== 0) process.exit(Number.isInteger(result.status) ? result.status : 1);
+}
+`;
+    writeFileSync(runnerPath,runner,{encoding:'utf8',mode:0o600});
+    const invocation=projectExecution(stage.work,'node',[runnerName]);
+    const result=await new Promise(resolvePromise=>{
+      executeInvocation(invocation,{
+        cwd:stage.work,timeout:timeoutMs,maxBuffer:2_000_000,
+        env:{
+          PATH:[process.env.PATH,'/usr/local/sbin','/usr/local/bin','/usr/sbin','/usr/bin','/sbin','/bin'].filter(Boolean).join(':'),
+          HOME:'/tmp',NODE_ENV:'test',LANG:process.env.LANG||'C.UTF-8',CI:'1'
+        }
+      },(error,stdout,stderr)=>resolvePromise({
+        ok:!error,code:error?.code??0,
+        output:(String(stdout||'')+String(stderr||'')).trim().slice(-6000),
+        error:error?String(error.message||error).slice(0,400):null
+      }));
+    });
+    if(!result.ok)return {ok:false,stage:'install-build-test',...result};
+    const artifacts=collectProjectStage(stage);
+    return {ok:true,build:{ok:true},tests:{ok:true},artifacts};
+  } catch(error) {
+    return {ok:false,stage:'sandbox',error:String(error?.code||error?.message||error).slice(0,400)};
+  } finally {
+    try { if(stage)disposeProjectStage(stage); } catch {}
+    cmdRelease();
+  }
+}
