@@ -53,10 +53,10 @@ async function generate({prompt,taskId,projectId}) {
  const jobId=existing?.id||randomUUID();
  const workspace=join(WORKSPACE,jobId);
  if(existing?.status==='RUNNING' && now()-Number(existing.updated_at)<10*60_000) return false;
- if(existing?.status==='RUNNING') rmSync(workspace,{recursive:true,force:true});
+ if(existing && existing.status!=='COMPLETED') rmSync(workspace,{recursive:true,force:true});
  mkdirSync(workspace,{recursive:true});
  db.prepare(`INSERT INTO generation_jobs(id,request_id,project_id,status,workspace,created_at,updated_at)
- VALUES(?,?,?,'RUNNING',?,?,?) ON CONFLICT(request_id) DO UPDATE SET status='RUNNING',updated_at=excluded.updated_at`)
+ VALUES(?,?,?,'RUNNING',?,?,?) ON CONFLICT(request_id) DO UPDATE SET status='RUNNING',manifest=NULL,error_code=NULL,updated_at=excluded.updated_at`)
  .run(jobId,taskId,projectId,workspace,now(),now());
  try {
   let generated=null,lastFailure='';
