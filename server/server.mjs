@@ -64,7 +64,7 @@ import { initBillingStore, createCheckoutSession, createBillingPortalSession, bi
 import { issueGatewayToken, gatewayPrincipal, hasGatewayScope, canAccessVilla, gatewayRoleScopes, initGatewayStore, createGatewayApiKey, listGatewayApiKeys, revokeGatewayApiKey } from './api-gateway.mjs';
 import { dlqTick, dlqStatus, restartFailedWorkflow, initDlq } from './event-dlq.mjs';
 import { sanitizeForStream } from './event-contracts.mjs';
-import { redisTryStreamAdd } from './redis.mjs';
+import { redisTryStreamAdd, redisTrySetNx, redisTryDel } from './redis.mjs';
 import { GENERATION_STREAM } from './generation-engine.mjs';
 import { initObservabilityStore, tokenBudgetStatus, httpMetrics, recordHttpRequest } from './observability.mjs';
 
@@ -1601,9 +1601,13 @@ async function internalMesh(req,res,url){
     const projectId=body.projectId==null?'':String(body.projectId);
     if(!/^[0-9a-f-]{36}$/i.test(taskId)||!prompt||prompt.length>9000||projectId.length>100)
       return json(res,400,{error:'Valid taskId, prompt (max 9000 chars), and projectId are required.'});
+    const idempotencyKey='agentforge:generation:request:'+taskId;
+    const claimed=await redisTrySetNx(idempotencyKey,'queued',86400);
+    if(claimed===null)return json(res,503,{error:'Generation queue unavailable.',code:'GENERATION_QUEUE_UNAVAILABLE'});
+    if(claimed===false)return json(res,202,{status:'ACCEPTED',taskId,duplicate:true});
     const event={type:'PROJECT_GENERATION_REQUESTED',id:taskId,payload:{taskId,projectId,prompt},at:Date.now()};
     const messageId=await redisTryStreamAdd(GENERATION_STREAM,{type:event.type,json:JSON.stringify(event),eventId:taskId+':REQUEST',at:event.at});
-    if(!messageId)return json(res,503,{error:'Generation queue unavailable.',code:'GENERATION_QUEUE_UNAVAILABLE'});
+    if(!messageId){await redisTryDel(idempotencyKey);return json(res,503,{error:'Generation queue unavailable.',code:'GENERATION_QUEUE_UNAVAILABLE'});}
     return json(res,202,{status:'ACCEPTED',taskId});
   }
   const generationStatus=url.pathname.match(/^\/internal\/mesh\/generate\/([0-9a-f-]{36})$/i);
