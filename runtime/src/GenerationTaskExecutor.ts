@@ -44,7 +44,7 @@ export function createGenerationTaskExecutor({ hubUrl, token, fetcher = fetch }:
           if (status.status === 'FAILED') throw Object.assign(new Error('Full-stack generation failed.'), {
             code:status.errorCode || 'GENERATION_FAILED', retryable:false
           });
-        } else if (statusResponse.status !== 404) {
+        } else if (![404,503].includes(statusResponse.status)) {
           throw Object.assign(new Error('Generation status unavailable.'), { code:'GENERATION_STATUS_UNAVAILABLE', retryable:true });
         }
         await sleep(1500,context.signal);
