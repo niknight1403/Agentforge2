@@ -15,7 +15,7 @@ export function projectExecution(root,binary,args,{mode=defaultMode(),image=proc
  if(!/^(?:[a-zA-Z0-9][a-zA-Z0-9._/:-]*@sha256:[a-f0-9]{64}|sha256:[a-f0-9]{64})$/.test(image))throw Error('PROJECT_SANDBOX_PINNED_IMAGE_REQUIRED');
  const source=realpathSync(root);
  if(source==='/'||/[\r\n,]/.test(source))throw Error('PROJECT_SANDBOX_WORKSPACE_INVALID');
- const cache=process.env.VF_NPM_CACHE_DIR?realpathSync(process.env.VF_NPM_CACHE_DIR):'';
+ const cache=npmCachePath?realpathSync(npmCachePath):'';
  if(cache&&(!statSync(cache).isDirectory()||cache==='/'||/[\r\n,]/.test(cache)))throw Error('PROJECT_SANDBOX_NPM_CACHE_INVALID');
  const uid=process.getuid?.()>0?process.getuid():1000;
  const gid=process.getgid?.()>0?process.getgid():1000;
