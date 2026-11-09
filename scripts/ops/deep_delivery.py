@@ -14,6 +14,7 @@ Modi:
   apk-verify  APK strukturell pruefen (Zip, Manifest, Signatur, Web-Root)
   features        Funktionsauftraege (mybabes-Parität) idempotent in die Villa legen
   features-verify Pruft das gebaute Web-Artefakt auf die geforderten Oberflaechen
+  features-run    Wartet auf die Funktionsauftraege, baut, prueft (eine CI-Strecke)
 """
 from __future__ import annotations
 
@@ -501,6 +502,51 @@ def mode_features_verify() -> int:
     return 0
 
 
+
+def offene_aufgaben(token: str, did: int) -> tuple[int, int]:
+    rows = call(f"/api/villas/{did}/tasks?limit=500", token=token) or []
+    offen = [t for t in rows if str(t.get("status") or "").upper() not in ("DONE", "CANCELLED", "CANCELED")]
+    return len(offen), len(rows)
+
+
+def mode_features_run() -> int:
+    """Eine Strecke fuer die CI: auf die Funktionsauftraege warten, dann bauen
+    und die Oberflaechen pruefen. Warten ist kein Nachweis - erst der Build mit
+    bestandener Pruefung beendet den Lauf erfolgreich."""
+    token = login()
+    deep = resolve_deep(token)
+    did = int(deep["id"])
+    geduld = int(os.environ.get("VF_FEATURES_WAIT_SEC", "5400"))
+    ende = time.time() + geduld
+    letzter = None
+    while time.time() < ende:
+        status = call(f"/api/villas/{did}", token=token)
+        villa = status.get("villa") or {}
+        offen, gesamt = offene_aufgaben(token, did)
+        zeile = f"status={villa.get('status')} autonomy={villa.get('autonomy')} executing={villa.get('executing')} offen={offen}/{gesamt}"
+        if zeile != letzter:
+            print("LAGE", zeile, flush=True)
+            letzter = zeile
+        if offen == 0:
+            print("AUFTRAEGE-FERTIG", flush=True)
+            break
+        time.sleep(60)
+    else:
+        print("WARTEZEIT-ERSCHOEPFT", f"{geduld}s", flush=True)
+
+    offen, gesamt = offene_aufgaben(token, did)
+    if offen:
+        print("NICHT-FERTIG", f"{offen} von {gesamt} offen", flush=True)
+        return 1
+
+    print("BAU-START", flush=True)
+    rc = mode_build()
+    if rc != 0:
+        print("BAU-FEHLER", rc, flush=True)
+        return rc
+    return mode_features_verify()
+
+
 def mode_plan() -> int:
     """Zeigt je Phase, welche Pflicht-Bausteine fehlen und warum der Score
     unter 100 bleibt (Produkt-Gate der Villa)."""
@@ -544,6 +590,7 @@ if __name__ == "__main__":
         "apk-verify": lambda: mode_apk_verify(sys.argv[2] if len(sys.argv) > 2 else "deep-villa.apk"),
         "features": mode_features,
         "features-verify": mode_features_verify,
+        "features-run": mode_features_run,
     }
     if modus not in tabelle:
         raise SystemExit(f"Unbekannter Modus: {modus}")

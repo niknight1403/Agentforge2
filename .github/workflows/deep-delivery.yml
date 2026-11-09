@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "status | plan | apply | build | apk | features | features-verify"
+        description: "status | plan | apply | build | apk | features | features-verify | features-run"
         required: true
         default: "status"
       app_name:
@@ -31,6 +31,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  features-run:
+    if: github.event.inputs.mode == 'features-run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Auf Funktionsauftraege warten, bauen, Oberflaechen pruefen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+          VF_FEATURES_WAIT_SEC: "7200"
+        run: python3 scripts/ops/deep_delivery.py features-run
+
   status:
     if: github.event.inputs.mode == 'status'
     runs-on: ubuntu-latest
