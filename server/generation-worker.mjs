@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import { chat } from './llm.mjs';
@@ -48,6 +48,27 @@ function inputFrom(event) {
  return {prompt,taskId,projectId};
 }
 
+function cleanupExpiredWorkspaces() {
+ const cutoff=Date.now()-(30*24*60*60*1000);
+ const active=new Set(db.prepare("SELECT workspace FROM generation_jobs WHERE status='RUNNING'").all().map(row=>resolve(row.workspace)));
+ let removed=0;
+ try {
+  for(const entry of readdirSync(WORKSPACE,{withFileTypes:true})) {
+   if(!entry.isDirectory()) continue;
+   const target=resolve(WORKSPACE,entry.name);
+   if(!target.startsWith(WORKSPACE+process.platform==='win32'?'\\\\':'/')) continue;
+   if(active.has(target)) continue;
+   try {
+    const info=statSync(target);
+    if(info.mtimeMs<cutoff) { rmSync(target,{recursive:true,force:true}); removed++; }
+   } catch(error) { console.warn('[generation-worker] workspace retention cleanup skipped',{code:error?.code||'FS_ERROR'}); }
+  }
+ } catch(error) {
+  if(error?.code!=='ENOENT') console.warn('[generation-worker] workspace retention scan skipped',{code:error?.code||'FS_ERROR'});
+ }
+ if(removed) console.log('[generation-worker] expired workspaces removed',{count:removed});
+}
+
 function assertLease(jobId, owner) {
  const row=db.prepare("SELECT lease_owner,status FROM generation_jobs WHERE id=?").get(jobId);
  if(!['RUNNING','COMPLETED'].includes(row?.status) || row.lease_owner!==owner) throw Object.assign(new Error('GENERATION_LEASE_LOST'),{code:'GENERATION_LEASE_LOST'});
@@ -87,6 +108,7 @@ async function generate({prompt,taskId,projectId}) {
  }
  if(existing && existing.status!=='COMPLETED') rmSync(workspace,{recursive:true,force:true});
  mkdirSync(workspace,{recursive:true});
+ cleanupExpiredWorkspaces();
  const leaseTimer=setInterval(()=>{
   try { db.prepare("UPDATE generation_jobs SET updated_at=? WHERE request_id=? AND status='RUNNING' AND lease_owner=?").run(now(),taskId,leaseOwner); }
   catch(error) { console.error('[generation-worker] lease heartbeat failed',{code:error?.code||'DB_ERROR'}); }
