@@ -68,8 +68,13 @@ def villas(token) -> list[dict]:
 
 
 def resolve_deep(token) -> dict:
+    """Exakt dieselbe Regel wie scripts/ops/focus-deep-villa.sh: ID 34 und
+    Name beginnt mit "deep ·". Villa #39 heisst ebenfalls "Deep · ..." und
+    darf nicht mitgenommen werden."""
     alle = villas(token)
-    treffer = [v for v in alle if (v.get("name") or "").lower().startswith(DEEP_PREFIX)]
+    treffer = [v for v in alle
+               if int(v.get("id") or 0) == DEEP_ID_CANDIDATE
+               and (v.get("name") or "").lower().startswith(DEEP_PREFIX)]
     if len(treffer) != 1:
         ids = [(v.get("id"), v.get("name")) for v in alle]
         raise SystemExit(f"Deep Villa nicht eindeutig ({len(treffer)} Treffer). Villen: {ids}")
