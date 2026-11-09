@@ -5,7 +5,7 @@ The opt-in worker consumes generation requests from Redis Streams and writes iso
 ## Start
 
 ```bash
-REDIS_URL=redis://127.0.0.1:6379 npm run worker:generation
+REDIS_URL=redis://127.0.0.1:6379 VF_PROJECT_SANDBOX=docker npm run worker:generation
 ```
 
 Default stream: `agentforge:events:stream`; consumer group: `fullstack-generation-v1`.
@@ -39,8 +39,8 @@ Example task input:
 
 `PROJECT_PLANNED`, `SCAFFOLD_GENERATED`, `CONTAINER_TEST_PASSED` /
 `CONTAINER_TEST_FAILED`, `CHECKPOINT_SAVED`, and `STREAM_COMPLETE` are appended
-to the same stream. Payloads contain metadata only, never prompts, source code, credentials,
-or model responses. SQLite stores job/checkpoint state locally.
+to the same stream. Lifecycle telemetry contains metadata only, never prompts, source code, credentials,
+or model responses. The initial request event necessarily carries the user prompt for the worker. SQLite stores job/checkpoint state locally.
 
 ## Safety and limits
 
