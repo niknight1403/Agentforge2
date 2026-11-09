@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { hostname } from 'node:os';
 import { chat } from './llm.mjs';
@@ -49,9 +49,11 @@ async function checkpoint(jobId,stage,metadata={}) {
 
 async function generate({prompt,taskId,projectId}) {
  const existing=db.prepare('SELECT * FROM generation_jobs WHERE request_id=?').get(taskId);
- if(existing?.status==='COMPLETED') { await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace:existing.workspace}); return; }
+ if(existing?.status==='COMPLETED') { await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace:existing.workspace}); return true; }
  const jobId=existing?.id||randomUUID();
  const workspace=join(WORKSPACE,jobId);
+ if(existing?.status==='RUNNING' && now()-Number(existing.updated_at)<10*60_000) return false;
+ if(existing?.status==='RUNNING') rmSync(workspace,{recursive:true,force:true});
  mkdirSync(workspace,{recursive:true});
  db.prepare(`INSERT INTO generation_jobs(id,request_id,project_id,status,workspace,created_at,updated_at)
  VALUES(?,?,?,'RUNNING',?,?,?) ON CONFLICT(request_id) DO UPDATE SET status='RUNNING',updated_at=excluded.updated_at`)
@@ -113,6 +115,7 @@ async function generate({prompt,taskId,projectId}) {
   db.prepare("UPDATE generation_jobs SET status='COMPLETED',manifest=?,updated_at=? WHERE id=?").run(JSON.stringify(result),now(),jobId);
   await checkpoint(jobId,'COMPLETED',{build:result.build,tests:result.tests});
   await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace,projectId,build:result.build,tests:result.tests,workerCommit:deployManifest.workerCommit,deployManifest:'deploy-manifest.json'});
+  return true;
  } catch(error) {
   const code=String(error?.code||'GENERATION_FAILED').slice(0,100);
   db.prepare("UPDATE generation_jobs SET status='FAILED',error_code=?,updated_at=? WHERE id=?").run(code,now(),jobId);
@@ -133,7 +136,7 @@ export async function startGenerationWorker({signal}={}) {
    if(!row.event) { await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); continue; }
    const event=row.event;
    if(!['PROJECT_GENERATION_REQUESTED','project.generate'].includes(event.type)) { await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); continue; }
-   try { await generate(inputFrom(event)); await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); }
+   try { const finished=await generate(inputFrom(event)); if(finished!==false) await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); }
    catch(error) {
     console.error('[generation-worker] task failed',{code:error?.code||'GENERATION_FAILED'});
     try {
