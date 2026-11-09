@@ -1,0 +1,46 @@
+name: Villa 34 Web-Integration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integrieren:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Oberflaeche per SSH in den Villa-34-Projektordner legen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          scp -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key \
+            docs/app/index.html scripts/ops/villa34-web.sh ubuntu@92.5.177.159:/tmp/ || {
+              ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'mkdir -p /tmp';
+              scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key docs/app/index.html scripts/ops/villa34-web.sh ubuntu@92.5.177.159:/tmp/;
+            }
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
+            'bash /tmp/villa34-web.sh /tmp/index.html 2>&1 | tail -60'
+
+      - name: Villa neu bauen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: python3 scripts/ops/deep_delivery.py build
+
+      - name: Funktionen im Artefakt pruefen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: python3 scripts/ops/deep_delivery.py features-verify
