@@ -64,6 +64,8 @@ import { initBillingStore, createCheckoutSession, createBillingPortalSession, bi
 import { issueGatewayToken, gatewayPrincipal, hasGatewayScope, canAccessVilla, gatewayRoleScopes, initGatewayStore, createGatewayApiKey, listGatewayApiKeys, revokeGatewayApiKey } from './api-gateway.mjs';
 import { dlqTick, dlqStatus, restartFailedWorkflow, initDlq } from './event-dlq.mjs';
 import { sanitizeForStream } from './event-contracts.mjs';
+import { redisTryStreamAdd } from './redis.mjs';
+import { GENERATION_STREAM } from './generation-engine.mjs';
 import { initObservabilityStore, tokenBudgetStatus, httpMetrics, recordHttpRequest } from './observability.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
@@ -1589,11 +1591,35 @@ async function api(req, res, url) {
 }
 
 async function internalMesh(req,res,url){
-  if(url.pathname!=='/internal/mesh/execute'||req.method!=='POST')return json(res,404,{error:'Not found'});
   const expected=String(process.env.VF_AGENT_RUNTIME_TOKEN||'');
   const supplied=String(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
   const a=Buffer.from(supplied),b=Buffer.from(expected);
   if(expected.length<32||a.length!==b.length||!timingSafeEqual(a,b))return json(res,401,{error:'Unauthorized'});
+  if(url.pathname==='/internal/mesh/generate'&&req.method==='POST'){
+    const body=await readBody(req);
+    const taskId=String(body.taskId||''),prompt=String(body.prompt||'').trim();
+    const projectId=body.projectId==null?'':String(body.projectId);
+    if(!/^[0-9a-f-]{36}$/i.test(taskId)||!prompt||prompt.length>9000||projectId.length>100)
+      return json(res,400,{error:'Valid taskId, prompt (max 9000 chars), and projectId are required.'});
+    const event={type:'PROJECT_GENERATION_REQUESTED',id:taskId,payload:{taskId,projectId,prompt},at:Date.now()};
+    const messageId=await redisTryStreamAdd(GENERATION_STREAM,{type:event.type,json:JSON.stringify(event),eventId:taskId+':REQUEST',at:event.at});
+    if(!messageId)return json(res,503,{error:'Generation queue unavailable.',code:'GENERATION_QUEUE_UNAVAILABLE'});
+    return json(res,202,{status:'ACCEPTED',taskId});
+  }
+  const generationStatus=url.pathname.match(/^\/internal\/mesh\/generate\/([0-9a-f-]{36})$/i);
+  if(req.method==='GET'&&generationStatus){
+    try{
+      const job=db.prepare('SELECT id,status,manifest,error_code,workspace,project_id FROM generation_jobs WHERE request_id=?').get(generationStatus[1]);
+      if(!job)return json(res,404,{error:'Generation task not found.'});
+      const checkpoints=db.prepare('SELECT stage,metadata,created_at FROM generation_checkpoints WHERE job_id=? ORDER BY created_at ASC').all(job.id)
+        .map(row=>({stage:row.stage,metadata:JSON.parse(row.metadata||'{}'),createdAt:row.created_at}));
+      let result=null;try{result=job.manifest?JSON.parse(job.manifest):null;}catch{}
+      return json(res,200,{status:job.status,result,errorCode:job.error_code||undefined,checkpoints});
+    }catch(error){
+      return json(res,503,{error:'Generation worker storage unavailable.',code:'GENERATION_STORAGE_UNAVAILABLE'});
+    }
+  }
+  if(url.pathname!=='/internal/mesh/execute'||req.method!=='POST')return json(res,404,{error:'Not found'});
   const body=await readBody(req);
   const taskId=Number(body.taskId),villaId=Number(body.villaId);
   if(!Number.isSafeInteger(taskId)||taskId<1||!Number.isSafeInteger(villaId)||villaId<1)return json(res,400,{error:'Valid taskId and villaId are required.'});
