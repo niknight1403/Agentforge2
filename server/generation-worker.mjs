@@ -5,7 +5,7 @@ import { hostname } from 'node:os';
 import { chat } from './llm.mjs';
 import { db, now } from './db.mjs';
 import { redisTryAck, redisTryClaimStale, redisTryCreateConsumerGroup, redisTryReadConsumerGroup, redisTryStreamAdd } from './redis.mjs';
-import { runCommand } from './fs-tools.mjs';
+import { runGenerationChecks } from './fs-tools.mjs';
 import { GENERATION_STREAM, GENERATION_GROUP, parseGenerationOutput, generationPrompt, generationEvent } from './generation-engine.mjs';
 
 const CONSUMER=String(process.env.AGENTFORGE_GENERATION_CONSUMER||`${hostname().replace(/[^a-zA-Z0-9:_-]/g,'-')}:${process.pid}`);
@@ -76,23 +76,17 @@ async function generate({prompt,taskId,projectId}) {
   writeFileSync(join(workspace,'project_manifest.json'),JSON.stringify({...generated.manifest,requestId:taskId,projectId,generatedAt:new Date().toISOString()},null,2)+'\n',{flag:'wx'});
   await publish('SCAFFOLD_GENERATED',taskId,{projectId,files:generated.files.length,bytes:generated.bytes});
   await checkpoint(jobId,'SCAFFOLD_GENERATED',{files:generated.files.length,bytes:generated.bytes});
-  const packageJson=join(workspace,'package.json');
-  if(process.env.VF_PROJECT_SANDBOX!=='docker') throw Object.assign(new Error('GENERATION_DOCKER_SANDBOX_REQUIRED'),{code:'GENERATION_DOCKER_SANDBOX_REQUIRED'});
-  let build={ok:false,skipped:true,error:'NO_PACKAGE_MANIFEST'};
-  let tests={ok:false,skipped:true,error:'NO_PACKAGE_MANIFEST'};
-  if(existsSync(packageJson)) {
-   const pkg=JSON.parse((await import('node:fs')).readFileSync(packageJson,'utf8'));
-   if(pkg.scripts?.build) build=await runCommand(workspace,'npm',['run','build'],120000);
-   if(pkg.scripts?.test) tests=await runCommand(workspace,'npm',['test'],120000);
-  }
+  const checks=await runGenerationChecks(workspace,120000);
+  let build={ok:checks.ok,error:checks.ok?null:checks.error||'BUILD_FAILED'};
+  let tests={ok:checks.ok,error:checks.ok?null:checks.error||'TEST_FAILED'};
   if(build.ok && tests.ok) {
    await publish('CONTAINER_TEST_PASSED',taskId,{projectId});
    await checkpoint(jobId,'CONTAINER_TEST_PASSED',{build:'passed',tests:'passed'});
   } else {
-   const failure=[build.error,tests.error].filter(Boolean).join(' | ').slice(0,700)||'BUILD_OR_TEST_NOT_CONFIGURED';
+   const failure=[checks.stage,checks.error,checks.output].filter(Boolean).join(' | ').slice(0,700)||'BUILD_OR_TEST_NOT_CONFIGURED';
    await publish('CONTAINER_TEST_FAILED',taskId,{projectId,errorCode:failure.slice(0,120)});
-   // No blind mutation: return the bounded diagnostics to the PEER reviewer in a fresh LLM repair request.
-   const repair=await chat([{role:'system',content:'Du bist Reviewer. Gib ausschließlich ein JSON-Objekt mit files:[{path,content}] zurück. Korrigiere nur Build-/Testfehler. Keine Secrets, keine Installationsskripte.'},{role:'user',content:`Fehler: ${failure}\nProjektdateien: ${generated.files.map(f=>f.path).join(', ')}\nAufgabe: ${prompt.slice(0,3000)}`}],{role:'REVIEWER',priority:'background'});
+   await checkpoint(jobId,'CONTAINER_TEST_FAILED',{errorCode:String(checks.stage||checks.error||'BUILD_FAILED').slice(0,100)});
+   const repair=await chat([{role:'system',content:'Du bist Reviewer. Gib ausschließlich ein JSON-Objekt mit files:[{path,content}] zurück. Korrigiere nur Build-/Testfehler. Keine Secrets, keine Installationsskripte.'},{role:'user',content:`Fehler: ${failure}\\nProjektdateien: ${generated.files.map(f=>f.path).join(', ')}\\nAufgabe: ${prompt.slice(0,3000)}`}],{role:'REVIEWER',priority:'background'});
    let patch;
    try { patch=parseGenerationOutput(JSON.stringify({files:JSON.parse(String(repair?.content||'{}')).files})); }
    catch { throw Object.assign(new Error('REVIEW_REPAIR_OUTPUT_INVALID'),{code:'REVIEW_REPAIR_OUTPUT_INVALID'}); }
@@ -101,12 +95,14 @@ async function generate({prompt,taskId,projectId}) {
     mkdirSync(dirname(target),{recursive:true});
     writeFileSync(target,file.content,{encoding:'utf8'});
    }
-   if(existsSync(packageJson)) {
-    const pkg=JSON.parse((await import('node:fs')).readFileSync(packageJson,'utf8'));
-    if(pkg.scripts?.build) build=await runCommand(workspace,'npm',['run','build'],120000);
-    if(pkg.scripts?.test) tests=await runCommand(workspace,'npm',['test'],120000);
-   }
+   const repaired=await runGenerationChecks(workspace,120000);
+   build={ok:repaired.ok,error:repaired.ok?null:repaired.error||'BUILD_FAILED'};
+   tests={ok:repaired.ok,error:repaired.ok?null:repaired.error||'TEST_FAILED'};
    if(!build.ok || !tests.ok) throw Object.assign(new Error('GENERATION_QUALITY_GATE_FAILED'),{code:'GENERATION_QUALITY_GATE_FAILED'});
+   await publish('CONTAINER_TEST_PASSED',taskId,{projectId,repairApplied:true});
+   await checkpoint(jobId,'CONTAINER_TEST_PASSED',{build:'passed',tests:'passed',repairApplied:true});
+  }
+  if(!build.ok || !tests.ok) throw Object.assign(new Error('GENERATION_QUALITY_GATE_FAILED'),{code:'GENERATION_QUALITY_GATE_FAILED'});
    await publish('CONTAINER_TEST_PASSED',taskId,{projectId,repairApplied:true});
    await checkpoint(jobId,'CONTAINER_TEST_PASSED',{build:'passed',tests:'passed',repairApplied:true});
   }
