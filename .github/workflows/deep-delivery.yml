@@ -125,13 +125,12 @@ jobs:
           PY
 
       - name: APK bauen
-        env:
-          APP_NAME: ${{ github.event.inputs.app_name }}
-          VILLA_NAME: ${{ env.VILLA_NAME }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          export VILLA_NAME="${APP_NAME:-${VILLA_NAME:-Deep Villa}}"
+          VN="$(cat /tmp/villa-name.txt 2>/dev/null || echo 'Deep Villa')"
+          export VILLA_NAME="${VN:-Deep Villa}"
+          echo "App-Name: $VILLA_NAME"
           python3 scripts/villa_apk_prepare.py
           cd villa-apk-template
           gradle --no-daemon assembleDebug

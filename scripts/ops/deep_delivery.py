@@ -210,6 +210,8 @@ def mode_apk_fetch() -> int:
         raise SystemExit(f"Kein Web-Build-Artefakt ({len(art or b'')} Bytes).")
     with open("/tmp/villa.zip", "wb") as fh:
         fh.write(art)
+    with open("/tmp/villa-name.txt", "w", encoding="utf-8") as fh:
+        fh.write(name + "\n")
     print("ARTEFAKT", len(art), "Bytes ->", "/tmp/villa.zip")
     env = os.environ.get("GITHUB_ENV")
     if env:
