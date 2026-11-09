@@ -3,7 +3,7 @@ import {executeInvocation} from './project-process.mjs';
 import {projectExecution} from './project-execution.mjs';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, existsSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, extname } from 'node:path';
 
 /**
