@@ -72,5 +72,9 @@ console.log('BUILD-SKRIPT', pkg.scripts.build, '| vorher:', pkg.scripts['build:o
 # Sofort ausliefern, damit die Oberflaeche auch ohne Build erreichbar ist.
 sudo mkdir -p "$PROJEKT/dist"
 sudo install -m 0644 "$APP_DATEI" "$PROJEKT/dist/index.html"
-echo "DIST-INDEX $(sudo stat -c %s "$PROJEKT/dist/index.html") Bytes"
+# Die APK-Strasse nimmt die erste index.html im Artefakt. Ein alter Prototyp an
+# der Wurzel wuerde sie gewinnen, deshalb tragen Wurzel und dist denselben
+# Produktstand: eine Quelle, zwei Pfade.
+sudo install -m 0644 "$APP_DATEI" "$PROJEKT/index.html"
+echo "DIST-INDEX $(sudo stat -c %s "$PROJEKT/dist/index.html") Bytes | WURZEL $(sudo stat -c %s "$PROJEKT/index.html") Bytes"
 echo "FERTIG $PROJEKT"
