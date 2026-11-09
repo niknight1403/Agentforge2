@@ -1,0 +1,237 @@
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
+import { hostname } from 'node:os';
+import { chat } from './llm.mjs';
+import { db, now } from './db.mjs';
+import { redisTryAck, redisTryClaimStale, redisTryCreateConsumerGroup, redisTryReadConsumerGroup, redisTryStreamAdd } from './redis.mjs';
+import { runGenerationChecks } from './fs-tools.mjs';
+import { GENERATION_STREAM, GENERATION_GROUP, parseGenerationOutput, generationPrompt, generationEvent } from './generation-engine.mjs';
+import { classifyGenerationFailure } from './generation-recovery.mjs';
+
+const CONSUMER=String(process.env.AGENTFORGE_GENERATION_CONSUMER||`${hostname().replace(/[^a-zA-Z0-9:_-]/g,'-')}:${process.pid}`);
+const WORKSPACE=resolve(process.env.AGENTFORGE_GENERATION_WORKSPACE||'server/data/generated');
+const sleep=ms=>new Promise(resolveP=>setTimeout(resolveP,ms));
+
+const LEASE_MS = Math.max(90_000, Number(process.env.AGENTFORGE_GENERATION_LEASE_MS) || 180_000);
+const HEARTBEAT_MS = Math.max(10_000, Math.min(30_000, Math.floor(LEASE_MS / 4)));
+const MAX_ATTEMPTS = Math.max(1, Number(process.env.AGENTFORGE_GENERATION_MAX_ATTEMPTS) || 5);
+
+db.exec(`
+ CREATE TABLE IF NOT EXISTS generation_jobs (
+  id TEXT PRIMARY KEY, request_id TEXT UNIQUE, project_id TEXT, status TEXT NOT NULL,
+  workspace TEXT NOT NULL, manifest TEXT, error_code TEXT, commit_sha TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+ );
+ CREATE TABLE IF NOT EXISTS generation_checkpoints (
+  id TEXT PRIMARY KEY, job_id TEXT NOT NULL, stage TEXT NOT NULL, metadata TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+ );
+`);
+try { db.exec('ALTER TABLE generation_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0'); } catch { /* already migrated */ }
+try { db.exec('ALTER TABLE generation_jobs ADD COLUMN lease_owner TEXT'); } catch { /* already migrated */ }
+
+
+async function publish(type,taskId,metadata={}) {
+ const event=generationEvent(type,taskId,metadata);
+ const messageId=await redisTryStreamAdd(GENERATION_STREAM,{type,json:JSON.stringify(event),eventId:event.taskId+':'+type+':'+event.at,at:event.at});
+ if(!messageId) throw Object.assign(new Error('GENERATION_EVENT_PUBLISH_FAILED'),{code:'GENERATION_EVENT_PUBLISH_FAILED'});
+}
+
+function inputFrom(event) {
+ const p=event?.payload||event?.data||event||{};
+ const prompt=String(p.prompt||p.idea||p.request||'').trim();
+ const taskId=String(p.taskId||p.requestId||event?.id||'').slice(0,100);
+ const projectId=p.projectId==null?'':String(p.projectId).slice(0,100);
+ if(!prompt || !taskId) throw Object.assign(new Error('PROMPT_OR_TASK_ID_MISSING'),{code:'PROMPT_OR_TASK_ID_MISSING'});
+ if(prompt.length>9000) throw Object.assign(new Error('PROMPT_TOO_LONG'),{code:'PROMPT_TOO_LONG'});
+ return {prompt,taskId,projectId};
+}
+
+function cleanupExpiredWorkspaces() {
+ const cutoff=Date.now()-(30*24*60*60*1000);
+ const active=new Set(db.prepare("SELECT workspace FROM generation_jobs WHERE status='RUNNING'").all().map(row=>resolve(row.workspace)));
+ let removed=0;
+ try {
+  for(const entry of readdirSync(WORKSPACE,{withFileTypes:true})) {
+   if(!entry.isDirectory()) continue;
+   const target=resolve(WORKSPACE,entry.name);
+   if(!target.startsWith(`${WORKSPACE}${sep}`)) continue;
+   if(active.has(target)) continue;
+   try {
+    const info=statSync(target);
+    if(info.mtimeMs<cutoff) { rmSync(target,{recursive:true,force:true}); removed++; }
+   } catch(error) { console.warn('[generation-worker] workspace retention cleanup skipped',{code:error?.code||'FS_ERROR'}); }
+  }
+ } catch(error) {
+  if(error?.code!=='ENOENT') console.warn('[generation-worker] workspace retention scan skipped',{code:error?.code||'FS_ERROR'});
+ }
+ if(removed) console.log('[generation-worker] expired workspaces removed',{count:removed});
+}
+
+function assertLease(jobId, owner) {
+ const row=db.prepare("SELECT lease_owner,status FROM generation_jobs WHERE id=?").get(jobId);
+ if(!['RUNNING','COMPLETED'].includes(row?.status) || row.lease_owner!==owner) throw Object.assign(new Error('GENERATION_LEASE_LOST'),{code:'GENERATION_LEASE_LOST'});
+}
+
+async function checkpoint(jobId,stage,metadata={},owner) {
+ assertLease(jobId,owner);
+ const id=randomUUID(), safe={};
+ for(const [k,v] of Object.entries(metadata)) if(['files','bytes','attempt','build','tests','errorCode'].includes(k)) safe[k]=v;
+ db.prepare('INSERT INTO generation_checkpoints(id,job_id,stage,metadata,created_at) VALUES(?,?,?,?,?)').run(id,jobId,stage,JSON.stringify(safe),now());
+ await publish('CHECKPOINT_SAVED',jobId,{checkpointId:id,step:stage});
+}
+
+async function generate({prompt,taskId,projectId}) {
+ const existing=db.prepare('SELECT * FROM generation_jobs WHERE request_id=?').get(taskId);
+ if(existing?.status==='COMPLETED') { await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace:existing.workspace}); return true; }
+ if(existing?.status==='FAILED') return true; // terminal jobs must not be restarted by duplicate stream deliveries
+ const jobId=existing?.id||randomUUID();
+ const startedAt=now();
+ const leaseOwner=randomUUID();
+ // Every lease claim gets its own workspace so an expired/stale worker can never share files with its replacement.
+ const workspace=join(WORKSPACE,`${jobId}-${leaseOwner}`);
+ // Atomic lease acquisition prevents two consumers from deleting/writing the same workspace.
+ const claim=db.prepare(`INSERT INTO generation_jobs(id,request_id,project_id,status,workspace,attempts,lease_owner,created_at,updated_at)
+ VALUES(?,?,?,'RUNNING',?,1,?,?,?)
+ ON CONFLICT(request_id) DO UPDATE SET
+  status='RUNNING',workspace=excluded.workspace,manifest=NULL,error_code=NULL,attempts=generation_jobs.attempts+1,lease_owner=excluded.lease_owner,updated_at=excluded.updated_at
+ WHERE generation_jobs.status!='RUNNING' OR generation_jobs.updated_at<=?`)
+ .run(jobId,taskId,projectId,workspace,leaseOwner,startedAt,startedAt,startedAt-LEASE_MS);
+ if(!claim.changes) return false;
+ const active=db.prepare('SELECT attempts FROM generation_jobs WHERE request_id=?').get(taskId);
+ const attempt=Number(active?.attempts||1);
+ if(attempt>MAX_ATTEMPTS) {
+  db.prepare("UPDATE generation_jobs SET status='FAILED',error_code='GENERATION_RETRY_EXHAUSTED',updated_at=?,lease_owner=NULL WHERE request_id=? AND lease_owner=?").run(now(),taskId,leaseOwner);
+  try { await publish('STREAM_COMPLETE',taskId,{status:'FAILED',errorCode:'GENERATION_RETRY_EXHAUSTED'}); } catch {}
+  return true;
+ }
+ if(existing && existing.status!=='COMPLETED') rmSync(workspace,{recursive:true,force:true});
+ mkdirSync(workspace,{recursive:true});
+ cleanupExpiredWorkspaces();
+ const leaseTimer=setInterval(()=>{
+  try { db.prepare("UPDATE generation_jobs SET updated_at=? WHERE request_id=? AND status='RUNNING' AND lease_owner=?").run(now(),taskId,leaseOwner); }
+  catch(error) { console.error('[generation-worker] lease heartbeat failed',{code:error?.code||'DB_ERROR'}); }
+ },HEARTBEAT_MS);
+ leaseTimer.unref?.();
+ try {
+  assertLease(jobId,leaseOwner);
+  let generated=null,lastFailure='';
+  for(let attempt=1;attempt<=3;attempt++) {
+   const result=await chat([{role:'system',content:'Erzeuge sichere, modulare Full-Stack-Codebasen als JSON.'},{role:'user',content:generationPrompt(prompt,lastFailure)}],{role:'CODER',priority:'background'});
+   assertLease(jobId,leaseOwner);
+   const raw=String(result?.content||'');
+   try { generated=parseGenerationOutput(raw); break; }
+   catch(error) { lastFailure=String(error?.code||error?.message||'INVALID_OUTPUT'); if(attempt===3) throw error; }
+  }
+  assertLease(jobId,leaseOwner);
+  await publish('PROJECT_PLANNED',taskId,{projectId,files:generated.files.length});
+  await checkpoint(jobId,'PROJECT_PLANNED',{files:generated.files.length,bytes:generated.bytes},leaseOwner);
+  for(const file of generated.files) {
+   assertLease(jobId,leaseOwner);
+   const target=join(workspace,file.path);
+   mkdirSync(dirname(target),{recursive:true});
+   writeFileSync(target,file.content,{encoding:'utf8',flag:'wx'});
+  }
+  assertLease(jobId,leaseOwner);
+  writeFileSync(join(workspace,'project_manifest.json'),JSON.stringify({...generated.manifest,requestId:taskId,projectId,generatedAt:new Date().toISOString()},null,2)+'\n',{flag:'wx'});
+  await publish('SCAFFOLD_GENERATED',taskId,{projectId,files:generated.files.length,bytes:generated.bytes});
+  await checkpoint(jobId,'SCAFFOLD_GENERATED',{files:generated.files.length,bytes:generated.bytes},leaseOwner);
+  assertLease(jobId,leaseOwner);
+  const checks=await runGenerationChecks(workspace,120000);
+  assertLease(jobId,leaseOwner);
+  let build={ok:checks.ok,error:checks.ok?null:checks.error||'BUILD_FAILED'};
+  let tests={ok:checks.ok,error:checks.ok?null:checks.error||'TEST_FAILED'};
+  if(build.ok && tests.ok) {
+   await publish('CONTAINER_TEST_PASSED',taskId,{projectId});
+   await checkpoint(jobId,'CONTAINER_TEST_PASSED',{build:'passed',tests:'passed'},leaseOwner);
+  } else {
+   const failure=[checks.stage,checks.error,checks.output].filter(Boolean).join(' | ').slice(0,700)||'BUILD_OR_TEST_NOT_CONFIGURED';
+   await publish('CONTAINER_TEST_FAILED',taskId,{projectId,errorCode:failure.slice(0,120)});
+   await checkpoint(jobId,'CONTAINER_TEST_FAILED',{errorCode:String(checks.stage||checks.error||'BUILD_FAILED').slice(0,100)},leaseOwner);
+   const repair=await chat([{role:'system',content:'Du bist Reviewer. Gib ausschließlich ein JSON-Objekt mit files:[{path,content}] zurück. Korrigiere nur Build-/Testfehler. Keine Secrets, keine Installationsskripte.'},{role:'user',content:`Fehler: ${failure}\\nProjektdateien: ${generated.files.map(f=>f.path).join(', ')}\\nAufgabe: ${prompt.slice(0,3000)}`}],{role:'REVIEWER',priority:'background'});
+   assertLease(jobId,leaseOwner);
+   let patch;
+   try { patch=parseGenerationOutput(JSON.stringify({files:JSON.parse(String(repair?.content||'{}')).files})); }
+   catch { throw Object.assign(new Error('REVIEW_REPAIR_OUTPUT_INVALID'),{code:'REVIEW_REPAIR_OUTPUT_INVALID'}); }
+   for(const file of patch.files) {
+    assertLease(jobId,leaseOwner);
+    const target=join(workspace,file.path);
+    mkdirSync(dirname(target),{recursive:true});
+    writeFileSync(target,file.content,{encoding:'utf8'});
+   }
+   assertLease(jobId,leaseOwner);
+   const repaired=await runGenerationChecks(workspace,120000);
+   assertLease(jobId,leaseOwner);
+   build={ok:repaired.ok,error:repaired.ok?null:repaired.error||'BUILD_FAILED'};
+   tests={ok:repaired.ok,error:repaired.ok?null:repaired.error||'TEST_FAILED'};
+   if(!build.ok || !tests.ok) throw Object.assign(new Error('GENERATION_QUALITY_GATE_FAILED'),{code:'GENERATION_QUALITY_GATE_FAILED'});
+   await publish('CONTAINER_TEST_PASSED',taskId,{projectId,repairApplied:true});
+   await checkpoint(jobId,'CONTAINER_TEST_PASSED',{build:'passed',tests:'passed',repairApplied:true},leaseOwner);
+  }
+  const deployManifest={status:'NOT_DEPLOYED',reason:'Deployment requires an explicitly configured target and verified production credentials.',workspace,projectId,workerCommit:process.env.GITHUB_SHA||null,build:'passed',tests:'passed',createdAt:new Date().toISOString()};
+  assertLease(jobId,leaseOwner);
+  writeFileSync(join(workspace,'deploy-manifest.json'),JSON.stringify(deployManifest,null,2)+'\n',{flag:'wx'});
+  const result={manifest:generated.manifest,workspace,projectId,build:'passed',tests:'passed',deployManifest};
+  assertLease(jobId,leaseOwner);
+  const completed=db.prepare("UPDATE generation_jobs SET status='COMPLETED',manifest=?,updated_at=? WHERE id=? AND status='RUNNING' AND lease_owner=?").run(JSON.stringify(result),now(),jobId,leaseOwner);
+  if(!completed.changes) throw Object.assign(new Error('GENERATION_LEASE_LOST'),{code:'GENERATION_LEASE_LOST'});
+  await checkpoint(jobId,'COMPLETED',{build:result.build,tests:result.tests},leaseOwner);
+  await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace,projectId,build:result.build,tests:result.tests,workerCommit:deployManifest.workerCommit,deployManifest:'deploy-manifest.json'});
+  return true;
+ } catch(error) {
+  const failure=classifyGenerationFailure(error,attempt,MAX_ATTEMPTS);
+  const {code,terminal}=failure;
+  const released=db.prepare("UPDATE generation_jobs SET status=?,error_code=?,updated_at=?,lease_owner=NULL WHERE id=? AND lease_owner=? AND status='RUNNING'")
+   .run(terminal?'FAILED':'PENDING',terminal?code:(`RETRYABLE:${code}`).slice(0,100),now(),jobId,leaseOwner);
+  if(!released.changes) {
+   console.warn('[generation-worker] stale worker fenced from changing job state',{code:'GENERATION_LEASE_LOST'});
+  } else if(terminal) {
+   try { await publish('STREAM_COMPLETE',taskId,{status:'FAILED',errorCode:code}); }
+   catch(publishError) { console.error('[generation-worker] terminal status event could not be published',{code:publishError?.code||'PUBLISH_FAILED'}); }
+  } else if(released.changes) {
+   console.warn('[generation-worker] transient failure retained for retry',{code,attempt,maxAttempts:MAX_ATTEMPTS});
+  }
+  throw error;
+ } finally {
+  clearInterval(leaseTimer);
+ }
+}
+
+export async function startGenerationWorker({signal}={}) {
+ const created=await redisTryCreateConsumerGroup(GENERATION_STREAM,GENERATION_GROUP);
+ if(created==null) throw new Error('GENERATION_REDIS_UNAVAILABLE');
+ console.log('[generation-worker] listening',{stream:GENERATION_STREAM,group:GENERATION_GROUP,consumer:CONSUMER});
+ while(!signal?.aborted) {
+  let rows=await redisTryClaimStale(GENERATION_STREAM,GENERATION_GROUP,CONSUMER,{minIdleMs:60000,count:5});
+  if(!rows?.length) rows=await redisTryReadConsumerGroup(GENERATION_STREAM,GENERATION_GROUP,CONSUMER,{count:5});
+  if(!rows?.length) { await sleep(750); continue; }
+  for(const row of rows) {
+   if(!row.event) { await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); continue; }
+   const event=row.event;
+   if(!['PROJECT_GENERATION_REQUESTED','project.generate'].includes(event.type)) { await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); continue; }
+   try { const finished=await generate(inputFrom(event)); if(finished!==false) await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); }
+   catch(error) {
+    const code=String(error?.code||'GENERATION_FAILED');
+    console.error('[generation-worker] task failed',{code});
+    // Invalid payloads cannot become valid through retry. Acknowledge them
+    // instead of reclaiming the same poison message forever.
+    if(['PROMPT_OR_TASK_ID_MISSING','PROMPT_TOO_LONG'].includes(code)) {
+     await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id);
+     continue;
+    }
+    try {
+     const parsed=inputFrom(event);
+     const terminal=db.prepare("SELECT status FROM generation_jobs WHERE request_id=?").get(parsed.taskId);
+     if(terminal?.status==='FAILED') await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id);
+    } catch { /* leave transiently incomplete work pending for recovery */ }
+   }
+  }
+ }
+}
+
+if(import.meta.url===`file://${process.argv[1]}`) {
+ const controller=new AbortController();
+ process.once('SIGINT',()=>controller.abort()); process.once('SIGTERM',()=>controller.abort());
+ startGenerationWorker({signal:controller.signal}).catch(error=>{console.error('[generation-worker] stopped:',error?.code||error.message);process.exitCode=1;});
+}

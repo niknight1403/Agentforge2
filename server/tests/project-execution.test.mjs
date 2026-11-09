@@ -27,3 +27,14 @@ test('production fails closed when no project sandbox is configured',()=>{
   if(beforeSandbox===undefined)delete process.env.VF_PROJECT_SANDBOX;else process.env.VF_PROJECT_SANDBOX=beforeSandbox;
  }
 });
+
+test('shared npm cache is never mounted implicitly; only an explicit per-job cache is mounted',()=>{
+ const before=process.env.VF_NPM_CACHE_DIR;
+ try{
+  process.env.VF_NPM_CACHE_DIR=tmpdir();
+  const isolated=projectExecution(tmpdir(),'node',['test.js'],{mode:'docker',image});
+  assert.ok(!isolated.args.some(x=>String(x).includes('target=/npm-cache')));
+  const perJob=projectExecution(tmpdir(),'node',['test.js'],{mode:'docker',image,npmCachePath:tmpdir()});
+  assert.ok(perJob.args.includes('type=bind,source='+realpathSync(tmpdir())+',target=/npm-cache'));
+ }finally{if(before===undefined)delete process.env.VF_NPM_CACHE_DIR;else process.env.VF_NPM_CACHE_DIR=before;}
+});
