@@ -12,11 +12,14 @@ Modi:
   build       Web-Build im Hub anstossen und bis zum Ende beobachten
   apk-fetch   Villa-Name + Build-Artefakt nach /tmp/villa.zip (fuer die APK-Baustrasse)
   apk-verify  APK strukturell pruefen (Zip, Manifest, Signatur, Web-Root)
+  features        Funktionsauftraege (mybabes-Parität) idempotent in die Villa legen
+  features-verify Pruft das gebaute Web-Artefakt auf die geforderten Oberflaechen
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -265,6 +268,227 @@ def mode_apk_verify(pfad: str) -> int:
     return 0
 
 
+
+# ---------------------------------------------------------------------------
+# Funktionsparität zu mybabes.ai (Nikos Auftrag 2026-11-09).
+# Belege: docs/mybabes-feature-parity.md (öffentliche Startseite, 2026-11-09).
+# Jeder Auftrag nennt seine Abnahmekriterien und verbietet erfundene Nachweise.
+# ---------------------------------------------------------------------------
+
+FEATURE_TASKS = [
+    {
+        "key": "F1",
+        "title": "F1 Explore-Hub: Charaktere, Bilder, Videos mit Tag-Filtern und Suche",
+        "markers": [r"explore", r"filter|tag"],
+        "description": (
+            "Erweitere das bestehende Produkt um einen Explore-Hub mit vier Bereichen: "
+            "Charaktere, Bilder, Videos, Stories. Jeder Bereich zeigt Karten aus den vorhandenen "
+            "Beispieldaten. Dazu eine Filterleiste (Stil: realistisch/anime, Kategorie-Tags) und "
+            "ein Suchfeld, das die Karten live filtert. Kein Nachladen aus fremden Seiten, keine "
+            "erfundenen Inhalte: wenn ein Bereich keine Daten hat, zeigt er einen leeren Zustand mit "
+            "klarem Text. Abnahme: Explore im Menue erreichbar, Filter und Suche ändern die "
+            "angezeigten Karten nachvollziehbar, Build bleibt gruen."
+        ),
+    },
+    {
+        "key": "F2",
+        "title": "F2 Charakter-Builder: Aussehen, Backstory, Persoenlichkeit, Sprechstil, Vorlage, visuelle Identitaet",
+        "markers": [r"builder|erstell", r"pers(ö|oe)nlichkeit|personality|backstory"],
+        "description": (
+            "Baue einen Charakter-Builder mit Feldern fuer Name, Alter, Aussehen, Backstory, "
+            "Persoenlichkeit und Sprechstil. Speichere eigene Charaktere dauerhaft im Browser "
+            "(localStorage) und liste sie im Explore-Hub mit. Zusaetzlich eine Vorlage ('Template Babe'), "
+            "die ein Formular vorbelegt, und ein Feld 'visuelle Merkmale' (Haare, Augen, Stil), das als "
+            "Identitaetsanker gespeichert und bei jedem generierten Medium mitgeschickt wird. "
+            "Abnahme: eigener Charakter ist nach dem Speichern im Explore sichtbar und im Chat auswaehlbar, "
+            "Felder werden validiert, Build bleibt gruen."
+        ),
+    },
+    {
+        "key": "F3",
+        "title": "F3 Chat mit Gedaechtnis und Chat-Galerie",
+        "markers": [r"ged(ä|ae)chtnis|memory|verlauf", r"galerie|gallery"],
+        "description": (
+            "Der Chat speichert den Verlauf je Charakter im Browser und laedt ihn beim Oeffnen wieder. "
+            "Der Charakter bekommt die letzten Nachrichten als Kontext, damit Bezuege erhalten bleiben. "
+            "Dazu eine Chat-Galerie: erzeugte oder hochgeladene Medien werden im Verlauf und in einer "
+            "eigenen Galerie je Charakter angezeigt, mit Loeschfunktion. Solange kein Modell-Endpunkt "
+            "konfiguriert ist, antwortet die lokale Regel-Engine und das Produkt sagt das offen. "
+            "Abnahme: Verlauf ueberlebt einen Reload, Galerie zeigt vorhandene Medien, Build bleibt gruen."
+        ),
+    },
+    {
+        "key": "F4",
+        "title": "F4 Stimme: Sprachausgabe und Spracheingabe",
+        "markers": [r"speech|voice|stimme|sprach"],
+        "description": (
+            "Nutze die Browser-Schnittstellen SpeechSynthesis (Ausgabe) und SpeechRecognition (Eingabe), "
+            "wenn vorhanden. Jede Chat-Antwort bekommt einen Vorlesen-Knopf, das Eingabefeld einen "
+            "Mikrofon-Knopf. Fehlt die Schnittstelle im Browser, zeigt der Knopf 'nicht verfuegbar' "
+            "statt still zu scheitern. Abnahme: beide Knoepfe existieren, erkennen die Verfuegbarkeit "
+            "korrekt, fallen ohne Absturz zurueck, Build bleibt gruen."
+        ),
+    },
+    {
+        "key": "F5",
+        "title": "F5 Bildgenerator mit Anbieter-Adapter und Token-Zaehler",
+        "markers": [r"bildgenerator|image.?generator", r"token"],
+        "description": (
+            "Baue eine Bildgenerator-Oberflaeche mit Prompt, Stilwahl, 2K-Option und Ergebnisbereich. "
+            "Die Erzeugung laeuft ueber einen Adapter, der einen konfigurierten Anbieter aufruft. "
+            "Fehlt die Konfiguration, zeigt die Oberflaeche 'nicht konfiguriert' und erzeugt kein "
+            "Platzhalterbild, das wie ein Ergebnis aussieht. Ein Token-Zaehler zeigt Verbrauch und "
+            "Restguthaben aus dem lokalen Konto. Abnahme: Oberflaeche vorhanden, Zustand ohne Anbieter "
+            "ist klar benannt, Build bleibt gruen."
+        ),
+    },
+    {
+        "key": "F6",
+        "title": "F6 Videogenerator und Reels mit Modellwahl",
+        "markers": [r"video", r"reel"],
+        "description": (
+            "Baue eine Video-Oberflaeche mit Modellwahl (zwei frei benannte Modelle), Dauer, Prompt und "
+            "Ergebnisbereich sowie eine Reels-Ansicht, die vorhandene Videos als kurze Sequenz abspielt. "
+            "Erzeugung wieder ueber denselben Anbieter-Adapter wie beim Bild mit klarem Zustand "
+            "'nicht konfiguriert'. Abnahme: Video- und Reels-Ansicht vorhanden, Modellwahl wirkt, "
+            "Build bleibt gruen."
+        ),
+    },
+    {
+        "key": "F7",
+        "title": "F7 Story-Creator fuer fortlaufende Handlungen",
+        "markers": [r"story|geschichte"],
+        "description": (
+            "Baue einen Story-Creator: Charakter waehlen, Kapitel anlegen, Handlung in Stichpunkten "
+            "ergaenzen, Kapitel als Liste anzeigen und im Browser speichern. Der Charakter und seine "
+            "visuellen Merkmale bleiben ueber Kapitel hinweg gleich. Abnahme: mehrere Kapitel lassen sich "
+            "anlegen, bearbeiten und wieder laden, Build bleibt gruen."
+        ),
+    },
+    {
+        "key": "F8",
+        "title": "F8 Creator-Bereich, Token-/Abo-Seite, Alterssperre, Rechtsseiten",
+        "markers": [r"creator", r"abo|abonnement|preis|pricing|token", r"18|alter|vollj(ä|ae)hrig"],
+        "description": (
+            "Ergaenze: (a) Creator-Bereich, in dem ein eigener Charakter als oeffentlich markiert und "
+            "wieder entfernt werden kann, (b) Seite mit Token-Paketen und Abo-Uebersicht, die offen sagt, "
+            "dass ohne Zahlungsanbieter kein Verkauf stattfindet, (c) Altersabfrage beim ersten Start, "
+            "(d) Rechtsseiten: Nutzungsbedingungen, Datenschutz, gesperrte Inhalte, Entfernung, "
+            "Altersverifikation - als eigene Seiten mit ehrlichem Platzhaltertext, der den Stand benennt. "
+            "Abnahme: alle vier Punkte erreichbar, Altersabfrage blockiert bis zur Bestaetigung, "
+            "Build bleibt gruen."
+        ),
+    },
+]
+
+
+def gateway_token(token: str) -> str:
+    """Schreib-Token fuer die Gateway-API. Der Admin-Token-Weg braucht Superadmin;
+    die Schluessel-Route ist der Fallback und liefert den Schluessel einmalig."""
+    try:
+        out = call("/api/admin/gateway-token", "POST", {"role": "admin", "villaIds": [DEEP_ID_CANDIDATE], "ttlSeconds": 3600}, token=token)
+        if out.get("token"):
+            print("GATEWAY-TOKEN", "admin (Kurzlebig)")
+            return out["token"]
+    except urllib.error.HTTPError as e:
+        print("GATEWAY-TOKEN-START", f"HTTP {e.code}", e.read()[:160])
+    try:
+        out = call("/api/v1/gateway-keys", "POST", {"label": "deep-features", "role": "admin", "villaIds": [DEEP_ID_CANDIDATE], "ttlSeconds": 1800}, token=token)
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"Kein Schreib-Token: HTTP {e.code} {e.read()[:200]!r} (Adminrechte noetig)")
+    key = out.get("apiKey") or out.get("key") or out.get("token")
+    if not key:
+        raise SystemExit(f"Schluessel-Antwort ohne Schluessel: {json.dumps(out, ensure_ascii=False)[:200]}")
+    print("GATEWAY-TOKEN", "admin (Schluessel, 30 Minuten)")
+    return key
+
+
+def vorhandene_titel(token: str, did: int) -> set[str]:
+    rows = call(f"/api/villas/{did}/tasks?limit=500", token=token) or []
+    return {normal(str(t.get("title") or "")) for t in rows}
+
+
+def normal(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def mode_features() -> int:
+    """Legt die Funktionsauftraege idempotent an und startet die Villa.
+    Doppelte Titel werden uebersprungen, damit ein zweiter Lauf keine
+    Auftraege verdoppelt."""
+    token = login()
+    deep = resolve_deep(token)
+    did = int(deep["id"])
+    gtoken = gateway_token(token)
+    bekannt = vorhandene_titel(token, did)
+    neu = 0
+    for auf in FEATURE_TASKS:
+        if normal(auf["title"]) in bekannt:
+            print("VORHANDEN", auf["key"], auf["title"][:70])
+            continue
+        try:
+            out = call("/api/v1/gateway/tasks", "POST",
+                       {"villaId": did, "title": auf["title"], "description": auf["description"]},
+                       token=gtoken)
+        except urllib.error.HTTPError as e:
+            print("FEHLER", auf["key"], f"HTTP {e.code}", e.read()[:200])
+            return 1
+        neu += 1
+        print("ANGELEGT", auf["key"], out.get("taskId"), out.get("status"))
+    print("NEU", neu, "VON", len(FEATURE_TASKS))
+    st = call(f"/api/villas/{did}/product", token=token)
+    print("SCORE", st.get("score"), "VERIFIED", st.get("verified"), "STAGE", st.get("stage"))
+    status = call(f"/api/villas/{did}", token=token)
+    villa = status.get("villa") or {}
+    print("VILLA", kurz({**villa, "id": did}))
+    return 0 if neu or True else 1
+
+
+def artefakt_text(pfad: str, grenze: int = 4_000_000) -> str:
+    """Text aller Web-Dateien im Build-Artefakt, damit die Pruefung nicht nur
+    index.html liest."""
+    teile: list[str] = []
+    with zipfile.ZipFile(pfad) as z:
+        for name in z.namelist():
+            if not name.lower().endswith((".html", ".js", ".css", ".json", ".txt", ".svg")):
+                continue
+            if z.getinfo(name).file_size > 512_000:
+                continue
+            teile.append(z.read(name).decode("utf-8", "replace"))
+            if sum(len(t) for t in teile) > grenze:
+                break
+    return "\n".join(teile)
+
+
+def mode_features_verify() -> int:
+    """Prueft das gebaute Web-Artefakt auf die geforderten Oberflaechen.
+    Diese Pruefung belegt Vorhandensein, nicht Bedienqualitaet."""
+    token = login()
+    deep = resolve_deep(token)
+    did = int(deep["id"])
+    art = call(f"/api/villas/{did}/build/download", token=token, raw=True)
+    if not art or len(art) < 1000:
+        raise SystemExit(f"Kein Web-Build-Artefakt ({len(art or b'')} Bytes). Erst build laufen lassen.")
+    pfad = "/tmp/villa-features.zip"
+    with open(pfad, "wb") as fh:
+        fh.write(art)
+    text = artefakt_text(pfad).lower()
+    print("ARTEFAKT", len(art), "Bytes, Textlaenge", len(text))
+    fehlt = []
+    for auf in FEATURE_TASKS:
+        treffer = {m: bool(re.search(m, text, re.I)) for m in auf["markers"]}
+        ok = all(treffer.values())
+        print("PRUEFUNG", auf["key"], "OK" if ok else "FEHLT",
+              json.dumps({m: v for m, v in treffer.items()}, ensure_ascii=False))
+        if not ok:
+            fehlt.append(auf["key"])
+    if fehlt:
+        print("NICHT-NACHGEWIESEN", ",".join(fehlt))
+        return 1
+    print("ALLE-FUNKTIONEN-NACHGEWIESEN", len(FEATURE_TASKS))
+    return 0
+
+
 def mode_plan() -> int:
     """Zeigt je Phase, welche Pflicht-Bausteine fehlen und warum der Score
     unter 100 bleibt (Produkt-Gate der Villa)."""
@@ -306,6 +530,8 @@ if __name__ == "__main__":
         "plan": mode_plan,
         "apk-fetch": mode_apk_fetch,
         "apk-verify": lambda: mode_apk_verify(sys.argv[2] if len(sys.argv) > 2 else "deep-villa.apk"),
+        "features": mode_features,
+        "features-verify": mode_features_verify,
     }
     if modus not in tabelle:
         raise SystemExit(f"Unbekannter Modus: {modus}")

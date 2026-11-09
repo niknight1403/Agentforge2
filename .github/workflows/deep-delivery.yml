@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "status | plan | apply | build | apk"
+        description: "status | plan | apply | build | apk | features | features-verify"
         required: true
         default: "status"
       app_name:
@@ -42,6 +42,30 @@ jobs:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
           VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
         run: python3 scripts/ops/deep_delivery.py status
+
+  features:
+    if: github.event.inputs.mode == 'features'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Funktionsauftraege anlegen und Villa starten
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: python3 scripts/ops/deep_delivery.py features
+
+  features-verify:
+    if: github.event.inputs.mode == 'features-verify'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Oberflaechen im Web-Build pruefen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: python3 scripts/ops/deep_delivery.py features-verify
 
   plan:
     if: github.event.inputs.mode == 'plan'
