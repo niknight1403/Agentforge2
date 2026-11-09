@@ -15,6 +15,21 @@
 - Der Start aktiviert die Autonomie wieder, auch wenn die Villa zuvor über den Master-Agenten pausiert wurde.
 - Die Anzahl gleichzeitiger Villen ist fest auf zwei begrenzt (Einstellung `villaSlots`, gültig 1-2); größere Altwerte in der Datenbank werden auf zwei gekappt, damit die Anzeige dem tatsächlichen Verhalten entspricht.
 
+## Full-Stack-Engine 1.62.0
+
+- **Prompt zu Produkt**: `npm run forge -- "Baue ein Rechnungstool mit Kunden und Rechnungen" --out ./out/rechnungstool`
+  erzeugt Client (React/Tailwind), API (REST mit Rollen), Datenmodell (Prisma/PostgreSQL inkl. Migration und Seed) und
+  Authentifizierung (JWT, Passworthashing) als modularen Dateibaum.
+- **Vierstufiger PEER-Loop**: Planner (Blueprint), Executor (Dateien), Express (Syntax, Vertraege, echte API-Tests in der
+  Sandbox), Reviewer (begrenzte Selbstkorrektur per Neuschreiben der betroffenen Datei).
+- **Event-Bus**: `PROJECT_PLANNED`, `SCAFFOLD_GENERATED`, `CONTAINER_TEST_PASSED`/`_FAILED`, `CHECKPOINT_SAVED`,
+  `STREAM_COMPLETE`/`STREAM_FAILED` auf `agentforge:events:stream` (nur Metadaten, kein Prompt, kein Dateiinhalt).
+- **Checkpoints** liegen hash-verkettet in der bestehenden Aufgaben-Datenbank; jeder Bau ist wiederaufsetzbar.
+- **Worker**: `npm run worker:fullstack` liest Bauauftraege aus dem Stream, bestaetigt erst nach Abschluss und schreibt
+  seinen Zustand nach `server/data/fullstack/worker-health.json`.
+- **Nur verifiziert ist fertig**: ein Bau ohne bestandene Pruefung endet als `STREAM_FAILED` mit Befund, nie als Erfolg.
+- Details: `docs/fullstack-engine.md`.
+
 VillaForge ist ein privates System zum Erstellen von **Deep Agents**, die eine Idee in einer
 **Villa mit bis zu 1000 Agenten** autonom planen, umsetzen und abschließen.
 

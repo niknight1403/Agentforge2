@@ -54,3 +54,24 @@ model AgentCheckpoint {
 
   @@index([taskId, stepNumber])
 }
+
+// Full-Stack-Engine: ein generiertes Projekt mit seinem verifizierten Stand.
+// Die Laufzeit des Hubs fuehrt denselben Stand in SQLite (server/fullstack),
+// dieses Modell ist die persistente Sicht fuer Supervisor und Telemetrie.
+model GeneratedProject {
+  id              String   @id @default(uuid())
+  slug            String   @unique
+  blueprintDigest String
+  requestDigest   String
+  status          String   @default("PLANNED")
+  files           Int      @default(0)
+  testsPassed     Int      @default(0)
+  repairs         Int      @default(0)
+  commitHash      String?
+  taskId          String?
+  agentId         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, createdAt])
+}
