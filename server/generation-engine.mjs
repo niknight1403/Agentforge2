@@ -6,8 +6,8 @@ export const MAX_GENERATED_FILES = 80;
 export const MAX_GENERATED_BYTES = 1_500_000;
 
 export function safeGeneratedPath(value) {
-  const input=String(value||'').replaceAll('\\\\','/');
-  if(!input || input.length>240 || input.startsWith('/') || /^[a-zA-Z]:/.test(input) || input.includes('\\0')) return null;
+  const input=String(value||'').replaceAll('\\','/');
+  if(!input || input.length>240 || input.startsWith('/') || /^[a-zA-Z]:/.test(input) || input.includes('\0')) return null;
   const normalized=resolve('/workspace',input);
   const rel=relative('/workspace',normalized);
   if(!rel || rel==='.' || rel==='..' || rel.startsWith('..'+sep)) return null;
