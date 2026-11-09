@@ -66,14 +66,15 @@ async function generate({prompt,taskId,projectId}) {
  if(existing?.status==='COMPLETED') { await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace:existing.workspace}); return true; }
  if(existing?.status==='FAILED') return true; // terminal jobs must not be restarted by duplicate stream deliveries
  const jobId=existing?.id||randomUUID();
- const workspace=join(WORKSPACE,jobId);
+ // Every lease claim gets its own workspace so an expired/stale worker can never share files with its replacement.
+ const workspace=join(WORKSPACE,`${jobId}-${leaseOwner}`);
  const startedAt=now();
  const leaseOwner=randomUUID();
  // Atomic lease acquisition prevents two consumers from deleting/writing the same workspace.
  const claim=db.prepare(`INSERT INTO generation_jobs(id,request_id,project_id,status,workspace,attempts,lease_owner,created_at,updated_at)
  VALUES(?,?,?,'RUNNING',?,1,?,?,?)
  ON CONFLICT(request_id) DO UPDATE SET
-  status='RUNNING',manifest=NULL,error_code=NULL,attempts=generation_jobs.attempts+1,lease_owner=excluded.lease_owner,updated_at=excluded.updated_at
+  status='RUNNING',workspace=excluded.workspace,manifest=NULL,error_code=NULL,attempts=generation_jobs.attempts+1,lease_owner=excluded.lease_owner,updated_at=excluded.updated_at
  WHERE generation_jobs.status!='RUNNING' OR generation_jobs.updated_at<=?`)
  .run(jobId,taskId,projectId,workspace,leaseOwner,startedAt,startedAt,startedAt-LEASE_MS);
  if(!claim.changes) return false;
