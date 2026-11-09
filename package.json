@@ -17,7 +17,8 @@
     "test:live": "node scripts/live-e2e.mjs",
     "test:design": "node scripts/design-audit.mjs",
     "build:web": "node scripts/build-web.mjs",
-    "check:secrets": "node scripts/check-secrets.mjs"
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "worker:generation": "node server/generation-worker.mjs"
   },
   "engines": {
     "node": ">=22"
