@@ -436,6 +436,18 @@ def mode_features() -> int:
         neu += 1
         print("ANGELEGT", auf["key"], out.get("taskId"), out.get("status"))
     print("NEU", neu, "VON", len(FEATURE_TASKS))
+    # Eine COMPLETED-Villa nimmt der Scheduler nicht von selbst wieder auf:
+    # erst stoppen (Status PAUSED), dann mit runToCompletion neu einreihen.
+    status = call(f"/api/villas/{did}", token=token)
+    villa = status.get("villa") or {}
+    if str(villa.get("status") or "").upper() in ("COMPLETED", "FAILED"):
+        print("WIEDERAUFNAHME", villa.get("status"), "-> PAUSED")
+        call(f"/api/villas/{did}/stop", "POST", token=token)
+        time.sleep(2)
+    start = call(f"/api/villas/{did}/orchestrate", "POST", {"runToCompletion": True, "concurrency": 0}, token=token)
+    print("START", json.dumps(start, ensure_ascii=False)[:300])
+    if not (isinstance(start, dict) and start.get("ok") is True):
+        raise SystemExit("Orchestrierung abgelehnt.")
     st = call(f"/api/villas/{did}/product", token=token)
     print("SCORE", st.get("score"), "VERIFIED", st.get("verified"), "STAGE", st.get("stage"))
     status = call(f"/api/villas/{did}", token=token)
