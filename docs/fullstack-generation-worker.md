@@ -9,6 +9,14 @@ REDIS_URL=redis://127.0.0.1:6379 VF_PROJECT_SANDBOX=docker VF_NPM_CACHE_DIR=/srv
 ```
 
 Default stream: `agentforge:events:stream`; consumer group: `fullstack-generation-v1`.
+
+## Retry and lease configuration
+
+- `AGENTFORGE_GENERATION_LEASE_MS`: lease duration in milliseconds (default 180000; minimum 90000).
+- `AGENTFORGE_GENERATION_MAX_ATTEMPTS`: maximum durable job attempts (default 5; minimum 1).
+- `AGENTFORGE_GENERATION_CONSUMER`: optional explicit Redis consumer name; otherwise hostname and process ID are used.
+- A unique per-claim lease-owner token fences heartbeat and state updates from stale workers. Heartbeats run every 10–30 seconds and only extend the matching owner lease.
+- Retryable provider, rate-limit, network and Redis-publish failures remain pending for Redis stale-message recovery. Permanent validation/quality failures become terminal; retries are bounded.
 Publish an event with Redis `XADD` fields `type=PROJECT_GENERATION_REQUESTED` and
 `json={"type":"PROJECT_GENERATION_REQUESTED","id":"request-uuid","payload":{"taskId":"request-uuid","projectId":"optional-project-id","prompt":"Build ..."}}`.
 
