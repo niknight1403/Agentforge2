@@ -289,7 +289,14 @@ for (const [label, args] of commands) {
 }
 `;
     writeFileSync(runnerPath,runner,{encoding:'utf8',mode:0o600});
-    // Copy the trusted prewarmed cache into this disposable job stage. Generated\n    // build/test scripts never receive the shared host cache mount.\n    const sharedCache=realpathSync(process.env.VF_NPM_CACHE_DIR);\n    if(!statSync(sharedCache).isDirectory()||sharedCache==='/'||/[\\r\\n,]/.test(sharedCache)) throw Error('PROJECT_SANDBOX_NPM_CACHE_INVALID');\n    const jobCache=join(stage.owner,'npm-cache');\n    mkdirSync(jobCache,{recursive:true,mode:0o700});\n    cpSync(sharedCache,jobCache,{recursive:true,dereference:true,force:true});\n    const invocation=projectExecution(stage.work,'node',[runnerName],{npmCachePath:jobCache});
+    // Copy the trusted prewarmed cache into this disposable job stage. Generated
+    // build/test scripts never receive the shared host cache mount.
+    const sharedCache=realpathSync(process.env.VF_NPM_CACHE_DIR);
+    if(!statSync(sharedCache).isDirectory()||sharedCache==='/'||/[\r\n,]/.test(sharedCache)) throw Error('PROJECT_SANDBOX_NPM_CACHE_INVALID');
+    const jobCache=join(stage.owner,'npm-cache');
+    mkdirSync(jobCache,{recursive:true,mode:0o700});
+    cpSync(sharedCache,jobCache,{recursive:true,dereference:true,force:true});
+    const invocation=projectExecution(stage.work,'node',[runnerName],{npmCachePath:jobCache});
     const result=await new Promise(resolvePromise=>{
       executeInvocation(invocation,{
         cwd:stage.work,timeout:timeoutMs,maxBuffer:2_000_000,
