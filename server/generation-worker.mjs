@@ -50,7 +50,7 @@ function inputFrom(event) {
 
 function assertLease(jobId, owner) {
  const row=db.prepare("SELECT lease_owner,status FROM generation_jobs WHERE id=?").get(jobId);
- if(row?.status!=='RUNNING' || row.lease_owner!==owner) throw Object.assign(new Error('GENERATION_LEASE_LOST'),{code:'GENERATION_LEASE_LOST'});
+ if(!['RUNNING','COMPLETED'].includes(row?.status) || row.lease_owner!==owner) throw Object.assign(new Error('GENERATION_LEASE_LOST'),{code:'GENERATION_LEASE_LOST'});
 }
 
 async function checkpoint(jobId,stage,metadata={},owner) {
@@ -110,6 +110,7 @@ async function generate({prompt,taskId,projectId}) {
    mkdirSync(dirname(target),{recursive:true});
    writeFileSync(target,file.content,{encoding:'utf8',flag:'wx'});
   }
+  assertLease(jobId,leaseOwner);
   writeFileSync(join(workspace,'project_manifest.json'),JSON.stringify({...generated.manifest,requestId:taskId,projectId,generatedAt:new Date().toISOString()},null,2)+'\n',{flag:'wx'});
   await publish('SCAFFOLD_GENERATED',taskId,{projectId,files:generated.files.length,bytes:generated.bytes});
   await checkpoint(jobId,'SCAFFOLD_GENERATED',{files:generated.files.length,bytes:generated.bytes},leaseOwner);
@@ -146,6 +147,7 @@ async function generate({prompt,taskId,projectId}) {
    await checkpoint(jobId,'CONTAINER_TEST_PASSED',{build:'passed',tests:'passed',repairApplied:true},leaseOwner);
   }
   const deployManifest={status:'NOT_DEPLOYED',reason:'Deployment requires an explicitly configured target and verified production credentials.',workspace,projectId,workerCommit:process.env.GITHUB_SHA||null,build:'passed',tests:'passed',createdAt:new Date().toISOString()};
+  assertLease(jobId,leaseOwner);
   writeFileSync(join(workspace,'deploy-manifest.json'),JSON.stringify(deployManifest,null,2)+'\n',{flag:'wx'});
   const result={manifest:generated.manifest,workspace,projectId,build:'passed',tests:'passed',deployManifest};
   assertLease(jobId,leaseOwner);
