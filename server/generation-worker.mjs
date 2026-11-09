@@ -70,10 +70,10 @@ async function generate({prompt,taskId,projectId}) {
  const startedAt=now();
  const leaseOwner=randomUUID();
  // Atomic lease acquisition prevents two consumers from deleting/writing the same workspace.
- const claim=db.prepare(`INSERT INTO generation_jobs(id,request_id,project_id,status,workspace,attempts,created_at,updated_at)
- VALUES(?,?,?,'RUNNING',?,1,?,?)
+ const claim=db.prepare(`INSERT INTO generation_jobs(id,request_id,project_id,status,workspace,attempts,lease_owner,created_at,updated_at)
+ VALUES(?,?,?,'RUNNING',?,1,?,?,?)
  ON CONFLICT(request_id) DO UPDATE SET
-  status='RUNNING',manifest=NULL,error_code=NULL,attempts=generation_jobs.attempts+1,updated_at=excluded.updated_at
+  status='RUNNING',manifest=NULL,error_code=NULL,attempts=generation_jobs.attempts+1,lease_owner=excluded.lease_owner,updated_at=excluded.updated_at
  WHERE generation_jobs.status!='RUNNING' OR generation_jobs.updated_at<=?`)
  .run(jobId,taskId,projectId,workspace,leaseOwner,startedAt,startedAt,startedAt-LEASE_MS);
  if(!claim.changes) return false;
