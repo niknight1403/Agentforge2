@@ -261,6 +261,7 @@ export const ALLOWED = Object.entries(COMMAND_POLICY).map(([bin, subs]) => Array
  */
 export async function runGenerationChecks(root, timeoutMs = 120_000) {
   if (process.env.VF_PROJECT_SANDBOX !== 'docker') return { ok:false, error:'GENERATION_DOCKER_SANDBOX_REQUIRED' };
+  if (!process.env.VF_NPM_CACHE_DIR) return { ok:false, error:'GENERATION_NPM_CACHE_REQUIRED' };
   const packagePath = join(resolve(root), 'package.json');
   if (!existsSync(packagePath)) return { ok:false, error:'NO_PACKAGE_MANIFEST' };
   let pkg;
@@ -274,9 +275,9 @@ export async function runGenerationChecks(root, timeoutMs = 120_000) {
     const runnerName='.vf-generation-runner-'+randomUUID()+'.cjs';
     const runnerPath=join(stage.work,runnerName);
     const runner=String.raw`const { spawnSync } = require('node:child_process');
-const env = { ...process.env, HOME: '/tmp', CI: '1', npm_config_cache: '/workspace/.npm-cache' };
+const env = { ...process.env, HOME: '/tmp', CI: '1', npm_config_cache: '/npm-cache' };
 const commands = [
-  ['install', ['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--no-progress', '--cache=/workspace/.npm-cache']],
+  ['install', ['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--no-progress', '--cache=/npm-cache']],
   ['build', ['run', 'build']],
   ['test', ['test']]
 ];
