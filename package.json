@@ -19,6 +19,7 @@
     "build:web": "node scripts/build-web.mjs",
     "forge": "node scripts/fullstack.mjs",
     "worker:fullstack": "node scripts/fullstack-worker.mjs",
+    "worker:generation": "node server/generation-worker.mjs",
     "check:secrets": "node scripts/check-secrets.mjs"
   },
   "engines": {
