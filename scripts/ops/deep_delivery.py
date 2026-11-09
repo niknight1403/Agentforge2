@@ -194,7 +194,11 @@ def mode_build() -> int:
             art = call(f"/api/villas/{did}/build/download", token=token, raw=True)
             print("ARTEFAKT-BYTES", len(art or b""))
             return 0 if (art and len(art) > 1000) else 1
-        if state in ("FAILED", "ERROR"):
+        if state in ("FAILED", "ERROR", "UNVERIFIED"):
+            # Endzustaende mit Befund sofort melden, statt 10 Minuten zu warten.
+            print("BUILD-BEFUND", json.dumps(st, ensure_ascii=False)[:4000])
+            for zeile in (st.get("log") or [])[-8:]:
+                print("  LOG", str(zeile)[:300])
             return 1
         time.sleep(15)
     print("TIMEOUT: Build nach 10 Minuten nicht fertig")
