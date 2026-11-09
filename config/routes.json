@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "hinweis": "Kontingente der kostenlosen Tarife. 'limitsVerified: false' heißt: Zahl stammt aus der Anbieter-Dokumentation und muss im Dashboard bestätigt werden. 0 = unbegrenzt. Der Ledger zählt lokal mit; er ersetzt keine Anbieter-Anzeige.",
+  "routes": [
+    {
+      "id": "ollama-local",
+      "kind": "ollama",
+      "priority": 90,
+      "isLocal": true,
+      "needsKey": false,
+      "tools": true,
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "model": "qwen2.5-coder:7b",
+      "apiKeyEnv": "",
+      "limits": { "rpm": 0, "rpd": 0, "tpm": 0, "tpd": 0 },
+      "limitsVerified": true,
+      "note": "Eigene Hardware (auch die Oracle-VM). Einzige Route ohne Fremdkontingent; Grundlast für 24/7."
+    },
+    {
+      "id": "gemini-free",
+      "kind": "gemini",
+      "priority": 10,
+      "needsKey": true,
+      "tools": true,
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "model": "gemini-2.0-flash",
+      "apiKeyEnv": "GEMINI_API_KEY",
+      "limits": { "rpm": 15, "rpd": 1500, "tpm": 1000000, "tpd": 0 },
+      "limitsVerified": false,
+      "note": "Großes Kontextfenster, gut für Planung. Tageslimit im Dashboard prüfen."
+    },
+    {
+      "id": "groq-free",
+      "kind": "groq",
+      "priority": 20,
+      "needsKey": true,
+      "tools": true,
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "model": "openai/gpt-oss-120b",
+      "apiKeyEnv": "GROQ_API_KEY",
+      "limits": { "rpm": 30, "rpd": 1000, "tpm": 12000, "tpd": 0 },
+      "limitsVerified": false,
+      "note": "Schnell, kleines Token-Budget pro Minute: für kurze Schritte, nicht für lange Dateien."
+    },
+    {
+      "id": "openrouter-free",
+      "kind": "openrouter",
+      "priority": 30,
+      "needsKey": true,
+      "tools": true,
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "model": "google/gemma-4-31b-it:free",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "limits": { "rpm": 20, "rpd": 50, "tpm": 0, "tpd": 0 },
+      "limitsVerified": false,
+      "note": "Kostenlose Modelle haben ein eigenes, niedriges Tageslimit."
+    }
+  ]
+}
