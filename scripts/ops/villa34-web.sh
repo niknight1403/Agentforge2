@@ -10,30 +10,28 @@ PROJEKT="${2:-}"
 MARKER="mybabes-app.html"
 
 echo "== DIAGNOSE =="
-sudo ls -d /opt/villaforge 2>/dev/null || true
-HUB_SRC=$(sudo grep -rln "export function projectDirectory" /opt/villaforge/server 2>/dev/null | head -1 || true)
-echo "HUB-SRC ${HUB_SRC:-unbekannt}"
-[ -n "${HUB_SRC:-}" ] && sudo grep -n "export function projectDirectory" -A 6 "$HUB_SRC" || true
-
-if [ -z "$PROJEKT" ] && [ -n "${HUB_SRC:-}" ]; then
-  PROJEKT=$(cd /opt/villaforge && node -e "
-    const m = await import('${HUB_SRC#/opt/villaforge/}');
-    console.log(m.projectDirectory(34));
-  " 2>/dev/null | tail -1 || true)
+DB=""
+for k in $(sudo find /opt/villaforge -maxdepth 4 -name '*.db' -not -path '*/node_modules/*' 2>/dev/null); do
+  if sudo sqlite3 "$k" "SELECT name FROM sqlite_master WHERE type='table' AND name='villas'" 2>/dev/null | grep -qx villas; then DB="$k"; break; fi
+done
+echo "DB ${DB:-nicht gefunden}"
+if [ -n "$DB" ]; then
+  sudo sqlite3 -header -separator ' | ' "$DB" "SELECT id, status, source_path FROM villas WHERE id=34" || true
+  if [ -z "$PROJEKT" ]; then
+    PROJEKT=$(sudo sqlite3 "$DB" "SELECT source_path FROM villas WHERE id=34" 2>/dev/null | tr -d '\r' || true)
+  fi
 fi
 
 if [ -z "$PROJEKT" ] || [ ! -d "$PROJEKT" ]; then
-  for k in /opt/villaforge/data/projects/34 /opt/villaforge/data/project/34 \
-           /opt/villaforge/projects/34 /opt/villaforge/data/villas/34 \
-           /opt/villaforge/data/deep/34; do
+  echo "SOURCE_PATH unbrauchbar ($PROJEKT), suche Projektordner:"
+  sudo find /opt/villaforge -maxdepth 3 -type d \( -name 'villa-34' -o -name '34' -o -name '*villa*34*' \) -not -path '*/node_modules/*' 2>/dev/null | head -10
+  for k in /opt/villaforge/workspace/villa-34 /opt/villaforge/projects/villa-34 \
+           /opt/villaforge/data/workspace/villa-34 /opt/villaforge/pilot/villa-34; do
     [ -d "$k" ] && PROJEKT="$k" && break
   done
 fi
 
 if [ -z "$PROJEKT" ] || [ ! -d "$PROJEKT" ]; then
-  echo "SUCHE per find:"
-  sudo find /opt/villaforge -maxdepth 5 -type f -name package.json -printf '%h\n' 2>/dev/null | head -20
-  sudo find /opt/villaforge -maxdepth 4 -type d -name 34 2>/dev/null | head -10
   echo "PROJEKT-NICHT-GEFUNDEN"
   exit 3
 fi
