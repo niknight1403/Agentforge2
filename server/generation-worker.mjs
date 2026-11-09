@@ -57,6 +57,7 @@ async function checkpoint(jobId,stage,metadata={}) {
 async function generate({prompt,taskId,projectId}) {
  const existing=db.prepare('SELECT * FROM generation_jobs WHERE request_id=?').get(taskId);
  if(existing?.status==='COMPLETED') { await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace:existing.workspace}); return true; }
+ if(existing?.status==='FAILED') return true; // terminal jobs must not be restarted by duplicate stream deliveries
  const jobId=existing?.id||randomUUID();
  const workspace=join(WORKSPACE,jobId);
  const startedAt=now();
