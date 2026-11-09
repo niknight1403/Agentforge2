@@ -104,10 +104,13 @@ async function generate({prompt,taskId,projectId}) {
    if(!build.ok || !tests.ok) throw Object.assign(new Error('GENERATION_QUALITY_GATE_FAILED'),{code:'GENERATION_QUALITY_GATE_FAILED'});
    await publish('CONTAINER_TEST_PASSED',taskId,{projectId,repairApplied:true});
   }
-  const result={manifest:generated.manifest,workspace,projectId,build:build.ok?'passed':build.skipped?'not_configured':'failed',tests:tests.ok?'passed':tests.skipped?'not_configured':'failed'};
+  if(!build.ok || !tests.ok) throw Object.assign(new Error('GENERATION_BUILD_OR_TEST_NOT_VERIFIED'),{code:'GENERATION_BUILD_OR_TEST_NOT_VERIFIED'});
+  const deployManifest={status:'NOT_DEPLOYED',reason:'Deployment requires an explicitly configured target and verified production credentials.',workspace,projectId,workerCommit:process.env.GITHUB_SHA||null,build:'passed',tests:'passed',createdAt:new Date().toISOString()};
+  writeFileSync(join(workspace,'deploy-manifest.json'),JSON.stringify(deployManifest,null,2)+'\\n',{flag:'wx'});
+  const result={manifest:generated.manifest,workspace,projectId,build:'passed',tests:'passed',deployManifest};
   db.prepare("UPDATE generation_jobs SET status='COMPLETED',manifest=?,updated_at=? WHERE id=?").run(JSON.stringify(result),now(),jobId);
   await checkpoint(jobId,'COMPLETED',{build:result.build,tests:result.tests});
-  await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace,projectId,build:result.build,tests:result.tests});
+  await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace,projectId,build:result.build,tests:result.tests,workerCommit:deployManifest.workerCommit,deployManifest:'deploy-manifest.json'});
  } catch(error) {
   const code=String(error?.code||'GENERATION_FAILED').slice(0,100);
   db.prepare("UPDATE generation_jobs SET status='FAILED',error_code=?,updated_at=? WHERE id=?").run(code,now(),jobId);
