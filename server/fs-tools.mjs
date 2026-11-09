@@ -251,3 +251,56 @@ export function runCommand(root, binary, args = [], timeoutMs = 120_000) {
 }
 
 export const ALLOWED = Object.entries(COMMAND_POLICY).map(([bin, subs]) => Array.isArray(subs) ? `${bin} (${subs.join('|')})` : `${bin} (Skriptdatei im Projekt)`);
+
+/**
+ * One pinned, network-isolated Docker stage for dependency installation,
+ * build and tests. The writable stage persists between these invocations,
+ * so node_modules created by the offline install are available to build/test.
+ * The npm cache must be preloaded in the pinned sandbox image or supplied
+ * through the workspace cache; this function never opens network access.
+ */
+export async function runGenerationChecks(root, timeoutMs = 120_000) {
+  if (process.env.VF_PROJECT_SANDBOX !== 'docker') return { ok:false, error:'GENERATION_DOCKER_SANDBOX_REQUIRED' };
+  const packagePath = join(resolve(root), 'package.json');
+  if (!existsSync(packagePath)) return { ok:false, error:'NO_PACKAGE_MANIFEST' };
+  let pkg;
+  try { pkg=JSON.parse(readFileSync(packagePath,'utf8')); }
+  catch { return { ok:false, error:'PACKAGE_MANIFEST_INVALID' }; }
+  if (!pkg.scripts?.build || !pkg.scripts?.test) return { ok:false, error:'BUILD_OR_TEST_SCRIPT_MISSING' };
+  await cmdAcquire();
+  let stage=null;
+  const run = (args) => new Promise((resolvePromise) => {
+    let invocation;
+    try { invocation=projectExecution(stage.work,'npm',args); }
+    catch (error) { return resolvePromise({ok:false,error:String(error?.message||error).slice(0,400)}); }
+    executeInvocation(invocation,{
+      cwd:stage.work,timeout:timeoutMs,maxBuffer:2_000_000,
+      env:{
+        PATH:[process.env.PATH,'/usr/local/sbin','/usr/local/bin','/usr/sbin','/usr/bin','/sbin','/bin'].filter(Boolean).join(':'),
+        HOME:'/tmp',NODE_ENV:'test',LANG:process.env.LANG||'C.UTF-8',CI:'1',
+        npm_config_cache:'/workspace/.npm-cache'
+      }
+    },(error,stdout,stderr)=>resolvePromise({
+      ok:!error,code:error?.code??0,
+      output:(String(stdout||'')+String(stderr||'')).trim().slice(-6000),
+      error:error?String(error.message||error).slice(0,400):null
+    }));
+  });
+  try {
+    stage=prepareProjectStage(root);
+    const install=await run(['install','--offline','--ignore-scripts','--no-audit','--no-fund','--cache=/workspace/.npm-cache']);
+    if(!install.ok)return {ok:false,stage:'install',...install};
+    const build=await run(['run','build']);
+    if(!build.ok)return {ok:false,stage:'build',...build};
+    const tests=await run(['test']);
+    if(!tests.ok)return {ok:false,stage:'test',...tests};
+    const artifacts=collectProjectStage(stage);
+    return {ok:true,build,tests,artifacts};
+  } catch(error) {
+    return {ok:false,stage:'sandbox',error:String(error?.code||error?.message||error).slice(0,400)};
+  } finally {
+    try { if(stage)disposeProjectStage(stage); } catch {}
+    cmdRelease();
+  }
+}
+
