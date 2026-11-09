@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 
-private data class PhoneFile(val uri: Uri, val id: String, val name: String, val mime: String, val size: Long)
+private data class PhoneFile(val uri: Uri, val id: String, val parentId: String, val name: String, val mime: String, val size: Long)
 private data class FileAction(val title: String, val files: List<PhoneFile>, val folder: String? = null, val delete: Boolean = false)
 
 @Composable
@@ -178,19 +178,30 @@ fun FileManagerScreen() {
 private fun listFiles(context: Context, tree: Uri): List<PhoneFile> {
     val resolver = context.contentResolver
     val rootId = DocumentsContract.getTreeDocumentId(tree)
-    val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, rootId)
+    val queue = ArrayDeque<Pair<String, Int>>()
+    val visited = mutableSetOf<String>()
     val out = mutableListOf<PhoneFile>()
-    resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c ->
-        val idCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-        val nameCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-        val mimeCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
-        val sizeCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
-        while (c.moveToNext()) {
-            val id = c.getString(idCol)
-            val mime = c.getString(mimeCol) ?: "application/octet-stream"
-            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) continue
-            val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-            out += PhoneFile(uri, id, c.getString(nameCol) ?: id, mime, if (sizeCol >= 0 && !c.isNull(sizeCol)) c.getLong(sizeCol) else 0L)
+    queue.add(rootId to 0)
+    while (queue.isNotEmpty() && out.size < 5000) {
+        val (parentId, depth) = queue.removeFirst()
+        if (!visited.add(parentId) || depth > 12) continue
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+        resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c ->
+            val idCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val mimeCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            val sizeCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+            while (c.moveToNext() && out.size < 5000) {
+                val id = c.getString(idCol)
+                val name = c.getString(nameCol) ?: id
+                val mime = c.getString(mimeCol) ?: "application/octet-stream"
+                if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    queue.add(id to depth + 1)
+                } else {
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                    out += PhoneFile(uri, id, parentId, name, mime, if (sizeCol >= 0 && !c.isNull(sizeCol)) c.getLong(sizeCol) else 0L)
+                }
+            }
         }
     }
     return out.sortedBy { it.name.lowercase() }
@@ -233,8 +244,7 @@ private fun moveIntoFolder(context: Context, tree: Uri, files: List<PhoneFile>, 
     val target = DocumentsContract.buildDocumentUriUsingTree(tree, folderId!!)
     var moved = 0
     for (file in files) {
-        val parentId = file.id.substringBeforeLast('/', rootId)
-        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, parentId)
+        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, file.parentId)
         if (runCatching { DocumentsContract.moveDocument(resolver, file.uri, parent, target) }.getOrNull() != null) moved++
     }
     return moved
