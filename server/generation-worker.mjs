@@ -26,7 +26,8 @@ db.exec(`
 
 async function publish(type,taskId,metadata={}) {
  const event=generationEvent(type,taskId,metadata);
- await redisTryStreamAdd(GENERATION_STREAM,{type,json:JSON.stringify(event),eventId:event.taskId+':'+type+':'+event.at,at:event.at});
+ const messageId=await redisTryStreamAdd(GENERATION_STREAM,{type,json:JSON.stringify(event),eventId:event.taskId+':'+type+':'+event.at,at:event.at});
+ if(!messageId) throw Object.assign(new Error('GENERATION_EVENT_PUBLISH_FAILED'),{code:'GENERATION_EVENT_PUBLISH_FAILED'});
 }
 
 function inputFrom(event) {
@@ -74,6 +75,7 @@ async function generate({prompt,taskId,projectId}) {
   await publish('SCAFFOLD_GENERATED',taskId,{projectId,files:generated.files.length,bytes:generated.bytes});
   await checkpoint(jobId,'SCAFFOLD_GENERATED',{files:generated.files.length,bytes:generated.bytes});
   const packageJson=join(workspace,'package.json');
+  if(process.env.VF_PROJECT_SANDBOX!=='docker') throw Object.assign(new Error('GENERATION_DOCKER_SANDBOX_REQUIRED'),{code:'GENERATION_DOCKER_SANDBOX_REQUIRED'});
   let build={ok:false,skipped:true,error:'NO_PACKAGE_MANIFEST'};
   let tests={ok:false,skipped:true,error:'NO_PACKAGE_MANIFEST'};
   if(existsSync(packageJson)) {
