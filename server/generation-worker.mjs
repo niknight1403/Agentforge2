@@ -7,6 +7,7 @@ import { db, now } from './db.mjs';
 import { redisTryAck, redisTryClaimStale, redisTryCreateConsumerGroup, redisTryReadConsumerGroup, redisTryStreamAdd } from './redis.mjs';
 import { runGenerationChecks } from './fs-tools.mjs';
 import { GENERATION_STREAM, GENERATION_GROUP, parseGenerationOutput, generationPrompt, generationEvent } from './generation-engine.mjs';
+import { classifyGenerationFailure } from './generation-recovery.mjs';
 
 const CONSUMER=String(process.env.AGENTFORGE_GENERATION_CONSUMER||`${hostname().replace(/[^a-zA-Z0-9:_-]/g,'-')}:${process.pid}`);
 const WORKSPACE=resolve(process.env.AGENTFORGE_GENERATION_WORKSPACE||'server/data/generated');
@@ -29,18 +30,6 @@ db.exec(`
 `);
 try { db.exec('ALTER TABLE generation_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0'); } catch { /* already migrated */ }
 
-function isRetryableGenerationError(error) {
- const status=Number(error?.status||error?.statusCode||0);
- const code=String(error?.code||'').toUpperCase();
- if(error?.retryable===true || error?.busy===true) return true;
- if(status===408 || status===425 || status===429 || status>=500) return true;
- return [
-  'GENERATION_EVENT_PUBLISH_FAILED','GENERATION_REDIS_UNAVAILABLE','REDIS_UNAVAILABLE',
-  'RATE_WINDOW_BUSY','CIRCUIT_OPEN','ECONNRESET','ECONNREFUSED','ETIMEDOUT',
-  'EAI_AGAIN','ENETUNREACH','EHOSTUNREACH','UND_ERR_CONNECT_TIMEOUT',
-  'UND_ERR_SOCKET','GENERATION_PROVIDER_UNAVAILABLE'
- ].includes(code);
-}
 
 async function publish(type,taskId,metadata={}) {
  const event=generationEvent(type,taskId,metadata);
@@ -145,9 +134,8 @@ async function generate({prompt,taskId,projectId}) {
   await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace,projectId,build:result.build,tests:result.tests,workerCommit:deployManifest.workerCommit,deployManifest:'deploy-manifest.json'});
   return true;
  } catch(error) {
-  const code=String(error?.code||'GENERATION_FAILED').slice(0,100);
-  const retryable=isRetryableGenerationError(error);
-  const terminal=!retryable || attempt>=MAX_ATTEMPTS;
+  const failure=classifyGenerationFailure(error,attempt,MAX_ATTEMPTS);
+  const {code,terminal}=failure;
   db.prepare("UPDATE generation_jobs SET status=?,error_code=?,updated_at=? WHERE id=?")
    .run(terminal?'FAILED':'PENDING',terminal?code:(`RETRYABLE:${code}`).slice(0,100),now(),jobId);
   if(terminal) {
