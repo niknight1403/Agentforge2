@@ -122,6 +122,7 @@ fun FileManagerScreen() {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Telefon-Dateimanager")
         Text("Chatgesteuerte Dateiverwaltung · Zugriff nur auf den ausgewählten Ordner")
+        Text("Wichtig: „Spiele“ findet nur APK-Dateien bzw. entsprechend benannte Dateien im freigegebenen Ordner. Bereits installierte Apps lassen sich hier aus Sicherheitsgründen weder verschieben noch deinstallieren.")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { picker.launch(treeUri) }) { Text(if (treeUri == null) "Speicherordner wählen" else "Ordner ändern") }
             OutlinedButton(onClick = { refresh() }, enabled = treeUri != null && !busy) { Text("Aktualisieren") }
