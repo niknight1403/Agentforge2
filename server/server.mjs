@@ -1609,10 +1609,12 @@ async function internalMesh(req,res,url){
   const generationStatus=url.pathname.match(/^\/internal\/mesh\/generate\/([0-9a-f-]{36})$/i);
   if(req.method==='GET'&&generationStatus){
     try{
-      const job=db.prepare('SELECT status,manifest,error_code,workspace,project_id FROM generation_jobs WHERE request_id=?').get(generationStatus[1]);
+      const job=db.prepare('SELECT id,status,manifest,error_code,workspace,project_id FROM generation_jobs WHERE request_id=?').get(generationStatus[1]);
       if(!job)return json(res,404,{error:'Generation task not found.'});
+      const checkpoints=db.prepare('SELECT stage,metadata,created_at FROM generation_checkpoints WHERE job_id=? ORDER BY created_at ASC').all(job.id)
+        .map(row=>({stage:row.stage,metadata:JSON.parse(row.metadata||'{}'),createdAt:row.created_at}));
       let result=null;try{result=job.manifest?JSON.parse(job.manifest):null;}catch{}
-      return json(res,200,{status:job.status,result,errorCode:job.error_code||undefined});
+      return json(res,200,{status:job.status,result,errorCode:job.error_code||undefined,checkpoints});
     }catch(error){
       return json(res,503,{error:'Generation worker storage unavailable.',code:'GENERATION_STORAGE_UNAVAILABLE'});
     }
