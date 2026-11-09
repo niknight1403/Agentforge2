@@ -121,7 +121,37 @@ export function queryWindow(ctx, options = {}) {
 export const VALIDATE_TEMPLATE = `import { HttpError } from './http.mjs';
 
 const EMAIL = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/;
-const DATE = /^\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:?\\d{2})?)?$/;
+const DATE = /^(\\d{4})-(\\d{2})-(\\d{2})(?:[T ](\\d{2}):(\\d{2})(?::(\\d{2})(?:\\.(\\d{1,3}))?)?(Z|[+-]\\d{2}:?\\d{2})?)?$/;
+
+/**
+ * Ein Datum ist erst gueltig, wenn es den Tag wirklich gibt. Die reine Form
+ * ("2026-02-31") reicht nicht: Monat, Tag, Schaltjahr, Uhrzeit und
+ * Zeitzonenversatz werden hier einzeln geprueft.
+ */
+function isRealDate(value) {
+  const match = DATE.exec(String(value).trim());
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12) return false;
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (day < 1 || day > daysInMonth) return false;
+  if (match[4] !== undefined) {
+    if (Number(match[4]) > 23 || Number(match[5]) > 59) return false;
+    if (match[6] !== undefined && Number(match[6]) > 59) return false;
+    const zone = match[8];
+    if (zone && zone !== 'Z') {
+      const digits = zone.slice(1).replace(':', '');
+      const offsetHours = Number(digits.slice(0, 2));
+      const offsetMinutes = Number(digits.slice(2) || '0');
+      if (offsetHours > 14 || offsetMinutes > 59) return false;
+      if (offsetHours === 14 && offsetMinutes !== 0) return false;
+    }
+  }
+  return true;
+}
 
 function checkText(name, rule, value) {
   if (typeof value !== 'string') return name + ' muss Text sein.';
@@ -152,7 +182,7 @@ function coerce(name, rule, raw) {
     return null;
   }
   if (rule.type === 'datetime') {
-    if (typeof raw !== 'string' || !DATE.test(raw.trim())) return name + ' muss ein Datum (YYYY-MM-DD) sein.';
+    if (typeof raw !== 'string' || !isRealDate(raw)) return name + ' muss ein gueltiges Datum (YYYY-MM-DD) sein.';
     return null;
   }
   if (rule.type === 'enum') {

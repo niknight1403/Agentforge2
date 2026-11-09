@@ -15,6 +15,13 @@
 - Der Start aktiviert die Autonomie wieder, auch wenn die Villa zuvor über den Master-Agenten pausiert wurde.
 - Die Anzahl gleichzeitiger Villen ist fest auf zwei begrenzt (Einstellung `villaSlots`, gültig 1-2); größere Altwerte in der Datenbank werden auf zwei gekappt, damit die Anzeige dem tatsächlichen Verhalten entspricht.
 
+## Datumspruefung 1.62.1
+
+- Die generierte Validierung prueft Kalendertage und Uhrzeiten inhaltlich: `2026-02-31`, `2026-13-01` und
+  `24:00` werden abgelehnt, Schaltjahre und Zeitzonen bis `+14:00` korrekt behandelt.
+- ISO-Zeitstempel mit Millisekunden werden angenommen; die Akzeptanzmatrix steht als Test in
+  `server/tests/fullstack-datetime.test.mjs`.
+
 ## Full-Stack-Engine 1.62.0
 
 - **Prompt zu Produkt**: `npm run forge -- "Baue ein Rechnungstool mit Kunden und Rechnungen" --out ./out/rechnungstool`
