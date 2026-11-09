@@ -70,12 +70,16 @@ export class QuotaLedger {
     this.clock = clock;
     this.file = file;
     this.routes = new Map();
+    // Konto-Sperren liegen ueber den Routen: ein 429 gehoert dem Schluessel,
+    // auch wenn eine Schwesterroute erst spaeter registriert wird.
+    this.accountCooldowns = new Map();
     for (const route of routes) this.register(route);
   }
 
   register(route = {}) {
     if (!route.id) throw quotaError('route ohne id');
     const limits = { ...ZERO_LIMITS, ...(route.limits || {}) };
+    const kontoSperre = this.accountCooldowns.get(route.account || route.id);
     this.routes.set(route.id, {
       id: route.id,
       // Kontingent haengt am Konto des Anbieters, nicht an der Route: zwei
@@ -99,7 +103,7 @@ export class QuotaLedger {
         tpd: limitOf(limits.tpd)
       },
       events: [],
-      cooldownUntil: 0,
+      cooldownUntil: kontoSperre && kontoSperre.until > this.clock() ? kontoSperre.until : 0,
       lastCooldownReason: '',
       failures: 0,
       successes: 0,
@@ -143,6 +147,8 @@ export class QuotaLedger {
   #admits(route, tokens, now) {
     if (!route.enabled) return 'deaktiviert';
     if (route.cooldownUntil > now) return 'cooldown';
+    const konto = this.accountCooldowns.get(route.account);
+    if (konto && konto.until > now) return 'cooldown';
     const usage = this.usage(route.id);
     const { rpm, rpd, tpm, tpd } = route.limits;
     if (rpm && usage.usedMinute + 1 > rpm) return 'rpm';
@@ -190,6 +196,11 @@ export class QuotaLedger {
     route.lastCooldownReason = kind;
     let affected = 1;
     if (kind === 'rate_limit' || kind === 'quota' || kind === 'auth') {
+      // Kontoweite Sperre: greift auch fuer Routen, die dieser Prozess noch
+      // nicht gesehen hat (deshalb separat gespeichert, nicht nur an der Route).
+      const bisher = this.accountCooldowns.get(route.account);
+      const until = Math.max(now + pause, bisher?.until || 0);
+      this.accountCooldowns.set(route.account, { until, reason: kind });
       // Ein Limit gehoert dem Konto: weitere Routen desselben Kontos sind
       // genauso gesperrt. Sonst rotiert der Betrieb scheinbar weiter und
       // laeuft in dieselbe Wand.
@@ -366,10 +377,17 @@ export class QuotaLedger {
         breakerMs: route.breakerMs
       };
     }
-    return { version: 1, savedAt: this.clock(), routes };
+    const accounts = {};
+    for (const [account, entry] of this.accountCooldowns) accounts[account] = entry;
+    return { version: 2, savedAt: this.clock(), routes, accounts };
   }
 
   restore(snapshot = {}) {
+    for (const [account, entry] of Object.entries(snapshot.accounts || {})) {
+      if (entry && Number(entry.until) > 0) {
+        this.accountCooldowns.set(account, { until: Number(entry.until), reason: entry.reason || '' });
+      }
+    }
     const saved = snapshot.routes || {};
     for (const route of this.routes.values()) {
       const entry = saved[route.id];

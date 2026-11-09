@@ -68,6 +68,44 @@ Routen auswählen, prüfen und rotieren. Genau das macht der Ledger: er entschei
 pro Auftrag, welche hinterlegte Route dran ist, und wechselt selbstständig,
 bevor ein Limit reißt.
 
+## Verdrahtung im Aufrufpfad (Stufe 1)
+
+`server/route-selection.mjs` übersetzt eine Route aus der Tabelle `routes` in
+ein Ledger-Konto und lässt sie vor dem Aufruf zu. `server/llm.mjs` fragt die
+Zulassung in `callOpenAiCompatible()` direkt vor dem Circuit Breaker und verbucht
+das Ergebnis danach. Zwei Schalter steuern das Verhalten:
+
+| Variable | Standard | Wirkung |
+| --- | --- | --- |
+| `VF_ROUTE_LEDGER` | `0` | `1` aktiviert die Zulassung; ohne sie läuft alles wie vorher |
+| `LLM_LOCAL_ONLY` | `1` | `1` lässt ausschließlich lokale Endpunkte zu, `0` erlaubt freie Tarife als Burst |
+| `VF_ROUTE_LEDGER_STATE` | leer | Pfad für den Zustand (Kontingente, Pausen); leer = nur im Speicher |
+
+Konto = `key_env`, sonst der Anbieter. Zwei Routen mit demselben Schlüssel
+teilen damit ein Kontingent, und ein 429 auf einer von beiden sperrt beide,
+weil die Sperre am Konto hängt (`accountCooldowns`) und auch für Routen greift,
+die der Prozess erst später kennenlernt.
+
+Ablauf einer Anfrage mit aktivem Ledger:
+
+1. `admit(route, {tokens})` prüft Konto-Sperre, Minuten- und Tagesfenster.
+   Verweigerung wirft `RATE_WINDOW_BUSY` mit `reason` und `retryAfterMs`; die
+   Kaskade nimmt die nächste Route, statt in einen 429 zu laufen.
+2. Aufruf über Circuit Breaker und Anbieterfenster (unverändert).
+3. `settle()` verbucht Erfolg oder Fehler; 429, Quota und Auth sperren das Konto
+   für die errechnete Pause.
+
+`routingStatus()` zeigt je Route zusätzlich `quota` (Konto, Tagesverbrauch,
+Kopffreiheit, Sperre). Zum Prüfen auf der VM:
+
+```bash
+VF_ROUTE_LEDGER=1 LLM_LOCAL_ONLY=0 node -e "import('./server/llm.mjs').then(m=>console.log(JSON.stringify(m.routingStatus().routes.slice(0,3),null,1)))"
+```
+
+Achtung: `LLM_LOCAL_ONLY=1` (Standard) lässt keine Cloud-Route zu. Wer den
+Betrieb ausschließlich lokal fährt, lässt es so; wer freie Tarife als Burst
+nutzt, setzt es bewusst auf `0`.
+
 ## Neuen Anbieter aufnehmen
 
 1. Account selbst anlegen, Schlüssel in die Umgebung (`*_API_KEY`).

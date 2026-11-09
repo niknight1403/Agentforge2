@@ -3,6 +3,7 @@ import { db, now } from './db.mjs';
 import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute } from './llm-config.mjs';
 import { createCascade, orderCascadeRoutes } from './llm-cascade.mjs';
 import { createRequestLimiter } from './request-limiter.mjs';
+import { routeAdmission, isLocalEndpoint } from './route-selection.mjs';
 import { createCircuitBreaker } from './circuit-breaker.mjs';
 import { userStore, quotaLeft, chargeTokens } from './auth.mjs';
 import { emit } from './events.mjs';
@@ -155,13 +156,37 @@ function providerCircuitKey(route) {
 }
 
 async function callOpenAiCompatible(route, messages, opts) {
-  return providerCircuits.execute(providerCircuitKey(route),()=>{
-    if(!isLocalRoute(route)){
-      const permit=requestLimiter.admit(providerCircuitKey(route),routeRpm(route),{interactive:opts.priority==='interactive'});
-      if(!permit.ok)throw Object.assign(new Error('Provider request window is busy.'),{busy:true,code:'RATE_WINDOW_BUSY',retryAfterMs:permit.retryAfterMs});
-    }
-    return callOpenAiCompatibleRaw(route,messages,opts);
-  });
+  /* Zulassung vor dem Aufruf (Schalter VF_ROUTE_LEDGER=1): Kontingent wird je
+     Konto rollierend mitgezaehlt, damit eine Route nicht erst durch einen 429
+     merkt, dass sie dicht ist. Ohne den Schalter bleibt der Pfad unveraendert. */
+  const zulassung = routeAdmission.admit(route, { tokens: routeAdmission.estimateTokens(messages) });
+  if (!zulassung.ok) {
+    throw Object.assign(new Error(zulassung.message || `Route ohne Restkontingent: ${zulassung.reason}`), {
+      busy: true,
+      code: 'RATE_WINDOW_BUSY',
+      reason: zulassung.reason,
+      retryAfterMs: zulassung.retryAfterMs
+    });
+  }
+  try {
+    const out = await providerCircuits.execute(providerCircuitKey(route),()=>{
+      if(!isLocalRoute(route)){
+        const permit=requestLimiter.admit(providerCircuitKey(route),routeRpm(route),{interactive:opts.priority==='interactive'});
+        if(!permit.ok)throw Object.assign(new Error('Provider request window is busy.'),{busy:true,code:'RATE_WINDOW_BUSY',retryAfterMs:permit.retryAfterMs});
+      }
+      return callOpenAiCompatibleRaw(route,messages,opts);
+    });
+    routeAdmission.settle(route, { ok: true });
+    return out;
+  } catch (error) {
+    routeAdmission.settle(route, {
+      ok: false,
+      status: error?.status,
+      retryAfterMs: error?.retryAfterMs,
+      reason: error?.reason || ''
+    });
+    throw error;
+  }
 }
 
 const localModels=new Map();
@@ -331,8 +356,11 @@ export function routingStatus() {
   const routes=enabled.map(r=>{
     const circuit=providerCircuits.snapshot(providerCircuitKey(r));
     const configured=!r.key_env||!!resolveKey(r.key_env);
-    const eligible=(!freeOnly||isFreeRoute(r))&&configured&&Number(r.cooldown_until||0)<=Date.now()&&(circuit.state!=='OPEN'||circuit.retryAt<=Date.now());
-    return {id:r.id,name:r.name,model:r.model,provider:r.provider,priority:r.priority,isFree:isFreeRoute(r),local:isLocalRoute(r),configured,eligible,cooldownUntil:r.cooldown_until||0,status:r.status,circuit:{state:circuit.state,retryAt:circuit.retryAt}};
+    const zulassung=routeAdmission.status().find((row)=>row.id===String(r.id));
+    const lokalerPfad=isLocalEndpoint(r.base_url)||String(r.provider||'')==='ollama';
+    const ledgerSperrt=routeAdmission.enabled&&(zulassung?zulassung.usable===false:(routeAdmission.localOnly&&!lokalerPfad));
+    const eligible=(!freeOnly||isFreeRoute(r))&&configured&&Number(r.cooldown_until||0)<=Date.now()&&(circuit.state!=='OPEN'||circuit.retryAt<=Date.now())&&!ledgerSperrt;
+    return {id:r.id,name:r.name,model:r.model,provider:r.provider,priority:r.priority,isFree:isFreeRoute(r),local:isLocalRoute(r),configured,eligible,cooldownUntil:r.cooldown_until||0,status:r.status,circuit:{state:circuit.state,retryAt:circuit.retryAt},quota:zulassung?{account:zulassung.account,usedDay:zulassung.usedDay,usedMinute:zulassung.usedMinute,headroom:zulassung.headroom,cooldownMs:zulassung.cooldownMs,cooldownReason:zulassung.cooldownReason}:null};
   });
   const eligibleIds=new Set(routes.filter(r=>r.eligible).map(r=>r.id));
   const candidates=enabled.filter(r=>eligibleIds.has(r.id));
