@@ -85,9 +85,13 @@ test('Mit belegtem Produkt im Projektordner passiert das Gate', async () => {
   writeFileSync(join(dir, 'app.test.mjs'), 'test("ok",()=>{});');
   writeFileSync(join(dir, 'README.md'), '# Rechnungen\n\nStart: npm start\n');
   writeFileSync(join(dir, 'verification.json'), JSON.stringify({
-    build: { status: 'passed' },
-    tests: { status: 'passed' },
-    userFlow: { status: 'passed' },
+    build: { status: 'passed', artifact: { path: 'dist/app.zip', sha256: 'a'.repeat(64), bytes: 4096 } },
+    tests: { status: 'passed', passed: 12, failed: 0, skipped: 0, runId: 'ci-e2e-123' },
+    userFlow: {
+      status: 'passed',
+      smoke: { status: 'passed', runId: 'smoke-e2e-123' },
+      download: { status: 'passed', url: '/api/villas/1/build/download', sha256: 'b'.repeat(64), bytes: 4096 },
+    },
   }));
   writeFileSync(join(dir, 'taste.json'), TASTE_JSON);
   writeFileSync(join(dir, 'spion.json'), SPION_JSON);
@@ -123,9 +127,13 @@ test('Belegtes Produkt ohne TASTE/SPION erzeugt keine Villa', async () => {
   writeFileSync(join(dir, 'app.test.mjs'), 'test("ok",()=>{});');
   writeFileSync(join(dir, 'README.md'), '# Rechnungen\n\nStart: npm start\n');
   writeFileSync(join(dir, 'verification.json'), JSON.stringify({
-    build: { status: 'passed' },
-    tests: { status: 'passed' },
-    userFlow: { status: 'passed' },
+    build: { status: 'passed', artifact: { path: 'dist/app.zip', sha256: 'a'.repeat(64), bytes: 4096 } },
+    tests: { status: 'passed', passed: 12, failed: 0, skipped: 0, runId: 'ci-e2e-123' },
+    userFlow: {
+      status: 'passed',
+      smoke: { status: 'passed', runId: 'smoke-e2e-123' },
+      download: { status: 'passed', url: '/api/villas/1/build/download', sha256: 'b'.repeat(64), bytes: 4096 },
+    },
   }));
   writeFileSync(join(dir, 'taste.json'), JSON.stringify({ statements: [
     { claim: 'Niko will reine Entwicklungsarbeit ohne Marketingpflicht', evidence: { source: 'repo:commits' } },

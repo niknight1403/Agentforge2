@@ -1,0 +1,39 @@
+name: Villa-34 Repair Diagnostics Acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'server/project-verification.mjs'
+      - 'server/tests/project-verification.test.mjs'
+      - '.github/workflows/villa34-diagnostics-acceptance.yml'
+  push:
+    branches: ['main', 'autonomous/10-sprints-media-acceptance']
+    paths:
+      - 'server/project-verification.mjs'
+      - 'server/tests/project-verification.test.mjs'
+      - '.github/workflows/villa34-diagnostics-acceptance.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: villa34-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verification-diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Run complete deterministic quality gate
+        run: npm run check
+      - name: Assert Villa-34 root-cause diagnostics stay covered
+        run: |
+          node --import ./server/tests/_env.mjs --test --test-reporter=tap --test-name-pattern='Reparaturbefunde enthalten konkrete Stufenfehler' server/tests/project-verification.test.mjs

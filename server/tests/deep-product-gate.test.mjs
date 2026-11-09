@@ -12,9 +12,13 @@ import {
 } from '../deep-product-gate.mjs';
 
 const VERIFIED = {
-  build: { status: 'passed' },
-  tests: { status: 'passed' },
-  userFlow: { status: 'passed' },
+  build: { status: 'passed', artifact: { path: 'dist/app.zip', sha256: 'a'.repeat(64), bytes: 4096 } },
+  tests: { status: 'passed', passed: 12, failed: 0, skipped: 0, runId: 'ci-123' },
+  userFlow: {
+    status: 'passed',
+    smoke: { status: 'passed', runId: 'smoke-123' },
+    download: { status: 'passed', url: '/api/villas/7/build/download', sha256: 'b'.repeat(64), bytes: 4096 },
+  },
 };
 
 function productFiles(overrides = {}) {
@@ -56,6 +60,30 @@ test('Fehlender Verifikationslauf blockiert, statt optimistisch durchzuwinken', 
   assert.equal(gate.ready, false);
   assert.equal(gate.checks.verification.status, 'unknown');
   assert.ok(gate.blockers.some((b) => b.key === 'verification'));
+});
+
+test('Statusfelder ohne echte Build-, Test-, Smoke- und Download-Belege reichen nicht', () => {
+  const verification = {
+    build: { status: 'passed' },
+    tests: { status: 'passed' },
+    userFlow: { status: 'passed' },
+  };
+  const gate = evaluateProductGate(productFiles({ verification }));
+  assert.equal(gate.ready, false);
+  assert.equal(gate.checks.verification.status, 'unknown');
+  assert.match(JSON.stringify(gate.checks.verification.evidence), /Build-Artefakt/);
+  assert.match(JSON.stringify(gate.checks.verification.evidence), /Smoke/);
+  assert.match(JSON.stringify(gate.checks.verification.evidence), /Download/);
+});
+
+test('Ungültige Prüfsummen, fehlgeschlagene oder übersprungene Tests blockieren', () => {
+  const verification = structuredClone(VERIFIED);
+  verification.build.artifact.sha256 = 'not-a-hash';
+  verification.tests.skipped = 1;
+  verification.userFlow.download.bytes = 0;
+  const gate = evaluateProductGate(productFiles({ verification }));
+  assert.equal(gate.ready, false);
+  assert.equal(gate.checks.verification.status, 'unknown');
 });
 
 test('Ein fehlgeschlagener Build bleibt ein Blocker', () => {

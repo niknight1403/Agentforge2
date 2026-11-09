@@ -38,7 +38,7 @@ import { deepMissionBrief } from './deep-mission.mjs';
 import { classifyDeepDevelopmentIntent } from './deep-intent.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
-import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
+import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce, transitionDeepMission, getDeepMission, latestDeepMission } from './deepagent.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
 import { studioStatus as routeStudioStatus, eliteRanking as routeEliteRanking, simulateChain as routeSimulateChain, saveChain as routeSaveChain, listChains as routeListChains, buildChainFromGoal as routeChainFromGoal, recordSimulation as routeRecordSim } from './route-studio.mjs';
@@ -1203,6 +1203,10 @@ async function api(req, res, url) {
   if (p === '/api/deep/projects' && m === 'GET') {
     return json(res, 200, listDeepProjects());
   }
+  if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'missions' && parts[3] && m === 'GET') {
+    const mission = getDeepMission(parts[3]);
+    return mission ? json(res, 200, mission) : json(res, 404, { error: 'Mission nicht gefunden' });
+  }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts.length === 4 && m === 'DELETE') {
     const projectId = Number(parts[3]);
     if (isDeepProjectDeveloping(projectId)) return json(res, 409, { error: 'Projekt wird gerade an die Entwicklungs-Villa übergeben.' });
@@ -1215,7 +1219,7 @@ async function api(req, res, url) {
     const bootstrap = parts[4] === 'bootstrap';
     const detail = deepProjectDetail(projectId);
     if (!detail) return json(res, 404, { error: 'Projekt nicht gefunden' });
-    return runDeepProjectDevelopmentOnce(projectId, async () => {
+    return runDeepProjectDevelopmentOnce(projectId, async ({ missionId }) => {
       try {
         const previousVillaId = Number(deepProjectDetail(projectId)?.project.villa_id || 0);
         let villaId = previousVillaId;
@@ -1231,9 +1235,11 @@ async function api(req, res, url) {
           // Beleg, antwortet der Endpunkt mit den konkreten Blockern.
           const gate = productGateForProjectDir(deepProjectDir(projectId));
           if (!bootstrap && !gate.ready) {
+            transitionDeepMission(missionId, 'BLOCKED', { errorCode: 'PRODUCT_GATE_BLOCKED' });
             return json(res, 409, {
               ok: false,
               projectId,
+              missionId,
               villaId: 0,
               gateBlocked: true,
               checks: gate.checks,
@@ -1248,9 +1254,11 @@ async function api(req, res, url) {
           // entsteht keine Villa - der Endpunkt nennt die fehlenden Artefakte.
           const handover = scanHandoverArtifacts(deepProjectDir(projectId));
           if (!bootstrap && !handover.ready) {
+            transitionDeepMission(missionId, 'BLOCKED', { errorCode: 'HANDOVER_ARTIFACTS_MISSING' });
             return json(res, 409, {
               ok: false,
               projectId,
+              missionId,
               villaId: 0,
               gateBlocked: true,
               artifactBlocked: true,
@@ -1268,12 +1276,16 @@ async function api(req, res, url) {
           ? { active: [villaId], queue: [] }
           : scheduleVilla(villaId, { concurrency: 2, maxRounds: 12 });
         const blocked = Number(scheduled.blockedVillaId || 0) === villaId;
+        const started = !blocked && (scheduled.active || []).includes(villaId);
+        const queued = !blocked && (scheduled.queue || []).includes(villaId);
+        transitionDeepMission(missionId, blocked ? 'BLOCKED' : queued ? 'QUEUED' : 'RUNNING', { villaId, errorCode: blocked ? (scheduled.reason || 'VILLA_START_BLOCKED') : null });
         return json(res, 202, {
           ok: !blocked,
           projectId,
+          missionId,
           villaId,
-          started: !blocked && (scheduled.active || []).includes(villaId),
-          queued: !blocked && (scheduled.queue || []).includes(villaId),
+          started,
+          queued,
           blocked,
           reason: blocked ? scheduled.reason : undefined,
           message: blocked
@@ -1282,16 +1294,17 @@ async function api(req, res, url) {
             : 'Projekt an die autonome VillaForge-Entwicklungs- und Build-Kette übergeben.'
         });
       } catch (e) {
-        return json(res, 503, { error: String(e.message || e).slice(0, 400), code: e.code || 'DEVELOPMENT_START_FAILED' });
+        try { transitionDeepMission(missionId, 'FAILED', { errorCode: e.code || 'DEVELOPMENT_START_FAILED' }); } catch { /* mission may already be terminal */ }
+        return json(res, 503, { missionId, error: String(e.message || e).slice(0, 400), code: e.code || 'DEVELOPMENT_START_FAILED' });
       }
     });
   }
   // The project creation/chat actions explicitly authorized here can start a Villa
   // without the separate "Autonom umsetzen" button. Existing projects are reused.
-  const autoStartDeepProject = async (projectId) => runDeepProjectDevelopmentOnce(projectId,async()=>{
+  const autoStartDeepProject = async (projectId) => runDeepProjectDevelopmentOnce(projectId,async({missionId})=>{
     try {
       const detail=deepProjectDetail(projectId);
-      if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
+      if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND',missionId};
       let villaId=Number(detail.project.villa_id||0);
       if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
         const brief=[detail.project.idea,deepMissionBrief(detail.project.idea),villaLessonsContext()].join('\n\n').slice(0,9000);
@@ -1300,8 +1313,8 @@ async function api(req, res, url) {
       }
       const scheduled=isRunning(villaId)?{active:[villaId],queue:[]}:scheduleVilla(villaId,{concurrency:2,maxRounds:12});
       const blocked=Number(scheduled.blockedVillaId||0)===villaId;
-      return {ok:!blocked,villaId,started:!blocked&&(scheduled.active||[]).includes(villaId),queued:!blocked&&(scheduled.queue||[]).includes(villaId),blocked,reason:scheduled.reason||null};
-    }catch(error){return {ok:false,code:error.code||'AUTO_START_FAILED',error:String(error.message||error).slice(0,250)};}
+      return {ok:!blocked,missionId,villaId,started:!blocked&&(scheduled.active||[]).includes(villaId),queued:!blocked&&(scheduled.queue||[]).includes(villaId),blocked,reason:scheduled.reason||null};
+    }catch(error){return {ok:false,missionId,code:error.code||'AUTO_START_FAILED',error:String(error.message||error).slice(0,250)};}
   });
   if (p === '/api/deep/projects' && m === 'POST') {
     try {
