@@ -1,0 +1,38 @@
+{
+  "agent": "TASTE",
+  "project": "Villa 34 (deep) - MyBabes-Funktionsparitaet",
+  "generated": "2026-11-09",
+  "note": "Praeferenzprofil des Auftraggebers. Jede Aussage stammt aus einer belegten Spur; ohne Quelle keine Aussage.",
+  "statements": [
+    {
+      "claim": "Offenheit vor Schein-Funktionen: die Oberflaeche nennt fehlende Anbieter, statt Antworten zu erfinden.",
+      "evidence": {
+        "source": "repo:niknight1403/Agentforge2 docs/app/index.html - Hinweis 'Kein Modell-Endpunkt konfiguriert, deshalb keine echten Modellantworten'"
+      }
+    },
+    {
+      "claim": "Abnahme nur mit Beleg: ein Ergebnis gilt erst nach Artefakt- und Browser-Nachweis als fertig.",
+      "evidence": {
+        "source": "repo:niknight1403/Agentforge2 - Produkt-Gate aus PR #44 (baf71c6), Villa-34-Nachweis vom 09.11.2026"
+      }
+    },
+    {
+      "claim": "Deutschsprachige Oberflaeche mit klaren Statusmeldungen statt Marketing-Floskeln.",
+      "evidence": {
+        "source": "repo:niknight1403/Agentforge2 docs/app/index.html - deutsche UI-Texte, Fussnoten zu Anbietern und Zahlung"
+      }
+    },
+    {
+      "claim": "Bezahlfunktionen erst nach belegter Freigabe, kein Checkout-Versprechen vor der Produktfreigabe.",
+      "evidence": {
+        "source": "produkt:digistore24 762354 - Checkout meldete 'noch nicht genehmigt', bis die Freigabe im Dashboard erfolgt"
+      }
+    },
+    {
+      "claim": "Autonomie mit Grenzen: waehrend ein Projekt fertiggestellt wird, bleiben andere Projekte bewusst pausiert.",
+      "evidence": {
+        "source": "repo:niknight1403/Agentforge2 - projectFocus [34,3] in /api/health, uebrige Villen PAUSED"
+      }
+    }
+  ]
+}

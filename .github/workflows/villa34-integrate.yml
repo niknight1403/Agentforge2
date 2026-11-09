@@ -37,6 +37,15 @@ jobs:
           scp $SSH_OPTS docs/app/index.html scripts/ops/villa34-web.sh ubuntu@92.5.177.159:/tmp/villa34/
           ssh $SSH_OPTS ubuntu@92.5.177.159 "bash /tmp/villa34/villa34-web.sh /tmp/villa34/index.html '${PROJEKT_DIR:-}' 2>&1 | tail -60"
 
+      - name: Uebergabe-Artefakte liefern (TASTE/SPION)
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/villa34_handover.py >> "$GITHUB_ENV"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=25 -i $HOME/.ssh/oracle_key"
+          scp $SSH_OPTS docs/handover/taste.json docs/handover/spion.json scripts/ops/villa34-handover.sh ubuntu@92.5.177.159:/tmp/villa34/
+          ssh $SSH_OPTS ubuntu@92.5.177.159 "bash /tmp/villa34/villa34-handover.sh '${DEEP_DIR}' /tmp/villa34/taste.json /tmp/villa34/spion.json 2>&1 | tail -20"
+          python3 scripts/ops/villa34_handover.py --verify
+
       - name: Villa neu bauen
         run: python3 scripts/ops/deep_delivery.py build
 
