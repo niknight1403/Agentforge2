@@ -5,7 +5,7 @@ import { RedisEventBus } from './RedisEventBus.js';
 import { AgentWorker } from './AgentWorker.js';
 import { AgentTelemetry } from './AgentTelemetry.js';
 import { CheckpointStore } from './CheckpointStore.js';
-import { createHubTaskExecutor } from './HubTaskExecutor.js';
+import { createCompositeTaskExecutor } from './CompositeTaskExecutor.js';
 import { TelemetryStore } from './TelemetryStore.js';
 
 const port = Number(process.env.PORT || 12001);
@@ -19,7 +19,7 @@ const prisma = new PrismaClient();
 const bus = new RedisEventBus();
 const checkpointStore = new CheckpointStore(prisma);
 const telemetryStore = new TelemetryStore(prisma);
-const executor = createHubTaskExecutor({hubUrl,token});
+const executor = createCompositeTaskExecutor({hubUrl,token});
 const worker = new AgentWorker(prisma, bus, executor);
 const controller = new AbortController();
 let outboxTimer: NodeJS.Timeout | undefined;
