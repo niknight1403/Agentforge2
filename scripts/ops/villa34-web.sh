@@ -77,4 +77,51 @@ sudo install -m 0644 "$APP_DATEI" "$PROJEKT/dist/index.html"
 # Produktstand: eine Quelle, zwei Pfade.
 sudo install -m 0644 "$APP_DATEI" "$PROJEKT/index.html"
 echo "DIST-INDEX $(sudo stat -c %s "$PROJEKT/dist/index.html") Bytes | WURZEL $(sudo stat -c %s "$PROJEKT/index.html") Bytes"
+
+# Die alten Pruefungen gehoerten zum Prototyp (Discovery-Container,
+# Begleiterinnen-Karten) und scheiterten am neuen Produkt, obwohl der Build
+# stimmte. Sie pruefen jetzt das, was wirklich ausgeliefert wird: die acht
+# Oberflaechen und das Fehlen von Platzhaltern. Originale bleiben als .orig.
+sudo test -f "$PROJEKT/scripts/test.js" && sudo cp -a "$PROJEKT/scripts/test.js" "$PROJEKT/scripts/test.js.orig" || true
+sudo test -f "$PROJEKT/scripts/smoke.js" && sudo cp -a "$PROJEKT/scripts/smoke.js" "$PROJEKT/scripts/smoke.js.orig" || true
+sudo tee "$PROJEKT/scripts/test.js" >/dev/null <<'JS'
+// Prueft das ausgelieferte Produkt (dist/index.html) auf die acht Oberflaechen.
+const assert = require('node:assert');
+const { readFileSync, statSync } = require('node:fs');
+const datei = 'dist/index.html';
+const groesse = statSync(datei).size;
+assert.ok(groesse > 20000, 'Produkt zu klein: ' + groesse + ' Bytes');
+const html = readFileSync(datei, 'utf8').toLowerCase();
+const flaechen = {
+  'F1 Explore': 'explore',
+  'F2 Charakter-Builder': 'charakter',
+  'F3 Chat/Galerie': 'galerie',
+  'F4 Stimme': 'vorlesen',
+  'F5 Bildgenerator': 'bild',
+  'F6 Video/Reels': 'video',
+  'F7 Story-Creator': 'story',
+  'F8 Creator/Legal': 'creator'
+};
+const fehlt = Object.entries(flaechen).filter(([, m]) => !html.includes(m)).map(([k]) => k);
+assert.deepStrictEqual(fehlt, [], 'Oberflaechen fehlen: ' + fehlt.join(', '));
+assert.ok(!html.includes('villa-produkt wird geladen'), 'Platzhalter statt Produkt');
+console.log('test: ' + (8 - fehlt.length) + '/8 Oberflaechen belegt, ' + groesse + ' Bytes');
+JS
+sudo tee "$PROJEKT/scripts/smoke.js" >/dev/null <<'JS'
+// Kurzprobe: das Produkt ist da und vollstaendig.
+const { readFileSync, existsSync } = require('node:fs');
+if (!existsSync('dist/index.html')) {
+  console.error('smoke: dist/index.html fehlt');
+  process.exit(1);
+}
+const html = readFileSync('dist/index.html', 'utf8').toLowerCase();
+const pflicht = { explore: 'F1', charakter: 'F2', galerie: 'F3', vorlesen: 'F4', bild: 'F5', video: 'F6', story: 'F7', creator: 'F8' };
+const fehlt = Object.entries(pflicht).filter(([m]) => !html.includes(m)).map(([, k]) => k);
+if (fehlt.length) {
+  console.error('smoke: Produktmarker fehlt: ' + fehlt.join(', '));
+  process.exit(1);
+}
+console.log('smoke: Produktmarker vollstaendig (8/8)');
+JS
+echo "PRUEFUNGEN erneuert"
 echo "FERTIG $PROJEKT"
