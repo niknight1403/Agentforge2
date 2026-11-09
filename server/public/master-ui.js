@@ -49,7 +49,7 @@ async function sendMaster(e) {
       return;
     }
     if (out.error || out.pending) throw new Error(out.error || 'Die Aktion läuft noch. Mit „Status prüfen“ wird dieselbe Anfrage fortgesetzt.');
-    if (out.answer) setMsg('#masterMsg',out.ok ? 'Bearbeitung abgeschlossen.' : 'Bitte das Ergebnis im Verlauf prüfen.',!out.ok);
+    if (out.answer) setMsg('#masterMsg',out.ok ? 'Bearbeitung abgeschlossen.' : out.answer,!out.ok);
     masterPending = null; $('#masterInput').value = '';
     await Promise.all([refreshMaster(),loadVillas(),typeof loadStats === 'function' ? loadStats() : Promise.resolve(),typeof loadPacks === 'function' ? loadPacks() : Promise.resolve()]);
   } catch(err) { setMsg('#masterMsg',String(err.message || err),true); }

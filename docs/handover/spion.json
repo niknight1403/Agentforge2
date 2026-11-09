@@ -1,0 +1,20 @@
+{
+  "agent": "SPION",
+  "project": "Villa 34 (deep) - MyBabes-Funktionsparitaet",
+  "generated": "2026-11-09",
+  "note": "Oeffentliche Wettbewerbsbeobachtung. Nur Startseiten, keine Logins, kein Scraping gegen AGB; Datum ist der Beobachtungstag.",
+  "competitors": [
+    {
+      "name": "mybabes.ai",
+      "observation": "Oeffentliche Startseite zeigt Explore mit Tag-Filtern, Charakter-Builder, Chat mit Gedaechtnis, Bildgenerator, Video/Reels, Story-Creator, Creator-Bereich, Token/Abo-Modelle und eine Alterssperre vor dem Einstieg.",
+      "source": "https://mybabes.ai",
+      "date": "2026-11-09"
+    },
+    {
+      "name": "Candy AI",
+      "observation": "Startseite fuehrt Discover, Shorts, Chat, Collection und Create Character; Filter nach Girls/Anime/Guys, Rabattbanner auf Premium, Charakter-Builder mit Ethnizitaet, Alter, Augen, Haaren, Persoenlichkeit, Stimme und Hobbies; Chat, Stimme, Bild und Video als Medienwege, Token-Verbrauch wird beim Bau genannt.",
+      "source": "https://candy.ai/",
+      "date": "2026-11-09"
+    }
+  ]
+}

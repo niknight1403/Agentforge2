@@ -101,7 +101,12 @@ export function createMasterControl(deps) {
     } catch (e) { db.exec('ROLLBACK'); throw e; }
   }
   // A crashed process must never replay a half-completed configuration turn.
-  db.prepare("UPDATE control_turns SET status='interrupted',response=? WHERE status='running'").run(JSON.stringify({ ok:false,answer:'Unterbrochen. Bitte den Status prüfen, bevor du Änderungen erneut beauftragst.',steps:[],interrupted:true }));
+  const interruptedTurns = db.prepare("SELECT request_id FROM control_turns WHERE status='running'").all();
+  const markInterrupted = db.prepare("UPDATE control_turns SET status='interrupted',response=? WHERE request_id=? AND status='running'");
+  for (const { request_id: requestId } of interruptedTurns) {
+    const response = { requestId, ok:false, answer:'Unterbrochen. Bitte den Status prüfen, bevor du Änderungen erneut beauftragst.', steps:[], interrupted:true };
+    markInterrupted.run(JSON.stringify(response), requestId);
+  }
   function status() {
     return { ...controlCatalog(), packs: packState(), tools: toolSpecs().map(t => ({ ...t, enabled: t.enabled !== false && toolEnabled(t.name) })),
       villas: db.prepare("SELECT id,name,status,autonomy FROM villas WHERE status != 'ARCHIVED' ORDER BY id LIMIT 200").all(),

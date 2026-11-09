@@ -53,10 +53,14 @@ test('leere Antwort und null blockieren den Release nicht', () => {
   }
 });
 
-test('Tag eines anderen Commits wird weiterhin verweigert', () => {
+test('Tag eines anderen Commits verhindert den Upload, faerbt den Lauf aber nicht rot', () => {
+  // Derselbe Versionsstand kann mehrere Commits haben (Doku/Ops heben
+  // versionName nicht an). Der fremde Release bleibt unangetastet, der Lauf
+  // endet gruen mit Hinweis - der Upload-Pfad wird nicht erreicht.
   const ergebnis = lauf('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
-  assert.equal(ergebnis.code, 1, 'Schutz vor fremden Artefakten bleibt aktiv');
-  assert.match(ergebnis.out, /gehoert zu/);
+  assert.equal(ergebnis.code, 0, 'Lauf endet nicht rot, weil nichts veroeffentlicht wird');
+  assert.match(ergebnis.out, /gehoert zu/, 'Hinweis nennt den fremden Commit');
+  assert.doesNotMatch(ergebnis.out, /DURCHGELASSEN/, 'Upload-Pfad bleibt versperrt');
 });
 
 test('Tag auf demselben Commit laesst den Release zu', () => {

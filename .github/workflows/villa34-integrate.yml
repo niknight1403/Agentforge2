@@ -10,6 +10,9 @@ jobs:
   integrieren:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+      VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -17,30 +20,37 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Projektordner der Villa 34 ermitteln
+        run: python3 scripts/ops/villa34_path.py >> "$GITHUB_ENV"
+
       - name: Oberflaeche per SSH in den Villa-34-Projektordner legen
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
           set -euo pipefail
+          echo "PROJEKT_DIR=${PROJEKT_DIR:-<leer>}"
           mkdir -p ~/.ssh
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          scp -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key \
-            docs/app/index.html scripts/ops/villa34-web.sh ubuntu@92.5.177.159:/tmp/ || {
-              ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 'mkdir -p /tmp';
-              scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key docs/app/index.html scripts/ops/villa34-web.sh ubuntu@92.5.177.159:/tmp/;
-            }
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 \
-            'bash /tmp/villa34-web.sh /tmp/index.html 2>&1 | tail -60'
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=25 -i $HOME/.ssh/oracle_key"
+          ssh $SSH_OPTS ubuntu@92.5.177.159 'mkdir -p /tmp/villa34'
+          scp $SSH_OPTS docs/app/index.html scripts/ops/villa34-web.sh ubuntu@92.5.177.159:/tmp/villa34/
+          ssh $SSH_OPTS ubuntu@92.5.177.159 "bash /tmp/villa34/villa34-web.sh /tmp/villa34/index.html '${PROJEKT_DIR:-}' 2>&1 | tail -60"
+
+      - name: Uebergabe-Artefakte liefern (TASTE/SPION)
+        run: |
+          set -euo pipefail
+          AUSGABE=$(python3 scripts/ops/villa34_handover.py)
+          printf '%s\n' "$AUSGABE" >> "$GITHUB_ENV"
+          DEEP_DIR=$(printf '%s\n' "$AUSGABE" | sed -n 's/^DEEP_DIR=//p' | head -1)
+          echo "DEEP_DIR=${DEEP_DIR:-<leer>}"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=25 -i $HOME/.ssh/oracle_key"
+          scp $SSH_OPTS docs/handover/taste.json docs/handover/spion.json scripts/ops/villa34-handover.sh ubuntu@92.5.177.159:/tmp/villa34/
+          ssh $SSH_OPTS ubuntu@92.5.177.159 "bash /tmp/villa34/villa34-handover.sh '${DEEP_DIR}' /tmp/villa34/taste.json /tmp/villa34/spion.json 2>&1 | tail -20"
+          python3 scripts/ops/villa34_handover.py --verify
 
       - name: Villa neu bauen
-        env:
-          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
-          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
         run: python3 scripts/ops/deep_delivery.py build
 
       - name: Funktionen im Artefakt pruefen
-        env:
-          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
-          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
         run: python3 scripts/ops/deep_delivery.py features-verify
