@@ -4,6 +4,9 @@ import {runtimeCapabilityInventory} from './runtime-capabilities.mjs';
 import {villaDiagnostics} from './villa-diagnostics.mjs';
 import { VERSION } from './version.mjs';
 import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStudioPreview } from './studio.mjs';
+import { castOverview,createPersona,createWardrobePack,listPersonas,listWardrobePacks,personaCard,personaDetail,resolveLook,updatePersona } from './persona-packs.mjs';
+import { activeDirections,consumeDirections,directorHistory,directorStatus,postInstruction } from './director-chat.mjs';
+import { burnTitle,freeMediaStatus,imagesToVideo,mediaToolInventory,resizeImage,videoThumbnail } from './free-media-tools.mjs';
 import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config.mjs';
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
@@ -39,6 +42,7 @@ import { classifyDeepDevelopmentIntent } from './deep-intent.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
 import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
+import { projectReadiness } from './deep-completion.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
 import { studioStatus as routeStudioStatus, eliteRanking as routeEliteRanking, simulateChain as routeSimulateChain, saveChain as routeSaveChain, listChains as routeListChains, buildChainFromGoal as routeChainFromGoal, recordSimulation as routeRecordSim } from './route-studio.mjs';
@@ -453,7 +457,7 @@ async function api(req, res, url) {
     const total = os.totalmem(), free = os.freemem();
     const la = os.loadavg();
     return json(res, 200, {
-      ok: true, testFixture:process.env.VF_PREVIEW_FIXTURE==='1', capabilities:['capability-autopilot-v1','llm-cascade-v1','mcp-gateway-v1','verified-readiness-v1','studio-v1','master-control-v1','resource-agent-v1','free-route-cycle-v1','api-gateway-v1','admin-api-key-management-v1','auth-session-rotation-v1','stripe-billing-v1','redis-task-dlq-v1','cost-kill-switch-v1','admin-observability-v1'],masterControl:1,llm:routingSummary(), ts: now(), version: VERSION, routes: enabledRoutes().length,
+      ok: true, testFixture:process.env.VF_PREVIEW_FIXTURE==='1', capabilities:['capability-autopilot-v1','llm-cascade-v1','mcp-gateway-v1','verified-readiness-v1','studio-v1','master-control-v1','resource-agent-v1','free-route-cycle-v1','api-gateway-v1','admin-api-key-management-v1','auth-session-rotation-v1','stripe-billing-v1','redis-task-dlq-v1','cost-kill-switch-v1','admin-observability-v1','cast-personas-v1','wardrobe-packs-v1','director-chat-v1','free-media-tools-v1','deep-completion-report-v1','free-route-hunter-api-v1'],masterControl:1,llm:routingSummary(), ts: now(), version: VERSION, routes: enabledRoutes().length,
       uptime: { processSec: Math.round(process.uptime()), systemSec: Math.round(os.uptime()) },
       cpu: { cores: os.cpus().length, load1: Number(la[0].toFixed(2)), load5: Number(la[1].toFixed(2)), load15: Number(la[2].toFixed(2)) },
       mem: {
@@ -784,6 +788,89 @@ async function api(req, res, url) {
   }
   if (p === '/api/resources' && m === 'GET') return json(res, 200, resourceStatus());
   if (p === '/api/resources/history' && m === 'GET') return json(res, 200, resourceHistory(url.searchParams.get('limit')));
+  /* ---- Darstellerinnen: Persoenlichkeiten, Kleidungs-Packs, Regie-Chat ---- */
+  if (p === '/api/cast' && m === 'GET') return json(res, 200, castOverview(url.searchParams.get('villaId') || 0));
+  if (/^\/api\/villas\/\d+\/cast$/.test(p) && m === 'GET') {
+    const villaId = Number(p.split('/')[3]);
+    return json(res, 200, castOverview(villaId));
+  }
+  if (/^\/api\/villas\/\d+\/cast$/.test(p) && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Figuren anlegen ist Admins vorbehalten.' });
+    const villaId = Number(p.split('/')[3]);
+    const b = await readBody(req);
+    try { return json(res, 200, { ok: true, persona: createPersona(villaId, b) }); }
+    catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
+  }
+  if (/^\/api\/personas\/\d+$/.test(p) && m === 'GET') return json(res, 200, personaDetail(Number(p.split('/')[3])));
+  if (/^\/api\/personas\/\d+$/.test(p) && m === 'PATCH') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Figuren aendern ist Admins vorbehalten.' });
+    const b = await readBody(req);
+    try { return json(res, 200, { ok: true, persona: updatePersona(Number(p.split('/')[3]), b) }); }
+    catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
+  }
+  if (/^\/api\/personas\/\d+\/card$/.test(p) && m === 'GET') return json(res, 200, personaCard(Number(p.split('/')[3])));
+  if (/^\/api\/personas\/\d+\/packs$/.test(p) && m === 'GET') return json(res, 200, { ok: true, packs: listWardrobePacks(Number(p.split('/')[3])) });
+  if (/^\/api\/personas\/\d+\/packs$/.test(p) && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Kleidungs-Packs anlegen ist Admins vorbehalten.' });
+    const b = await readBody(req);
+    try { return json(res, 200, { ok: true, pack: createWardrobePack(Number(p.split('/')[3]), b) }); }
+    catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
+  }
+  if (/^\/api\/personas\/\d+\/look$/.test(p) && m === 'GET') {
+    try {
+      return json(res, 200, resolveLook(Number(p.split('/')[3]), { occasion: url.searchParams.get('occasion') || 'alltag', day: url.searchParams.get('day') || null }));
+    } catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
+  }
+  if (/^\/api\/villas\/\d+\/director$/.test(p) && m === 'GET') {
+    const villaId = Number(p.split('/')[3]);
+    const personaId = url.searchParams.get('personaId');
+    return json(res, 200, {
+      ok: true,
+      status: directorStatus(villaId, personaId ? Number(personaId) : null),
+      history: directorHistory(villaId, personaId ? Number(personaId) : null, 40),
+      open: activeDirections(villaId, personaId ? Number(personaId) : null)
+    });
+  }
+  if (/^\/api\/villas\/\d+\/director$/.test(p) && m === 'POST') {
+    const villaId = Number(p.split('/')[3]);
+    const b = await readBody(req);
+    try {
+      return json(res, 200, { ok: true, ...postInstruction(villaId, b.personaId ? Number(b.personaId) : null, b.text, { role: b.role || 'user' }) });
+    } catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
+  }
+  if (/^\/api\/villas\/\d+\/director\/consume$/.test(p) && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Regie-Anweisungen uebernehmen ist Admins vorbehalten.' });
+    const villaId = Number(p.split('/')[3]);
+    const b = await readBody(req);
+    return json(res, 200, { ok: true, ...consumeDirections(villaId, b.personaId ? Number(b.personaId) : null, b.kinds || undefined, { note: b.note }) });
+  }
+  /* ---- Kostenlose Bild-/Videowerkzeuge (lokale Inventur + echte Laeufe) ---- */
+  if (p === '/api/media-tools' && m === 'GET') return json(res, 200, await freeMediaStatus());
+  if (p === '/api/media-tools/inventory' && m === 'GET') return json(res, 200, { ok: true, tools: await mediaToolInventory({ refresh: true }) });
+  if (p === '/api/media-tools/resize' && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Medienlaeufe sind Admins vorbehalten.' });
+    const b = await readBody(req);
+    try { return json(res, 200, { ok: true, ...(await resizeImage(b)) }); }
+    catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
+  }
+  if (p === '/api/media-tools/images-to-video' && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Medienlaeufe sind Admins vorbehalten.' });
+    const b = await readBody(req);
+    try { return json(res, 200, { ok: true, ...(await imagesToVideo(b)) }); }
+    catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
+  }
+  if (p === '/api/media-tools/thumbnail' && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Medienlaeufe sind Admins vorbehalten.' });
+    const b = await readBody(req);
+    try { return json(res, 200, { ok: true, ...(await videoThumbnail(b)) }); }
+    catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
+  }
+  if (p === '/api/media-tools/burn-title' && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Medienlaeufe sind Admins vorbehalten.' });
+    const b = await readBody(req);
+    try { return json(res, 200, { ok: true, ...(await burnTitle(b)) }); }
+    catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
+  }
   if (p === '/api/free-routes' && m === 'GET') return json(res, 200, { ...freeRouteCycleStatus(), scans: freeRouteScanHistory(12) });
   if (p === '/api/free-routes/scan' && m === 'POST') {
     if (!openMode && !isAdmin) return json(res, 403, { error: 'Gratis-Routen-Scan ist Admins vorbehalten.' });
@@ -1209,6 +1296,27 @@ async function api(req, res, url) {
     return deleteDeepProject(projectId)
       ? json(res, 200, { ok: true, deleted: true })
       : json(res, 404, { error: 'Projekt nicht gefunden' });
+  }
+  /* ---- Deep-Projekt: Fertigstellungs-Bericht inkl. Live-Ansicht ---- */
+  if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'completion' && m === 'GET') {
+    const report = projectReadiness(Number(parts[3]));
+    if (!report) return json(res, 404, { error: 'Projekt nicht gefunden' });
+    return json(res, 200, report);
+  }
+  /* ---- Gratis-Routen-Jaeger: Werkzeug- und LLM-Routen im Ueberblick ---- */
+  if (p === '/api/free-routes/hunter' && m === 'GET') {
+    const media = await freeMediaStatus();
+    return json(res, 200, {
+      ok: true,
+      hunter: hunterStatus(),
+      weekly: weeklyReport(),
+      mediaTools: { available: media.available, missing: media.missing, can: media.can },
+      note: 'Verfuegbarkeit ist keine Fertigmeldung: freie Routen und Werkzeuge werden nur benutzt, wenn ein Lauf sie tatsaechlich aufruft.'
+    });
+  }
+  if (p === '/api/free-routes/hunter/tick' && m === 'POST') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Routen-Jagd ist Admins vorbehalten.' });
+    return json(res, 200, await hunterTick());
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && (parts[4] === 'develop' || parts[4] === 'bootstrap') && m === 'POST') {
     const projectId = Number(parts[3]);
