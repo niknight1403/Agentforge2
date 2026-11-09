@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "status | plan | apply | build | apk | features | features-verify | features-run"
+        description: "status | plan | apply | build | apk | apk-www | features | features-verify | features-run"
         required: true
         default: "status"
       app_name:
@@ -55,6 +55,63 @@ jobs:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
           VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
         run: python3 scripts/ops/deep_delivery.py status
+
+  apk-www:
+    if: github.event.inputs.mode == 'apk-www'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle einrichten
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.8.2"
+
+      - name: Web-Root aus dem Repository setzen
+        run: |
+          set -euo pipefail
+          WWW="$GITHUB_WORKSPACE/villa-apk-template/app/src/main/assets/www"
+          mkdir -p "$WWW"
+          find "$WWW" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          cp -r docs/app/. "$WWW"/
+          test -s "$WWW/index.html"
+          if grep -qi "Villa-Produkt wird geladen" "$WWW/index.html"; then echo "Nur Template-Platzhalter"; exit 1; fi
+          python3 - <<'PY'
+          import glob, os
+          www = os.path.join(os.environ['GITHUB_WORKSPACE'], 'villa-apk-template/app/src/main/assets/www')
+          files = [p for p in glob.glob(os.path.join(www, '**', '*'), recursive=True) if os.path.isfile(p)]
+          print('Web-Dateien:', len(files), 'Bytes:', sum(os.path.getsize(p) for p in files))
+          PY
+
+      - name: APK bauen
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          export VILLA_NAME="MyBabes Studio"
+          python3 scripts/villa_apk_prepare.py
+          cd villa-apk-template
+          gradle --no-daemon assembleDebug
+          APK=$(find . -name "*.apk" -path "*debug*" | head -1)
+          test -n "$APK"
+          cp "$APK" "$GITHUB_WORKSPACE/mybabes-studio.apk"
+          ls -l "$GITHUB_WORKSPACE/mybabes-studio.apk"
+
+      - name: APK pruefen (Paket, Signatur, Web-Root im APK)
+        run: python3 scripts/ops/deep_delivery.py apk-verify mybabes-studio.apk
+
+      - name: APK hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: mybabes-studio-apk
+          path: mybabes-studio.apk
+          if-no-files-found: error
 
   features:
     if: github.event.inputs.mode == 'features'
