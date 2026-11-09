@@ -40,7 +40,10 @@ jobs:
       - name: Uebergabe-Artefakte liefern (TASTE/SPION)
         run: |
           set -euo pipefail
-          python3 scripts/ops/villa34_handover.py >> "$GITHUB_ENV"
+          AUSGABE=$(python3 scripts/ops/villa34_handover.py)
+          printf '%s\n' "$AUSGABE" >> "$GITHUB_ENV"
+          DEEP_DIR=$(printf '%s\n' "$AUSGABE" | sed -n 's/^DEEP_DIR=//p' | head -1)
+          echo "DEEP_DIR=${DEEP_DIR:-<leer>}"
           SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=25 -i $HOME/.ssh/oracle_key"
           scp $SSH_OPTS docs/handover/taste.json docs/handover/spion.json scripts/ops/villa34-handover.sh ubuntu@92.5.177.159:/tmp/villa34/
           ssh $SSH_OPTS ubuntu@92.5.177.159 "bash /tmp/villa34/villa34-handover.sh '${DEEP_DIR}' /tmp/villa34/taste.json /tmp/villa34/spion.json 2>&1 | tail -20"
