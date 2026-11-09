@@ -16,6 +16,7 @@ Default stream: `agentforge:events:stream`; consumer group: `fullstack-generatio
 - `AGENTFORGE_GENERATION_MAX_ATTEMPTS`: maximum durable job attempts (default 5; minimum 1).
 - `AGENTFORGE_GENERATION_CONSUMER`: optional explicit Redis consumer name; otherwise hostname and process ID are used.
 - A unique per-claim lease-owner token fences heartbeat and state updates from stale workers. Every claim also receives a distinct workspace directory, so a reclaimed job never shares files with an older worker that may still be running. Heartbeats run every 10–30 seconds and only extend the matching owner lease.
+- Unreferenced generation workspaces older than 30 days are pruned opportunistically; workspaces belonging to currently RUNNING jobs are excluded.
 - Retryable provider, rate-limit, network and Redis-publish failures remain pending for Redis stale-message recovery. Permanent validation/quality failures become terminal; retries are bounded.
 Publish an event with Redis `XADD` fields `type=PROJECT_GENERATION_REQUESTED` and
 `json={"type":"PROJECT_GENERATION_REQUESTED","id":"request-uuid","payload":{"taskId":"request-uuid","projectId":"optional-project-id","prompt":"Build ..."}}`.
