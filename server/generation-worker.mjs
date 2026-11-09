@@ -66,10 +66,10 @@ async function generate({prompt,taskId,projectId}) {
  if(existing?.status==='COMPLETED') { await publish('STREAM_COMPLETE',taskId,{status:'COMPLETED',workspace:existing.workspace}); return true; }
  if(existing?.status==='FAILED') return true; // terminal jobs must not be restarted by duplicate stream deliveries
  const jobId=existing?.id||randomUUID();
- // Every lease claim gets its own workspace so an expired/stale worker can never share files with its replacement.
- const workspace=join(WORKSPACE,`${jobId}-${leaseOwner}`);
  const startedAt=now();
  const leaseOwner=randomUUID();
+ // Every lease claim gets its own workspace so an expired/stale worker can never share files with its replacement.
+ const workspace=join(WORKSPACE,`${jobId}-${leaseOwner}`);
  // Atomic lease acquisition prevents two consumers from deleting/writing the same workspace.
  const claim=db.prepare(`INSERT INTO generation_jobs(id,request_id,project_id,status,workspace,attempts,lease_owner,created_at,updated_at)
  VALUES(?,?,?,'RUNNING',?,1,?,?,?)
