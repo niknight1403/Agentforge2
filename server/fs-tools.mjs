@@ -3,7 +3,7 @@ import {executeInvocation} from './project-process.mjs';
 import {projectExecution} from './project-execution.mjs';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readdirSync, readFileSync, statSync, existsSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, mkdirSync, cpSync } from 'node:fs';
 import { join, relative, resolve, extname } from 'node:path';
 
 /**
@@ -289,7 +289,7 @@ for (const [label, args] of commands) {
 }
 `;
     writeFileSync(runnerPath,runner,{encoding:'utf8',mode:0o600});
-    const invocation=projectExecution(stage.work,'node',[runnerName]);
+    // Copy the trusted prewarmed cache into this disposable job stage. Generated\n    // build/test scripts never receive the shared host cache mount.\n    const sharedCache=realpathSync(process.env.VF_NPM_CACHE_DIR);\n    if(!statSync(sharedCache).isDirectory()||sharedCache==='/'||/[\\r\\n,]/.test(sharedCache)) throw Error('PROJECT_SANDBOX_NPM_CACHE_INVALID');\n    const jobCache=join(stage.owner,'npm-cache');\n    mkdirSync(jobCache,{recursive:true,mode:0o700});\n    cpSync(sharedCache,jobCache,{recursive:true,dereference:true,force:true});\n    const invocation=projectExecution(stage.work,'node',[runnerName],{npmCachePath:jobCache});
     const result=await new Promise(resolvePromise=>{
       executeInvocation(invocation,{
         cwd:stage.work,timeout:timeoutMs,maxBuffer:2_000_000,
