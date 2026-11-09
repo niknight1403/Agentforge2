@@ -16,7 +16,7 @@ export function safeGeneratedPath(value) {
 }
 
 export function parseGenerationOutput(raw) {
-  const text=String(raw||'').trim().replace(/^\`\`\`(?:json)?\\s*/i,'').replace(/\\s*\`\`\`$/,'');
+  const text=String(raw||'').trim();
   let parsed;
   try { parsed=JSON.parse(text); } catch { throw Object.assign(new Error('LLM_OUTPUT_INVALID_JSON'),{code:'LLM_OUTPUT_INVALID_JSON'}); }
   if(!parsed || typeof parsed!=='object' || Array.isArray(parsed)) throw new Error('Manifest muss ein Objekt sein.');
@@ -53,8 +53,8 @@ export function generationPrompt(prompt, previousFailure='') {
     'Keine Pfade außerhalb des Projekts, keine Symlinks, keine Binärdateien. Begrenze dich auf maximal 80 Textdateien.',
     'Lege package.json mit build/test Skripten an, aber führe keine Paketinstallation aus. Verwende nur notwendige Abhängigkeiten und dokumentiere Voraussetzungen.',
     previousFailure ? 'REVIEW-FEEDBACK: '+String(previousFailure).slice(0,1200)+' Bitte korrigiere die vorige Ausgabe.' : '',
-    'NUTZERANFORDERUNG:\\n'+String(prompt||'').slice(0,9000)
-  ].filter(Boolean).join('\\n\\n');
+    'NUTZERANFORDERUNG:\n'+String(prompt||'').slice(0,9000)
+  ].filter(Boolean).join('\n\n');
 }
 
 export function generationEvent(type, taskId, metadata={}) {
