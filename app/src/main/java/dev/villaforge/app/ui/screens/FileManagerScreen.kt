@@ -1,0 +1,232 @@
+package dev.villaforge.app.ui.screens
+
+import android.content.Context
+import android.net.Uri
+import android.provider.DocumentsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.security.MessageDigest
+
+private data class PhoneFile(val uri: Uri, val id: String, val name: String, val mime: String, val size: Long)
+private data class FileAction(val title: String, val files: List<PhoneFile>, val folder: String? = null, val delete: Boolean = false)
+
+@Composable
+fun FileManagerScreen() {
+    val context = LocalContext.current
+    val resolver = context.contentResolver
+    val prefs = remember { context.getSharedPreferences("phone-file-manager", Context.MODE_PRIVATE) }
+    var treeUri by remember { mutableStateOf(prefs.getString("tree", null)?.let(Uri::parse)) }
+    var files by remember { mutableStateOf<List<PhoneFile>>(emptyList()) }
+    var command by remember { mutableStateOf("") }
+    var result by remember { mutableStateOf("Wähle zuerst einen Speicherordner aus. Der Zugriff bleibt auf diesen Ordner begrenzt.") }
+    var pending by remember { mutableStateOf<FileAction?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun refresh() {
+        val root = treeUri ?: return
+        scope.launch {
+            busy = true
+            try {
+                files = withContext(Dispatchers.IO) { listFiles(context, root) }
+                result = "${files.size} Dateien im freigegebenen Ordner gefunden."
+            } catch (e: Exception) { result = "Lesefehler: ${e.message}" }
+            busy = false
+        }
+    }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                treeUri = uri
+                prefs.edit().putString("tree", uri.toString()).apply()
+                refresh()
+            } catch (e: Exception) { result = "Ordnerzugriff konnte nicht gespeichert werden: ${e.message}" }
+        }
+    }
+
+    fun plan(text: String) {
+        val q = text.trim().lowercase()
+        if (q.isBlank()) return
+        val selected = when {
+            listOf("bild", "foto", "image", "jpg", "png").any(q::contains) -> files.filter { it.mime.startsWith("image/") }
+            listOf("video", "film", "mp4").any(q::contains) -> files.filter { it.mime.startsWith("video/") }
+            listOf("musik", "audio", "mp3").any(q::contains) -> files.filter { it.mime.startsWith("audio/") }
+            listOf("spiel", "game", "apk").any(q::contains) -> files.filter { it.name.endsWith(".apk", true) || it.name.contains("game", true) }
+            else -> files.filter { it.name.contains(q, true) }
+        }
+        when {
+            q.contains("duplikat") || q.contains("doppelt") -> {
+                scope.launch {
+                    busy = true
+                    val groups = withContext(Dispatchers.IO) { findDuplicates(context, files) }
+                    val duplicates = groups.flatMap { it.drop(1) }
+                    result = if (duplicates.isEmpty()) "Keine inhaltlich identischen Dateien gefunden." else "${duplicates.size} Duplikate in ${groups.size} Gruppen gefunden."
+                    pending = if (duplicates.isEmpty()) null else FileAction("Duplikate prüfen (Originale bleiben erhalten)", duplicates)
+                    busy = false
+                }
+            }
+            q.contains("sortier") || q.contains("ordne") || q.contains("verschieb") -> {
+                val category = when {
+                    selected.all { it.mime.startsWith("image/") } -> "Bilder"
+                    selected.all { it.mime.startsWith("video/") } -> "Videos"
+                    selected.all { it.mime.startsWith("audio/") } -> "Audio"
+                    else -> "Sortiert"
+                }
+                if (selected.isEmpty()) result = "Keine passenden Dateien gefunden."
+                else pending = FileAction("${selected.size} Dateien nach '$category' verschieben", selected, category)
+            }
+            q.contains("lösch") || q.contains("entfern") || q.contains("delete") -> {
+                if (selected.isEmpty()) result = "Keine passenden Dateien gefunden."
+                else pending = FileAction("${selected.size} Dateien löschen", selected, delete = true)
+            }
+            else -> result = "Befehl erkannt? Beispiele: „Finde Duplikate“, „Sortiere Bilder“, „Zeige Videos“, „Lösche Datei Urlaub.jpg“."
+        }
+    }
+
+    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Telefon-Dateimanager")
+        Text("Chatgesteuerte Dateiverwaltung · Zugriff nur auf den ausgewählten Ordner")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { picker.launch(treeUri) }) { Text(if (treeUri == null) "Speicherordner wählen" else "Ordner ändern") }
+            OutlinedButton(onClick = { refresh() }, enabled = treeUri != null && !busy) { Text("Aktualisieren") }
+        }
+        OutlinedTextField(
+            value = command, onValueChange = { command = it }, modifier = Modifier.fillMaxWidth(),
+            label = { Text("Was soll ich mit deinen Dateien tun?") },
+            placeholder = { Text("z. B. Finde Duplikate oder sortiere Bilder") },
+            trailingIcon = { androidx.compose.material3.Icon(Icons.Default.Search, contentDescription = null) }
+        )
+        Button(onClick = { plan(command) }, enabled = treeUri != null && !busy) { Text("Befehl ausführen") }
+        Text(if (busy) "Arbeite …" else result)
+        Text("Dateien: ${files.size}")
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(files.take(150), key = { it.id }) { file ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text(file.name)
+                        Text("${file.mime} · ${file.size} Bytes")
+                    }
+                }
+            }
+        }
+    }
+
+    pending?.let { action ->
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            title = { Text(action.title) },
+            text = { Column { Text("Bitte prüfe die betroffenen Dateien. Es wird nichts ohne deine Bestätigung geändert."); action.files.take(12).forEach { Text("• ${it.name}") }; if (action.files.size > 12) Text("… und ${action.files.size - 12} weitere") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    pending = null
+                    scope.launch {
+                        busy = true
+                        try {
+                            val changed = withContext(Dispatchers.IO) {
+                                if (action.delete) action.files.count { runCatching { DocumentsContract.deleteDocument(resolver, it.uri) }.getOrDefault(false) }
+                                else if (action.folder != null) moveIntoFolder(context, treeUri!!, action.files, action.folder)
+                                else 0
+                            }
+                            result = "$changed Dateien verarbeitet."
+                            refresh()
+                        } catch (e: Exception) { result = "Aktion fehlgeschlagen: ${e.message}" }
+                        busy = false
+                    }
+                }) { Text("Bestätigen") }
+            },
+            dismissButton = { TextButton(onClick = { pending = null }) { Text("Abbrechen") } }
+        )
+    }
+}
+
+private fun listFiles(context: Context, tree: Uri): List<PhoneFile> {
+    val resolver = context.contentResolver
+    val rootId = DocumentsContract.getTreeDocumentId(tree)
+    val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, rootId)
+    val out = mutableListOf<PhoneFile>()
+    resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE), null, null, null)?.use { c ->
+        val idCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+        val nameCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+        val mimeCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+        val sizeCol = c.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+        while (c.moveToNext()) {
+            val id = c.getString(idCol)
+            val mime = c.getString(mimeCol) ?: "application/octet-stream"
+            if (mime == DocumentsContract.Document.MIME_TYPE_DIR) continue
+            val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+            out += PhoneFile(uri, id, c.getString(nameCol) ?: id, mime, if (sizeCol >= 0 && !c.isNull(sizeCol)) c.getLong(sizeCol) else 0L)
+        }
+    }
+    return out.sortedBy { it.name.lowercase() }
+}
+
+private fun findDuplicates(context: Context, files: List<PhoneFile>): List<List<PhoneFile>> {
+    val buckets = files.filter { it.size > 0 }.groupBy { it.size }.values.filter { it.size > 1 }
+    val groups = mutableListOf<List<PhoneFile>>()
+    for (bucket in buckets) {
+        val hashes = bucket.mapNotNull { file ->
+            runCatching {
+                val digest = MessageDigest.getInstance("SHA-256")
+                context.contentResolver.openInputStream(file.uri)?.use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) { val n = input.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) }
+                } ?: return@runCatching null
+                digest.digest().joinToString("") { "%02x".format(it) } to file
+            }.getOrNull()
+        }.groupBy({ it.first }, { it.second }).values.filter { it.size > 1 }
+        groups += hashes
+    }
+    return groups
+}
+
+private fun moveIntoFolder(context: Context, tree: Uri, files: List<PhoneFile>, folder: String): Int {
+    val resolver = context.contentResolver
+    val rootId = DocumentsContract.getTreeDocumentId(tree)
+    val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, rootId)
+    var folderId: String? = null
+    resolver.query(childrenUri, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null)?.use { c ->
+        val id = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+        val name = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+        val mime = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+        while (c.moveToNext()) if (c.getString(name) == folder && c.getString(mime) == DocumentsContract.Document.MIME_TYPE_DIR) folderId = c.getString(id)
+    }
+    if (folderId == null) {
+        val created = DocumentsContract.createDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(tree, rootId), DocumentsContract.Document.MIME_TYPE_DIR, folder) ?: return 0
+        folderId = DocumentsContract.getDocumentId(created)
+    }
+    val target = DocumentsContract.buildDocumentUriUsingTree(tree, folderId!!)
+    var moved = 0
+    for (file in files) {
+        val parentId = file.id.substringBeforeLast('/', rootId)
+        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, parentId)
+        if (runCatching { DocumentsContract.moveDocument(resolver, file.uri, parent, target) }.getOrNull() != null) moved++
+    }
+    return moved
+}
