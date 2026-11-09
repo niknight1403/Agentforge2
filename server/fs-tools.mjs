@@ -3,7 +3,7 @@ import {executeInvocation} from './project-process.mjs';
 import {projectExecution} from './project-execution.mjs';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, mkdirSync, cpSync, realpathSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, existsSync, writeFileSync, mkdirSync, cpSync, realpathSync, chmodSync } from 'node:fs';
 import { join, relative, resolve, extname } from 'node:path';
 
 /**
@@ -259,6 +259,20 @@ export const ALLOWED = Object.entries(COMMAND_POLICY).map(([bin, subs]) => Array
  * temporary stage, and invokes npm with shell:false. The npm cache must be
  * preloaded in the pinned image or available in the stage cache.
  */
+function makeDisposableCacheWritable(directory) {
+  // Docker runs as an unprivileged UID even when the Hub itself runs as root.
+  // The copied cache is disposable, so grant that container UID read/write
+  // access without changing permissions on the shared host cache.
+  chmodSync(directory,0o777);
+  for(const entry of readdirSync(directory,{withFileTypes:true})) {
+    const target=join(directory,entry.name);
+    if(entry.isSymbolicLink()) throw Error('PROJECT_SANDBOX_NPM_CACHE_SYMLINK');
+    if(entry.isDirectory()) makeDisposableCacheWritable(target);
+    else if(entry.isFile()) chmodSync(target,0o666);
+    else throw Error('PROJECT_SANDBOX_NPM_CACHE_ENTRY_INVALID');
+  }
+}
+
 export async function runGenerationChecks(root, timeoutMs = 120_000) {
   if (process.env.VF_PROJECT_SANDBOX !== 'docker') return { ok:false, error:'GENERATION_DOCKER_SANDBOX_REQUIRED' };
   if (!process.env.VF_NPM_CACHE_DIR) return { ok:false, error:'GENERATION_NPM_CACHE_REQUIRED' };
@@ -296,6 +310,7 @@ for (const [label, args] of commands) {
     const jobCache=join(stage.owner,'npm-cache');
     mkdirSync(jobCache,{recursive:true,mode:0o700});
     cpSync(sharedCache,jobCache,{recursive:true,dereference:true,force:true});
+    makeDisposableCacheWritable(jobCache);
     const invocation=projectExecution(stage.work,'node',[runnerName],{npmCachePath:jobCache});
     const result=await new Promise(resolvePromise=>{
       executeInvocation(invocation,{
