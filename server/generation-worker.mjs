@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { hostname } from 'node:os';
 import { chat } from './llm.mjs';
 import { db, now } from './db.mjs';
@@ -56,7 +56,7 @@ function cleanupExpiredWorkspaces() {
   for(const entry of readdirSync(WORKSPACE,{withFileTypes:true})) {
    if(!entry.isDirectory()) continue;
    const target=resolve(WORKSPACE,entry.name);
-   if(!target.startsWith(WORKSPACE+process.platform==='win32'?'\\\\':'/')) continue;
+   if(!target.startsWith(`${WORKSPACE}${sep}`)) continue;
    if(active.has(target)) continue;
    try {
     const info=statSync(target);
