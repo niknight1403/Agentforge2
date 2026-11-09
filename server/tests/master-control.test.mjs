@@ -57,6 +57,20 @@ test('Master-Turn wird bei Retry nicht erneut ausgeführt und behält einen Proj
   assert.match(db.prepare("SELECT content FROM memories WHERE kind='CONSTRAINT'").get().content,/Latenz/);
   await assert.rejects(service.turn({...input,message:'Anderer Inhalt'}),/andere/);
 });
+test('Unterbrochener Master-Turn nach Neustart zeigt die ID und wird nicht wiederholt', async () => {
+  const requestId='interrupted-master-turn-1';
+  const message='Erstelle Villa "Studio": Musik';
+  db.prepare("INSERT INTO control_turns VALUES (?,?,'running',NULL,?)").run(requestId,message,1);
+  let createCalls=0;
+  const {service}=control([{type:'create_villa',args:{name:'Studio',idea:'Musik',agentCount:3}}],async()=>{createCalls++;return {villaId:villa('Studio','Musik')};});
+  const result=await service.turn({message,requestId});
+  assert.equal(result.requestId,requestId);
+  assert.equal(result.ok,false);
+  assert.equal(result.interrupted,true);
+  assert.match(result.answer,/Status prüfen/);
+  assert.equal(db.prepare('SELECT status FROM control_turns WHERE request_id=?').get(requestId).status,'interrupted');
+  assert.equal(createCalls,0);
+});
 test('Master-Planung priorisiert kostenlose Cloud-Qualitätsrouten und begrenzt die Antwortzeit', async () => {
   let options;
   const service=createMasterControl({
