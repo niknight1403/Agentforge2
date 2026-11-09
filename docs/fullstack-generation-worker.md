@@ -12,6 +12,29 @@ Default stream: `agentforge:events:stream`; consumer group: `fullstack-generatio
 Publish an event with Redis `XADD` fields `type=PROJECT_GENERATION_REQUESTED` and
 `json={"type":"PROJECT_GENERATION_REQUESTED","id":"request-uuid","payload":{"taskId":"request-uuid","projectId":"optional-project-id","prompt":"Build ..."}}`.
 
+## Runtime / Prisma integration
+
+The authenticated internal Hub bridge is available to the existing Prisma-backed
+AgentForge runtime when both services share VF_AGENT_RUNTIME_TOKEN and
+MESH_INTERNAL_TOKEN:
+
+- Runtime tasks use input { kind: project.generate, prompt: ..., projectId: ... }.
+- The Prisma AgentWorker routes that task to POST /internal/mesh/generate and polls
+  GET /internal/mesh/generate/:taskId until the generator reaches a terminal state.
+- Job/checkpoint orchestration remains in the Prisma runtime; generated workspace
+  metadata and worker lifecycle are tracked by the Hub generation service.
+- Start the generation worker separately with Redis and VF_PROJECT_SANDBOX=docker.
+  The worker refuses to execute generated build/test scripts unless Docker sandbox mode
+  is explicitly enabled.
+
+Example task input:
+
+    {
+      "kind": "project.generate",
+      "projectId": "crm-001",
+      "prompt": "Build a responsive CRM with contacts, deals, roles and audit history."
+    }
+
 ## Lifecycle events
 
 `PROJECT_PLANNED`, `SCAFFOLD_GENERATED`, `CONTAINER_TEST_PASSED` /
@@ -36,4 +59,6 @@ or model responses. SQLite stores job/checkpoint state locally.
 
 `npm test -- --test-name-pattern=generation-engine` and `npm run check:syntax`.
 The worker is opt-in and is not started inside the HTTP Hub process; deploy it as a
-separate supervised process after configuring Redis and the production sandbox.
+separate supervised process after configuring Redis and the production Docker sandbox.
+The Prisma runtime bridge is opt-in per task via kind=project.generate; normal Hub
+agent tasks continue through the existing Hub executor.
