@@ -260,12 +260,45 @@ def mode_apk_verify(pfad: str) -> int:
     return 0
 
 
+def mode_plan() -> int:
+    """Zeigt je Phase, welche Pflicht-Bausteine fehlen und warum der Score
+    unter 100 bleibt (Produkt-Gate der Villa)."""
+    token = login()
+    deep = resolve_deep(token)
+    did = int(deep["id"])
+    prod = call(f"/api/villas/{did}/product", token=token)
+    print("SCORE", prod.get("score"), "PLAN", prod.get("planScore"), "STAGE", prod.get("stage"),
+          "PHASE", prod.get("currentPhase"), "VERIFIED", prod.get("verified"))
+    print("BLOCKERS", json.dumps(prod.get("blockers"), ensure_ascii=False)[:400])
+    r = prod.get("readiness") or {}
+    print("READINESS", r.get("status"), r.get("verified"), "QUELLE", r.get("sourceFiles"))
+    for k, v in (r.get("checks") or {}).items():
+        print("  CHECK", k, v.get("status"), str(v.get("output") or "")[:160].replace("\n", " | "))
+    offen = []
+    for ph in prod.get("phases") or []:
+        print(f"PHASE {ph.get('id')} ratio={ph.get('ratio')} {str(ph.get('title'))[:40]}")
+        for it in ph.get("items") or []:
+            if it.get("state") != "DONE":
+                offen.append((ph.get("id"), it))
+                print("   OFFEN", it.get("state"), it.get("key"), str(it.get("title"))[:70])
+    print("OFFENE-PFLICHT", len(offen))
+    tasks = call(f"/api/villas/{did}/tasks?limit=500", token=token)
+    for _, it in offen:
+        key = str(it.get("key") or "")
+        titel = str(it.get("title") or "")
+        treffer = [t for t in tasks if key and key.lower() in (str(t.get("title")) + " " + str(t.get("description"))).lower()][:5]
+        for t in treffer:
+            print("   TASK-TREFFER", t.get("id"), t.get("status"), str(t.get("title"))[:70])
+    return 0
+
+
 if __name__ == "__main__":
     modus = sys.argv[1] if len(sys.argv) > 1 else "status"
     tabelle = {
         "status": mode_status,
         "apply": mode_apply,
         "build": mode_build,
+        "plan": mode_plan,
         "apk-fetch": mode_apk_fetch,
         "apk-verify": lambda: mode_apk_verify(sys.argv[2] if len(sys.argv) > 2 else "deep-villa.apk"),
     }

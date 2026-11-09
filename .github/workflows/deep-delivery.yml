@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "status | apply | build | apk"
+        description: "status | plan | apply | build | apk"
         required: true
         default: "status"
       app_name:
@@ -42,6 +42,18 @@ jobs:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
           VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
         run: python3 scripts/ops/deep_delivery.py status
+
+  plan:
+    if: github.event.inputs.mode == 'plan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Produkt-Gate der Deep Villa pruefen
+        env:
+          VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
+          VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
+        run: python3 scripts/ops/deep_delivery.py plan
 
   apply:
     if: github.event.inputs.mode == 'apply'
