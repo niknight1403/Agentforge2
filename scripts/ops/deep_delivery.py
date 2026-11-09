@@ -250,6 +250,11 @@ def mode_apk_verify(pfad: str) -> int:
         print("SIGNATUR v1:", v1, "| v2/v3-Block:", v2)
         if not (v1 or v2):
             fehler.append("keine Signatur gefunden")
+        # Binaeres Manifest: Berechtigungen stehen als UTF-16-Strings im Pool.
+        man = z.read("AndroidManifest.xml")
+        for brauch in ("android.permission.INTERNET",):
+            if brauch.encode("utf-16-le") not in man and brauch.encode() not in man:
+                fehler.append(f"Manifest ohne {brauch}")
         dex = sum(len(z.read(n)) for n in namen if n.endswith(".dex"))
         print("DEX-BYTES", dex, "| WEB-DATEIEN", len([n for n in namen if n.startswith("assets/www/")]))
     if fehler:

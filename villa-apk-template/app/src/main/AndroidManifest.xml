@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Das Web-Produkt laedt eigene Assets offline; CDN-/API-Aufrufe der
+         Villa brauchen Netz. Ohne INTERNET blieb z. B. ein Tailwind-CDN
+         wirkungslos und die App startete ungestylt. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
