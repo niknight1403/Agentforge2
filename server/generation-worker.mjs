@@ -125,7 +125,7 @@ export async function startGenerationWorker({signal}={}) {
  console.log('[generation-worker] listening',{stream:GENERATION_STREAM,group:GENERATION_GROUP,consumer:CONSUMER});
  while(!signal?.aborted) {
   let rows=await redisTryClaimStale(GENERATION_STREAM,GENERATION_GROUP,CONSUMER,{minIdleMs:60000,count:5});
-  if(rows==null) rows=await redisTryReadConsumerGroup(GENERATION_STREAM,GENERATION_GROUP,CONSUMER,{count:5});
+  if(!rows?.length) rows=await redisTryReadConsumerGroup(GENERATION_STREAM,GENERATION_GROUP,CONSUMER,{count:5});
   if(!rows?.length) { await sleep(750); continue; }
   for(const row of rows) {
    if(!row.event) { await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); continue; }
