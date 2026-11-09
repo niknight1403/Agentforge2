@@ -134,7 +134,14 @@ export async function startGenerationWorker({signal}={}) {
    const event=row.event;
    if(!['PROJECT_GENERATION_REQUESTED','project.generate'].includes(event.type)) { await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); continue; }
    try { await generate(inputFrom(event)); await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id); }
-   catch(error) { console.error('[generation-worker] task failed',{code:error?.code||'GENERATION_FAILED'}); /* leave pending for XAUTOCLAIM recovery */ }
+   catch(error) {
+    console.error('[generation-worker] task failed',{code:error?.code||'GENERATION_FAILED'});
+    try {
+     const parsed=inputFrom(event);
+     const terminal=db.prepare("SELECT status FROM generation_jobs WHERE request_id=?").get(parsed.taskId);
+     if(terminal?.status==='FAILED') await redisTryAck(GENERATION_STREAM,GENERATION_GROUP,row.id);
+    } catch { /* leave malformed or transiently incomplete work pending for recovery */ }
+   }
   }
  }
 }
