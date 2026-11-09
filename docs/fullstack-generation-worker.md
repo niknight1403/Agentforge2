@@ -49,9 +49,10 @@ or model responses. The initial request event necessarily carries the user promp
 - The existing LLM cascade is used with CODER/REVIEWER roles; no provider is hard-coded.
 - The existing project command allowlist and sandbox policy are reused. Production
   fails closed if the pinned Docker sandbox is not configured.
-- The worker never runs `npm install` or downloads packages. Dependencies must already
-  be present in the generated workspace image; otherwise the quality gate reports the
-  build/test as not configured or failed.
+- Dependencies are installed with `npm install --offline --ignore-scripts` inside one
+  pinned, network-isolated Docker stage, followed by build and tests in that same stage.
+  The sandbox image must contain the required npm cache; no package downloads or lifecycle
+  scripts are allowed. A cache miss fails the quality gate closed.
 - A failed event remains pending for bounded stale-consumer recovery. Duplicate completed
   request IDs are idempotently acknowledged.
 
