@@ -21,6 +21,7 @@ import { db } from './db.mjs';
 import { getSetting } from './control-store.mjs';
 import { orchestrate } from './agents.mjs';
 import { focusDecision, focusVillaIds, releaseFocusIfComplete } from './project-focus.mjs';
+import { emit } from './events.mjs';
 
 // Fokus laesst sich weiterhin explizit fuer laengere Projektlaeufe aktivieren,
 // begrenzt aber nicht mehr die Zahl manuell startbarer Villen.
@@ -111,14 +112,18 @@ export function schedulerStatus() {
   };
 }
 
-function retryVilla(id, requestedDelayMs = 15_000, reason = 'MODEL_UNAVAILABLE') {
+// Basis-Backoff. Tests duerfen ihn per VF_RETRY_MIN_MS verkleinern, damit
+// Retry-Ketten ohne 15-Sekunden-Wartezeiten pruefbar bleiben.
+const retryBaseMs = () => Math.max(0, Number(process.env.VF_RETRY_MIN_MS) || 15_000);
+function retryVilla(id, requestedDelayMs = retryBaseMs(), reason = 'MODEL_UNAVAILABLE') {
   const villaId = Number(id);
   const villa = db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(villaId);
   if (!villa || villa.autonomy !== 1 || ['ARCHIVED','STOPPING','COMPLETED'].includes(villa.status)) return;
   if (retryTimers.has(villaId)) return;
   const attempt = (retryCounts.get(villaId) || 0) + 1;
   retryCounts.set(villaId, attempt);
-  const delayMs = Math.min(10 * 60_000, Math.max(15_000, Number(requestedDelayMs) || 15_000, 15_000 * (2 ** Math.min(attempt - 1, 5))));
+  const base = retryBaseMs();
+  const delayMs = Math.min(10 * 60_000, Math.max(base, Number(requestedDelayMs) || base, base * (2 ** Math.min(attempt - 1, 5))));
   const timer = setTimeout(() => {
     retryTimers.delete(villaId);
     retryDetails.delete(villaId);
@@ -179,7 +184,21 @@ function pump(preserveFront = 0) {
         .then((out) => {
           if (generation !== (generations.get(id) || 0)) return;
           if (out?.retryAfterMs) retryVilla(id, out.retryAfterMs);
-          else if (out?.status !== 'COMPLETED' && villaRunToCompletion(id)) retryVilla(id, 15_000, 'PRODUCT_INCOMPLETE');
+          else if (out?.status !== 'COMPLETED' && villaRunToCompletion(id)) {
+            // Der Abschlusslauf darf nicht endlos neu starten: Villa #34 lief
+            // alle 15 s in PRODUCT_INCOMPLETE, weil ein Gate-Kriterium
+            // unerreichbar war. Nach dem Budget wird ehrlich geparkt, damit
+            // Modellzeit nicht dauerhaft verbrannt wird.
+            const versuche = retryCounts.get(id) || 0;
+            const maxVersuche = Math.max(1, Number(process.env.VF_PRODUCT_RETRY_MAX) || 8);
+            if (versuche >= maxVersuche) {
+              retryCounts.delete(id);
+              setVillaRunToCompletion(id, false);
+              db.prepare("UPDATE villas SET status='PAUSED', updated_at=? WHERE id=? AND autonomy=1").run(Date.now(), id);
+              emit('report', { villaId: id, kind: 'PRODUCT_NOT_ACCEPTED', attempts: versuche, reason: 'Abnahme nach ' + maxVersuche + ' Anlaeufen nicht erreicht; Villa geparkt statt Endlos-Retry.' });
+              console.error(`[villaforge] Scheduler: Villa ${id}: Produktabnahme nach ${versuche} Anlaeufen nicht erreicht -> PAUSED`);
+            } else retryVilla(id, retryBaseMs(), 'PRODUCT_INCOMPLETE');
+          }
           else retryCounts.delete(id);
         })
         .catch(failed)

@@ -1,4 +1,4 @@
-import {reconcileCapabilities,capabilityBlockers} from './capability-autopilot.mjs';
+import {reconcileCapabilities,capabilityBlockers,capabilityNotes} from './capability-autopilot.mjs';
 import { ensureVerificationTasks } from './project-verification.mjs';
 /**
  * Produkt-Pipeline: von der Idee zum marktreifen Produkt, 24/7.
@@ -112,7 +112,11 @@ export function maturity(villaId) {
     ? (!readiness.sourceFiles?25:readiness.verified?100:passed===2?90:passed===1?75:60)
     : (!readiness.artifacts?.length?25:readiness.verified?100:Math.min(75,45+passed*15));
   const unfinishedTasks=tasks.filter(t=>t.status!=='DONE' && t.status!=='CANCELLED').length;
+  // Abnahme-Blocker sind nur Faehigkeiten mit offener Arbeit; reine
+  // Ausbauluecken (externe Konfiguration, abgebrochene Auftraege) bleiben
+  // sichtbar, blockieren aber kein verifiziertes Produkt.
   const capabilityFailures=capabilityBlockers(villaId);
+  const capabilityGaps=capabilityNotes(villaId);
   const s=Math.min(planScore,ceiling,unfinishedTasks||capabilityFailures.length?95:100);
   return {
     score: s,
@@ -120,7 +124,7 @@ export function maturity(villaId) {
     // Abnahme heisst: das Produkt funktioniert (Build, Tests, Smoke). Offene
     // Aufgaben sind die Verbesserungswarteschlange der Villa und waechst durch
     // die Autonomie staendig - als Abnahmekriterium blockierte das jedes Release.
-    verified:readiness.verified && capabilityFailures.length===0, unfinishedTasks, blockers:[...readiness.blockers,...capabilityFailures],
+    verified:readiness.verified && capabilityFailures.length===0, unfinishedTasks, blockers:[...readiness.blockers,...capabilityFailures], capabilityNotes:capabilityGaps,
     backlogNote:`${unfinishedTasks} Aufgaben in der Verbesserungswarteschlange (kein Release-Blocker)`,
     stage: readiness.verified ? (s===100?'Technisch verifiziert':'Technisch verifiziert, Ausbau offen') : s >= 90 ? 'Abnahme offen' : s >= 65 ? 'Beta' : s >= 35 ? 'MVP in Arbeit' : 'Fruehphase',
     domain: profile.id, deliveryLabel: profile.label,

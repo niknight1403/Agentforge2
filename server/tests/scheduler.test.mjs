@@ -287,3 +287,22 @@ test('Deleted and terminal villas cannot consume scheduler slots',async()=>{
  let calls=0;configureScheduler({start:async()=>calls++});enqueueVillas([...ids,99999999]);
  await new Promise(r=>setImmediate(r));assert.equal(calls,0);assert.deepEqual(schedulerStatus().active,[]);_resetScheduler();
 });
+
+test('Abschlusslauf parkt nach dem Retry-Budget statt endlos neu zu starten', async () => {
+ _resetScheduler();
+ process.env.VF_RETRY_MIN_MS='1'; process.env.VF_PRODUCT_RETRY_MAX='2';
+ try {
+  const id=villa('Deep endlos',0,0);
+  db.prepare('UPDATE villas SET autonomy=1 WHERE id=?').run(id);
+  configureScheduler({start:async()=>({status:'PAUSED'})});
+  scheduleVilla(id,{runToCompletion:true});
+  for(let i=0;i<200;i++){
+   if(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status==='PAUSED')break;
+   await new Promise((r)=>setTimeout(r,5));
+  }
+  const {villaRunToCompletion}=await import('../scheduler.mjs');
+  assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status,'PAUSED');
+  assert.equal(villaRunToCompletion(id),false,'Parken beendet den Abschlussmodus');
+  assert.deepEqual(schedulerStatus().retrying,[]);
+ } finally { delete process.env.VF_RETRY_MIN_MS; delete process.env.VF_PRODUCT_RETRY_MAX; _resetScheduler(); }
+});

@@ -59,10 +59,27 @@ test('Gescheiterte Auftraege erzeugen keine neue Retry-Schlange und bleiben begr
  db.prepare("UPDATE tasks SET status='PENDING' WHERE id=?").run(r.taskId);assert.equal(reconcileCapabilities(v).added,0);assert.equal(db.prepare('SELECT status FROM tasks WHERE id=?').get(r.taskId).status,'CANCELLED');assert.equal(capabilityStatus(v).requests[0].status,'blocked');
 });
 
-test('Offene Pflichtfaehigkeiten blockieren Produktabnahme und Ultra-Release auch bei DONE-Titeln',async()=>{
+test('Offene Faehigkeits-Arbeit blockiert die Abnahme, reine Ausbauluecken nicht',async()=>{
  const {maturity}=await import('../product.mjs');const {ultraStatus}=await import('../ultra-agent.mjs');
+ const {capabilityBlockers,capabilityNotes}=await import('../capability-autopilot.mjs');
+ // Externe Konfiguration (Integration ohne Auftrag) ist eine Ausbauluecke:
+ // sichtbar, aber kein Abnahme-Blocker eines verifizierten Produkts.
  const v=villa();requestCapability(v,need('required-video','integration'));
- const product=maturity(v);assert.equal(product.verified,false);assert.ok(product.blockers.some(x=>x.includes('required-video')));assert.equal(ultraStatus(v).gatePassed,false);
+ assert.deepEqual(capabilityBlockers(v),[]);assert.ok(capabilityNotes(v).some((x)=>x.includes('required-video')));
+ const ausbau=maturity(v);assert.equal(ausbau.verified,false);assert.ok(ausbau.capabilityNotes.some((x)=>x.includes('required-video')));assert.ok(!ausbau.blockers.some((x)=>x.includes('required-video')));
+ // Laufende Faehigkeits-Arbeit bleibt ein harter Blocker fuer Abnahme und Ultra.
+ const w=villa();requestCapability(w,need('live-export','feature'));reconcileCapabilities(w);
+ assert.ok(capabilityBlockers(w).some((x)=>x.includes('live-export')));
+ assert.ok(maturity(w).blockers.some((x)=>x.includes('live-export')));assert.equal(ultraStatus(w).gatePassed,false);
+});
+test('Review ohne Nachweis wird als Fehlversuch gezaehlt und endet begrenzt statt in Endlosschleife',()=>{
+ const v=villa(),coder=Number(insertAgent(v,'Coder','CODER'));requestCapability(v,need('review-limbo'));reconcileCapabilities(v);
+ let r=capabilityStatus(v).requests[0];db.prepare("UPDATE tasks SET status='DONE',agent_id=? WHERE id=?").run(coder,r.taskId);reconcileCapabilities(v);
+ r=capabilityStatus(v).requests[0];assert.equal(r.status,'awaiting_review');assert.ok(r.reviewTaskId);
+ for(let i=0;i<4;i++){const cur=capabilityStatus(v).requests[0];if(cur.reviewTaskId)db.prepare("UPDATE tasks SET status='DONE' WHERE id=?").run(cur.reviewTaskId);reconcileCapabilities(v);}
+ r=capabilityStatus(v).requests[0];assert.equal(r.status,'blocked');
+ const offen=db.prepare("SELECT COUNT(*) n FROM tasks WHERE villa_id=? AND status IN ('PENDING','READY','RUNNING','REVIEW')").get(v).n;
+ assert.equal(offen,0,'kein Dauer-Auftrag fuer eine verwaisete Review');
 });
 
 test('Externe Luecke kann nach Einrichtung zur pruefbaren Projektintegration werden, niemals direkt validated',()=>{

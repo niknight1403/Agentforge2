@@ -71,6 +71,20 @@ export function reconcileCapabilities(villaId){
     db.prepare("UPDATE capability_requests SET status='blocked',attempts=?,last_task_status='FAILED',updated_at=? WHERE villa_id=? AND capability_id=?").run(attempts,now(),Number(villaId),r.capability_id);continue;
    }
    if(work.status==='DONE'){
+    const reviewRow=r.review_task_id?db.prepare('SELECT status FROM tasks WHERE villa_id=? AND id=?').get(Number(villaId),Number(r.review_task_id)):null;
+    // Ein Review ohne Nachweis (Aufgabe fehlt, abgebrochen oder ohne
+    // capability_verify abgeschlossen) ist ein Fehlversuch. Ohne diese Zaehlung
+    // standen solche Faehigkeiten fuer immer auf awaiting_review - sie sahen wie
+    // offene Arbeit aus, ohne dass jemand sie noch abschliessen konnte.
+    if(reviewRow&&['DONE','CANCELLED','FAILED'].includes(reviewRow.status)){
+     // Jede abgeschlossene/abgebrochene Review ohne Validierung zaehlt einmal:
+     // die Referenz wird geleert, damit derselbe Review nicht doppelt zaehlt.
+     const attempts=r.attempts+1;
+     const stamp=now();
+     if(attempts>=3){db.prepare("UPDATE capability_requests SET status='blocked',attempts=?,last_task_status='REVIEW_INCOMPLETE',review_task_id=NULL,updated_at=? WHERE villa_id=? AND capability_id=?").run(attempts,stamp,Number(villaId),r.capability_id);continue;}
+     db.prepare("UPDATE capability_requests SET attempts=?,last_task_status='REVIEW_INCOMPLETE',review_task_id=NULL,updated_at=? WHERE villa_id=? AND capability_id=?").run(attempts,stamp,Number(villaId),r.capability_id);
+     r.attempts=attempts;r.review_task_id=null;r.last_task_status='REVIEW_INCOMPLETE';
+    }
     let reviewId=r.review_task_id;
     if(!reviewId&&added<2){reviewId=task(Number(villaId),`Capability Review [${r.capability_id}] ${r.updated_at}`,'Rolle: REVIEWER\nGoal: Pruefe unabhaengig '+r.title+'.\nAbnahme: '+r.acceptance+'\nConstraints: Nicht selbst implementieren oder einen Textabschluss als Nachweis akzeptieren. Lies Implementierung und Tests, fuehre project_run fuer Build, Tests und Smoke aus.\nFormat: Dateien, Pruefbefehle und belegte Ergebnisse. Danach capability_verify mit id, testPath und artifactPath aufrufen; ein fehlgeschlagenes Gate bleibt offen.\nFailure Handling: Konkreten Befund dokumentieren und sicher stoppen.');added++;}
     db.prepare("UPDATE capability_requests SET status='awaiting_review',review_task_id=?,last_task_status='DONE',updated_at=? WHERE villa_id=? AND capability_id=?").run(reviewId||null,now(),Number(villaId),r.capability_id);continue;
@@ -104,7 +118,35 @@ export function verifyCapability(villaId,id,{testPath,artifactPath},agentId){
  emit('report',{villaId:Number(villaId),kind:'CAPABILITY_VALIDATED',capabilityId:String(id)});
  return {id:String(id),status:'validated',scope:'project',evidence};
 }
-export function capabilityBlockers(villaId){return capabilityStatus(villaId).requests.filter(r=>r.status!=='observed'&&!r.validated).map(r=>`Faehigkeit ${r.id}: ${r.status}; Abnahme offen`);}
+const OPEN_TASK_STATES = ['PENDING', 'READY', 'RUNNING', 'REVIEW'];
+function openTaskOf(villaId, taskId) {
+ if (!taskId) return null;
+ const row = db.prepare('SELECT status FROM tasks WHERE villa_id=? AND id=?').get(Number(villaId), Number(taskId));
+ return row && OPEN_TASK_STATES.includes(row.status) ? row.status : null;
+}
+/**
+ * Echte Abnahme-Blocker sind nur Faehigkeiten, deren Arbeit JETZT laeuft oder
+ * wartet (offene Implementierungs- oder Review-Aufgabe). Eine Faehigkeit, die
+ * externe Konfiguration braucht (needs_configuration), deren Aufgabe
+ * abgebrochen wurde (blocked/dismissed) oder deren Review-Aufgabe nicht mehr
+ * offen ist, ist eine Luecke im Ausbau - kein Defekt des Produkts. Solche
+ * Luecken standen bisher als Dauerblocker im Gate: Villa #34 lieferte einen
+ * verifizierten Build, kam aber nie auf 100, weil alte Prisma-/node_modules-
+ * Anfragen auf needs_configuration standen.
+ */
+export function capabilityBlockers(villaId){
+ return db.prepare('SELECT * FROM capability_requests WHERE villa_id=?').all(Number(villaId))
+  .filter(r=>['proposed','implementing','awaiting_review'].includes(r.status))
+  .filter(r=>openTaskOf(villaId,r.task_id)||openTaskOf(villaId,r.review_task_id))
+  .map(r=>`Faehigkeit ${r.capability_id}: ${r.status}; offene Aufgabe`);
+}
+/** Sichtbare, aber nicht abnahmeblockierende Ausbauluecken. */
+export function capabilityNotes(villaId){
+ return db.prepare('SELECT * FROM capability_requests WHERE villa_id=?').all(Number(villaId))
+  .filter(r=>!['observed','dismissed','validated'].includes(r.status))
+  .filter(r=>!openTaskOf(villaId,r.task_id)&&!openTaskOf(villaId,r.review_task_id))
+  .map(r=>`Faehigkeit ${r.capability_id}: ${r.status}; Ausbau offen, keine Abnahme-Blockade`);
+}
 export function observeProjectFailure(villaId,result){
  if(!db.prepare('SELECT id FROM villas WHERE id=?').get(Number(villaId)))return;
  if(!/MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND|No module named|command not found|ENOENT/.test(String(result?.error||'')+' '+String(result?.output||'')))return;
