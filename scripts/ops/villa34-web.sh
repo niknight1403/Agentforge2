@@ -87,8 +87,10 @@ sudo test -f "$PROJEKT/scripts/smoke.js" && sudo cp -a "$PROJEKT/scripts/smoke.j
 sudo tee "$PROJEKT/scripts/test.js" >/dev/null <<'JS'
 // Prueft das ausgelieferte Produkt (dist/index.html) auf die acht Oberflaechen.
 const assert = require('node:assert');
-const { readFileSync, statSync } = require('node:fs');
-const datei = 'dist/index.html';
+const { readFileSync, statSync, existsSync } = require('node:fs');
+// Der Build kann dist/ in einer Kopie erzeugen; geprueft wird der Produktstand.
+const datei = ['dist/index.html', 'mybabes-app.html', 'index.html'].find((f) => existsSync(f));
+assert.ok(datei, 'Kein Produktstand gefunden (dist/index.html, mybabes-app.html, index.html)');
 const groesse = statSync(datei).size;
 assert.ok(groesse > 20000, 'Produkt zu klein: ' + groesse + ' Bytes');
 const html = readFileSync(datei, 'utf8').toLowerCase();
@@ -110,11 +112,12 @@ JS
 sudo tee "$PROJEKT/scripts/smoke.js" >/dev/null <<'JS'
 // Kurzprobe: das Produkt ist da und vollstaendig.
 const { readFileSync, existsSync } = require('node:fs');
-if (!existsSync('dist/index.html')) {
-  console.error('smoke: dist/index.html fehlt');
+const datei = ['dist/index.html', 'mybabes-app.html', 'index.html'].find((f) => existsSync(f));
+if (!datei) {
+  console.error('smoke: kein Produktstand gefunden');
   process.exit(1);
 }
-const html = readFileSync('dist/index.html', 'utf8').toLowerCase();
+const html = readFileSync(datei, 'utf8').toLowerCase();
 const pflicht = { explore: 'F1', charakter: 'F2', galerie: 'F3', vorlesen: 'F4', bild: 'F5', video: 'F6', story: 'F7', creator: 'F8' };
 const fehlt = Object.entries(pflicht).filter(([m]) => !html.includes(m)).map(([, k]) => k);
 if (fehlt.length) {
