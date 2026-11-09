@@ -192,11 +192,15 @@ Release-APK ist direkt installierbar und debug-signiert.
 ## Neu in 1.10.0
 
 - Key-Pool mit Kontingent-Rotation: `GROQ_API_KEY`, `OPENROUTER_API_KEY`,
-  `GEMINI_API_KEY`, `CEREBRAS_API_KEY` akzeptieren nummerierte Zweit-Keys
-  (`_2` bis `_12`, Secrets-Store oder Umgebung). Bei 429/402 rotiert der
-  Anruf sofort auf den nächsten Key derselben Route, bevor die Route
-  pausiert — Gratis-Kontingente mehrerer Keys bündeln sich.
-- `GET /api/stats` meldet `keyPools[]` (Namen + `ready`-Zahl, nie Werte)
+`GEMINI_API_KEY` (Secrets-Store oder Umgebung). Bei 429/402 rotiert der
+Rotator auf einen anderen **Anbieter**; das Konto-Kontingent wird rollierend
+mitgezaehlt (`server/route-quota.mjs`).
+Regel: **ein Konto je Anbieter.** Varianten wie `_2` bis `_12` sind nur fuer
+legitime, getrennt angelegte Konten gedacht (etwa Organisation und Privatkonto)
+und zaehlen als **ein** gemeinsames Kontingent — eine Route je Konto, kein
+Ausreizen desselben Limits ueber mehrere Keys. Zusaetzliche Konten legt der
+Owner selbst an; automatische Registrierung ist nicht Teil des Systems (siehe
+`docs/route-orchestration-24-7.md`).
 
 ## Neu in 1.9.0
 

@@ -184,3 +184,34 @@ test('Konfiguration aus config/routes.json ist lesbar und lokal zuerst', () => {
   const instance = createLedger({ routes: geladen });
   assert.equal(instance.next({ tokens: 500, needsTools: true }).route.isLocal, true);
 });
+
+test('ein Konto mit zwei Routen: 429 sperrt beide', () => {
+  let now = 1_000_000;
+  const instance = new QuotaLedger({
+    clock: () => now,
+    routes: [
+      { id: 'g-main', account: 'google-niko', baseUrl: 'https://g.example/v1', limits: { rpd: 100 } },
+      { id: 'g-zweit', account: 'google-niko', baseUrl: 'https://g.example/v1', limits: { rpd: 100 } },
+      { id: 'groq', account: 'groq-niko', baseUrl: 'https://q.example/v1', limits: { rpd: 100 } }
+    ]
+  });
+  instance.settle('g-main', { ok: false, status: 429, retryAfterMs: 60_000 });
+  assert.equal(instance.consume('g-zweit').reason, 'cooldown');
+  assert.equal(instance.consume('groq').ok, true);
+  now += 60_001;
+  assert.equal(instance.consume('g-zweit').ok, true);
+});
+
+test('Plan zaehlt Routen desselben Kontos nicht doppelt', () => {
+  const instance = new QuotaLedger({
+    routes: [
+      { id: 'a1', account: 'konto-a', baseUrl: 'https://a.example/v1', limits: { rpd: 40 } },
+      { id: 'a2', account: 'konto-a', baseUrl: 'https://a.example/v1', limits: { rpd: 40 } },
+      { id: 'b1', account: 'konto-b', baseUrl: 'https://b.example/v1', limits: { rpd: 30 } }
+    ]
+  });
+  const plan = instance.plan({ demandPerHour: 100, horizonHours: 24 });
+  assert.equal(plan.finiteCapacity, 70, 'ein Konto zaehlt einmal, nicht je Route');
+  assert.equal(plan.shortfall, 2400 - 70);
+  assert.ok(plan.perRoute.every((row) => typeof row.account === 'string'));
+});

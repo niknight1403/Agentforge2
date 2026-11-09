@@ -78,6 +78,10 @@ export class QuotaLedger {
     const limits = { ...ZERO_LIMITS, ...(route.limits || {}) };
     this.routes.set(route.id, {
       id: route.id,
+      // Kontingent haengt am Konto des Anbieters, nicht an der Route: zwei
+      // Routen mit demselben Schluessel teilen ein Limit. Ohne Konto-Angabe
+      // ist die Route ihr eigenes Konto.
+      account: route.account || route.id,
       kind: route.kind || 'openai',
       priority: Number(route.priority) || 50,
       isLocal: route.isLocal === true,
@@ -184,7 +188,19 @@ export class QuotaLedger {
     }
     route.cooldownUntil = now + pause;
     route.lastCooldownReason = kind;
-    return { cooldownMs: pause, reason: kind };
+    let affected = 1;
+    if (kind === 'rate_limit' || kind === 'quota' || kind === 'auth') {
+      // Ein Limit gehoert dem Konto: weitere Routen desselben Kontos sind
+      // genauso gesperrt. Sonst rotiert der Betrieb scheinbar weiter und
+      // laeuft in dieselbe Wand.
+      for (const other of this.routes.values()) {
+        if (other.id === route.id || other.account !== route.account) continue;
+        other.cooldownUntil = Math.max(other.cooldownUntil, now + pause);
+        other.lastCooldownReason = kind;
+        affected += 1;
+      }
+    }
+    return { cooldownMs: pause, reason: kind, affectedRoutes: affected };
   }
 
   /** Anteil des Tageskontingents, der noch frei ist (1 = voll, 0 = erschöpft). */
@@ -251,6 +267,8 @@ export class QuotaLedger {
     let localHealthy = false;
     const unverified = [];
 
+    let finiteByAccount = 0;
+    const accountCapacity = new Map();
     for (const route of this.routes.values()) {
       const usage = this.usage(route.id);
       const byDay = route.limits.rpd ? Math.max(0, route.limits.rpd - usage.usedDay) : Infinity;
@@ -263,13 +281,22 @@ export class QuotaLedger {
       if (!route.limitsVerified) unverified.push(route.id);
       if (route.isLocal) {
         if (usable) localHealthy = true;
-        perRoute.push({ route: route.id, isLocal: true, usable, capacity: usable ? 'unbegrenzt' : 0 });
+        perRoute.push({ route: route.id, account: route.account, isLocal: true, usable, capacity: usable ? 'unbegrenzt' : 0 });
         continue;
       }
       const admitted = usable ? capacity : 0;
-      if (Number.isFinite(admitted)) finiteCapacity += admitted;
-      perRoute.push({ route: route.id, isLocal: false, usable, capacity: admitted });
+      if (Number.isFinite(admitted)) {
+        // Mehrere Routen eines Kontos teilen ein Limit: es zaehlt die beste
+        // Route des Kontos, nicht die Summe. Sonst rechnet der Plan zu optimistisch.
+        const bisher = accountCapacity.get(route.account) || 0;
+        if (admitted > bisher) {
+          finiteByAccount += admitted - bisher;
+          accountCapacity.set(route.account, admitted);
+        }
+      }
+      perRoute.push({ route: route.id, account: route.account, isLocal: false, usable, capacity: admitted });
     }
+    finiteCapacity = finiteByAccount;
 
     const covered = localHealthy ? demand : Math.min(demand, finiteCapacity);
     const shortfall = Math.max(0, demand - covered);
@@ -309,6 +336,7 @@ export class QuotaLedger {
       const usage = this.usage(route.id);
       return {
         id: route.id,
+        account: route.account,
         kind: route.kind,
         isLocal: route.isLocal,
         enabled: route.enabled,
