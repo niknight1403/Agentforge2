@@ -1,2 +1,2 @@
 /** Zentrale Version des Hubs — alle Endpunkte melden sie von hier. */
-export const VERSION = '1.65.1';
+export const VERSION = '1.66.0';
