@@ -1,16 +1,16 @@
 {
-  "checked_at": "2026-11-10T18:31:27.214441+00:00",
+  "checked_at": "2026-11-10T23:56:45.229575+00:00",
   "hub": {
     "state": "UP",
     "version": "1.66.0",
     "routes": 26,
     "villas": 26,
-    "running": 2,
+    "running": 1,
     "agents": 479,
     "executing": 1,
     "queued": 0,
-    "open_tasks": 1223
+    "open_tasks": 1233
   },
-  "villa_activity_min": 379,
-  "state": "DEGRADED"
+  "villa_activity_min": 26,
+  "state": "UP"
 }
