@@ -45,10 +45,30 @@ fun FileManagerScreen() {
     var result by remember { mutableStateOf("Wähle zuerst einen Speicherordner aus. Der Zugriff bleibt auf diesen Ordner begrenzt.") }
     var pending by remember { mutableStateOf<FileAction?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var accessStatus by remember { mutableStateOf("Nicht freigegeben") }
     val scope = rememberCoroutineScope()
+
+    fun updateAccessStatus() {
+        val grant = treeUri?.let { uri -> context.contentResolver.persistedUriPermissions.firstOrNull { it.uri == uri } }
+        accessStatus = when {
+            treeUri == null -> "Nicht freigegeben"
+            grant == null -> "Zugriff abgelaufen – Ordner erneut freigeben"
+            grant.isReadPermission && grant.isWritePermission -> "Lesen und Schreiben freigegeben"
+            grant.isReadPermission -> "Nur Lesen freigegeben – Änderungen nicht möglich"
+            else -> "Kein gültiger Speicherzugriff"
+        }
+    }
+
+    LaunchedEffect(treeUri) { updateAccessStatus() }
 
     fun refresh() {
         val root = treeUri ?: return
+        updateAccessStatus()
+        val grant = context.contentResolver.persistedUriPermissions.firstOrNull { it.uri == root }
+        if (grant?.isReadPermission != true) {
+            result = "Kein gültiger Lesezugriff. Bitte den Speicherordner erneut freigeben."
+            return
+        }
         scope.launch {
             busy = true
             try {
@@ -120,11 +140,21 @@ fun FileManagerScreen() {
 
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Telefon-Dateimanager")
-        Text("Chatgesteuerte Dateiverwaltung · Zugriff nur auf den ausgewählten Ordner")
+        Text("Chatgesteuerte Dateiverwaltung · Android-Speicherfreigabe")
+        Text("Speicherrechte: $accessStatus")
+        Text("Android 10+ erlaubt aus Sicherheitsgründen keinen stillen Vollzugriff auf den gesamten Gerätespeicher. Wähle im Systemdialog einen Ordner; die Freigabe gilt dauerhaft für diesen Ordner und seine Unterordner, bis du sie in Android widerrufst.")
         Text("Wichtig: „Spiele“ findet nur APK-Dateien bzw. entsprechend benannte Dateien im freigegebenen Ordner. Bereits installierte Apps lassen sich hier aus Sicherheitsgründen weder verschieben noch deinstallieren.")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { picker.launch(treeUri) }) { Text(if (treeUri == null) "Speicherordner wählen" else "Ordner ändern") }
+            Button(onClick = { picker.launch(treeUri) }) { Text(if (treeUri == null) "Speicherzugriff erlauben" else "Ordner / Rechte ändern") }
             OutlinedButton(onClick = { refresh() }, enabled = treeUri != null && !busy) { Text("Aktualisieren") }
+            if (treeUri != null) OutlinedButton(onClick = {
+                treeUri?.let { uri -> runCatching { context.contentResolver.releasePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } }
+                treeUri = null
+                prefs.edit().remove("tree").apply()
+                files = emptyList()
+                accessStatus = "Nicht freigegeben"
+                result = "Speicherzugriff wurde in der App zurückgesetzt."
+            }) { Text("Trennen") }
         }
         OutlinedTextField(
             value = command, onValueChange = { command = it }, modifier = Modifier.fillMaxWidth(),
@@ -158,9 +188,16 @@ fun FileManagerScreen() {
                     scope.launch {
                         busy = true
                         try {
+                            val selectedTree = treeUri
+                            val grant = selectedTree?.let { uri -> context.contentResolver.persistedUriPermissions.firstOrNull { it.uri == uri } }
+                            if (grant?.isWritePermission != true) {
+                                result = "Schreibzugriff fehlt. Bitte den Ordner erneut auswählen und Lesen/Schreiben erlauben."
+                                busy = false
+                                return@launch
+                            }
                             val changed = withContext(Dispatchers.IO) {
                                 if (action.delete) action.files.count { runCatching { DocumentsContract.deleteDocument(resolver, it.uri) }.getOrDefault(false) }
-                                else if (action.folder != null) moveIntoFolder(context, treeUri!!, action.files, action.folder)
+                                else if (action.folder != null && selectedTree != null) moveIntoFolder(context, selectedTree, action.files, action.folder)
                                 else 0
                             }
                             result = "$changed Dateien verarbeitet."
