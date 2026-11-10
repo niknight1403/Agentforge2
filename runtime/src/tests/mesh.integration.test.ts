@@ -20,13 +20,17 @@ test('PostgreSQL outbox -> Redis consumer -> atomic step/checkpoint pipeline', {
     await worker.flushOutbox();
     const deadline = Date.now() + 10_000;
     let current = await prisma.agentTask.findUnique({ where: { id: task.id } });
-    while (current?.status !== 'COMPLETED' && Date.now() < deadline) {
+    let completionEvents = await prisma.agentTelemetry.count({ where: { taskId: task.id, eventType: 'task.completed' } });
+    // The worker commits COMPLETED before writing telemetry. Wait for both durable
+    // outcomes so the assertion does not race the final telemetry insert.
+    while ((current?.status !== 'COMPLETED' || completionEvents !== 1) && Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 50));
       current = await prisma.agentTask.findUnique({ where: { id: task.id } });
+      completionEvents = await prisma.agentTelemetry.count({ where: { taskId: task.id, eventType: 'task.completed' } });
     }
     assert.equal(current?.status, 'COMPLETED');
     assert.equal(await prisma.agentStep.count({ where: { taskId: task.id } }), 1);
-    assert.equal(await prisma.agentTelemetry.count({ where: { taskId: task.id, eventType: 'task.completed' } }), 1);
+    assert.equal(completionEvents, 1);
     const checkpoint = await prisma.agentCheckpoint.findFirst({ where: { taskId: task.id } });
     assert.ok(checkpoint?.id);
   } finally {
