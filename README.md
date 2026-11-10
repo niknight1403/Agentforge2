@@ -11,6 +11,8 @@
   automatisch fortgesetzt: es startet nichts ungefragt.
 - Hintergrund: Das Produktions-Audit vom 2026-11-10 fand Villen mit 3, 77 und 88 offenen
   Aufgaben, die als „fertig" gemeldet wurden.
+- Ab 1.65.1 fährt der Hub die Abstimmung zusätzlich selbst (60 Sekunden nach dem Start und
+  alle 10 Minuten), weil auf einem ruhenden Hub niemand `pump()` aufruft.
 
 ## Integrationen per Pull Request 1.64.0
 

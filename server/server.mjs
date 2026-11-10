@@ -27,6 +27,7 @@ import { resumePendingVillas } from './resume.mjs';
 import { schedulerStatus, villaRanking, enqueueVillas, configureScheduler, scheduleVilla, cancelScheduledVilla} from './scheduler.mjs';
 import { focusStatus, setVillaFocus, clearVillaFocus, focusHistory } from './project-focus.mjs';
 import { maintenanceTick, pruneOldData, dbSize } from './maintenance.mjs';
+import { reconcileCompletionStates } from './completion-state.mjs';
 import { cmdGateStatus } from './fs-tools.mjs';
 import { bus, emit } from './events.mjs';
 import { runCouncil, listCouncil, autoCouncil } from './council.mjs';
@@ -1786,6 +1787,19 @@ server.listen(PORT, HOST, () => {
     } catch (e) { logError('Wartung:', e.message || e); }
   }, 6 * 60 * 60 * 1000);
   maintenanceLoop.unref();
+
+  // Ehrlicher Abschlussstatus (Issue #137): Der Scheduler stimmt den Status vor
+  // jeder Startentscheidung ab. Auf einem ruhenden Hub laeuft der Scheduler aber
+  // gar nicht - dann bliebe eine Villa mit offenen Aufgaben fuer immer
+  // "COMPLETED". Deshalb zusaetzlich ein eigener, billiger Takt.
+  setTimeout(() => { try { reconcileCompletionStates(); } catch { /* nie fatal */ } }, 60 * 1000).unref?.();
+  const completionLoop = setInterval(() => {
+    try {
+      const out = reconcileCompletionStates();
+      if (out.reopened.length) log(`Abschlussstatus korrigiert: ${out.reopened.map((v) => `V${v.villaId} (${v.openTasks} offen)`).join(', ')}`);
+    } catch (e) { logError('Abschlussstatus:', e.message || e); }
+  }, 10 * 60 * 1000);
+  completionLoop.unref();
 
   // KEYFORGE-AGENT: Secrets-Store scannen, neue Keys identifizieren/validieren
   // und Routen anlegen (Charta 2026-10-18). Erster Lauf nach 90 s, dann alle 10 Min.

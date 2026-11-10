@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -93,4 +93,12 @@ test('Audit-Befund completion_consistency verschwindet nach der Abstimmung', () 
     missionAvailable: false
   });
   assert.equal(after.checks.find((c) => c.code === 'completion_consistency'), undefined, 'kein Widerspruch mehr');
+});
+
+test('ruhender Hub korrigiert den Status auch ohne Scheduler-Aktivitaet', () => {
+  // Der Scheduler-Hook allein greift nur, wenn ein Lauf startet. Auf einem
+  // ruhenden Hub muss ein eigener Takt die Abstimmung fahren.
+  const source = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8');
+  assert.match(source, /reconcileCompletionStates\(\)/, 'Abstimmung wird im Hub aufgerufen');
+  assert.match(source, /completionLoop = setInterval/, 'eigener Takt fuer den Abschlussstatus');
 });
