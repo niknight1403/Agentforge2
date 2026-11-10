@@ -25,6 +25,8 @@ import { ROLES } from './agent-roles.mjs';
 import { medienAktion, medienInfo, medienAktionen } from './media-tools.mjs';
 import { normalizeSwarmBlueprint } from './swarm.mjs';
 import { villaLock } from './verification-lock.mjs';
+import { publishIntegration, integrationBranchName } from './integration-publish.mjs';
+import { villaRepo } from './repo-target.mjs';
 export { normalizeSwarmBlueprint } from './swarm.mjs';
 
 
@@ -1754,6 +1756,32 @@ export async function publishToGitHub(villaId, agentId, task, { exec, fetchFn } 
   const token = db.prepare('SELECT value FROM secrets WHERE name = ?').get('GITHUB_TOKEN')?.value;
   if (!token) return { ok: false, error: 'Kein GITHUB_TOKEN im Secrets-Store hinterlegt.' };
   const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(villaId) || {};
+
+  // Issue #135: Eine Villa mit belegter Repository-Bindung darf im Zielprojekt
+  // ausschliesslich ueber Feature-Branch und Pull Request veroeffentlichen.
+  // Kein neues Repository, kein Force-Push, kein Commit auf den Zielbranch.
+  const binding = villaRepo(villaId);
+  if (binding?.repo) {
+    const integration = await publishIntegration({
+      villaId,
+      root,
+      repo: binding.repo,
+      baseBranch: binding.branch || 'main',
+      featureBranch: integrationBranchName(villaId, task?.title || villa.name || ''),
+      title: `Integration: ${String(task?.title || villa.name || 'Erweiterung').slice(0, 90)}`,
+      message: String(task?.title || 'Integrationsstand'),
+      body: [
+        `Automatischer Integrationsstand der Villa #${villaId} (${villa.name || 'ohne Namen'}).`,
+        String(villa.idea || '').slice(0, 600),
+        'Nur der Feature-Branch wurde beschrieben; der Zielbranch bleibt unveraendert und entscheidet per Review.'
+      ].join('\n\n'),
+      token,
+      exec: run,
+      fetchFn: doFetch
+    });
+    return integration.ok ? integration : { ok: false, error: integration.error, stage: integration.stage };
+  }
+
   const slug = String(villa.name || 'villa').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'villa';
   const repo = `villaforge-${slug}`;
   const hdrs = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' };
