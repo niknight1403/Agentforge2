@@ -311,7 +311,8 @@ for (const [label, args] of commands) {
     if(!statSync(sharedCache).isDirectory()||sharedCache==='/'||/[\r\n,]/.test(sharedCache)) throw Error('PROJECT_SANDBOX_NPM_CACHE_INVALID');
     const jobCache=join(stage.owner,'npm-cache');
     mkdirSync(jobCache,{recursive:true,mode:0o700});
-    // Preserve links during copy so makeDisposableCacheWritable rejects them instead of following them.\n    cpSync(sharedCache,jobCache,{recursive:true,dereference:false,force:true});
+    // Preserve links during copy so makeDisposableCacheWritable rejects them instead of following them.
+    cpSync(sharedCache,jobCache,{recursive:true,dereference:false,force:true});
     makeDisposableCacheWritable(jobCache);
     const invocation=projectExecution(stage.work,'node',[runnerName],{npmCachePath:jobCache});
     const result=await new Promise(resolvePromise=>{

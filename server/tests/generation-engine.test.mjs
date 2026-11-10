@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { safeGeneratedPath, parseGenerationOutput, generationEvent, GENERATION_STREAM } from '../generation-engine.mjs';
 import { runGenerationChecks } from '../fs-tools.mjs';
 
@@ -32,4 +33,11 @@ test('generated build execution fails closed without Docker sandbox',async()=>{
   if(previous===undefined) delete process.env.VF_PROJECT_SANDBOX;
   else process.env.VF_PROJECT_SANDBOX=previous;
  }
+});
+
+test('offline npm cache copy is executable code, not part of a line comment',()=>{
+ const source=readFileSync(new URL('../fs-tools.mjs',import.meta.url),'utf8');
+ const copyLine=source.split('\n').find(line=>line.includes('cpSync(sharedCache,jobCache'));
+ assert.ok(copyLine,'expected the disposable npm cache copy operation');
+ assert.match(copyLine,/^\s*cpSync\(/,'cache copy must start on an executable source line');
 });
