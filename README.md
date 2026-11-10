@@ -1,5 +1,20 @@
 # VillaForge
 
+## Integrationen per Pull Request 1.64.0
+
+- Eine Villa, die an ein bestehendes Repository gebunden ist (`villaRepo(villaId)`), veröffentlicht
+  dort ausschließlich über einen Feature-Branch und einen Pull Request. Es entsteht kein neues
+  Produkt-Repo und es gibt keinen Force-Push auf den Zielbranch.
+- Branch: `villaforge/integration-<villaId>-<slug>`, deterministisch, damit ein Wiederanlauf
+  denselben Branch weiterführt. Gepusht wird immer ein explizites Refspec
+  (`refs/heads/<feature>:refs/heads/<feature>`).
+- Der Lauf endet vor dem ersten Git-Befehl, wenn Feature- und Zielbranch gleich sind, und ohne
+  Commit/Push/PR bei rotem Qualitätstor, fehlenden Änderungen, fehlendem Checkout oder fehlendem
+  Token. Die Stufe steht im Ergebnis (`gates`, `commit`, `checkout`, `config`, `pull_request`).
+- Ein bereits offener Pull Request (HTTP 422) wird als eigener Zustand gemeldet, nicht als Erfolg.
+  Zugangsdaten werden aus Fehlermeldungen entfernt.
+- Ungebundene Villen nutzen weiterhin ihr eigenes Produkt-Repo (`villaforge-<slug>`).
+
 ## Projektarten und Zielzuordnung 1.63.0
 
 - Jeder Vorschlag des Innovations-Scouts trägt jetzt vor der Freigabe eine Projektart:
