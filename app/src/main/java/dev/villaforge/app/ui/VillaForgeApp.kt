@@ -146,6 +146,9 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     NavigationBarItem(selected = screen == Screen.CAPABILITIES, onClick = { viewModel.closeDetail(); screen = Screen.CAPABILITIES },
                         icon = { Icon(Icons.Filled.Build, contentDescription = "Werkzeuge", tint = if (screen == Screen.CAPABILITIES) NeonCyan else TextMuted) },
                         label = { Text("Werkzeuge") })
+                    NavigationBarItem(selected = screen == Screen.FILES, onClick = { viewModel.closeDetail(); screen = Screen.FILES },
+                        icon = { Icon(Icons.Filled.Folder, contentDescription = "Dateien", tint = if (screen == Screen.FILES) NeonCyan else TextMuted) },
+                        label = { Text("Dateien") })
                 }
             }
         },
