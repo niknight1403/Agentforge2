@@ -1,5 +1,25 @@
 # VillaForge
 
+## Projektarten und Zielzuordnung 1.63.0
+
+- Jeder Vorschlag des Innovations-Scouts trägt jetzt vor der Freigabe eine Projektart:
+  `NEW_PROJECT` (eigenes Produkt, eigener Workspace), `INTEGRATION` (Erweiterung eines
+  bestehenden Projekts) oder `SUBPROJECT` (Teilprojekt in einem bestehenden Monorepo).
+- Für `INTEGRATION` und `SUBPROJECT` sind Zielrepository (`owner/name`), Branch und bei
+  `SUBPROJECT` zusätzlich der Zielpfad Pflicht. Fehlt etwas, bleibt der Vorschlag offen
+  und nennt den Grund (`blockedReason`).
+- Eine Freigabe erzeugt nur bei `NEW_PROJECT` eine eigenständige Villa. `INTEGRATION`
+  erweitert die Villa, die nachweislich an dieses Repository gebunden ist, und legt dort
+  einen Integrationsauftrag an (Feature-Branch, Tests/Build, danach Pull Request).
+- Zielzuordnungen stammen aus einer ausdrücklichen Villa-Bindung (`sources`, Art `GITHUB`)
+  oder dem echten Git-Remote des Quellordners. Namensähnlichkeit gilt nie als Beweis.
+  Ist ein Repository mit mehreren Villen verbunden, blockiert die Freigabe bis zur Klärung.
+- Klärung durch den Besitzer: `POST /api/proposals/:id/classification` mit `projectType`,
+  `targetRepo`, `targetBranch`, `targetPath` und `classificationReason`. `GET /api/proposals`
+  liefert Projektart, Ziel, Konfidenz und Blockadegrund mit.
+- Altbestand aus der Zeit vor der Projektart wird einmalig als `NEW_PROJECT` übernommen;
+  neue Vorschläge müssen ihre Projektart selbst mitbringen.
+
 ## GitHub-Changelog-Agent 1.50.0
 
 - GitHub-Push-Webhooks werden mit `X-Hub-Signature-256` anhand des unveränderten Bodys geprüft und pro Delivery-ID idempotent verarbeitet.

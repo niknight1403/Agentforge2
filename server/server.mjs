@@ -30,7 +30,7 @@ import { maintenanceTick, pruneOldData, dbSize } from './maintenance.mjs';
 import { cmdGateStatus } from './fs-tools.mjs';
 import { bus, emit } from './events.mjs';
 import { runCouncil, listCouncil, autoCouncil } from './council.mjs';
-import { runScout, listProposals, approveProposal, rejectProposal, explainVilla } from './scout.mjs';
+import { runScout, listProposals, approveProposal, rejectProposal, explainVilla, clarifyProposal } from './scout.mjs';
 import { maturity, developCycle, PHASES, proposalsToTasks } from './product.mjs';
 import { evolutionState, proposeForVilla, evolveAll, listVillaProposals, listAllPending, approveVillaProposal, rejectVillaProposal, KINDS as EVOLVE_KINDS } from './evolve.mjs';
 import { systemAudit, healTick, healActions } from './heal.mjs';
@@ -1214,6 +1214,11 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'proposals' && parts[2] && parts[3] === 'reject' && m === 'POST') {
     return json(res, 200, rejectProposal(Number(parts[2])));
+  }
+  if (parts[0] === 'api' && parts[1] === 'proposals' && parts[2] && parts[3] === 'classification' && m === 'POST') {
+    const body = await readBody(req);
+    try { return json(res, 200, clarifyProposal(Number(parts[2]), body || {})); }
+    catch (e) { return json(res, e.statusCode || 400, { error: e.message }); }
   }
   /* ---- Villa-Evolution (v1.30): jede Villa schlaegt selbst naechste Phasen/Perfektion/Marketplace vor ---- */
   if (p === '/api/evolution/pending' && m === 'GET') {
