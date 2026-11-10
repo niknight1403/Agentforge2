@@ -22,6 +22,7 @@ import { getSetting } from './control-store.mjs';
 import { orchestrate } from './agents.mjs';
 import { focusDecision, focusVillaIds, releaseFocusIfComplete } from './project-focus.mjs';
 import { emit } from './events.mjs';
+import { reconcileCompletionStates } from './completion-state.mjs';
 
 // Fokus laesst sich weiterhin explizit fuer laengere Projektlaeufe aktivieren,
 // begrenzt aber nicht mehr die Zahl manuell startbarer Villen.
@@ -161,6 +162,9 @@ export function cancelScheduledVilla(id) {
 }
 
 function pump(preserveFront = 0) {
+  // Ehrlicher Abschluss: "COMPLETED" mit offener Arbeit ist kein Abschluss.
+  // Die Abstimmung laeuft vor jeder Startentscheidung und ist idempotent.
+  reconcileCompletionStates();
   prioritizeQueue(preserveFront);
   while (starter && occupiedSlots() < SLOTS() && queue.length) {
     const id = queue.shift();

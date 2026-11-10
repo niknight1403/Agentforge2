@@ -1,5 +1,17 @@
 # VillaForge
 
+## Ehrlicher Abschlussstatus 1.65.0
+
+- `COMPLETED` heißt: keine offene Arbeit. Weicht der Zustand auseinander (neue Aufgaben in
+  einer fertigen Villa), setzt der Scheduler die Villa beim nächsten Takt auf `PAUSED` zurück
+  (`server/completion-state.mjs`, Event `villa` mit Grund `COMPLETION_REOPENED`).
+- Offen ist dieselbe Definition wie im Villa-Audit: alles außer `DONE`, `CANCELLED`, `CANCELED`.
+  `FAILED` zählt mit.
+- Die Autonomie-Einstellung des Besitzers bleibt unverändert, und `PAUSED` wird nicht
+  automatisch fortgesetzt: es startet nichts ungefragt.
+- Hintergrund: Das Produktions-Audit vom 2026-11-10 fand Villen mit 3, 77 und 88 offenen
+  Aufgaben, die als „fertig" gemeldet wurden.
+
 ## Integrationen per Pull Request 1.64.0
 
 - Eine Villa, die an ein bestehendes Repository gebunden ist (`villaRepo(villaId)`), veröffentlicht
