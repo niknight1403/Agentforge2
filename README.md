@@ -1,5 +1,15 @@
 # VillaForge
 
+## Audit-Diagnose 1.66.0
+
+- Bei roter Produktabnahme nennt der Bericht jetzt den Grund als stabilen Code
+  (`server/villa-configuration.mjs`): `evidence_stale`, `evidence_invalid`, `evidence_missing`,
+  `build`, `tests`, `smoke`, `no_implementation`, `artifact_missing`, `review_missing`,
+  `open_tasks`, `failed_tasks`, `project_path`, sonst `other`.
+- Das Workflow-Protokoll zeigt nur das Aggregat über alle Villen, nie Blockiertexte, Pfade oder
+  Villa-Kennungen.
+- Die Abnahme selbst bleibt unverändert streng: keine Lockerung, keine Schwelle.
+
 ## Ehrlicher Abschlussstatus 1.65.0
 
 - `COMPLETED` heißt: keine offene Arbeit. Weicht der Zustand auseinander (neue Aufgaben in
