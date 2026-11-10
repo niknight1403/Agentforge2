@@ -140,6 +140,8 @@ const COMMAND_POLICY = {
   python3: 'SCRIPT',
   python: 'SCRIPT',
   gradle: ['test', 'build', 'assemble', 'check', 'tasks'],
+  // Rust projects (e.g. NexusSphere) run only offline build/test commands in the pinned sandbox.
+  cargo: ['test', 'build', 'check', 'clippy', 'fmt', 'metadata'],
   // Git fuer echte Commits aus der Villa heraus: bewusst KEIN push/pull/fetch/remote.
   git: ['status', 'diff', 'add', 'commit', 'log', 'restore', 'show', 'branch', 'rev-parse']
 };
