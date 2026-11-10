@@ -61,8 +61,8 @@ fun FileManagerScreen() {
 
     LaunchedEffect(treeUri) { updateAccessStatus() }
 
-    fun refresh() {
-        val root = treeUri ?: return
+    fun refresh(root: Uri? = treeUri) {
+        root ?: return
         updateAccessStatus()
         val grant = context.contentResolver.persistedUriPermissions.firstOrNull { it.uri == root }
         if (grant?.isReadPermission != true) {
@@ -85,7 +85,7 @@ fun FileManagerScreen() {
                 context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                 treeUri = uri
                 prefs.edit().putString("tree", uri.toString()).apply()
-                refresh()
+                refresh(uri)
             } catch (e: Exception) { result = "Ordnerzugriff konnte nicht gespeichert werden: ${e.message}" }
         }
     }
