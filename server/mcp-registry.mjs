@@ -55,7 +55,7 @@ db.exec(`
     created_at INTEGER NOT NULL,
     published_at INTEGER
   );
-  CREATE INDEX IF NOT EXISTS idx_mcp_registry_events_pending ON mcp_registry_events(published_at, claim_expires_at, created_at);
+  CREATE INDEX IF NOT EXISTS idx_mcp_registry_events_pending ON mcp_registry_events(published_at, created_at);
 `);
 
 function ensureColumn(table, column, definition) {
@@ -65,6 +65,7 @@ function ensureColumn(table, column, definition) {
 ensureColumn('mcp_registry_events', 'claim_token', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('mcp_registry_events', 'claim_expires_at', 'INTEGER');
 ensureColumn('mcp_registry_events', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+db.exec('CREATE INDEX IF NOT EXISTS idx_mcp_registry_events_lease ON mcp_registry_events(published_at, claim_expires_at, created_at)');
 
 
 function plainObject(value, label) {
