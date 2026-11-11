@@ -64,7 +64,7 @@ import { createReadStream, existsSync as fsExists } from 'node:fs';
 import { initBillingStore, createCheckoutSession, createBillingPortalSession, billingSummary, adminBillingMetrics, flushStripeUsage } from './billing.mjs';
 import { issueGatewayToken, gatewayPrincipal, hasGatewayScope, canAccessVilla, gatewayRoleScopes, initGatewayStore, createGatewayApiKey, listGatewayApiKeys, revokeGatewayApiKey } from './api-gateway.mjs';
 import { dlqTick, dlqStatus, restartFailedWorkflow, initDlq } from './event-dlq.mjs';
-import { sanitizeForStream } from './event-contracts.mjs';
+import { eventForStream } from './event-contracts.mjs';
 import { redisTryStreamAdd } from './redis.mjs';
 import { GENERATION_STREAM } from './generation-engine.mjs';
 import { initObservabilityStore, tokenBudgetStatus, httpMetrics, recordHttpRequest } from './observability.mjs';
@@ -1630,7 +1630,7 @@ async function api(req, res, url) {
       // Only administrators receive the full event payload. Ordinary authenticated
       // users must get the same metadata-only view as anonymous clients: the bus is
       // global and events are not yet partitioned by Villa ownership.
-      const payload = isAdmin ? e : sanitizeForStream(e);
+      const payload = eventForStream(e, { isAdmin });
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
     bus.on('event', onEvent);
