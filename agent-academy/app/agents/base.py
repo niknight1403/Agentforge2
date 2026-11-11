@@ -1,0 +1,29 @@
+from app.config import settings
+
+
+class BaseAgent:
+    def __init__(self, name: str, system_prompt: str):
+        """Initialize an agent with a stable name and constrained system prompt."""
+        self.name = name
+        self.system_prompt = system_prompt
+
+    async def execute(self, user_prompt: str) -> str:
+        """Run an explicitly enabled advisory completion against the configured local model."""
+        if not settings.llm_enabled:
+            raise RuntimeError("LLM execution is disabled; set ACADEMY_LLM_ENABLED=true explicitly")
+        try:
+            from litellm import acompletion
+        except ImportError as exc:
+            raise RuntimeError("Install the optional 'llm' dependencies to enable LLM execution") from exc
+        response = await acompletion(
+            model=settings.default_model,
+            api_base=settings.ollama_base_url,
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            timeout=45,
+        )
+        content = response.choices[0].message.content
+        return content or ""
