@@ -111,7 +111,7 @@ fun FileManagerScreen() {
         } else emptyList()
         val isDeleteCommand = listOf("lösch", "loesch", "entfern", "delete").any(q::contains)
 
-        val hasExplicitBulkIntent = listOf("bild", "bilder", "foto", "fotos", "video", "videos", "film", "filme", "musik", "audio", "spiele", "game", "apk", "duplikat", "duplikate", "doppelt").any(q::contains)
+        val hasExplicitBulkIntent = !needle.contains('.') && listOf("bild", "bilder", "foto", "fotos", "video", "videos", "film", "filme", "musik", "audio", "spiele", "game", "apk", "duplikat", "duplikate", "doppelt").any(q::contains)
 
         // Filename deletes (with or without extension) are exact-only. Missing
         // and duplicate basenames fail closed; category and duplicate operations
