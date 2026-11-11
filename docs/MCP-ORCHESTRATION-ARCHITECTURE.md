@@ -17,3 +17,7 @@ The stdio validator requires a trusted `realpath` callback (normally backed by `
 ## Important limitation
 
 These functions validate policy inputs; they do not spawn processes, resolve DNS, pin sockets, inject secrets, or provide an OS sandbox. The future transport host must enforce those operations. For stdio, pass `shell: false` and isolate the process with OS/container controls, resource limits, and a read-only filesystem where possible. The returned policy result is not itself proof of sandboxing.
+
+## Registry event outbox delivery
+
+The SQLite outbox uses short-lived per-event claim tokens and leases. A worker claims a bounded batch in an immediate transaction; concurrent workers cannot claim the same unexpired event. Expired leases become eligible for retry and increment the attempt counter. Acknowledgement requires the matching claim token and an unexpired lease, preventing stale workers from acknowledging work reclaimed by another worker. Delivery remains at-least-once: consumers must be idempotent because a worker can publish successfully and crash before acknowledging.
