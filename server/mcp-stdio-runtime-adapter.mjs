@@ -90,6 +90,10 @@ export async function connectMcpStdioServer({
     if (credentialEnvKey && Object.hasOwn(env, credentialEnvKey)) delete env[credentialEnvKey];
   }
 
+  // SDK v2 merges host defaults into the child env. Override every inherited
+  // POSIX key so host identity, PATH and environment values are not leaked.
+  for (const key of SDK_INHERITED_ENV_KEYS) launch.env[key] = '';
+
   let transport;
   let client;
   let closed = false;
