@@ -199,11 +199,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Holt neue Chat-Nachrichten nach, ohne Eingabe-Anhänge oder Chat-Zustand zu löschen. */
-    fun refreshDeepMessages(id: Long) = viewModelScope.launch {
+    suspend fun refreshDeepMessages(id: Long) {
+        if (_state.value.busy) return
         try {
             val (_, messages) = client.deepProjectDetail(id)
             _state.update { current ->
-                if (current.deepActiveProject?.id == id) current.copy(deepMessages = messages) else current
+                if (current.deepActiveProject?.id != id || current.busy) current
+                else {
+                    val localOnly = current.deepMessages.filter { it.id == 0L }
+                    current.copy(deepMessages = messages + localOnly)
+                }
             }
         } catch (_: Exception) { }
     }
@@ -231,7 +236,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Aktualisiert den belegten Projektstatus und die installierten Laufzeit-Werkzeuge. */
-    fun refreshDeepWorkspace(id: Long) = viewModelScope.launch {
+    suspend fun refreshDeepWorkspace(id: Long) {
         try {
             val workspace = client.deepWorkspace(id)
             _state.update { current ->

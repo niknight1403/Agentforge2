@@ -21,11 +21,24 @@ export function inspectProductZip(bytes){
  if(cursor!==offset+size||!names.some(n=>/(?:^|\/)(?:index\.html|package\.json|AndroidManifest\.xml)$/.test(n)))throw Error('PRODUCT_APP_FILES_MISSING');
  return {entries:count,bytes:b.length};
 }
+function hasZipContainer(bytes) {
+ const b=Buffer.from(bytes||[]);
+ if(b.length<22||b.readUInt32LE(0)!==0x04034b50)return false;
+ for(let i=b.length-22;i>=Math.max(0,b.length-65557);i--){
+  if(b.readUInt32LE(i)===0x06054b50&&i+22+b.readUInt16LE(i+20)===b.length)return true;
+ }
+ return false;
+}
 export function isValidDeliverableArtifact(bytes,extension){
  const b=Buffer.from(bytes||[]),ext=String(extension||'').toLowerCase();
  if(b.length<16)return false;
  if(ext==='.pdf')return b.subarray(0,5).toString('ascii')==='%PDF-';
- if(['.docx','.xlsx','.pptx','.odt','.epub'].includes(ext))return b.length>=22&&b.readUInt32LE(0)===0x04034b50;
+ if(['.docx','.xlsx','.pptx','.odt','.epub','.ods','.key','.3mf','.zip'].includes(ext))return hasZipContainer(b);
+ if(ext==='.rtf')return /^\\{\\\\rtf\\d/i.test(b.toString('utf8',0,32));
+ if(['.tif','.tiff'].includes(ext)){
+  return b.length>=8&&((b[0]===0x49&&b[1]===0x49&&((b[2]===0x2a&&b[3]===0x00)||(b[2]===0x2b&&b[3]===0x00)))||(b[0]===0x4d&&b[1]===0x4d&&((b[2]===0x00&&b[3]===0x2a)||(b[2]===0x00&&b[3]===0x2b)));
+ }
+ if(ext==='.aac')return b[0]===0xff&&(b[1]&0xf6)===0xf0;
  if(ext==='.parquet')return b.subarray(0,4).toString('ascii')==='PAR1'&&b.subarray(-4).toString('ascii')==='PAR1';
  if(ext==='.glb')return b.subarray(0,4).toString('ascii')==='glTF';
  if(ext==='.gltf'||ext==='.json'){
@@ -34,12 +47,12 @@ export function isValidDeliverableArtifact(bytes,extension){
  if(ext==='.step'||ext==='.stp')return /^ISO-10303-21/i.test(b.toString('utf8',0,200));
  if(ext==='.stl'){
   if(b.length>=84&&84+b.readUInt32LE(80)*50===b.length)return true;
-  return /^solid\b/i.test(b.toString('utf8',0,100));
+  return /^solid\\b/i.test(b.toString('utf8',0,100));
  }
- if(ext==='.obj')return /^(?:v|o|g|f)\s/m.test(b.toString('utf8',0,2000));
- if(['.md','.txt','.html','.csv','.tsv','.ics'].includes(ext)){
+ if(ext==='.obj')return /^(?:v|o|g|f)\\s/m.test(b.toString('utf8',0,2000));
+ if(['.md','.txt','.html','.csv','.tsv','.ics','.ino'].includes(ext)){
   const text=b.toString('utf8');
-  return !text.includes('\u0000')&&text.trim().length>=16;
+  return !text.includes('\\u0000')&&text.trim().length>=16;
  }
  return false;
 }
@@ -58,7 +71,7 @@ export async function verifyProductAcceptance({requestJson,download,preferredVil
   // dann der echte Container (ftyp/RIFF/OggS ...), nicht die Endung.
   const artifact=String(build.artifact||'');
   const extension=artifact.includes('.')?artifact.slice(artifact.lastIndexOf('.')).toLowerCase():'';
-  if(build.artifactType==='media'||(extension&&['.mp4','.webm','.mov','.m4v','.mp3','.wav','.ogg','.m4a','.flac','.png','.jpg','.jpeg','.webp','.svg'].includes(extension))){
+  if(build.artifactType==='media'||(extension&&['.mp4','.webm','.mov','.m4v','.mp3','.wav','.ogg','.m4a','.aac','.flac','.png','.jpg','.jpeg','.webp','.svg','.tif','.tiff'].includes(extension))){
    if(!isPlayableArtifact(bytes,extension))continue;
    return {villaId:id,verified:true,media:{extension,bytes:Buffer.from(bytes).length}};
   }

@@ -10,8 +10,10 @@ import { createUser, createSession } from '../auth.mjs';
 test('DeepAgent endpoints require login and isolate projects, chat and files by owner', async (t) => {
   const userA = createUser({ email: 'deepagent-owner-a@example.invalid', password: 'test-only-password-a', role: 'user' });
   const userB = createUser({ email: 'deepagent-owner-b@example.invalid', password: 'test-only-password-b', role: 'user' });
+  const unlimitedUser = createUser({ email: 'deepagent-unlimited@example.invalid', password: 'test-only-unlimited-password', role: 'user', isUnlimited: true });
   const tokenA = createSession(userA.id);
   const tokenB = createSession(userB.id);
+  const unlimitedToken = createSession(unlimitedUser.id);
   process.env.DEEP_DIR = join(TMP, 'deep-projects');
   const port = 18000 + (process.pid % 10000);
   const base = `http://127.0.0.1:${port}`;
@@ -54,6 +56,8 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const auth = (token) => ({ Authorization: `Bearer ${token}` });
   const runtimeInventory = await fetch(`${base}/api/system/runtime-capabilities`, { headers: auth(tokenA) });
   assert.equal(runtimeInventory.status, 403, 'non-admin users must not access runtime capability inventory');
+  const unlimitedInventory = await fetch(`${base}/api/system/runtime-capabilities`, { headers: auth(unlimitedToken) });
+  assert.equal(unlimitedInventory.status, 403, 'unlimited billing quota must not grant administrator access');
   for (const [method, path] of [
     ['GET', '/api/deep/projects'],
     ['POST', '/api/deep/projects'],

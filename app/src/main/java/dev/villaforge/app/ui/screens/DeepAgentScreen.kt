@@ -208,7 +208,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
         while (true) {
             viewModel.refreshDeepWorkspace(projectId)
             viewModel.refreshDeepMessages(projectId)
-            delay(3_000)
+            delay(5_000)
         }
     }
 
@@ -285,9 +285,23 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                                                 connection.readTimeout = 15000
                                                 viewModel.authHeader()?.let { connection.setRequestProperty("Authorization", it) }
                                                 connection.connect()
-                                                val mime = connection.contentType?.substringBefore(';') ?: "application/octet-stream"
-                                                val encoding = connection.contentEncoding ?: "UTF-8"
-                                                WebResourceResponse(mime, encoding, connection.inputStream)
+                                                val contentType = connection.contentType.orEmpty()
+                                                val mime = contentType.substringBefore(';').ifBlank { "application/octet-stream" }
+                                                val charsetName = Regex("(?i)charset\\s*=\\s*[\"']?([^;\"'\\s]+)")
+                                                    .find(contentType)?.groupValues?.get(1)
+                                                val charset = charsetName?.takeIf {
+                                                    runCatching { java.nio.charset.Charset.forName(it) }.isSuccess
+                                                } ?: "UTF-8"
+                                                val statusCode = connection.responseCode.takeIf { it in 100..599 } ?: 200
+                                                val reasonPhrase = connection.responseMessage?.takeIf { it.isNotBlank() }
+                                                    ?: if (statusCode in 200..299) "OK" else "HTTP $statusCode"
+                                                val responseHeaders = connection.headerFields
+                                                    .mapNotNull { (key, values) -> key?.let { it to values.joinToString(", ") } }
+                                                    .toMap()
+                                                val responseBody = if (statusCode >= 400) {
+                                                    connection.errorStream ?: connection.inputStream
+                                                } else connection.inputStream
+                                                WebResourceResponse(mime, charset, statusCode, reasonPhrase, responseHeaders, responseBody)
                                             } catch (_: Exception) { null }
                                         }
                                     }

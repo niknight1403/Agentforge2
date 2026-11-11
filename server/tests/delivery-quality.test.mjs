@@ -170,3 +170,9 @@ test('haengender Lauf gilt nach 20 Minuten als abgebrochen', async () => {
   assert.equal(isStaleBuild({status: 'ready', startedAt: jetzt - 60 * 60_000}, jetzt), false);
   assert.equal(isStaleBuild({status: 'running', startedAt: new Date(jetzt - 25 * 60_000).toISOString()}, jetzt), true);
 });
+
+
+test('blank delivery override falls back to the stored Villa name', () => {
+ const id = Number(db.prepare("INSERT INTO villas(name,idea,status,created_at,updated_at) VALUES ('Business plan','','PAUSED',?,?)").run(now(),now()).lastInsertRowid);
+ assert.equal(deliveryProfile(id, '   ').id, 'business');
+});

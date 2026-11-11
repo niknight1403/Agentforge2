@@ -1,6 +1,6 @@
 import { createPublishPost, listPublishPosts, getVillaRevenue } from './publishing.mjs';
 import {capabilityStatus,requestCapability} from './capability-autopilot.mjs';
-import {runtimeCapabilityInventory} from './runtime-capabilities.mjs';
+import {cachedRuntimeCapabilityInventory} from './runtime-capabilities.mjs';
 import {villaDiagnostics} from './villa-diagnostics.mjs';
 import { VERSION } from './version.mjs';
 import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStudioPreview } from './studio.mjs';
@@ -289,7 +289,7 @@ async function api(req, res, url) {
   // ohne Lockout) oder dauerhaft via VF_OPEN_MODE=1.
   const openMode = process.env.VF_OPEN_MODE === '1' || !usersExist();
   const needAuth = !openMode && !user;
-  const isAdmin = checkIsAdmin(req) || (!!user && (user.role === 'admin' || user.role === 'superadmin' || user.role === 'SUPERADMIN' || Number(user.is_unlimited) === 1));
+  const isAdmin = checkIsAdmin(req);
   // Sicherheitsalarm: offener Modus ist ein stiller Auth-Ausfall (leere users-Tabelle
   // oder bewusst gesetzter Open-Mode-Schalter). Einmal pro Prozess laut protokollieren.
   if (openMode && !globalThis.__vfOpenModeWarned) {
@@ -432,7 +432,7 @@ async function api(req, res, url) {
   }
   if (p === '/api/system/runtime-capabilities' && m === 'GET') {
     if (!openMode && !isAdmin) return json(res, 403, { error: 'Administrator role required.' });
-    return json(res,200,{capabilities:runtimeCapabilityInventory(),note:'Availability only; not proof of configured, tested or verified product output.'});
+    return json(res,200,{capabilities:cachedRuntimeCapabilityInventory(),note:'Availability only; not proof of configured, tested or verified product output.'});
   }
   if (p === '/api/system/audit') {
     res.setHeader('Access-Control-Allow-Origin', '*');

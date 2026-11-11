@@ -126,7 +126,7 @@ export function isAdmin(req) {
   const user = req.user || userForRequest(req) || userStore.getStore();
   if (!user) return false;
   const role = String(user.role || '').toUpperCase();
-  return role === 'ADMIN' || role === 'SUPERADMIN' || Number(user.is_unlimited) === 1 || user.token_budget === 'UNLIMITED';
+  return role === 'ADMIN' || role === 'SUPERADMIN';
 }
 
 /* --------------------------- Sessions --------------------------- */

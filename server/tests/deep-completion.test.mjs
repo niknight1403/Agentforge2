@@ -5,6 +5,9 @@
 import './_env.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createDeepProject, deepProjectDir } from '../deepagent.mjs';
 import { liveViewState, summarizeReadiness } from '../deep-completion.mjs';
 
 const readyGate = { ready: true, checks: {}, blockers: [] };
@@ -85,4 +88,20 @@ test('liveViewState meldet ohne Projektordner ehrlich fehlende Auslieferbarkeit'
   assert.equal(state.available, false);
   assert.equal(state.entry, null);
   assert.match(state.detail, /Kein Einstiegspunkt/);
+});
+
+
+test('liveViewState only advertises entries from confined build roots', async () => {
+  const project = await createDeepProject('Ein Projekt mit sicherer Web-Vorschau und Build-Root', {
+    chatFn: async () => ({ content: 'Plan erstellt.' })
+  });
+  const root = deepProjectDir(project.id);
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, 'index.html'), '<!doctype html><title>Root</title>');
+  assert.equal(liveViewState(project.id).available, false);
+
+  mkdirSync(join(root, 'dist'), { recursive: true });
+  writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html><title>Dist</title>');
+  assert.equal(liveViewState(project.id).available, true);
+  assert.equal(liveViewState(project.id).entry, 'dist/index.html');
 });

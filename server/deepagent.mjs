@@ -117,8 +117,8 @@ export function deepProjectDir(id) {
 /** Projekt-Kontext fuer den Deep Agent: Idee, Anhaenge, Verlauf, Gedaechtnis. */
 function buildContext(project, files) {
   const recent = db.prepare(
-    "SELECT id, title, status, datetime(updated_at / 1000, 'unixepoch', 'localtime') updated FROM deep_projects WHERE id != ? ORDER BY updated_at DESC LIMIT 5"
-  ).all(project.id);
+    "SELECT id, title, status, datetime(updated_at / 1000, 'unixepoch', 'localtime') updated FROM deep_projects WHERE id != ? AND owner_user_id IS ? ORDER BY updated_at DESC LIMIT 5"
+  ).all(project.id, project.owner_user_id ?? null);
   const lines = [
     `AKTUELLES PROJEKT: "${project.title}" (Status ${project.status})`,
     `PROJEKT-IDEE: ${String(project.idea).slice(0, 800)}`
@@ -336,7 +336,7 @@ export function deepPreviewFile(projectId, rest) {
   try { root = realpathSync(dir); } catch { return null; }
   const allowed = ['dist', 'build', 'out', 'public', 'web-dist'].some((folder) =>
     target.startsWith(join(root, folder) + '/')
-  ) || (clean.length === 1 && clean[0] === 'index.html' && target === join(root, 'index.html'));
+  );
   try { if (!allowed || !statSync(target).isFile()) return null; } catch { return null; }
   const mimeMap = {
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',

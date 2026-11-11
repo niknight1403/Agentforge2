@@ -117,6 +117,9 @@ test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeich
   mkdirSync(dist, { recursive: true });
   writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Preview</title>');
   writeFileSync(join(dist, 'app.js'), 'console.log("preview")');
+  const projectRoot = join(TMP, 'deep-files', String(project.id));
+  writeFileSync(join(projectRoot, 'index.html'), '<!doctype html><title>Root entry</title>');
+  assert.equal(deepPreviewFile(project.id, 'index.html'), null, 'root project files are not preview roots');
   const outside = join(TMP, 'outside-secret.txt');
   writeFileSync(outside, 'must not be served');
   symlinkSync(outside, join(dist, 'leak.txt'));
@@ -125,4 +128,26 @@ test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeich
   assert.equal(deepPreviewFile(project.id, 'dist/../../../../etc/passwd'), null);
   assert.equal(deepPreviewFile(project.id, '.env'), null);
   assert.equal(deepPreviewFile(project.id, 'dist/leak.txt'), null);
+});
+
+
+test('DeepAgent memory never mixes project titles across owners', async () => {
+  const ownerA = await createDeepProject('Privates Projekt von Nutzer A mit eigenem Kontext', {
+    chatFn: reply,
+    ownerUserId: 101
+  });
+  await createDeepProject('Geheimes Projekt von Nutzer B ohne Freigabe', {
+    chatFn: reply,
+    ownerUserId: 202
+  });
+  let systemContext = '';
+  await deepChat(ownerA.id, 'Erstelle den nächsten Schritt.', [], {
+    chatFn: async (messages) => {
+      systemContext = messages[0].content;
+      return reply();
+    }
+  });
+
+  assert.match(systemContext, /Privates Projekt von Nutzer A/);
+  assert.doesNotMatch(systemContext, /Geheimes Projekt von Nutzer B/);
 });
