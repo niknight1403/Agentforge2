@@ -121,15 +121,28 @@ export async function connectMcpStdioServer({
   const close = async () => {
     if (closed) return;
     closed = true;
+    let clientCloseError;
     try {
-      if (client && typeof client.close === 'function') await client.close();
-      else if (transport && typeof transport.close === 'function') await transport.close();
+      if (client && typeof client.close === 'function') {
+        try {
+          await client.close();
+        } catch (error) {
+          clientCloseError = error;
+          // A failed SDK close must not prevent a best-effort transport teardown.
+          if (transport && typeof transport.close === 'function') {
+            try { await transport.close(); } catch { /* preserve the SDK close error */ }
+          }
+        }
+      } else if (transport && typeof transport.close === 'function') {
+        await transport.close();
+      }
     } finally {
       // Do not retain a decrypted credential in this adapter's launch object.
       for (const key of Object.keys(launch.env)) {
         if (key === credentialEnvKey) delete launch.env[key];
       }
     }
+    if (clientCloseError) throw clientCloseError;
   };
 
   try {
