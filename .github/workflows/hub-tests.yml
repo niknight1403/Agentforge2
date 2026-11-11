@@ -2,7 +2,7 @@ name: Hub-Tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/mcp-orchestration-registry]
   push:
     branches: [main]
     paths:
