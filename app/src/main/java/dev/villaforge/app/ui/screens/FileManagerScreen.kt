@@ -124,14 +124,25 @@ fun FileManagerScreen() {
         // Filename deletes (with or without extension) are exact-only. Missing
         // and duplicate basenames fail closed; category and duplicate operations
         // remain available only when the command explicitly names that operation.
-        if (isDeleteCommand && !hasExplicitBulkIntent) {
+        if (isDeleteCommand) {
+            // An exact basename always wins over category/duplicate intent.
+            // This prevents commands such as "Lösche Bild" from deleting every
+            // image when a single file is literally named "Bild".
             val exactMatches = files.filter { it.name.equals(needle, ignoreCase = true) }
             when (exactMatches.size) {
-                0 -> result = "Keine Datei mit dem exakten Namen '" + needle + "' gefunden. Es wurde nichts ausgewählt."
-                1 -> pending = FileAction("1 Datei löschen", exactMatches, delete = true)
-                else -> result = "Der Dateiname '" + needle + "' kommt " + exactMatches.size + "-mal vor. Bitte wähle einen eindeutigeren Namen. Es wurde nichts ausgewählt."
+                1 -> {
+                    pending = FileAction("1 Datei löschen", exactMatches, delete = true)
+                    return
+                }
+                in 2..Int.MAX_VALUE -> {
+                    result = "Der Dateiname '" + needle + "' kommt " + exactMatches.size + "-mal vor. Bitte wähle einen eindeutigeren Namen. Es wurde nichts ausgewählt."
+                    return
+                }
+                else -> if (!hasExplicitBulkIntent) {
+                    result = "Keine Datei mit dem exakten Namen '" + needle + "' gefunden. Es wurde nichts ausgewählt."
+                    return
+                }
             }
-            return
         }
 
         val selected = when {
