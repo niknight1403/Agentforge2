@@ -266,8 +266,11 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                                         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                                             val target = request?.url?.toString() ?: return null
                                             return try {
-                                                val connection = URL(target).openConnection() as HttpURLConnection
-                                                viewModel.authHeader()?.let { connection.setRequestProperty("Authorization", it) }
+                                                val targetUrl = URL(target)
+                                                val connection = targetUrl.openConnection() as HttpURLConnection
+                                                if (targetUrl.host.equals(URL(state.serverUrl).host, ignoreCase = true)) {
+                                                    viewModel.authHeader()?.let { connection.setRequestProperty("Authorization", it) }
+                                                }
                                                 connection.connectTimeout = 8000
                                                 connection.readTimeout = 15000
                                                 connection.connect()
