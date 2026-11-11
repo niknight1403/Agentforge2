@@ -180,10 +180,22 @@ export function createMcpRuntimeSupervisor({
     }
   }
 
+  function listAllServers() {
+    const servers = [];
+    let offset = 0;
+    while (true) {
+      const page = listServers({ limit: 500, offset });
+      if (!Array.isArray(page)) throw new TypeError('listServers must return an array');
+      servers.push(...page);
+      if (page.length < 500) return servers;
+      offset += page.length;
+    }
+  }
+
   function reconcile() {
     if (reconcileInFlight) return reconcileInFlight;
     const operation = (async () => {
-      const registered = new Map(listServers().map((server) => [server.id, server]));
+      const registered = new Map(listAllServers().map((server) => [server.id, server]));
       const stale = [...new Set([...connections.keys(), ...starting.keys()])]
         .filter((id) => !registered.has(id) || registered.get(id).status === 'disabled');
       const results = await Promise.allSettled(stale.map((id) => stopServer(id)));
