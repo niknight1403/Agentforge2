@@ -207,7 +207,8 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
     LaunchedEffect(projectId) {
         while (true) {
             viewModel.refreshDeepWorkspace(projectId)
-            delay(5_000)
+            viewModel.refreshDeepMessages(projectId)
+            delay(3_000)
         }
     }
 
