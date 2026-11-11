@@ -98,7 +98,9 @@ test('liveViewState only advertises entries from confined build roots', async ()
   const root = deepProjectDir(project.id);
   mkdirSync(root, { recursive: true });
   writeFileSync(join(root, 'index.html'), '<!doctype html><title>Root</title>');
-  assert.equal(liveViewState(project.id).available, false);
+  const rootPreview = liveViewState(project.id);
+  assert.equal(rootPreview.available, true);
+  assert.equal(rootPreview.entry, 'index.html');
 
   mkdirSync(join(root, 'dist'), { recursive: true });
   writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html><title>Dist</title>');
