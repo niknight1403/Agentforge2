@@ -88,9 +88,9 @@ export function isValidDeliverableArtifact(bytes,extension){
  if(ext==='.step'||ext==='.stp')return /^ISO-10303-21/i.test(b.toString('utf8',0,200));
  if(ext==='.stl'){
   if(b.length>=84&&84+b.readUInt32LE(80)*50===b.length)return true;
-  return /^solid\\b/i.test(b.toString('utf8',0,100));
+  return /^solid\b/i.test(b.toString('utf8',0,100));
  }
- if(ext==='.obj')return /^(?:v|o|g|f)\\s/m.test(b.toString('utf8',0,2000));
+ if(ext==='.obj')return /^(?:v|o|g|f)\s/m.test(b.toString('utf8',0,2000));
  if(['.md','.txt','.html','.csv','.tsv','.ics','.ino'].includes(ext)){
   const text=b.toString('utf8');
   return !text.includes('\u0000')&&text.trim().length>=16;
