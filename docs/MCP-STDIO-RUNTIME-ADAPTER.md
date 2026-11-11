@@ -106,13 +106,14 @@ active runtime after its client has been detached.
 Before closing a connected transport, the supervisor drains in-flight approved tool
 executions for that server. New calls are rejected as soon as teardown begins.
 This keeps a normal shutdown from killing an operation that already passed the
-registry approval and audit gate. **Important:** the current execution timeout only
-bounds how long the caller waits; `Promise.race` does not cancel the underlying SDK
-`callTool()` operation. After a timeout, the underlying operation may still be running
-while the supervisor releases its execution counter. Therefore this drain is best-effort,
-not a hard shutdown bound. Do not treat it as safe process termination or enable this
-runtime for untrusted workloads until the SDK transport exposes a verified cancellation
-path or the child process can be terminated through an independently enforced supervisor.
+registry approval and audit gate. **Important:** the current execution timeout only bounds how long the caller
+waits; `Promise.race` does not cancel the underlying SDK `callTool()` operation. The
+supervisor now marks the server `degraded` and retires/closes its stdio runtime after
+releasing the timed-out execution slot, preventing new calls through that adapter.
+However, transport close is still a best-effort teardown and is not proof that every
+underlying SDK operation or child process has stopped. Do not treat this as a hard
+process-termination guarantee or enable this runtime for untrusted workloads until
+cancellation and child-process termination have been independently verified.
 
 Registry reconciliation pages through the complete registry (500 entries per page),
 rather than relying on the registry's default first-page limit. Disabled or removed
