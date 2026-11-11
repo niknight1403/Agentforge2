@@ -1303,11 +1303,21 @@ async function api(req, res, url) {
   if ((p === '/api/deep/projects' || p.startsWith('/api/deep/')) && !openMode && !user) {
     return json(res, 401, { error: 'Login erforderlich.' });
   }
+  // Authenticated projects are tenant-scoped. Admins may support legacy/unassigned
+  // projects; open mode remains compatible only when no user session exists.
+  const canAccessDeepProject = (projectId) => {
+    const row = db.prepare('SELECT owner_user_id FROM deep_projects WHERE id = ?').get(Number(projectId));
+    if (!row) return false;
+    if (!user && openMode) return true;
+    if (isAdmin) return true;
+    return Boolean(user && row.owner_user_id !== null && Number(row.owner_user_id) === Number(user.id));
+  };
   if (p === '/api/deep/projects' && m === 'GET') {
-    return json(res, 200, listDeepProjects());
+    return json(res, 200, isAdmin || (!user && openMode) ? listDeepProjects() : listDeepProjects({ ownerUserId: user.id }));
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts.length === 4 && m === 'DELETE') {
     const projectId = Number(parts[3]);
+    if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
     if (isDeepProjectDeveloping(projectId)) return json(res, 409, { error: 'Projekt wird gerade an die Entwicklungs-Villa übergeben.' });
     return deleteDeepProject(projectId)
       ? json(res, 200, { ok: true, deleted: true })
@@ -1315,6 +1325,7 @@ async function api(req, res, url) {
   }
   /* ---- Deep-Projekt: Fertigstellungs-Bericht inkl. Live-Ansicht ---- */
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'completion' && m === 'GET') {
+    if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Projekt nicht gefunden' });
     const report = projectReadiness(Number(parts[3]));
     if (!report) return json(res, 404, { error: 'Projekt nicht gefunden' });
     return json(res, 200, report);
@@ -1337,6 +1348,7 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && (parts[4] === 'develop' || parts[4] === 'bootstrap') && m === 'POST') {
     const projectId = Number(parts[3]);
     const bootstrap = parts[4] === 'bootstrap';
+    if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
     const detail = deepProjectDetail(projectId);
     if (!detail) return json(res, 404, { error: 'Projekt nicht gefunden' });
     return runDeepProjectDevelopmentOnce(projectId, async () => {
@@ -1430,7 +1442,8 @@ async function api(req, res, url) {
   if (p === '/api/deep/projects' && m === 'POST') {
     try {
       const b = await readBody(req);
-      const created=await createDeepProject(b?.idea, { deferInitialPlan: true });
+      if (!user && !openMode) return json(res, 401, { error: 'Login erforderlich.' });
+      const created=await createDeepProject(b?.idea, { deferInitialPlan: true, ownerUserId: user?.id ?? null });
       const intent=classifyDeepDevelopmentIntent(b?.idea,{projectCreation:true});
       const development=intent.action==='AUTO_BUILD'?await autoStartDeepProject(created.id):null;
       return json(res,200,{...created,intent:intent.action,development});
@@ -1440,8 +1453,10 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'chat' && m === 'POST') {
     try {
+      const projectId = Number(parts[3]);
+      if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
       const b = await readBody(req);
-      const r = await deepChat(Number(parts[3]), b?.message || '', Array.isArray(b?.attachments) ? b.attachments : []);
+      const r = await deepChat(projectId, b?.message || '', Array.isArray(b?.attachments) ? b.attachments : []);
       const intent=classifyDeepDevelopmentIntent(b?.message);
       const development=intent.action==='AUTO_BUILD'?await autoStartDeepProject(Number(parts[3])):null;
       return json(res,200,{...r,intent:intent.action,development});
@@ -1451,6 +1466,7 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'files' && m === 'POST') {
     try {
+      if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Projekt nicht gefunden' });
       const b = await readBody(req);
       return json(res, 200, addDeepFile(Number(parts[3]), b?.name, b?.mime, b?.data));
     } catch (e) {
@@ -1458,6 +1474,7 @@ async function api(req, res, url) {
     }
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'preview' && parts.length >= 6 && m === 'GET') {
+    if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Keine Deep-Projekt-Vorschau-Datei' });
     const f = deepPreviewFile(Number(parts[3]), parts.slice(5).join('/'));
     if (!f) return json(res, 404, { error: 'Keine Deep-Projekt-Vorschau-Datei' });
     res.writeHead(200, {
@@ -1473,6 +1490,8 @@ async function api(req, res, url) {
     return;
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'files' && parts[3] && m === 'GET') {
+    const fileOwner = db.prepare('SELECT project_id FROM deep_files WHERE id = ?').get(Number(parts[3]));
+    if (!fileOwner || !canAccessDeepProject(fileOwner.project_id)) return json(res, 404, { error: 'Anhang nicht gefunden' });
     const f = deepFileById(Number(parts[3]));
     if (!f) return json(res, 404, { error: 'Anhang nicht gefunden' });
     res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'no-store' });
@@ -1480,6 +1499,7 @@ async function api(req, res, url) {
     return;
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && !parts[4] && m === 'GET') {
+    if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Projekt nicht gefunden' });
     const d = deepProjectDetail(Number(parts[3]));
     if (!d) return json(res, 404, { error: 'Projekt nicht gefunden' });
     return json(res, 200, d);
