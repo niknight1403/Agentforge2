@@ -1,7 +1,7 @@
 import './_env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, closeSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { createUser } from '../auth.mjs';
 import { TMP } from './_env.mjs';
@@ -135,6 +135,15 @@ test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeich
   symlinkSync(outside, join(dist, 'leak.txt'));
   assert.equal(deepPreviewFile(project.id, 'dist/index.html').mime, 'text/html; charset=utf-8');
   assert.equal(deepPreviewFile(project.id, 'dist/app.js').mime, 'text/javascript; charset=utf-8');
+  const pinned = deepPreviewFile(project.id, 'dist/app.js');
+  assert.ok(Number.isInteger(pinned.fd), 'preview returns an already-open file descriptor');
+  const original = join(dist, 'app-original.js');
+  renameSync(join(dist, 'app.js'), original);
+  symlinkSync(outside, join(dist, 'app.js'));
+  try {
+    assert.equal(readFileSync(pinned.fd, 'utf8'), 'console.log("preview")',
+      'replacing the checked path cannot redirect the already-open descriptor');
+  } finally { closeSync(pinned.fd); }
   assert.equal(deepPreviewFile(project.id, 'dist/../../../../etc/passwd'), null);
   assert.equal(deepPreviewFile(project.id, '.env'), null);
   assert.equal(deepPreviewFile(project.id, 'dist/leak.txt'), null);
