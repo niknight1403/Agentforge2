@@ -97,3 +97,8 @@ Startup failures are persisted as registry status `failed` with a bounded error 
 when the server still exists and the start was not cancelled. Discovery failures
 already recorded by the discovery layer are not double-counted. Cancellation and
 intentional disable/remove operations do not become false health failures.
+
+If transport shutdown itself fails, the supervisor removes the adapter from the
+usable connection map, records the server as `degraded` with an error code, and
+propagates the teardown error to the caller. This avoids falsely reporting an
+active runtime after its client has been detached.
