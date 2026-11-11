@@ -25,7 +25,7 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
       VF_ADMIN_PASSWORD: 'test-only-password-never-reused',
       VF_RESUME: '0'
     },
-    stdio: ['pipe', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe']
   });
   let output = '';
   child.stdout.on('data', (chunk) => { output += chunk.toString(); });
@@ -165,7 +165,7 @@ test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin ev
   const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
     cwd: process.cwd(),
     env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', VF_RESUME: '0' },
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['pipe', 'pipe', 'pipe']
   });
   let output = '';
   child.stdout.on('data', (chunk) => { output += chunk.toString(); });
