@@ -453,6 +453,7 @@ test('reconciliation closes connected runtimes when registry state is degraded, 
   ]);
   const closed = [];
   const supervisor = createMcpRuntimeSupervisor({
+    maxConcurrent: 4,
     getServer: (id) => servers.get(id) ?? null,
     listServers: () => [...servers.values()],
     setStatus: (id, status) => servers.set(id, { ...servers.get(id), status }),
