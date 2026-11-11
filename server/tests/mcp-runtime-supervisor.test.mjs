@@ -253,3 +253,35 @@ test('duplicate stop requests share one teardown operation', async () => {
   assert.equal(await firstStop, true);
   assert.equal(await secondStop, true);
 });
+
+test('approved tool execution is only routed through the connected supervised client', async () => {
+  const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
+  let received;
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    setStatus: (id, status) => servers.set(id, { ...servers.get(id), status }),
+    connect: async ({ serverId }) => fakeAdapter(serverId),
+    discover: async ({ serverId }) => servers.set(serverId, { ...servers.get(serverId), status: 'active' }),
+    executeTool: async (input) => { received = input; return { ok: true }; },
+  });
+  await assert.rejects(
+    supervisor.executeApprovedTool({ serverId: 'one', toolName: 'ping' }),
+    { code: 'MCP_RUNTIME_NOT_CONNECTED' },
+  );
+  const adapter = await supervisor.startServer('one');
+  const result = await supervisor.executeApprovedTool({
+    serverId: 'one', toolName: 'ping', arguments: { value: 7 }, timeoutMs: 900,
+  });
+  assert.deepEqual(result, { ok: true });
+  assert.equal(received.client, adapter);
+  assert.equal(received.serverId, 'one');
+  assert.equal(received.toolName, 'ping');
+  assert.deepEqual(received.arguments, { value: 7 });
+  assert.equal(received.timeoutMs, 900);
+  await supervisor.stopServer('one');
+  await assert.rejects(
+    supervisor.executeApprovedTool({ serverId: 'one', toolName: 'ping' }),
+    { code: 'MCP_RUNTIME_NOT_CONNECTED' },
+  );
+});
