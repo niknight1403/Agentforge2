@@ -16,7 +16,7 @@ function setup(name) {
 test('execution requires active server and explicit tool approval', async () => {
   const { server, tool } = setup('exec-approval-gate');
   let called = false;
-  const client = { async callTool() { called = true; return { content: [] }; } };
+  const client = { serverId: server.id, async callTool() { called = true; return { content: [] }; } };
   await assert.rejects(executeApprovedMcpTool({ serverId: server.id, toolName: tool.name, client }), { code: 'MCP_SERVER_NOT_ACTIVE' });
   setMcpServerStatus(server.id, 'active');
   await assert.rejects(executeApprovedMcpTool({ serverId: server.id, toolName: tool.name, client }), { code: 'MCP_TOOL_NOT_APPROVED' });
@@ -31,7 +31,7 @@ test('approved tool executes with bounded JSON arguments and returns SDK result'
   let call;
   const result = await executeApprovedMcpTool({
     serverId: server.id, toolName: tool.name, arguments: { query: 'hello' },
-    client: { async callTool(value) { call = value; return expected; } },
+    client: { serverId: server.id, async callTool(value) { call = value; return expected; } },
   });
   assert.deepEqual(result, expected);
   assert.deepEqual(call, { name: tool.name, arguments: { query: 'hello' } });
@@ -47,7 +47,7 @@ test('execution rejects oversized arguments and records a denial without calling
   let called = false;
   await assert.rejects(executeApprovedMcpTool({
     serverId: server.id, toolName: tool.name, arguments: { payload: 'x'.repeat(70 * 1024) },
-    client: { async callTool() { called = true; return {}; } },
+    client: { serverId: server.id, async callTool() { called = true; return {}; } },
   }), { code: 'MCP_INVALID_TOOL_ARGUMENTS' });
   assert.equal(called, false);
   const row = db.prepare('SELECT * FROM mcp_tool_execution_audit WHERE server_id=? ORDER BY created_at DESC LIMIT 1').get(server.id);
@@ -72,7 +72,7 @@ test('execution rejects oversized SDK results and audits failure', async () => {
   setMcpServerStatus(server.id, 'active');
   await assert.rejects(executeApprovedMcpTool({
     serverId: server.id, toolName: tool.name,
-    client: { async callTool() { return { content: [{ type: 'text', text: 'x'.repeat(1024 * 1024 + 1) }] }; } },
+    client: { serverId: server.id, async callTool() { return { content: [{ type: 'text', text: 'x'.repeat(1024 * 1024 + 1) }] }; } },
   }), { code: 'MCP_TOOL_RESULT_INVALID' });
   const row = db.prepare('SELECT * FROM mcp_tool_execution_audit WHERE server_id=? ORDER BY created_at DESC LIMIT 1').get(server.id);
   assert.equal(row.outcome, 'failed');
@@ -83,7 +83,7 @@ test('execution rejects non-JSON argument values before calling the client', asy
   setMcpToolPolicy(tool.id, 'approved', 'reviewed');
   setMcpServerStatus(server.id, 'active');
   let called = false;
-  const client = { async callTool() { called = true; return {}; } };
+  const client = { serverId: server.id, async callTool() { called = true; return {}; } };
   for (const argumentsValue of [
     { nested: new Date() },
     { nested: undefined },
