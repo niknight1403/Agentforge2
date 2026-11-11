@@ -74,9 +74,12 @@ test('stdio adapter rejects a registered server that is not stdio', async () => 
   }), { code: 'MCP_TRANSPORT_MISMATCH' });
 });
 
-test('stdio adapter requires SDK constructors and fails closed on policy rejection', async () => {
+test('stdio adapter reports a missing SDK and fails closed on policy rejection', async () => {
   const server = register('stdio-adapter-policy-reject', { command: '/bin/sh' });
-  await assert.rejects(connectMcpStdioServer({ serverId: server.id, policy }), { code: 'MCP_SDK_CONSTRUCTORS_REQUIRED' });
+  await assert.rejects(connectMcpStdioServer({
+    serverId: server.id, policy,
+    loadSdk: async () => { throw new Error('ERR_MODULE_NOT_FOUND'); },
+  }), { code: 'MCP_SDK_NOT_INSTALLED' });
   await assert.rejects(connectMcpStdioServer({
     serverId: server.id, policy, Client: class {}, StdioClientTransport: class {},
   }), { code: 'MCP_EXECUTABLE_NOT_ALLOWED' });
