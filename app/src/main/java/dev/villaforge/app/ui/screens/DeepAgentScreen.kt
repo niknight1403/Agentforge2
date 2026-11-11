@@ -228,7 +228,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                 onClick = { viewModel.developDeepProject(projectId) },
                 enabled = !state.busy
             ) {
-                Text(if (project.villaId > 0) "Villa öffnen" else "Autonom umsetzen", color = NeonCyan, fontSize = 11.sp)
+                Text(if (project.villaId > 0) "Entwicklung fortsetzen" else "Autonom umsetzen", color = NeonCyan, fontSize = 11.sp)
             }
             if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), color = NeonCyan)
         }
@@ -291,6 +291,16 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                     WorkspaceMetric("Villa", if (project.villaId > 0) "#${project.villaId}" else "noch offen", Modifier.weight(1f))
                     WorkspaceMetric("Live-Vorschau", if (completion?.optBoolean("liveViewAvailable") == true) "bereit" else "in Arbeit", Modifier.weight(1f))
                     WorkspaceMetric("Admin-Werkzeuge", "$availableTools / ${runtimeTools.length()}", Modifier.weight(1f))
+                }
+                if (runtimeTools.length() > 0) {
+                    Text("VERFÜGBARE RUNTIME-WERKZEUGE", style = MaterialTheme.typography.labelSmall, color = NeonCyan, fontWeight = FontWeight.Bold)
+                    (0 until minOf(runtimeTools.length(), 6)).forEach { index ->
+                        val tool = runtimeTools.optJSONObject(index)
+                        if (tool != null) Text(
+                            "${tool.optString("id")} · ${tool.optString("family")} · ${tool.optString("status")}",
+                            color = TextMuted, style = MaterialTheme.typography.labelSmall
+                        )
+                    }
                 }
                 if (workspace?.has("error") == true) {
                     Text("Live-Status: ${workspace.optString("error")}", color = TextMuted, style = MaterialTheme.typography.labelSmall)
