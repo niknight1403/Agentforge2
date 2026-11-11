@@ -53,7 +53,7 @@ export function createMcpRuntimeSupervisor({
     if (!server) return Promise.reject(fail('MCP_SERVER_NOT_FOUND', 'MCP server is not registered'));
     if (server.status === 'disabled') return Promise.reject(fail('MCP_SERVER_DISABLED', 'Disabled MCP servers cannot be started'));
     if (server.transport !== 'stdio') return Promise.reject(fail('MCP_TRANSPORT_UNSUPPORTED', 'This supervisor currently starts stdio servers only'));
-    if (connections.size + starting.size >= maxConcurrent) {
+    if (connections.size + starting.size + stopping.size >= maxConcurrent) {
       return Promise.reject(fail('MCP_RUNTIME_CAPACITY_REACHED', 'MCP runtime concurrency limit has been reached'));
     }
 
