@@ -360,3 +360,26 @@ export function markMcpRegistryEventPublished(id, claimToken) {
     "UPDATE mcp_registry_events SET published_at=?, claim_token='', claim_expires_at=NULL WHERE id=? AND published_at IS NULL AND claim_token=? AND claim_expires_at>?"
   ).run(now(), String(id), claimToken, now()).changes > 0;
 }
+
+/** Publishes a claimed outbox batch through an injected Redis Streams or other durable publisher. */
+export async function dispatchMcpRegistryEvents({ publish, limit = 100, leaseMs = 30_000 } = {}) {
+  if (typeof publish !== 'function') throw new TypeError('publish must be a function');
+  const events = claimMcpRegistryEvents(limit, { leaseMs });
+  let published = 0;
+  let failed = 0;
+  const failures = [];
+  for (const event of events) {
+    try {
+      await publish({ id: event.id, serverId: event.serverId, type: event.type, payload: event.payload, createdAt: event.createdAt });
+      if (markMcpRegistryEventPublished(event.id, event.claimToken)) published += 1;
+      else {
+        failed += 1;
+        failures.push({ eventId: event.id, type: event.type, code: 'MCP_EVENT_ACK_REJECTED' });
+      }
+    } catch (error) {
+      failed += 1;
+      failures.push({ eventId: event.id, type: event.type, code: typeof error?.code === 'string' ? error.code.slice(0, 120) : 'MCP_EVENT_PUBLISH_FAILED' });
+    }
+  }
+  return { claimed: events.length, published, failed, failures };
+}
