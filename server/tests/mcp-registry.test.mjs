@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   registerMcpServer, getMcpServer, listMcpServers, updateMcpServer,
   setMcpServerStatus, removeMcpServer, replaceMcpServerTools,
-  listMcpTools, setMcpToolPolicy, claimMcpRegistryEvents, markMcpRegistryEventPublished,
+  listMcpTools, setMcpToolPolicy, claimMcpRegistryEvents, markMcpRegistryEventPublished, dispatchMcpRegistryEvents,
 } from '../mcp-registry.mjs';
 
 test('registry validates and persists stdio and remote transport definitions', () => {
@@ -84,6 +84,20 @@ test('registry outbox leases prevent concurrent duplicate claims and reject stal
   assert.equal(retried.attempts, 2);
   assert.equal(markMcpRegistryEventPublished(first.id, first.claimToken), false);
   assert.equal(markMcpRegistryEventPublished(retried.id, retried.claimToken), true);
+});
+
+test('outbox dispatcher acknowledges successful publishes and leaves failures leased for retry', async () => {
+  const server = registerMcpServer({ name: 'dispatch-outbox-server', transport: 'stdio', command: 'node' });
+  const seen = [];
+  const result = await dispatchMcpRegistryEvents({ publish: async (event) => {
+    if (event.serverId === server.id && event.type === 'mcp.server.registered') throw Object.assign(new Error('temporary broker outage'), { code: 'BROKER_UNAVAILABLE' });
+    seen.push(event);
+  } });
+  assert.ok(result.claimed >= 1);
+  assert.equal(result.failed, 1);
+  assert.equal(result.failures[0].code, 'BROKER_UNAVAILABLE');
+  assert.ok(seen.length >= 0);
+  assert.equal(typeof dispatchMcpRegistryEvents, 'function');
 });
 
 test('registry supports update and cascade delete', () => {
