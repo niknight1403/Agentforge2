@@ -40,3 +40,15 @@ test('discovery timeout closes a stalled client', async () => {
   assert.equal(closed, true);
   assert.equal(getMcpServer(item.id).status, 'failed');
 });
+
+
+test('discovery rejects a client bound to another server before listTools', async () => {
+  const item = server('discovery-client-binding');
+  let called = false;
+  await assert.rejects(discoverMcpServerTools({
+    serverId: item.id,
+    client: { serverId: 'different-server', async listTools() { called = true; return { tools: [] }; } },
+  }), { code: 'MCP_CLIENT_SERVER_MISMATCH' });
+  assert.equal(called, false);
+  assert.equal(getMcpServer(item.id).status, 'pending');
+});
