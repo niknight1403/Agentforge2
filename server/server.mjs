@@ -1425,7 +1425,7 @@ async function api(req, res, url) {
   if (p === '/api/deep/projects' && m === 'POST') {
     try {
       const b = await readBody(req);
-      const created=await createDeepProject(b?.idea);
+      const created=await createDeepProject(b?.idea, { deferInitialPlan: true });
       const intent=classifyDeepDevelopmentIntent(b?.idea,{projectCreation:true});
       const development=intent.action==='AUTO_BUILD'?await autoStartDeepProject(created.id):null;
       return json(res,200,{...created,intent:intent.action,development});
