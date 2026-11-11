@@ -56,6 +56,14 @@ db.exec(`
   );
 `);
 
+// Additive ownership migration. Existing rows remain unassigned (NULL) and are
+// visible only to administrators until an explicit, verified reassignment.
+const deepProjectColumns = db.prepare('PRAGMA table_info(deep_projects)').all().map((column) => column.name);
+if (!deepProjectColumns.includes('owner_user_id')) {
+  db.exec('ALTER TABLE deep_projects ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_deep_projects_owner_updated ON deep_projects(owner_user_id, updated_at DESC)');
+
 /** Projektordner fuer Anhaenge (im Hub-Datenbereich). */
 const DEEP_DIR = process.env.DEEP_DIR || '/opt/villaforge/deep';
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12 MB pro Anhang
@@ -130,12 +138,12 @@ function buildContext(project, files) {
 }
 
 /** Anhänge-Metadaten aus einer Chat-Anfrage in Kontextzeilen uebersetzen. */
-function describeAttachments(attachments) {
+function describeAttachments(attachments, projectId) {
   const out = [];
   for (const a of Array.isArray(attachments) ? attachments : []) {
     const kind = String(a?.kind || 'link');
     if (kind === 'file' && a?.fileId) {
-      const f = db.prepare('SELECT name, mime, size, path FROM deep_files WHERE id = ?').get(Number(a.fileId));
+      const f = db.prepare('SELECT name, mime, size, path FROM deep_files WHERE id = ? AND project_id = ?').get(Number(a.fileId), Number(projectId));
       if (f) {
         out.push(`- DATEI-ANHANG: ${f.name} (${f.mime || '?'}, ${Math.round((f.size || 0) / 1024)} KB)`);
         const textLike = /^text\//i.test(f.mime || '') || /\.(?:txt|md|csv|json|ya?ml|xml|html|css|js|ts|py|kt|java|dart|toml|log)$/i.test(f.name || '');
@@ -172,7 +180,7 @@ export async function deepChat(projectId, userMessage, attachments = [], { chatF
   const history = db.prepare('SELECT role, content FROM deep_messages WHERE project_id = ? ORDER BY id DESC LIMIT 12').all(project.id).reverse();
 
   const routePolicy = deepAgentRoutePolicy(project.idea, userMessage);
-  const attLines = describeAttachments(attachments);
+  const attLines = describeAttachments(attachments, project.id);
   const userContent = [
     ...(attLines.length ? ['ANHAENGE AN DIESER NACHRICHT:', ...attLines] : []),
     String(userMessage || '').slice(0, 6000)
@@ -218,13 +226,13 @@ export async function deepChat(projectId, userMessage, attachments = [], { chatF
 }
 
 /** Neues Projekt anlegen: Idee -> Titel, erster Deep-Agent-Bauplan. */
-export async function createDeepProject(idea, { chatFn = realChat, deferInitialPlan = false } = {}) {
+export async function createDeepProject(idea, { chatFn = realChat, deferInitialPlan = false, ownerUserId = null } = {}) {
   const text = String(idea || '').trim().slice(0, 2000);
   if (text.length < 10) throw new Error('Bitte die App-Idee in mindestens einem Satz beschreiben.');
   const title = text.replace(/\s+/g, ' ').slice(0, 60);
   const ts = now();
-  const r = db.prepare('INSERT INTO deep_projects (title, idea, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
-    .run(title, text, 'ACTIVE', ts, ts);
+  const r = db.prepare('INSERT INTO deep_projects (title, idea, status, created_at, updated_at, owner_user_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(title, text, 'ACTIVE', ts, ts, Number.isSafeInteger(Number(ownerUserId)) && Number(ownerUserId) > 0 ? Number(ownerUserId) : null);
   const id = Number(r.lastInsertRowid);
   if (deferInitialPlan) {
     const placeholder = 'Ich analysiere deine Idee, prüfe passende Fähigkeiten und erstelle den ersten umsetzbaren Entwicklungsplan …';
@@ -249,13 +257,17 @@ export async function createDeepProject(idea, { chatFn = realChat, deferInitialP
 }
 
 /** Projektliste (Verlauf) - neueste zuerst. */
-export function listDeepProjects() {
-  return db.prepare(`
+export function listDeepProjects({ ownerUserId } = {}) {
+  const ownerFilter = ownerUserId === undefined ? '' : 'WHERE p.owner_user_id = ?';
+  const query = `
     SELECT p.id, p.title, p.status, p.created_at, p.updated_at,
            COALESCE((SELECT villa_id FROM deep_project_villas v WHERE v.project_id=p.id), 0) villa_id,
            (SELECT COUNT(*) FROM deep_messages m WHERE m.project_id = p.id) messages
-    FROM deep_projects p ORDER BY p.updated_at DESC LIMIT 50
-  `).all();
+    FROM deep_projects p ${ownerFilter} ORDER BY p.updated_at DESC LIMIT 50
+  `;
+  return ownerUserId === undefined
+    ? db.prepare(query).all()
+    : db.prepare(query).all(Number(ownerUserId));
 }
 
 /** Projekt-Detail: Projekt + Nachrichten (aeltere zuerst). */
