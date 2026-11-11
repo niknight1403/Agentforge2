@@ -84,6 +84,15 @@ export function createMcpRuntimeSupervisor({
         if (adapter) {
           try { await adapter.close(); } catch { /* preserve the startup failure */ }
         }
+        const failedServer = getServer(id);
+        if (!cancelled.has(id) && failedServer
+          && failedServer.status !== 'disabled' && failedServer.status !== 'failed') {
+          try {
+            setStatus(id, 'failed', {
+              errorCode: typeof error?.code === 'string' ? error.code : 'MCP_RUNTIME_START_FAILED',
+            });
+          } catch { /* preserve the original startup failure */ }
+        }
         throw error;
       } finally {
         starting.delete(id);
