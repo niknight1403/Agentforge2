@@ -2,6 +2,7 @@ import './_env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TMP } from './_env.mjs';
 import { createUser, createSession } from '../auth.mjs';
@@ -51,6 +52,8 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   assert.equal(ready, true, `Hub did not become ready: ${lastError?.message || ''}\\n${output}`);
 
   const auth = (token) => ({ Authorization: `Bearer ${token}` });
+  const runtimeInventory = await fetch(`${base}/api/system/runtime-capabilities`, { headers: auth(tokenA) });
+  assert.equal(runtimeInventory.status, 403, 'non-admin users must not access runtime capability inventory');
   for (const [method, path] of [
     ['GET', '/api/deep/projects'],
     ['POST', '/api/deep/projects'],
@@ -74,6 +77,25 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const created = JSON.parse(createdText);
   assert.ok(created.id > 0);
   const projectId = created.id;
+
+  const previewDir = join(TMP, 'deep-projects', String(projectId), 'dist');
+  mkdirSync(previewDir, { recursive: true });
+  writeFileSync(join(previewDir, 'index.html'), '<!doctype html><html><head><link rel="stylesheet" href="/assets/app.css"></head><body><script src="/assets/app.js"></script></body></html>');
+  mkdirSync(join(previewDir, 'assets'), { recursive: true });
+  writeFileSync(join(previewDir, 'assets', 'app.css'), 'body{color:#123456}');
+  writeFileSync(join(previewDir, 'assets', 'app.js'), 'window.__deepPreviewSmoke = true;');
+
+  const ownerPreview = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/index.html`, { headers: auth(tokenA) });
+  assert.equal(ownerPreview.status, 200);
+  assert.match(await ownerPreview.text(), /assets\/app\.css/);
+  const ownerCss = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/assets/app.css`, { headers: auth(tokenA) });
+  assert.equal(ownerCss.status, 200);
+  assert.match(ownerCss.headers.get('content-type') || '', /text\/css/);
+  assert.equal(await ownerCss.text(), 'body{color:#123456}');
+  const ownerJs = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/assets/app.js`, { headers: auth(tokenA) });
+  assert.equal(ownerJs.status, 200);
+  assert.match(ownerJs.headers.get('content-type') || '', /javascript/);
+  assert.equal(await ownerJs.text(), 'window.__deepPreviewSmoke = true;');
 
   const ownerList = await fetch(`${base}/api/deep/projects`, { headers: auth(tokenA) });
   assert.equal(ownerList.status, 200);
