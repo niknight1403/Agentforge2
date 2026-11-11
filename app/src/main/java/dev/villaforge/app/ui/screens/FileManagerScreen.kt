@@ -111,6 +111,9 @@ fun FileManagerScreen() {
         } else emptyList()
         val selected = when {
             exactNamedFiles.isNotEmpty() -> exactNamedFiles
+            // A filename-like query must never broaden into a whole MIME category
+            // when the exact name is absent; this keeps typoed delete commands safe.
+            needle.contains('.') -> emptyList()
             listOf("bild", "foto", "image", "jpg", "png").any(q::contains) -> files.filter { it.mime.startsWith("image/") }
             listOf("video", "film", "mp4").any(q::contains) -> files.filter { it.mime.startsWith("video/") }
             listOf("musik", "audio", "mp3").any(q::contains) -> files.filter { it.mime.startsWith("audio/") }
