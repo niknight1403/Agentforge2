@@ -1,8 +1,11 @@
+import process from 'node:process';
 import { getMcpServer } from './mcp-registry.mjs';
 import { readMcpCredential } from './mcp-credential-vault.mjs';
 import { validateStdioLaunch } from './mcp-transport-policy.mjs';
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
+// SDK v2 merges these host variables into every stdio child even when env is supplied.
+const SDK_INHERITED_ENV_KEYS = ['HOME', 'LOGNAME', 'PATH', 'SHELL', 'TERM', 'USER'];
 
 function fail(code, message) {
   const error = new Error(message);
@@ -47,6 +50,10 @@ export async function connectMcpStdioServer({
   }
   if (!Number.isInteger(connectTimeoutMs) || connectTimeoutMs < 100 || connectTimeoutMs > 120_000) {
     throw new TypeError('connectTimeoutMs must be an integer between 100 and 120000');
+  }
+
+  if (process.platform === 'win32') {
+    throw fail('MCP_STDIO_PLATFORM_UNSUPPORTED', 'Windows stdio is disabled until SDK inherited environment variables can be isolated safely');
   }
 
   const configuredEnv = server.config?.env ?? {};
