@@ -57,7 +57,6 @@ test('stdio adapter connects an SDK client with policy-validated launch settings
     args: [],
     cwd: '/srv/mcp-sandboxes/demo',
     env: { LANG: 'C.UTF-8' },
-    shell: false,
   });
   assert.deepEqual(await adapter.listTools(), { tools: [{ name: 'ping' }] });
   assert.deepEqual(await adapter.callTool({ name: 'ping', arguments: {} }), {
