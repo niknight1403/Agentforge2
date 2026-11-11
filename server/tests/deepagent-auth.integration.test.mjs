@@ -2,6 +2,7 @@ import './_env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TMP } from './_env.mjs';
 import { createUser, createSession } from '../auth.mjs';
@@ -86,6 +87,9 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   for (const [method, path, body] of [
     ['GET', `/api/deep/projects/${projectId}`],
     ['GET', `/api/deep/projects/${projectId}/completion`],
+    ['POST', `/api/deep/projects/${projectId}/develop`, {}],
+    ['POST', `/api/deep/projects/${projectId}/bootstrap`, {}],
+    ['GET', `/api/deep/projects/${projectId}/preview/dist/index.html`],
     ['POST', `/api/deep/projects/${projectId}/chat`, { message: 'Fremdes Projekt lesen' }],
     ['POST', `/api/deep/projects/${projectId}/files`, { name: 'leak.txt', mime: 'text/plain', data: Buffer.from('secret').toString('base64') }],
     ['DELETE', `/api/deep/projects/${projectId}`]
