@@ -6,7 +6,7 @@ name: Live-Test & Design-Audit
 # Die statischen Tests in hub-tests.yml bleiben davon unberuehrt.
 on:
   pull_request:
-    branches: [main, feat/mcp-orchestration-registry]
+    branches: [main, feat/mcp-orchestration-registry, fix/mcp-audit-client-mismatch]
     paths:
       - 'server/**'
       - 'scripts/design-audit.mjs'

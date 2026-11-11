@@ -115,4 +115,9 @@ test('execution rejects a client bound to a different registered server', async 
     client: { serverId: 'another-server', async callTool() { called = true; return {}; } },
   }), { code: 'MCP_CLIENT_SERVER_MISMATCH' });
   assert.equal(called, false);
+  const row = db.prepare('SELECT * FROM mcp_tool_execution_audit WHERE server_id=? ORDER BY created_at DESC LIMIT 1').get(server.id);
+  assert.equal(row.outcome, 'denied');
+  assert.equal(row.error_code, 'MCP_CLIENT_SERVER_MISMATCH');
+  assert.equal(row.tool_id, 'unknown');
+  assert.equal(row.arguments_sha256, 'unavailable');
 });

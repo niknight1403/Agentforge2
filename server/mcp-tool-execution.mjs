@@ -101,7 +101,19 @@ export async function executeApprovedMcpTool({
   if (!server) throw fail('MCP_SERVER_NOT_FOUND', 'MCP server is not registered');
   if (server.status !== 'active') throw fail('MCP_SERVER_NOT_ACTIVE', 'MCP server must be active before tool execution');
   if (!client || typeof client.callTool !== 'function') throw fail('MCP_CLIENT_REQUIRED', 'A connected MCP SDK client with callTool() is required');
-  if (client.serverId !== serverId) throw fail('MCP_CLIENT_SERVER_MISMATCH', 'The connected MCP client must be explicitly bound to the requested serverId');
+  if (client.serverId !== serverId) {
+    const error = fail('MCP_CLIENT_SERVER_MISMATCH', 'The connected MCP client must be explicitly bound to the requested serverId');
+    audit({
+      serverId,
+      toolId: 'unknown',
+      toolName: typeof toolName === 'string' ? toolName.slice(0, 160) : 'unknown',
+      argsHash: 'unavailable',
+      outcome: 'denied',
+      errorCode: error.code,
+      startedAt,
+    });
+    throw error;
+  }
   if (typeof toolName !== 'string' || !toolName.trim() || toolName.length > 160) {
     throw fail('MCP_INVALID_TOOL_NAME', 'toolName must contain 1..160 characters');
   }
