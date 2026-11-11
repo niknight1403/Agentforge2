@@ -42,7 +42,7 @@ function zipEntryNames(bytes) {
   const next=cursor+46+nameLen+extraLen+commentLen;
   if(next>end||flags&1||![0,8].includes(method))return null;
   const name=b.subarray(cursor+46,cursor+46+nameLen).toString('utf8');
-  if(!name||name.startsWith('/')||name.includes('\\\\')||name.split('/').includes('..'))return null;
+  if(!name||name.startsWith('/')||name.includes('\\')||name.split('/').includes('..'))return null;
   const local=b.readUInt32LE(cursor+42);
   if(local+30>offset||b.readUInt32LE(local)!==0x04034b50)return null;
   const localFlags=b.readUInt16LE(local+6),localMethod=b.readUInt16LE(local+8);
