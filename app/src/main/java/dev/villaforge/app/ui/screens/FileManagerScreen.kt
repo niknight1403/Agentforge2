@@ -166,15 +166,26 @@ fun FileManagerScreen() {
         }
         when {
             hasExplicitDuplicateIntent -> {
+                // Capture both the file list and its owning tree before starting
+                // asynchronous hashing. Never attach old-tree URIs to a new grant.
+                val sourceTree = treeUri
+                val sourceFiles = files
                 scope.launch {
                     busy = true
-                    val groups = withContext(Dispatchers.IO) { findDuplicates(context, files) }
-                    val duplicates = groups.flatMap { it.drop(1) }
-                    result = if (duplicates.isEmpty()) "Keine inhaltlich identischen Dateien gefunden." else "${duplicates.size} Duplikate in ${groups.size} Gruppen gefunden: " + duplicates.take(8).joinToString { it.name }
-                    if (q.contains("lösch") || q.contains("entfern") || q.contains("delete")) {
-                        pending = if (duplicates.isEmpty()) null else FileAction("${duplicates.size} erkannte Duplikate löschen", duplicates, delete = true, tree = treeUri)
+                    try {
+                        val groups = withContext(Dispatchers.IO) { findDuplicates(context, sourceFiles) }
+                        val duplicates = groups.flatMap { it.drop(1) }
+                        if (treeUri == sourceTree) {
+                            result = if (duplicates.isEmpty()) "Keine inhaltlich identischen Dateien gefunden." else "${duplicates.size} Duplikate in ${groups.size} Gruppen gefunden: " + duplicates.take(8).joinToString { it.name }
+                            if (q.contains("lösch") || q.contains("entfern") || q.contains("delete")) {
+                                pending = if (duplicates.isEmpty()) null else FileAction("${duplicates.size} erkannte Duplikate löschen", duplicates, delete = true, tree = sourceTree)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        if (treeUri == sourceTree) result = "Duplikatsuche fehlgeschlagen: ${e.message}"
+                    } finally {
+                        if (treeUri == sourceTree) busy = false
                     }
-                    busy = false
                 }
             }
             q.contains("sortier") || q.contains("ordne") || q.contains("verschieb") -> {
