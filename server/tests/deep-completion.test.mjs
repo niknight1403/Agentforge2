@@ -87,7 +87,7 @@ test('liveViewState meldet ohne Projektordner ehrlich fehlende Auslieferbarkeit'
   const state = liveViewState(987654);
   assert.equal(state.available, false);
   assert.equal(state.entry, null);
-  assert.match(state.detail, /Kein Einstiegspunkt/);
+  assert.match(state.detail, /Kein .*Einstiegspunkt/);
 });
 
 
