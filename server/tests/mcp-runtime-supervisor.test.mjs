@@ -341,3 +341,20 @@ test('the reconciliation loop closes disabled runtimes and is stopped by closeAl
   await supervisor.closeAll();
   assert.equal(supervisor.getSnapshot().reconciliationLoopRunning, false);
 });
+
+test('a non-cancelled connection failure is recorded in registry status', async () => {
+  const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    setStatus: (id, status, options = {}) => {
+      servers.set(id, { ...servers.get(id), status, lastErrorCode: options.errorCode ?? null });
+    },
+    connect: async () => { throw Object.assign(new Error('spawn rejected'), { code: 'MCP_EXECUTABLE_NOT_ALLOWED' }); },
+    discover: async () => { throw new Error('discovery must not run'); },
+  });
+  await assert.rejects(supervisor.startServer('one'), { code: 'MCP_EXECUTABLE_NOT_ALLOWED' });
+  assert.equal(servers.get('one').status, 'failed');
+  assert.equal(servers.get('one').lastErrorCode, 'MCP_EXECUTABLE_NOT_ALLOWED');
+  assert.deepEqual(supervisor.getSnapshot().startingServerIds, []);
+});
