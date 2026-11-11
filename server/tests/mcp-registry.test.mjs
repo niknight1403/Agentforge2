@@ -88,15 +88,17 @@ test('registry outbox leases prevent concurrent duplicate claims and reject stal
 
 test('outbox dispatcher acknowledges successful publishes and leaves failures leased for retry', async () => {
   const server = registerMcpServer({ name: 'dispatch-outbox-server', transport: 'stdio', command: 'node' });
+  const successfulServer = registerMcpServer({ name: 'dispatch-success-server', transport: 'stdio', command: 'node' });
   const seen = [];
   const result = await dispatchMcpRegistryEvents({ publish: async (event) => {
     if (event.serverId === server.id && event.type === 'mcp.server.registered') throw Object.assign(new Error('temporary broker outage'), { code: 'BROKER_UNAVAILABLE' });
     seen.push(event);
   } });
-  assert.ok(result.claimed >= 1);
+  assert.ok(result.claimed >= 2);
+  assert.ok(result.published >= 1);
   assert.equal(result.failed, 1);
   assert.equal(result.failures[0].code, 'BROKER_UNAVAILABLE');
-  assert.ok(seen.length >= 0);
+  assert.ok(seen.some((event) => event.serverId === successfulServer.id && event.type === 'mcp.server.registered'));
   assert.equal(typeof dispatchMcpRegistryEvents, 'function');
 });
 
