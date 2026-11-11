@@ -61,6 +61,7 @@ const DEEP_DIR = process.env.DEEP_DIR || '/opt/villaforge/deep';
 const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12 MB pro Anhang
 
 const deepDevelopmentJobs = new Map();
+const initialPlanJobs = new Map();
 
 export function isDeepProjectDeveloping(projectId) {
   return deepDevelopmentJobs.has(Number(projectId));
@@ -217,7 +218,7 @@ export async function deepChat(projectId, userMessage, attachments = [], { chatF
 }
 
 /** Neues Projekt anlegen: Idee -> Titel, erster Deep-Agent-Bauplan. */
-export async function createDeepProject(idea, { chatFn = realChat } = {}) {
+export async function createDeepProject(idea, { chatFn = realChat, deferInitialPlan = false } = {}) {
   const text = String(idea || '').trim().slice(0, 2000);
   if (text.length < 10) throw new Error('Bitte die App-Idee in mindestens einem Satz beschreiben.');
   const title = text.replace(/\s+/g, ' ').slice(0, 60);
@@ -225,10 +226,26 @@ export async function createDeepProject(idea, { chatFn = realChat } = {}) {
   const r = db.prepare('INSERT INTO deep_projects (title, idea, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
     .run(title, text, 'ACTIVE', ts, ts);
   const id = Number(r.lastInsertRowid);
+  if (deferInitialPlan) {
+    const placeholder = 'Ich analysiere deine Idee, prüfe passende Fähigkeiten und erstelle den ersten umsetzbaren Entwicklungsplan …';
+    const messageId = Number(db.prepare(
+      'INSERT INTO deep_messages (project_id, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?)'
+    ).run(id, 'assistant', placeholder, null, now()).lastInsertRowid);
+    const job = new Promise((resolve) => setImmediate(resolve))
+      .then(() => deepChat(id,
+        'Neues Projekt gestartet. Erstelle den initialen Bauplan: 1) Verstaendnis der Idee in 2 Saetzen, 2) Empfohlener Tech-Stack mit Begruendung, 3) Meilensteine M1-M3 mit Akzeptanzkriterien, 4) Der allererste konkrete Umsetzungsschritt.',
+        [], { chatFn }))
+      .then(() => db.prepare('DELETE FROM deep_messages WHERE id = ? AND project_id = ?').run(messageId, id))
+      .catch((error) => db.prepare('UPDATE deep_messages SET content = ? WHERE id = ? AND project_id = ?')
+        .run('Die initiale Analyse ist fehlgeschlagen: ' + String(error?.message || error).slice(0, 220), messageId, id))
+      .finally(() => initialPlanJobs.delete(id));
+    initialPlanJobs.set(id, job);
+    return { id, title, status: 'ACTIVE', reply: placeholder, offline: false, initialPending: true };
+  }
   const first = await deepChat(id,
     'Neues Projekt gestartet. Erstelle den initialen Bauplan: 1) Verstaendnis der Idee in 2 Saetzen, 2) Empfohlener Tech-Stack mit Begruendung, 3) Meilensteine M1-M3 mit Akzeptanzkriterien, 4) Der allererste konkrete Umsetzungsschritt.',
     [], { chatFn });
-  return { id, title, status: 'ACTIVE', reply: first.reply, offline: first.offline };
+  return { id, title, status: 'ACTIVE', reply: first.reply, offline: first.offline, initialPending: false };
 }
 
 /** Projektliste (Verlauf) - neueste zuerst. */
