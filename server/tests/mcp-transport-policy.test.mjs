@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { validateStdioLaunch, validateRemoteEndpoint } from '../mcp-transport-policy.mjs';
 
 const stdioPolicy = {
+  realpath: (value) => path.resolve(value),
   allowedExecutables: ['/usr/bin/node'],
   allowedWorkingDirectories: ['/srv/mcp-sandboxes'],
   allowedEnvironmentKeys: ['LANG', 'PATH'],

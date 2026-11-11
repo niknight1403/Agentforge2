@@ -8,7 +8,7 @@ function fail(code, message) {
 }
 
 function isWithin(root, candidate) {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  const relative = path.relative(root, candidate);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
@@ -25,20 +25,31 @@ function requireString(value, label, max = 2048) {
  * and must enforce OS/container isolation independently.
  */
 export function validateStdioLaunch({ command, args = [], cwd, env = {} } = {}, policy = {}) {
-  const executable = requireString(command, 'command', 1024);
-  if (!path.isAbsolute(executable) || path.resolve(executable) !== executable) {
+  const executableInput = requireString(command, 'command', 1024);
+  if (!path.isAbsolute(executableInput) || path.resolve(executableInput) !== executableInput) {
     throw fail('MCP_EXECUTABLE_NOT_ABSOLUTE', 'stdio executable must be a normalized absolute path');
   }
-  const allowedExecutables = new Set(policy.allowedExecutables ?? []);
+  if (typeof policy.realpath !== 'function') {
+    throw fail('MCP_REALPATH_REQUIRED', 'stdio policy requires a trusted realpath resolver to prevent symlink escapes');
+  }
+  let executable;
+  let workingDirectory;
+  let realRoots;
+  try {
+    executable = policy.realpath(executableInput);
+    workingDirectory = policy.realpath(requireString(cwd, 'cwd', 2048));
+    realRoots = (policy.allowedWorkingDirectories ?? []).map((root) => policy.realpath(root));
+  } catch {
+    throw fail('MCP_PATH_RESOLUTION_FAILED', 'stdio executable, working directory and sandbox roots must resolve on disk');
+  }
+  if (!path.isAbsolute(executable) || !path.isAbsolute(workingDirectory)) {
+    throw fail('MCP_PATH_RESOLUTION_FAILED', 'resolved stdio paths must be absolute');
+  }
+  const allowedExecutables = new Set((policy.allowedExecutables ?? []).map((item) => policy.realpath(item)));
   if (!allowedExecutables.has(executable)) {
     throw fail('MCP_EXECUTABLE_NOT_ALLOWED', 'stdio executable is not on the administrator allowlist');
   }
-  const workingDirectory = requireString(cwd, 'cwd', 2048);
-  if (!path.isAbsolute(workingDirectory) || !path.resolve(workingDirectory).startsWith(path.parse(workingDirectory).root)) {
-    throw fail('MCP_INVALID_WORKDIR', 'stdio working directory must be absolute');
-  }
-  const roots = policy.allowedWorkingDirectories ?? [];
-  if (!roots.some((root) => isWithin(root, workingDirectory))) {
+  if (!realRoots.some((root) => isWithin(root, workingDirectory))) {
     throw fail('MCP_WORKDIR_NOT_ALLOWED', 'stdio working directory is outside approved sandbox roots');
   }
   if (!Array.isArray(args) || args.length > (policy.maxArgs ?? 64)) {
@@ -62,7 +73,7 @@ export function validateStdioLaunch({ command, args = [], cwd, env = {} } = {}, 
     }
     safeEnv[key] = value;
   }
-  return { command: executable, args: [...args], cwd: path.resolve(workingDirectory), env: safeEnv, shell: false };
+  return { command: executable, args: [...args], cwd: workingDirectory, env: safeEnv, shell: false };
 }
 
 /**
