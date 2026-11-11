@@ -21,6 +21,7 @@ SECRET_MARKERS = re.compile(
 SAFE_SECRET_PLACEHOLDERS = {"changeme", "change-me", "replace-me", "your_api_key", "your-token", "placeholder"}
 
 def contains_secret(content: str) -> bool:
+    """Return whether content matches known credential assignments or key formats."""
     sample = content
     if SECRET_MARKERS.search(sample):
         return True
@@ -33,6 +34,7 @@ def contains_secret(content: str) -> bool:
 
 class GitHubScanner:
     def _validate_target(self, name: str, url: str) -> None:
+        """Validate repository names, canonical GitHub HTTPS URLs and owner allowlist."""
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", name):
             raise ValueError("Invalid repository name")
         match = re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?", url)
@@ -42,6 +44,7 @@ class GitHubScanner:
             raise ValueError("Repository owner is not in ACADEMY_GITHUB_ALLOWED_ORGS")
 
     async def clone_or_update(self, name: str, url: str) -> Path:
+        """Clone or fast-forward an allowlisted repository into the confined data root."""
         self._validate_target(name, url)
         destination = (settings.data_dir / "repos" / name).resolve()
         root = (settings.data_dir / "repos").resolve()
@@ -64,6 +67,7 @@ class GitHubScanner:
         return await asyncio.to_thread(operation)
 
     async def scan(self, repo_path: Path) -> list[dict[str, str]]:
+        """Collect supported, bounded, non-symlink source files without recognized secrets."""
         def operation() -> list[dict[str, str]]:
             chunks: list[dict[str, str]] = []
             for path in repo_path.rglob("*"):
