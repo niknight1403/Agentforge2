@@ -443,3 +443,29 @@ test('registry reconciliation paginates beyond the default first 100 servers', a
   assert.equal(result.stopped, 1);
   assert.equal(closeCount, 1);
 });
+
+test('reconciliation closes connected runtimes when registry state is degraded, failed, pending or transport changes', async () => {
+  const servers = new Map([
+    ['degraded', { id: 'degraded', transport: 'stdio', status: 'pending' }],
+    ['failed', { id: 'failed', transport: 'stdio', status: 'pending' }],
+    ['pending', { id: 'pending', transport: 'stdio', status: 'pending' }],
+    ['remote', { id: 'remote', transport: 'stdio', status: 'pending' }],
+  ]);
+  const closed = [];
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    setStatus: (id, status) => servers.set(id, { ...servers.get(id), status }),
+    connect: async ({ serverId }) => fakeAdapter(serverId, () => closed.push(serverId)),
+    discover: async ({ serverId }) => servers.set(serverId, { ...servers.get(serverId), status: 'active' }),
+  });
+  for (const id of servers.keys()) await supervisor.startServer(id);
+  servers.set('degraded', { ...servers.get('degraded'), status: 'degraded' });
+  servers.set('failed', { ...servers.get('failed'), status: 'failed' });
+  servers.set('pending', { ...servers.get('pending'), status: 'pending' });
+  servers.set('remote', { ...servers.get('remote'), transport: 'http' });
+  const result = await supervisor.reconcile();
+  assert.equal(result.stopped, 4);
+  assert.deepEqual(closed.sort(), ['degraded', 'failed', 'pending', 'remote']);
+  assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
+});
