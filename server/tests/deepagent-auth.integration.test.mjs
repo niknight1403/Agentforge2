@@ -211,10 +211,10 @@ test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin ev
       const { value, done } = await reader.read();
       if (done) throw new Error('SSE stream closed before test event arrived');
       buffer += decoder.decode(value, { stream: true });
-      const frames = buffer.split(/\\r?\\n\\r?\\n/);
+      const frames = buffer.split(/\r?\n\r?\n/);
       buffer = frames.pop() || '';
       for (const frame of frames) {
-        const data = frame.split(/\\r?\\n/).find((line) => line.startsWith('data:'));
+        const data = frame.split(/\r?\n/).find((line) => line.startsWith('data:'));
         if (data) return JSON.parse(data.slice(5).trim());
       }
     }
