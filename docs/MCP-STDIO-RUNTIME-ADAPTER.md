@@ -111,3 +111,9 @@ registry approval and audit gate. The existing execution timeout bounds the wait
 Registry reconciliation pages through the complete registry (500 entries per page),
 rather than relying on the registry's default first-page limit. Disabled or removed
 servers beyond the first page are therefore still detected and closed.
+
+## Hub integration status (release gate)
+
+The supervisor and adapter are currently reusable runtime modules; they are **not wired into `server/server.mjs` startup or the existing `/api/mcp` JSON-RPC gateway**. The existing gateway still executes the Hub's built-in `TOOL_SPECS` through `runTool`; it does not route calls to registered external MCP servers. No registry-management API or administrator-owned launch-policy provider is connected yet. Consequently, a green unit/SDK integration test proves the module contract only, not an end-to-end Hub feature.
+
+Before enabling this in production, implement and test the authenticated registry administration surface, inject a deployment-owned stdio launch policy, explicitly start/stop approved servers through the supervisor, route approved external tool calls through `executeApprovedTool`, expose sanitized runtime health, and close all runtimes during graceful Hub shutdown. Keep automatic startup disabled until an administrator explicitly approves a server. Add end-to-end tests covering authentication, approval, start/discovery, execution audit, disable/removal reconciliation, and shutdown.
