@@ -118,31 +118,36 @@ export async function connectMcpStdioServer({
   let transport;
   let client;
   let closed = false;
-  const close = async () => {
-    if (closed) return;
+  let closePromise;
+  const close = () => {
+    // Concurrent callers share one teardown operation and observe its result.
+    if (closePromise) return closePromise;
     closed = true;
-    let clientCloseError;
-    try {
-      if (client && typeof client.close === 'function') {
-        try {
-          await client.close();
-        } catch (error) {
-          clientCloseError = error;
-          // A failed SDK close must not prevent a best-effort transport teardown.
-          if (transport && typeof transport.close === 'function') {
-            try { await transport.close(); } catch { /* preserve the SDK close error */ }
+    closePromise = (async () => {
+      let clientCloseError;
+      try {
+        if (client && typeof client.close === 'function') {
+          try {
+            await client.close();
+          } catch (error) {
+            clientCloseError = error;
+            // A failed SDK close must not prevent a best-effort transport teardown.
+            if (transport && typeof transport.close === 'function') {
+              try { await transport.close(); } catch { /* preserve the SDK close error */ }
+            }
           }
+        } else if (transport && typeof transport.close === 'function') {
+          await transport.close();
         }
-      } else if (transport && typeof transport.close === 'function') {
-        await transport.close();
+      } finally {
+        // Do not retain a decrypted credential in this adapter's launch object.
+        for (const key of Object.keys(launch.env)) {
+          if (key === credentialEnvKey) delete launch.env[key];
+        }
       }
-    } finally {
-      // Do not retain a decrypted credential in this adapter's launch object.
-      for (const key of Object.keys(launch.env)) {
-        if (key === credentialEnvKey) delete launch.env[key];
-      }
-    }
-    if (clientCloseError) throw clientCloseError;
+      if (clientCloseError) throw clientCloseError;
+    })();
+    return closePromise;
   };
 
   try {
