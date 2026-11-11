@@ -35,11 +35,15 @@ export function createMcpRuntimeSupervisor({
 
   const connections = new Map();
   const starting = new Map();
+  const stopping = new Map();
   const cancelled = new Set();
 
   function startServer(serverId, connectOptions = {}) {
     const id = String(serverId ?? '');
     if (!id) return Promise.reject(new TypeError('serverId is required'));
+    if (stopping.has(id)) {
+      return stopping.get(id).then(() => startServer(id, connectOptions));
+    }
     if (connections.has(id)) return Promise.resolve(connections.get(id));
     if (starting.has(id)) return starting.get(id);
 
@@ -85,30 +89,38 @@ export function createMcpRuntimeSupervisor({
     return pending;
   }
 
-  async function stopServer(serverId) {
+  function stopServer(serverId) {
     const id = String(serverId ?? '');
-    if (!id) return false;
+    if (!id) return Promise.resolve(false);
+    if (stopping.has(id)) return stopping.get(id);
+
     cancelled.add(id);
-    const pending = starting.get(id);
-    if (pending) {
-      try { await pending; } catch { /* startup owns teardown and its caller receives the failure */ }
-    }
-    const adapter = connections.get(id);
-    if (!adapter) {
-      const current = getServer(id);
-      if (current?.status === 'active') setStatus(id, 'pending');
+    const operation = (async () => {
+      const pending = starting.get(id);
+      if (pending) {
+        try { await pending; } catch { /* startup owns teardown and its caller receives the failure */ }
+      }
+      const adapter = connections.get(id);
+      if (!adapter) {
+        const current = getServer(id);
+        if (current?.status === 'active') setStatus(id, 'pending');
+        return Boolean(pending);
+      }
+      // Remove it before awaiting close so a concurrent start cannot reuse a
+      // client whose transport is already being torn down.
+      connections.delete(id);
+      try {
+        await adapter.close();
+        const current = getServer(id);
+        if (current?.status === 'active') setStatus(id, 'pending');
+      }
+      return true;
+    })().finally(() => {
       cancelled.delete(id);
-      return Boolean(pending);
-    }
-    connections.delete(id);
-    try {
-      await adapter.close();
-      const current = getServer(id);
-      if (current?.status === 'active') setStatus(id, 'pending');
-    } finally {
-      cancelled.delete(id);
-    }
-    return true;
+      stopping.delete(id);
+    });
+    stopping.set(id, operation);
+    return operation;
   }
 
   async function reconcile() {
@@ -124,7 +136,7 @@ export function createMcpRuntimeSupervisor({
   }
 
   async function closeAll() {
-    const ids = [...new Set([...connections.keys(), ...starting.keys()])];
+    const ids = [...new Set([...connections.keys(), ...starting.keys(), ...stopping.keys()])];
     const results = await Promise.allSettled(ids.map((id) => stopServer(id)));
     return {
       closed: results.filter((item) => item.status === 'fulfilled' && item.value).length,
@@ -141,6 +153,7 @@ export function createMcpRuntimeSupervisor({
       return Object.freeze({
         connectedServerIds: [...connections.keys()],
         startingServerIds: [...starting.keys()],
+        stoppingServerIds: [...stopping.keys()],
         maxConcurrent,
       });
     },
