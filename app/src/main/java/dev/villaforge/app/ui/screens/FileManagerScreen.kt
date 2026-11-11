@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 
 private data class PhoneFile(val uri: Uri, val id: String, val parentId: String, val name: String, val mime: String, val size: Long)
-private data class FileAction(val title: String, val files: List<PhoneFile>, val folder: String? = null, val delete: Boolean = false)
+private data class FileAction(val title: String, val files: List<PhoneFile>, val folder: String? = null, val delete: Boolean = false, val tree: Uri? = null)
 
 @Composable
 fun FileManagerScreen() {
@@ -72,10 +72,18 @@ fun FileManagerScreen() {
         scope.launch {
             busy = true
             try {
-                files = withContext(Dispatchers.IO) { listFiles(context, root) }
-                result = "${files.size} Dateien im freigegebenen Ordner gefunden."
-            } catch (e: Exception) { result = "Lesefehler: ${e.message}" }
-            busy = false
+                val loadedFiles = withContext(Dispatchers.IO) { listFiles(context, root) }
+                // A slower refresh for an old folder must never overwrite the
+                // listing for the currently selected tree.
+                if (treeUri == root) {
+                    files = loadedFiles
+                    result = "${loadedFiles.size} Dateien im freigegebenen Ordner gefunden."
+                }
+            } catch (e: Exception) {
+                if (treeUri == root) result = "Lesefehler: ${e.message}"
+            } finally {
+                if (treeUri == root) busy = false
+            }
         }
     }
 
@@ -109,7 +117,7 @@ fun FileManagerScreen() {
         val exactNamedFiles = if (needle.contains('.')) {
             files.filter { it.name.equals(needle, ignoreCase = true) }
         } else emptyList()
-        val isDeleteCommand = listOf("lösch", "loesch", "entfern", "delete").any(q::contains)
+        val isDeleteCommand = Regex("^(bitte\\s+)?(lösche|loesche|entferne|delete)\\b").containsMatchIn(q)
 
         // Bulk intent must be a standalone word, not a substring in a filename.
         val hasExplicitBulkIntent = !needle.contains('.') &&
@@ -131,7 +139,7 @@ fun FileManagerScreen() {
             val exactMatches = files.filter { it.name.equals(needle, ignoreCase = true) }
             when (exactMatches.size) {
                 1 -> {
-                    pending = FileAction("1 Datei löschen", exactMatches, delete = true)
+                    pending = FileAction("1 Datei löschen", exactMatches, delete = true, tree = treeUri)
                     return
                 }
                 in 2..Int.MAX_VALUE -> {
@@ -164,7 +172,7 @@ fun FileManagerScreen() {
                     val duplicates = groups.flatMap { it.drop(1) }
                     result = if (duplicates.isEmpty()) "Keine inhaltlich identischen Dateien gefunden." else "${duplicates.size} Duplikate in ${groups.size} Gruppen gefunden: " + duplicates.take(8).joinToString { it.name }
                     if (q.contains("lösch") || q.contains("entfern") || q.contains("delete")) {
-                        pending = if (duplicates.isEmpty()) null else FileAction("${duplicates.size} erkannte Duplikate löschen", duplicates, delete = true)
+                        pending = if (duplicates.isEmpty()) null else FileAction("${duplicates.size} erkannte Duplikate löschen", duplicates, delete = true, tree = treeUri)
                     }
                     busy = false
                 }
@@ -178,11 +186,11 @@ fun FileManagerScreen() {
                     else -> "Sortiert"
                 }
                 if (selected.isEmpty()) result = "Keine passenden Dateien gefunden."
-                else pending = FileAction("${selected.size} Dateien nach '$category' verschieben", selected, category)
+                else pending = FileAction("${selected.size} Dateien nach '$category' verschieben", selected, category, tree = treeUri)
             }
             q.contains("lösch") || q.contains("entfern") || q.contains("delete") -> {
                 if (selected.isEmpty()) result = "Keine passenden Dateien gefunden."
-                else pending = FileAction("${selected.size} Dateien löschen", selected, delete = true)
+                else pending = FileAction("${selected.size} Dateien löschen", selected, delete = true, tree = treeUri)
             }
             q.startsWith("zeige") || q.startsWith("finde") || q.startsWith("suche") -> {
                 result = "${selected.size} passende Dateien: " + selected.take(12).joinToString { it.name }
@@ -243,6 +251,11 @@ fun FileManagerScreen() {
                         try {
                             val selectedTree = treeUri
                             val grant = selectedTree?.let { uri -> context.contentResolver.persistedUriPermissions.firstOrNull { it.uri == uri } }
+                            if (action.tree == null || action.tree != selectedTree) {
+                                result = "Der ausgewählte Speicherordner hat sich geändert. Bitte den Befehl erneut ausführen."
+                                busy = false
+                                return@launch
+                            }
                             if (grant?.isWritePermission != true) {
                                 result = "Schreibzugriff fehlt. Bitte den Ordner erneut auswählen und Lesen/Schreiben erlauben."
                                 busy = false
@@ -298,7 +311,9 @@ private fun listFiles(context: Context, tree: Uri): List<PhoneFile> {
 }
 
 private fun findDuplicates(context: Context, files: List<PhoneFile>): List<List<PhoneFile>> {
-    val buckets = files.filter { it.size > 0 }.groupBy { it.size }.values.filter { it.size > 1 }
+    // Empty files are valid duplicate candidates too; SHA-256 of an empty
+    // stream is deterministic and safely groups byte-identical zero-byte files.
+    val buckets = files.groupBy { it.size }.values.filter { it.size > 1 }
     val groups = mutableListOf<List<PhoneFile>>()
     for (bucket in buckets) {
         val hashes = bucket.mapNotNull { file ->
