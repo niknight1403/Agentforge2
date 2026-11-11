@@ -64,8 +64,25 @@ test('registry event outbox is claimable and idempotently marked published', () 
   const events = claimMcpRegistryEvents();
   assert.ok(events.some((event) => event.serverId === server.id && event.type === 'mcp.server.registered'));
   const event = events.find((item) => item.serverId === server.id);
-  assert.equal(markMcpRegistryEventPublished(event.id), true);
-  assert.equal(markMcpRegistryEventPublished(event.id), false);
+  assert.equal(markMcpRegistryEventPublished(event.id, event.claimToken), true);
+  assert.equal(markMcpRegistryEventPublished(event.id, event.claimToken), false);
+});
+
+test('registry outbox leases prevent concurrent duplicate claims and reject stale acknowledgements', () => {
+  const server = registerMcpServer({ name: 'leased-outbox-server', transport: 'stdio', command: 'node' });
+  const firstBatch = claimMcpRegistryEvents();
+  const first = firstBatch.find((event) => event.serverId === server.id && event.type === 'mcp.server.registered');
+  assert.ok(first);
+  assert.ok(first.claimToken);
+  assert.equal(first.attempts, 1);
+  assert.equal(claimMcpRegistryEvents().some((event) => event.id === first.id), false);
+  db.prepare('UPDATE mcp_registry_events SET claim_expires_at=0 WHERE id=?').run(first.id);
+  const retried = claimMcpRegistryEvents().find((event) => event.id === first.id);
+  assert.ok(retried);
+  assert.notEqual(retried.claimToken, first.claimToken);
+  assert.equal(retried.attempts, 2);
+  assert.equal(markMcpRegistryEventPublished(first.id, first.claimToken), false);
+  assert.equal(markMcpRegistryEventPublished(retried.id, retried.claimToken), true);
 });
 
 test('registry supports update and cascade delete', () => {
