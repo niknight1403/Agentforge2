@@ -1,20 +1,17 @@
-# MCP transport discovery phase
+# MCP transport policy boundary
 
-## SDK boundary
+## Pre-connect policy helpers
 
-The Hub registry does not spawn processes or open sockets. A transport host is responsible for creating a connected client using the official MCP TypeScript SDK v2 (`@modelcontextprotocol/client`). The SDK's `Client.connect(transport)` performs the initialize handshake; `client.listTools()` retrieves advertised JSON Schema tool definitions. See the official client guide: https://ts.sdk.modelcontextprotocol.io/v2/get-started/first-client.html.
+`server/mcp-transport-policy.mjs` adds pure validation for the future transport host:
 
-This increment adds the post-connect discovery boundary in `server/mcp-transport-discovery.mjs`. It accepts an already-connected SDK-compatible client, validates and bounds the `tools/list` snapshot, infers conservative capability tags, persists the snapshot atomically through the registry, and marks the server active only after persistence succeeds. On discovery failure, the server is marked failed. A timed-out client is closed best-effort.
+- stdio executable must be an exact administrator-allowlisted normalized absolute path;
+- working directory must remain inside an approved sandbox root;
+- arguments must be bounded and pass a command-specific validator;
+- environment variables are allowlisted by key and bounded; credentials must be injected from the vault at runtime, never copied into registry configuration;
+- remote URLs require an allowlisted hostname, secure HTTPS/WSS by default, an approved port, and a complete DNS answer set whose IP addresses are explicitly allowlisted.
 
-## Deliberate security boundary
+The remote validator returns `pinnedAddresses`. A transport implementation MUST connect only to those exact addresses while retaining TLS hostname verification and the original Host/SNI value. Re-resolving the hostname at socket-connect time would reintroduce DNS-rebinding risk. Redirects must be disabled or every redirect target revalidated under the same policy.
 
-This module does **not** construct a transport, resolve DNS, spawn stdio processes, inject credentials, or execute tools. No connection can occur until a separately reviewed transport host enforces destination allowlists, DNS/IP pinning against rebinding, redirect restrictions, TLS policy, stdio executable allowlists, argument policy, and OS/container sandboxing. Do not treat registry status `active` as permission to call tools; governance approval remains independent.
+## Important limitation
 
-## Discovery limits
-
-- 500 tools per server snapshot.
-- Tool names are unique and limited to 160 characters.
-- Descriptions are limited to 4,000 characters.
-- Each input schema is limited to 64 KiB.
-- Discovery timeout defaults to 15 seconds and is configurable between 100 ms and 120 seconds.
-- Newly discovered tools remain `pending`; schema changes reset prior approval.
+These functions validate policy inputs; they do not spawn processes, resolve DNS, pin sockets, inject secrets, or provide an OS sandbox. The future transport host must enforce those operations. For stdio, pass `shell: false` and isolate the process with OS/container controls, resource limits, and a read-only filesystem where possible. The returned policy result is not itself proof of sandboxing.
