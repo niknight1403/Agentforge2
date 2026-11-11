@@ -182,3 +182,74 @@ test('runtime supervisor closes an adapter that is bound to a different server',
   assert.equal(closeCount, 1);
   assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
 });
+
+test('a concurrent restart waits for teardown instead of reusing a closing client', async () => {
+  const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
+  let connects = 0;
+  let releaseClose;
+  let closeStarted;
+  const closing = new Promise((resolve) => { closeStarted = resolve; });
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    setStatus: (id, status) => servers.set(id, { ...servers.get(id), status }),
+    connect: async ({ serverId }) => {
+      connects += 1;
+      const generation = connects;
+      return {
+        ...fakeAdapter(serverId),
+        async close() {
+          if (generation === 1) {
+            closeStarted();
+            await new Promise((resolve) => { releaseClose = resolve; });
+          }
+        },
+      };
+    },
+    discover: async ({ serverId }) => servers.set(serverId, { ...servers.get(serverId), status: 'active' }),
+  });
+
+  const first = await supervisor.startServer('one');
+  const stopping = supervisor.stopServer('one');
+  await closing;
+  assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
+  assert.deepEqual(supervisor.getSnapshot().stoppingServerIds, ['one']);
+  const restarting = supervisor.startServer('one');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(connects, 1, 'new process must not start before old process is closed');
+  releaseClose();
+  assert.equal(await stopping, true);
+  const second = await restarting;
+  assert.notEqual(second, first);
+  assert.equal(connects, 2);
+  assert.deepEqual(supervisor.getSnapshot().connectedServerIds, ['one']);
+  await supervisor.closeAll();
+});
+
+test('duplicate stop requests share one teardown operation', async () => {
+  const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
+  let releaseClose;
+  let closeCount = 0;
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    setStatus: (id, status) => servers.set(id, { ...servers.get(id), status }),
+    connect: async ({ serverId }) => ({
+      ...fakeAdapter(serverId),
+      async close() {
+        closeCount += 1;
+        await new Promise((resolve) => { releaseClose = resolve; });
+      },
+    }),
+    discover: async ({ serverId }) => servers.set(serverId, { ...servers.get(serverId), status: 'active' }),
+  });
+  await supervisor.startServer('one');
+  const firstStop = supervisor.stopServer('one');
+  const secondStop = supervisor.stopServer('one');
+  assert.equal(firstStop, secondStop);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closeCount, 1);
+  releaseClose();
+  assert.equal(await firstStop, true);
+  assert.equal(await secondStop, true);
+});
