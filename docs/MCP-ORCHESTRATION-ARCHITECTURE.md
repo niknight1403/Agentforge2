@@ -9,7 +9,8 @@
 - working directory must remain inside an approved sandbox root after realpath resolution;
 - arguments must be bounded and pass a command-specific validator;
 - environment variables are allowlisted by key and bounded; credentials must be injected from the vault at runtime, never copied into registry configuration;
-- remote URLs require an allowlisted hostname, secure HTTPS/WSS by default, an approved port, and a complete DNS answer set whose IP addresses are explicitly allowlisted.
+- remote URLs require an allowlisted hostname, secure HTTPS/WSS by default, an approved port, and a complete DNS answer set whose IP addresses are explicitly allowlisted;
+- remote URL query parameters with credential-like names (`access_token`, `refresh_token`, `api_key`, `client_secret`, `password`, etc.) are rejected; use the registry's `credentialRef` and inject secrets only at connection time.
 
 The stdio validator requires a trusted `realpath` callback (normally backed by `fs.realpathSync`) and compares canonical paths, not user-controlled symlink paths. The remote validator returns `pinnedAddresses`. A transport implementation MUST connect only to those exact addresses while retaining TLS hostname verification and the original Host/SNI value. Re-resolving the hostname at socket-connect time would reintroduce DNS-rebinding risk. Redirects must be disabled or every redirect target revalidated under the same policy.
 
