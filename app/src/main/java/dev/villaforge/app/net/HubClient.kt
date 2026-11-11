@@ -480,6 +480,15 @@ class HubClient(context: Context) {
     suspend fun deepDevelopProject(id: Long): JSONObject =
         JSONObject(execute("POST", "/api/deep/projects/$id/bootstrap", JSONObject()))
 
+    /** Live-Arbeitsplatz: belegter Fertigstellungsstand plus Admin-Runtime-Werkzeuge. */
+    suspend fun deepWorkspace(id: Long): JSONObject = withContext(Dispatchers.IO) {
+        val completion = JSONObject(execute("GET", "/api/deep/projects/$id/completion"))
+        val runtime = JSONObject(execute("GET", "/api/system/runtime-capabilities"))
+        JSONObject()
+            .put("completion", completion)
+            .put("capabilities", runtime.optJSONArray("capabilities") ?: JSONArray())
+    }
+
     /** Löscht genau dieses Deep-Projekt samt Chat und Anhängen. */
     suspend fun deepDeleteProject(id: Long): JSONObject =
         JSONObject(execute("DELETE", "/api/deep/projects/$id"))
