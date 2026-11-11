@@ -39,6 +39,9 @@ export function createMcpRuntimeSupervisor({
   const starting = new Map();
   const stopping = new Map();
   const cancelled = new Set();
+  let reconcileInFlight = null;
+  let reconcileTimer = null;
+  let reconciliationStop = null;
 
   function startServer(serverId, connectOptions = {}) {
     const id = String(serverId ?? '');
@@ -132,19 +135,49 @@ export function createMcpRuntimeSupervisor({
     return executeTool({ serverId: id, toolName, arguments: toolArguments, client: adapter, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
   }
 
-  async function reconcile() {
-    const registered = new Map(listServers().map((server) => [server.id, server]));
-    const stale = [...new Set([...connections.keys(), ...starting.keys()])]
-      .filter((id) => !registered.has(id) || registered.get(id).status === 'disabled');
-    const results = await Promise.allSettled(stale.map((id) => stopServer(id)));
-    return {
-      stopped: results.filter((item) => item.status === 'fulfilled' && item.value).length,
-      failed: results.filter((item) => item.status === 'rejected').length,
-      staleServerIds: stale,
+  function reconcile() {
+    if (reconcileInFlight) return reconcileInFlight;
+    const operation = (async () => {
+      const registered = new Map(listServers().map((server) => [server.id, server]));
+      const stale = [...new Set([...connections.keys(), ...starting.keys()])]
+        .filter((id) => !registered.has(id) || registered.get(id).status === 'disabled');
+      const results = await Promise.allSettled(stale.map((id) => stopServer(id)));
+      return {
+        stopped: results.filter((item) => item.status === 'fulfilled' && item.value).length,
+        failed: results.filter((item) => item.status === 'rejected').length,
+        staleServerIds: stale,
+      };
+    })();
+    reconcileInFlight = operation.finally(() => { reconcileInFlight = null; });
+    return reconcileInFlight;
+  }
+
+  function stopReconciliationLoop() {
+    if (reconcileTimer) clearInterval(reconcileTimer);
+    reconcileTimer = null;
+    reconciliationStop = null;
+  }
+
+  function startReconciliationLoop({ intervalMs = 5_000, onError = () => {} } = {}) {
+    if (!Number.isInteger(intervalMs) || intervalMs < 100 || intervalMs > 300_000) {
+      throw new TypeError('intervalMs must be an integer between 100 and 300000');
+    }
+    if (typeof onError !== 'function') throw new TypeError('onError must be a function');
+    if (reconcileTimer) return reconciliationStop;
+    const tick = () => {
+      reconcile().catch((error) => {
+        try { onError(error); } catch { /* observer failures must not stop reconciliation */ }
+      });
     };
+    reconcileTimer = setInterval(tick, intervalMs);
+    reconcileTimer.unref?.();
+    reconciliationStop = stopReconciliationLoop;
+    tick();
+    return reconciliationStop;
   }
 
   async function closeAll() {
+    stopReconciliationLoop();
     const ids = [...new Set([...connections.keys(), ...starting.keys(), ...stopping.keys()])];
     const results = await Promise.allSettled(ids.map((id) => stopServer(id)));
     return {
@@ -157,6 +190,8 @@ export function createMcpRuntimeSupervisor({
     startServer,
     stopServer,
     reconcile,
+    startReconciliationLoop,
+    stopReconciliationLoop,
     closeAll,
     executeApprovedTool,
     getSnapshot() {
@@ -164,6 +199,7 @@ export function createMcpRuntimeSupervisor({
         connectedServerIds: [...connections.keys()],
         startingServerIds: [...starting.keys()],
         stoppingServerIds: [...stopping.keys()],
+        reconciliationLoopRunning: Boolean(reconcileTimer),
         maxConcurrent,
       });
     },
