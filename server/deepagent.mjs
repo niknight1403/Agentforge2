@@ -334,10 +334,17 @@ export function deepPreviewFile(projectId, rest) {
   try { target = realpathSync(resolve(join(dir, ...clean))); } catch { return null; }
   let root;
   try { root = realpathSync(dir); } catch { return null; }
-  const allowed = ['dist', 'build', 'out', 'public', 'web-dist'].some((folder) =>
+  // Root-level index.html is intentionally not served here. A root entry may
+  // still reference conventional public asset directories (for example
+  // /assets/app.js); expose only those directories, never arbitrary project
+  // files such as uploaded attachments, source files or environment files.
+  const allowedBuildRoot = ['dist', 'build', 'out', 'public', 'web-dist'].some((folder) =>
     target.startsWith(join(root, folder) + '/')
   );
-  try { if (!allowed || !statSync(target).isFile()) return null; } catch { return null; }
+  const allowedRootAssets = ['assets', 'static'].some((folder) =>
+    target.startsWith(join(root, folder) + '/')
+  );
+  try { if (!(allowedBuildRoot || allowedRootAssets) || !statSync(target).isFile()) return null; } catch { return null; }
   const mimeMap = {
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
     '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
