@@ -19,6 +19,7 @@ test('runtime supervisor starts once, discovers tools, and reuses an existing co
   const supervisor = createMcpRuntimeSupervisor({
     getServer: (id) => servers.get(id) ?? null,
     listServers: () => [...servers.values()],
+    setStatus: (id, status) => servers.set(id, { ...servers.get(id), status }),
     connect: async ({ serverId }) => { connects += 1; return fakeAdapter(serverId); },
     discover: async ({ serverId, client }) => {
       assert.equal(serverId, 'one');
@@ -35,6 +36,7 @@ test('runtime supervisor starts once, discovers tools, and reuses an existing co
   assert.equal(discoveries, 1);
   assert.deepEqual(supervisor.getSnapshot().connectedServerIds, ['one']);
   assert.equal((await supervisor.closeAll()).closed, 1);
+  assert.equal(servers.get('one').status, 'pending');
   assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
 });
 
