@@ -319,8 +319,6 @@ test('runtime capacity remains occupied until the old child has fully closed', a
 test('the reconciliation loop closes disabled runtimes and is stopped by closeAll', async () => {
   const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
   let closeCount = 0;
-  let reconciled;
-  const stopped = new Promise((resolve) => { reconciled = resolve; });
   const supervisor = createMcpRuntimeSupervisor({
     getServer: (id) => servers.get(id) ?? null,
     listServers: () => [...servers.values()],
@@ -334,7 +332,6 @@ test('the reconciliation loop closes disabled runtimes and is stopped by closeAl
     intervalMs: 100,
     onError: (error) => { throw error; },
   });
-  await stopped;
   // The loop tick is asynchronous; wait for its first close to complete.
   for (let attempt = 0; attempt < 20 && closeCount === 0; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 5));
