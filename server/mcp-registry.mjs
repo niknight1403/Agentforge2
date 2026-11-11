@@ -7,6 +7,7 @@ const SERVER_STATES = new Set(['pending', 'active', 'degraded', 'failed', 'disab
 const TRANSPORTS = new Set(['stdio', 'sse', 'http', 'websocket']);
 const AUTH_MODES = new Set(['none', 'bearer', 'oauth2']);
 const SECRET_KEY = /(?:secret|password|passwd|token|api[_-]?key|client[_-]?secret|authorization|private[_-]?key)/i;
+const SENSITIVE_QUERY_PARAMETER = /(?:token|secret|password|passwd|authorization|auth|api[_-]?key|credential|signature|jwt|bearer|session|(?:^|[^a-z0-9])sig(?:$|[^a-z0-9]))/i;
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS mcp_servers (
@@ -105,6 +106,11 @@ function normalizeDefinition(input) {
     const allowed = transport === 'websocket' ? ['ws:', 'wss:'] : ['http:', 'https:'];
     if (!allowed.includes(parsed.protocol) || parsed.username || parsed.password || parsed.hash) {
       throw new TypeError('transport URL must use an allowed protocol and contain no credentials or fragment');
+    }
+    for (const key of parsed.searchParams.keys()) {
+      if (SENSITIVE_QUERY_PARAMETER.test(key)) {
+        throw new TypeError('transport URL query must not contain credential-like parameters; use credentialRef');
+      }
     }
     endpoint = parsed.toString();
   }
