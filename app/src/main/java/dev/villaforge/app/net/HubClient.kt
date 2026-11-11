@@ -480,6 +480,22 @@ class HubClient(context: Context) {
     suspend fun deepDevelopProject(id: Long): JSONObject =
         JSONObject(execute("POST", "/api/deep/projects/$id/bootstrap", JSONObject()))
 
+    /** Live-Arbeitsplatz: belegter Fertigstellungsstand plus Admin-Runtime-Werkzeuge. */
+    suspend fun deepWorkspace(id: Long): JSONObject = withContext(Dispatchers.IO) {
+        val completion = JSONObject(execute("GET", "/api/deep/projects/$id/completion"))
+        // Runtime inventory is intentionally admin-only. A 403 must not hide
+        // the project completion report from ordinary authenticated users.
+        val runtime = try {
+            JSONObject(execute("GET", "/api/system/runtime-capabilities"))
+        } catch (error: HubException) {
+            if (error.code == 403) null else throw error
+        }
+        JSONObject()
+            .put("completion", completion)
+            .put("capabilities", runtime?.optJSONArray("capabilities") ?: JSONArray())
+            .put("capabilitiesRestricted", runtime == null)
+    }
+
     /** Löscht genau dieses Deep-Projekt samt Chat und Anhängen. */
     suspend fun deepDeleteProject(id: Long): JSONObject =
         JSONObject(execute("DELETE", "/api/deep/projects/$id"))
@@ -530,6 +546,9 @@ class HubClient(context: Context) {
     suspend fun deepUploadFile(projectId: Long, name: String, mime: String, base64: String): JSONObject =
         JSONObject(execute("POST", "/api/deep/projects/$projectId/files",
             JSONObject().put("name", name).put("mime", mime).put("data", base64)))
+
+    fun deepPreviewUrl(projectId: Long, entry: String): String =
+        url("/api/deep/projects/$projectId/preview/" + entry.trimStart('/'))
 
     fun authHeaderValue(): String? =
         if (apiToken.isNotBlank()) "Bearer $apiToken" else null

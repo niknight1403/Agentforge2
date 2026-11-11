@@ -1,13 +1,29 @@
 import './_env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TMP } from './_env.mjs';
 
 process.env.DEEP_DIR = join(TMP, 'deep-files');
-const { createDeepProject, deepChat, addDeepFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping } = await import('../deepagent.mjs');
+const { createDeepProject, deepChat, addDeepFile, deepPreviewFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping } = await import('../deepagent.mjs');
 const reply = async () => ({ content: 'Bauplan: MVP, Tests und Startanleitung.' });
+
+test('DeepAgent öffnet den Projektchat sofort und erzeugt den initialen Plan im Hintergrund', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const project = await createDeepProject('Eine App mit sofortigem Entwicklungsworkspace', {
+    deferInitialPlan: true,
+    chatFn: async () => { await gate; return reply(); }
+  });
+  assert.equal(project.initialPending, true);
+  assert.match(deepProjectDetail(project.id).messages[0].content, /analysiere deine Idee/i);
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const messages = deepProjectDetail(project.id).messages;
+  assert.ok(messages.some((message) => /Bauplan: MVP/.test(message.content)));
+  assert.ok(!messages.some((message) => /analysiere deine Idee/i.test(message.content)));
+});
 
 test('Deep Agent übergibt lesbare Textanhänge mit klarer Datenabgrenzung', async () => {
   const project = await createDeepProject('Eine App für professionelle Projektplanung', { chatFn: reply });
@@ -92,4 +108,21 @@ test('Parallele Deep-Projekt-Übergaben teilen denselben Entwicklungsauftrag', a
   assert.deepEqual(await second, { villaId: 99 });
   assert.equal(count, 1);
   assert.equal(isDeepProjectDeveloping(7001), false);
+});
+
+
+test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeichnissen', async () => {
+  const project = await createDeepProject('Eine Web-App mit Live-Vorschau und Dashboard', { chatFn: reply });
+  const dist = join(TMP, 'deep-files', String(project.id), 'dist');
+  mkdirSync(dist, { recursive: true });
+  writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Preview</title>');
+  writeFileSync(join(dist, 'app.js'), 'console.log("preview")');
+  const outside = join(TMP, 'outside-secret.txt');
+  writeFileSync(outside, 'must not be served');
+  symlinkSync(outside, join(dist, 'leak.txt'));
+  assert.equal(deepPreviewFile(project.id, 'dist/index.html').mime, 'text/html; charset=utf-8');
+  assert.equal(deepPreviewFile(project.id, 'dist/app.js').mime, 'text/javascript; charset=utf-8');
+  assert.equal(deepPreviewFile(project.id, 'dist/../../../../etc/passwd'), null);
+  assert.equal(deepPreviewFile(project.id, '.env'), null);
+  assert.equal(deepPreviewFile(project.id, 'dist/leak.txt'), null);
 });
