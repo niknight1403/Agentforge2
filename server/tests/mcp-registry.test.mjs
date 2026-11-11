@@ -2,19 +2,23 @@ import './_env.mjs';
 import { db } from '../db.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
+import { randomBytes } from 'node:crypto';
+process.env.MCP_CREDENTIAL_MASTER_KEY = randomBytes(32).toString('base64');
+const { storeMcpCredential } = await import('../mcp-credential-vault.mjs');
+const {
   registerMcpServer, getMcpServer, listMcpServers, updateMcpServer,
   setMcpServerStatus, removeMcpServer, replaceMcpServerTools,
   listMcpTools, setMcpToolPolicy, claimMcpRegistryEvents, markMcpRegistryEventPublished, dispatchMcpRegistryEvents,
-} from '../mcp-registry.mjs';
+} = await import('../mcp-registry.mjs');
 
 test('registry validates and persists stdio and remote transport definitions', () => {
   const stdio = registerMcpServer({ name: 'local-files', transport: 'stdio', command: 'node', args: ['server.js'] });
   assert.equal(stdio.status, 'pending');
   assert.equal(stdio.command, 'node');
-  const remote = registerMcpServer({ name: 'remote-search', transport: 'http', url: 'https://mcp.example.test/rpc', authMode: 'bearer', credentialRef: 'vault:search' });
+  const credential = storeMcpCredential('remote-search-test-token');
+  const remote = registerMcpServer({ name: 'remote-search', transport: 'http', url: 'https://mcp.example.test/rpc', authMode: 'bearer', credentialRef: credential.credentialRef });
   assert.equal(remote.url, 'https://mcp.example.test/rpc');
-  assert.equal(remote.credentialRef, 'vault:search');
+  assert.equal(remote.credentialRef, credential.credentialRef);
   assert.equal(listMcpServers().length, 2);
 });
 
@@ -27,6 +31,7 @@ test('registry rejects invalid URLs, unsupported transports and inline secrets',
     assert.throws(() => registerMcpServer({ name: `query-secret-${parameter}`, transport: 'http', url: `https://example.test/mcp?${parameter}=secret` }), /credential-like parameters/);
   }
   assert.throws(() => registerMcpServer({ name: 'auth-missing-ref', transport: 'http', url: 'https://example.test', authMode: 'oauth2' }), /credentialRef/);
+  assert.throws(() => registerMcpServer({ name: 'auth-unknown-ref', transport: 'http', url: 'https://example.test', authMode: 'bearer', credentialRef: 'mcpcred:00000000-0000-4000-8000-000000000000' }), { code: 'MCP_CREDENTIAL_NOT_FOUND' });
 });
 
 test('registry enforces unique names and supports lifecycle status changes', () => {

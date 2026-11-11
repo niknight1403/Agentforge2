@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { db, now } from './db.mjs';
+import { hasMcpCredential } from './mcp-credential-vault.mjs';
 
 db.exec('PRAGMA foreign_keys = ON;');
 
@@ -91,6 +92,11 @@ function normalizeDefinition(input) {
   if (!AUTH_MODES.has(authMode)) throw new TypeError('unsupported authMode');
   const credentialRef = String(input.credentialRef ?? '').trim();
   if (authMode !== 'none' && !credentialRef) throw new TypeError('credentialRef is required for authenticated servers');
+  if (authMode !== 'none' && !hasMcpCredential(credentialRef)) {
+    const error = new TypeError('credentialRef must reference an existing encrypted MCP vault entry');
+    error.code = 'MCP_CREDENTIAL_NOT_FOUND';
+    throw error;
+  }
   if (authMode === 'none' && credentialRef) throw new TypeError('credentialRef requires an authenticated authMode');
 
   const config = input.config ?? {};

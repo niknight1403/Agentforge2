@@ -65,6 +65,12 @@ export function storeMcpCredential(value) {
   return { credentialRef: `mcpcred:${id}`, keyVersion: KEY_VERSION };
 }
 
+/** Checks whether a syntactically valid credential reference exists without decrypting it. */
+export function hasMcpCredential(credentialRef) {
+  if (typeof credentialRef !== 'string' || !/^mcpcred:[0-9a-f-]{36}$/i.test(credentialRef)) return false;
+  return Boolean(db.prepare('SELECT 1 FROM mcp_credentials WHERE id=?').get(credentialRef.slice('mcpcred:'.length)));
+}
+
 /** Decrypts only for trusted runtime adapters; never log or persist the returned value. */
 export function readMcpCredential(credentialRef) {
   if (typeof credentialRef !== 'string' || !/^mcpcred:[0-9a-f-]{36}$/i.test(credentialRef)) {
