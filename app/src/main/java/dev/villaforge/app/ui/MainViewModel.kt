@@ -198,6 +198,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (_: Exception) { }
     }
 
+    /** Holt neue Chat-Nachrichten nach, ohne Eingabe-Anhänge oder Chat-Zustand zu löschen. */
+    fun refreshDeepMessages(id: Long) = viewModelScope.launch {
+        try {
+            val (_, messages) = client.deepProjectDetail(id)
+            _state.update { current ->
+                if (current.deepActiveProject?.id == id) current.copy(deepMessages = messages) else current
+            }
+        } catch (_: Exception) { }
+    }
+
     /** Startet die autonome Umsetzung und bleibt bewusst im Entwicklungs-Workspace. */
     fun developDeepProject(id: Long) = viewModelScope.launch {
         if (_state.value.busy) return@launch
