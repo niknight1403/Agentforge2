@@ -29,7 +29,43 @@ For bearer-authenticated stdio servers, pass an explicit `credentialEnvKey` mapp
 - The SDK transport owns child-process creation and teardown. Its stdio parameter contract does not expose a `shell` option; the SDK itself launches without a shell. SDK v2 merges a fixed set of host environment variables into every child even when `env` is supplied, so the adapter explicitly overrides those POSIX keys with empty values after policy validation. Windows is currently rejected because its inherited environment set needs a separate safe platform policy. Verify the exact SDK version in the deployment lockfile.
 - The administrator must provide realpath-backed executable and sandbox allowlists, an environment-key allowlist, and a command-specific argv validator.
 - This is not an OS sandbox. Use a dedicated low-privilege account/container, resource limits, read-only mounts, and network egress restrictions.
-- Remote HTTP/SSE/WebSocket transports, DNS/socket pinning, redirect enforcement, process supervision, and OAuth are not implemented here.
+- Remote HTTP/SSE/WebSocket transports, DNS/socket pinning, redirect enforcement, OS/container isolation, resource quotas, crash restart policies, and OAuth are not implemented here.
 - Do not expose the returned raw SDK client to untrusted callers. Use the facade's `listTools`, `callTool`, and `close` methods so the server binding remains intact.
 
 The unit tests use fake SDK constructors to verify the adapter contract and lifecycle. A deployment still needs an integration test with its pinned official SDK version and a real, disposable MCP stdio server.
+
+## Registry-aware runtime supervision
+
+`server/mcp-runtime-supervisor.mjs` owns connected stdio adapters and coordinates their lifecycle with the registry:
+
+- Startup is explicit; pending servers are never launched automatically.
+- Startup validates the adapter's server binding, performs tool discovery, and only retains the connection after discovery succeeds.
+- Concurrent starts for the same server share one startup promise. A configurable concurrency cap (default: two) applies to starting plus connected runtimes.
+- Stop requests cancel in-flight startup and close any late-arriving adapter. Close is idempotent at the supervisor boundary.
+- `reconcile()` closes connected or starting runtimes whose registry entry was removed or disabled; it does not start pending servers.
+- `closeAll()` is intended for orderly Hub shutdown.
+
+Example:
+
+```js
+import { createMcpRuntimeSupervisor } from './mcp-runtime-supervisor.mjs';
+
+const supervisor = createMcpRuntimeSupervisor({
+  maxConcurrent: 2,
+  connect: (options) => connectMcpStdioServer({
+    ...options,
+    policy: administratorOwnedStdioPolicy,
+    Client,
+    StdioClientTransport,
+  }),
+});
+
+// Explicitly start a reviewed/registered server.
+await supervisor.startServer(serverId);
+
+// Invoke periodically from the Hub's existing lifecycle loop, and on shutdown:
+await supervisor.reconcile();
+await supervisor.closeAll();
+```
+
+This is an in-process lifecycle owner, not a hardened process supervisor. A production deployment still needs OS/container resource limits, crash detection/restart policy, and isolation outside Node.js.
