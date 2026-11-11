@@ -415,3 +415,31 @@ test('runtime shutdown drains an active approved tool call before closing its tr
   assert.equal(closed, true);
   assert.deepEqual(supervisor.getSnapshot().activeExecutions, {});
 });
+
+test('registry reconciliation paginates beyond the default first 100 servers', async () => {
+  const servers = new Map([['last', { id: 'last', transport: 'stdio', status: 'pending' }]]);
+  const offsets = [];
+  let closeCount = 0;
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: ({ limit, offset }) => {
+      offsets.push(offset);
+      if (offset === 0) {
+        return Array.from({ length: limit }, (_, index) => ({
+          id: `page-one-${index}`, status: 'pending',
+        }));
+      }
+      return [{ id: 'last', status: 'disabled' }];
+    },
+    setStatus: (id, status) => servers.set(id, { ...servers.get(id), status }),
+    connect: async ({ serverId }) => fakeAdapter(serverId, () => { closeCount += 1; }),
+    discover: async ({ serverId }) => servers.set(serverId, { ...servers.get(serverId), status: 'active' }),
+  });
+  await supervisor.startServer('last');
+  servers.set('last', { ...servers.get('last'), status: 'disabled' });
+  const result = await supervisor.reconcile();
+  assert.deepEqual(offsets, [0, 500]);
+  assert.deepEqual(result.staleServerIds, ['last']);
+  assert.equal(result.stopped, 1);
+  assert.equal(closeCount, 1);
+});
