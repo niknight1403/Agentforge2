@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createUser } from '../auth.mjs';
 import { TMP } from './_env.mjs';
 
 process.env.DEEP_DIR = join(TMP, 'deep-files');
@@ -132,13 +133,16 @@ test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeich
 
 
 test('DeepAgent memory never mixes project titles across owners', async () => {
+  const suffix = process.pid;
+  const ownerAUser = createUser({ email: `deepagent-memory-a-${suffix}@example.invalid`, password: 'test-only-password-a', role: 'user' });
+  const ownerBUser = createUser({ email: `deepagent-memory-b-${suffix}@example.invalid`, password: 'test-only-password-b', role: 'user' });
   const ownerA = await createDeepProject('Privates Projekt von Nutzer A mit eigenem Kontext', {
     chatFn: reply,
-    ownerUserId: 101
+    ownerUserId: ownerAUser.id
   });
   await createDeepProject('Geheimes Projekt von Nutzer B ohne Freigabe', {
     chatFn: reply,
-    ownerUserId: 202
+    ownerUserId: ownerBUser.id
   });
   let systemContext = '';
   await deepChat(ownerA.id, 'Erstelle den nächsten Schritt.', [], {
