@@ -42,22 +42,28 @@ jobs:
         run: |
           set -uo pipefail
           GROQ_PICK=""
-          for m in llama-3.3-70b-versatile openai/gpt-oss-120b openai/gpt-oss-20b qwen/qwen3-32b groq/compound-mini llama-3.1-8b-instant; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://api.groq.com/openai/v1/chat/completions -H "Authorization: Bearer $GROQ_KEY" -H 'content-type: application/json' -d "{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":5}" || true)
-            echo "groq $m -> $code"
-            if [ "$code" = "200" ]; then GROQ_PICK="$m"; break; fi
+          for m in openai/gpt-oss-20b meta-llama/llama-4-scout-17b-16e-instruct meta-llama/llama-4-maverick-17b-128e-instruct qwen/qwen3-32b mistral-saba-24b gemma2-9b-it openai/gpt-oss-120b llama-3.3-70b-versatile; do
+            out=$(curl -s -m 25 https://api.groq.com/openai/v1/chat/completions -H "Authorization: Bearer $GROQ_KEY" -H 'content-type: application/json' -d "{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"Antworte mit genau einem Satz: Ich helfe gern.\"}],\"max_tokens\":300}" || true)
+            text=$(printf '%s' "$out" | python3 -c 'import json,sys;d=json.load(sys.stdin);c=(d.get("choices") or [{}]);print(((c[0].get("message") or {}).get("content") or ""))' 2>/dev/null || true)
+            echo "groq $m -> chars=${#text}"
+            if [ "${#text}" -gt 15 ]; then GROQ_PICK="$m"; break; fi
           done
           GEMINI_PICK=""
-          for m in gemini-3.8-flash gemini-3-flash gemini-2.5-flash gemini-2.5-flash-lite gemini-flash-latest; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 "https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$GEMINI_KEY" -H 'content-type: application/json' -d '{"contents":[{"parts":[{"text":"ping"}]}]}' || true)
-            echo "gemini $m -> $code"
-            if [ "$code" = "200" ]; then GEMINI_PICK="$m"; break; fi
+          MODELS=$(curl -s -m 20 "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_KEY" || true)
+          CAND=$(printf '%s' "$MODELS" | python3 -c 'import json,sys;d=json.load(sys.stdin);n=[m["name"].split("/")[-1] for m in d.get("models",[]) if "generateContent" in (m.get("supportedGenerationMethods") or [])];f=[x for x in n if "flash" in x];print(" ".join((f or n)[:6]))' 2>/dev/null || true)
+          echo "gemini kandidaten: ${CAND:-keine}"
+          for m in $CAND; do
+            out=$(curl -s -m 25 "https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$GEMINI_KEY" -H 'content-type: application/json' -d '{"contents":[{"parts":[{"text":"Antworte mit genau einem Satz: Ich helfe gern."}]}],"generationConfig":{"maxOutputTokens":200}}' || true)
+            text=$(printf '%s' "$out" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("".join(p.get("text","") for p in d["candidates"][0]["content"]["parts"]))' 2>/dev/null || true)
+            echo "gemini $m -> chars=${#text}"
+            if [ "${#text}" -gt 15 ]; then GEMINI_PICK="$m"; break; fi
           done
           : > /tmp/models.env
           if [ -n "$GROQ_PICK" ]; then echo "GROQ_MODEL=$GROQ_PICK" >> /tmp/models.env; fi
           if [ -n "$GEMINI_PICK" ]; then echo "GEMINI_MODEL=$GEMINI_PICK" >> /tmp/models.env; fi
+          echo "LLM_MAX_TOKENS=800" >> /tmp/models.env
           echo "gewaehlt: $(tr '\n' ' ' < /tmp/models.env)"
-          test -s /tmp/models.env
+          if [ -z "$GROQ_PICK" ] && [ -z "$GEMINI_PICK" ]; then echo "::error::keine funktionierende LLM-Route"; exit 1; fi
 
       - name: .env bauen
         env:
