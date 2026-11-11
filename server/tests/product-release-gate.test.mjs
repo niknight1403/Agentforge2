@@ -1,11 +1,18 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {inspectProductZip,isValidDeliverableArtifact,verifyProductAcceptance} from '../../scripts/lib/product-release-gate.mjs';
-function zip(name='index.html'){
- const n=Buffer.from(name),data=Buffer.from('<main>Fixture app</main>');
- const local=Buffer.alloc(30);local.writeUInt32LE(0x04034b50);local.writeUInt32LE(data.length,18);local.writeUInt32LE(data.length,22);local.writeUInt16LE(n.length,26);
- const header=Buffer.alloc(46);header.writeUInt32LE(0x02014b50);header.writeUInt32LE(data.length,20);header.writeUInt32LE(data.length,24);header.writeUInt16LE(n.length,28);
- const end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50);end.writeUInt16LE(1,8);end.writeUInt16LE(1,10);end.writeUInt32LE(header.length+n.length,12);end.writeUInt32LE(local.length+n.length+data.length,16);
- return Buffer.concat([local,n,data,header,n,end]);
+function zip(names=['index.html']){
+ const entries=names.map(name=>({name,data:Buffer.from(name==='mimetype'?'application/epub+zip':name.endsWith('.xml')?'<root/>':'<main>Fixture app</main>')}));
+ const locals=[],centrals=[];let offset=0;
+ for(const entry of entries){
+  const n=Buffer.from(entry.name),data=entry.data;
+  const local=Buffer.alloc(30);local.writeUInt32LE(0x04034b50);local.writeUInt32LE(data.length,18);local.writeUInt32LE(data.length,22);local.writeUInt16LE(n.length,26);
+  locals.push(local,n,data);
+  const central=Buffer.alloc(46);central.writeUInt32LE(0x02014b50);central.writeUInt32LE(data.length,20);central.writeUInt32LE(data.length,24);central.writeUInt16LE(n.length,28);central.writeUInt32LE(offset,42);
+  centrals.push(central,n);offset+=local.length+n.length+data.length;
+ }
+ const centralSize=centrals.reduce((sum,b)=>sum+b.length,0);
+ const end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50);end.writeUInt16LE(entries.length,8);end.writeUInt16LE(entries.length,10);end.writeUInt32LE(centralSize,12);end.writeUInt32LE(offset,16);
+ return Buffer.concat([...locals,...centrals,end]);
 }
 test('Product archive requires a complete app archive instead of PK bytes or an empty package',()=>{
  assert.equal(inspectProductZip(zip()).entries,1);const bad=zip();bad.writeUInt32LE(999999,30+Buffer.byteLength('index.html')+Buffer.byteLength('<main>Fixture app</main>')+20);assert.throws(()=>inspectProductZip(bad),/INVALID/);assert.throws(()=>inspectProductZip(Buffer.from('PK-not-an-archive')),/INVALID/);
