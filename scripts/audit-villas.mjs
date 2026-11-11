@@ -9,7 +9,7 @@ export async function auditLiveVillas({baseUrl,email,password,fetchImpl=fetch}={
  const overall=AbortSignal.timeout(300000);let token;
  async function request(path,body){
   const r=await fetchImpl(u.origin+path,{method:body?'POST':'GET',headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),redirect:'error',signal:AbortSignal.any([overall,AbortSignal.timeout(15000)])});
-  if(!r.ok)throw Error('Audit endpoint '+path+' HTTP '+r.status);
+  if(!r.ok){const error=new Error('Audit endpoint failed.');error.status=r.status;throw error;}
   const text=await r.text();if(text.length>12*1024*1024)throw Error('Audit response too large.');return JSON.parse(text);
  }
  token=(await request('/api/auth/login',{email,password})).token;if(!token)throw Error('Audit login did not return a session.');
@@ -22,13 +22,19 @@ export async function auditLiveVillas({baseUrl,email,password,fetchImpl=fetch}={
  if(villas.length){try{const out=await request('/api/mcp',{jsonrpc:'2.0',id:'capability-audit',method:'tools/call',params:{name:'media_capabilities',arguments:{villa_id:Number(villas[0].id)}}});const data=JSON.parse(out.result?.content?.[0]?.text||'null');if(Array.isArray(data))media=data.map(c=>({id:c.id,status:c.status,executionVerified:false}));}catch{}}
  for(const v of villas){
   const id=Number(v.id);if(!Number.isSafeInteger(id)||id<1)throw Error('Invalid Villa ID.');
+  let stage='detail';
   try{
-   const detail=await request('/api/villas/'+id),product=await request('/api/villas/'+id+'/product'),evolution=await request('/api/evolution/villas/'+id);
+   const detail=await request('/api/villas/'+id);stage='product';
+   const product=await request('/api/villas/'+id+'/product');stage='evolution';
+   const evolution=await request('/api/evolution/villas/'+id);
    const missionAvailable=(evolution.proposals||[]).some(p=>p.kind==='prompt_agent'&&p.status==='ready');
    const report=assessVillaConfiguration({villa:detail.villa,agents:detail.agents,taskCounts:detail.taskCounts,tools,product,missionAvailable});
    report.capabilityAutopilot=detail.capabilityAutopilot?{enabled:detail.capabilityAutopilot.enabled,runsWithVilla:detail.capabilityAutopilot.runsWithVilla,requestCount:detail.capabilityAutopilot.requests?.length||0}:null;
    reports.push(report);
-  }catch{reports.push({villaId:id,status:'unavailable',checks:[{code:'audit_fetch',status:'blocked',detail:'Villa-Daten konnten nicht vollstaendig gelesen werden.',nextStep:'Berechtigung, Endpoint und Erreichbarkeit pruefen.'}]});}
+  }catch(error){
+   const httpStatus=Number.isInteger(error?.status)&&error.status>=100&&error.status<=599?error.status:null;
+   reports.push({villaId:id,status:'unavailable',checks:[{code:'audit_fetch_'+stage,status:'blocked',...(httpStatus===null?{}:{httpStatus}),detail:'Villa-Daten konnten in einer Pruefstufe nicht vollstaendig gelesen werden.',nextStep:'Berechtigung, Endpoint und Erreichbarkeit fuer die ausgewiesene Pruefstufe pruefen.'}]});
+  }
  }
  return {schemaVersion:1,generatedAt:new Date().toISOString(),source:{kind:'production-http',version:health.version,testFixture:health.testFixture===true,capabilityAutopilotAvailable:health.capabilities?.includes('capability-autopilot-v1')===true},readOnly:true,complete:reports.length===villas.length&&!reports.some(v=>v.status==='unavailable'),summary:{total:villas.length,passed:reports.filter(v=>v.status==='passed').length,needsReview:reports.filter(v=>v.status==='needs_review').length,blocked:reports.filter(v=>v.status==='blocked').length,unavailable:reports.filter(v=>v.status==='unavailable').length},integrations:{media,mediaInspection:media.length?'configuration_only':'unavailable',packs:(catalog.packs?.tools||[]).map(p=>({id:p.id,enabled:p.enabled,effective:p.effective})),skills:(catalog.skills||[]).map(s=>({id:s.id,enabled:!!s.enabled})),connectors:(catalog.connectors||[]).map(c=>({id:c.id,enabled:!!c.enabled,status:c.last_status,executionVerified:false})),llm:{configured:(routes.routes||[]).filter(r=>r.configured).length,eligible:(routes.routes||[]).filter(r=>r.eligible).length,freeOnly:routes.freeOnly,realAnswerVerified:false}},villas:reports,productAcceptanceBlockers:aggregateProductBlockers(reports)};
 }
