@@ -726,6 +726,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Autorisierungs-Header fuer Downloads (DownloadManager/WebView). */
     fun authHeader(): String? = client.authHeaderValue()
 
+    fun deepPreviewUrl(projectId: Long, entry: String): String = client.deepPreviewUrl(projectId, entry)
+
     /** Live-Ansicht: URL mit Auth-Header laden (WebView-Ressource). */
     fun previewResource(url: String): android.webkit.WebResourceResponse? = client.webResource(url)
 
