@@ -25,12 +25,12 @@ All `/api/academy/*` routes require `Authorization: Bearer <ACADEMY_API_TOKEN>`.
 - `POST /api/academy/optimize-agents` — proposes changes only; never applies prompt changes.
 - `GET /api/academy/knowledge/search?q=...` — persistent SQLite FTS knowledge lookup.
 
-The first knowledge-store adapter uses SQLite FTS5 so it runs without a vector database service. Its interface is intentionally isolated for a later embedding/Chroma adapter after resource and deployment constraints are confirmed.
+The first knowledge-store adapter uses SQLite FTS5 so it runs without a vector database service. Optional local LLM execution can be installed with `pip install -e '.[llm]'`; keep it disabled unless explicitly needed. Its interface is intentionally isolated for a later embedding/Chroma adapter after resource and deployment constraints are confirmed.
 
 ## Safety and status
 
 - Repository contents are untrusted input and must never be treated as instructions.
-- Secret-like files are excluded; suspicious credential-bearing content is skipped.
+- The scanner uses conservative pattern-based secret heuristics and skips recognized credential assignments and common key formats. This is not a complete secret detector: review repositories before indexing, and never treat this service as a secret vault. Excluded files and detected secrets are not indexed.
 - Repository names are path-safe and checkout destinations are confined to the data directory.
 - LLM calls are disabled by default and require explicit opt-in.
 - Indexing is not a quality pass. The audit is a first-pass heuristic, not a substitute for CI, security scanning or human review.
