@@ -116,6 +116,10 @@ fun FileManagerScreen() {
             Regex("\\b(bilder?|fotos?|videos?|filme?|musik|audio|spiele?|games?|apk|duplikate?|doppelt)\\b").containsMatchIn(q)
         val hasExplicitDuplicateIntent = !needle.contains('.') &&
             Regex("\\b(duplikate?|doppelt)\\b").containsMatchIn(q)
+        val hasExplicitImageIntent = Regex("\\b(bilder?|fotos?|images?|jpg|png)\\b").containsMatchIn(q)
+        val hasExplicitVideoIntent = Regex("\\b(videos?|filme?|mp4)\\b").containsMatchIn(q)
+        val hasExplicitAudioIntent = Regex("\\b(musik|audio|mp3)\\b").containsMatchIn(q)
+        val hasExplicitGameIntent = Regex("\\b(spiele?|games?|apk)\\b").containsMatchIn(q)
 
         // Filename deletes (with or without extension) are exact-only. Missing
         // and duplicate basenames fail closed; category and duplicate operations
@@ -135,10 +139,10 @@ fun FileManagerScreen() {
             // Keep filename-like searches exact too; never broaden a missing or
             // ambiguous basename into a MIME category.
             needle.contains('.') -> emptyList()
-            listOf("bild", "foto", "image", "jpg", "png").any(q::contains) -> files.filter { it.mime.startsWith("image/") }
-            listOf("video", "film", "mp4").any(q::contains) -> files.filter { it.mime.startsWith("video/") }
-            listOf("musik", "audio", "mp3").any(q::contains) -> files.filter { it.mime.startsWith("audio/") }
-            listOf("spiel", "game", "apk").any(q::contains) -> files.filter { it.name.endsWith(".apk", true) || it.name.contains("game", true) }
+            hasExplicitImageIntent -> files.filter { it.mime.startsWith("image/") }
+            hasExplicitVideoIntent -> files.filter { it.mime.startsWith("video/") }
+            hasExplicitAudioIntent -> files.filter { it.mime.startsWith("audio/") }
+            hasExplicitGameIntent -> files.filter { it.name.endsWith(".apk", true) || it.name.contains("game", true) }
             else -> files.filter { it.name.contains(needle.ifBlank { q }, true) }
         }
         when {
