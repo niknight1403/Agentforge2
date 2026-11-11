@@ -123,11 +123,9 @@ export function createMcpRuntimeSupervisor({
       // Remove it before awaiting close so a concurrent start cannot reuse a
       // client whose transport is already being torn down.
       connections.delete(id);
-      try {
-        await adapter.close();
-        const current = getServer(id);
-        if (current?.status === 'active') setStatus(id, 'pending');
-      }
+      await adapter.close();
+      const current = getServer(id);
+      if (current?.status === 'active') setStatus(id, 'pending');
       return true;
     })().finally(() => {
       cancelled.delete(id);
