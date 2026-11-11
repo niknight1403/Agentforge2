@@ -140,3 +140,45 @@ test('stop cancels an in-flight startup and the late adapter is always closed', 
   assert.equal(closeCount, 1);
   assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
 });
+
+test('runtime supervisor closes and resets a server stopped during tool discovery', async () => {
+  const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
+  let releaseDiscovery;
+  let discoveryStarted;
+  const started = new Promise((resolve) => { discoveryStarted = resolve; });
+  let closeCount = 0;
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    setStatus: (id, status) => servers.set(id, { ...servers.get(id), status }),
+    connect: async ({ serverId }) => fakeAdapter(serverId, () => { closeCount += 1; }),
+    discover: async ({ serverId }) => {
+      discoveryStarted();
+      await new Promise((resolve) => { releaseDiscovery = resolve; });
+      servers.set(serverId, { ...servers.get(serverId), status: 'active' });
+    },
+  });
+  const starting = supervisor.startServer('one');
+  await started;
+  const stopping = supervisor.stopServer('one');
+  releaseDiscovery();
+  await assert.rejects(starting, { code: 'MCP_RUNTIME_START_CANCELLED' });
+  assert.equal(await stopping, true);
+  assert.equal(closeCount, 1);
+  assert.equal(servers.get('one').status, 'pending');
+  assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
+});
+
+test('runtime supervisor closes an adapter that is bound to a different server', async () => {
+  const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
+  let closeCount = 0;
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    connect: async () => fakeAdapter('foreign', () => { closeCount += 1; }),
+    discover: async () => { throw new Error('foreign adapter must never reach discovery'); },
+  });
+  await assert.rejects(supervisor.startServer('one'), { code: 'MCP_RUNTIME_ADAPTER_INVALID' });
+  assert.equal(closeCount, 1);
+  assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
+});
