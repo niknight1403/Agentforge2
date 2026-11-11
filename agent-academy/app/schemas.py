@@ -8,6 +8,7 @@ class RepositoryTarget(BaseModel):
     @field_validator("url")
     @classmethod
     def github_https_only(cls, value: HttpUrl) -> HttpUrl:
+        """Reject non-GitHub URLs and URLs containing credentials or query data."""
         if value.scheme != "https" or value.host not in {"github.com", "www.github.com"}:
             raise ValueError("Only HTTPS GitHub repository URLs are allowed")
         if value.username or value.password or value.query or value.fragment:
