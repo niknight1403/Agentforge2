@@ -46,8 +46,24 @@ class KnowledgeStore:
             connection.execute("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
         return len(rows)
 
+    def list_repositories(self) -> list[str]:
+        """Return the distinct repository names currently stored in the index."""
+        with self._connect() as connection:
+            rows = connection.execute("SELECT DISTINCT repository FROM documents ORDER BY repository").fetchall()
+        return [row[0] for row in rows]
+
+    def list_files(self, repository: str) -> list[dict[str, str]]:
+        """Return indexed file metadata without loading stored source contents."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT path, language FROM documents WHERE repository = ? ORDER BY path",
+                (repository,),
+            ).fetchall()
+        return [{"path": row[0], "language": row[1]} for row in rows]
+
     def search(self, query: str, limit: int = 10) -> list[dict[str, str]]:
-        safe_query = " ".join(part for part in query.split() if part.replace("_", "").isalnum())
+        """Search indexed documents using literal FTS5 tokens."""
+        safe_query = " ".join(f'"{part}"' for part in query.split() if part.replace("_", "").isalnum())
         if not safe_query:
             return []
         with self._connect() as connection:
