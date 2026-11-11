@@ -357,6 +357,6 @@ export function claimMcpRegistryEvents(limit = 100, { leaseMs = 30_000 } = {}) {
 export function markMcpRegistryEventPublished(id, claimToken) {
   if (typeof claimToken !== 'string' || !claimToken) return false;
   return db.prepare(
-    "UPDATE mcp_registry_events SET published_at=?, claim_token='', claim_expires_at=NULL WHERE id=? AND published_at IS NULL AND claim_token=?"
-  ).run(now(), String(id), claimToken).changes > 0;
+    "UPDATE mcp_registry_events SET published_at=?, claim_token='', claim_expires_at=NULL WHERE id=? AND published_at IS NULL AND claim_token=? AND claim_expires_at>?"
+  ).run(now(), String(id), claimToken, now()).changes > 0;
 }
