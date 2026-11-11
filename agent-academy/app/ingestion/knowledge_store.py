@@ -9,6 +9,7 @@ class KnowledgeStore:
     """Persistent, dependency-light FTS store; embeddings can be added behind this interface."""
 
     def __init__(self, database: Path | None = None):
+        """Initialize the SQLite document table and its external-content FTS index."""
         self.database = database or settings.data_dir / "academy.sqlite3"
         self.database.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
@@ -29,12 +30,14 @@ class KnowledgeStore:
             """)
 
     def _connect(self):
+        """Open a SQLite connection with a bounded lock wait and WAL enabled."""
         connection = sqlite3.connect(self.database, timeout=10)
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA foreign_keys=ON")
         return connection
 
     def replace_repository(self, repository: str, chunks: Iterable[dict[str, str]]) -> int:
+        """Atomically replace all indexed files for one repository."""
         rows = list(chunks)
         with self._connect() as connection:
             connection.execute("DELETE FROM documents WHERE repository = ?", (repository,))
