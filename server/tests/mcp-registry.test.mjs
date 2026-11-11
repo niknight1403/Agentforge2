@@ -77,6 +77,7 @@ test('registry outbox leases prevent concurrent duplicate claims and reject stal
   assert.equal(first.attempts, 1);
   assert.equal(claimMcpRegistryEvents().some((event) => event.id === first.id), false);
   db.prepare('UPDATE mcp_registry_events SET claim_expires_at=0 WHERE id=?').run(first.id);
+  assert.equal(markMcpRegistryEventPublished(first.id, first.claimToken), false);
   const retried = claimMcpRegistryEvents().find((event) => event.id === first.id);
   assert.ok(retried);
   assert.notEqual(retried.claimToken, first.claimToken);
