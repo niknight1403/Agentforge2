@@ -7,7 +7,7 @@ Agentforge2 remains authoritative for Villa records, task scheduling, user permi
 ## Initial implementation
 
 The isolated service lives in `agent-academy/` and exposes:
-- health/readiness metadata at `GET /health`;
+- service health metadata at `GET /health` (not an authenticated readiness check);
 - authenticated repository ingestion at `POST /api/academy/sync-repos`;
 - authenticated architecture analysis and deterministic audit at `POST /api/academy/analyze-synergies`;
 - authenticated advisory prompt/workflow review at `POST /api/academy/optimize-agents`;
