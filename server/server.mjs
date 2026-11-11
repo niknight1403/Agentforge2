@@ -1627,7 +1627,10 @@ async function api(req, res, url) {
     res.write('retry: 3000\n\n');
     // Ohne Anmeldung nur Metadaten (kein Prompt, keine Tool-Argumente, kein Code).
     const onEvent = (e) => {
-      const payload = user ? e : sanitizeForStream(e);
+      // Only administrators receive the full event payload. Ordinary authenticated
+      // users must get the same metadata-only view as anonymous clients: the bus is
+      // global and events are not yet partitioned by Villa ownership.
+      const payload = isAdmin ? e : sanitizeForStream(e);
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
     bus.on('event', onEvent);
