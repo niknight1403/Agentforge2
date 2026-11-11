@@ -15,16 +15,13 @@ jobs:
           chmod 600 ~/.ssh/oracle_key
           ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 ubuntu@92.5.177.159 'bash -s' <<'EOS'
           set +e
-          echo "== node =="; node -v; command -v node
-          echo "== os =="; grep PRETTY_NAME /etc/os-release; nproc; free -m | head -2 | tail -1; df -h / | tail -1
-          echo "== listening ports =="; ss -ltn 2>/dev/null | awk 'NR>1{print $4}' | sed 's/.*://' | sort -un | tr '\n' ' '; echo
-          echo "== running services =="; systemctl list-units --type=service --state=running --no-pager | grep -Ei "hub|cyber|lead|nginx|ollama|caddy" | awk '{print $1}'
-          echo "== nginx includes =="; ls /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null
-          echo "== nginx server blocks =="; sudo nginx -T 2>/dev/null | grep -E "server_name|listen " | head -30
-          echo "== nginx locations (hub vhost) =="; sudo nginx -T 2>/dev/null | grep -nE "location |proxy_pass" | head -40
-          echo "== tls certs =="; sudo ls /etc/letsencrypt/live 2>/dev/null
-          echo "== /opt =="; ls -l /opt 2>/dev/null | head -12
-          echo "== sudo =="; sudo -n true && echo "passwordless sudo ok"
-          echo "== outbound =="; curl -s -o /dev/null -w "github:%{http_code} " https://github.com; curl -s -o /dev/null -w "groq:%{http_code}\n" https://api.groq.com
-          echo "== systemd unit example (hub) =="; systemctl cat villaforge-hub.service 2>/dev/null | head -20
+          echo "== hub vhost: server blocks and locations =="
+          sudo grep -nE "server \{|server_name|listen |location " /etc/nginx/sites-enabled/villaforge-hub
+          echo "== 9443 block detail =="
+          sudo awk 'NR>=280 && NR<=380' /etc/nginx/sites-enabled/villaforge-hub
+          echo "== anfragepilot =="
+          ls /opt/anfragepilot | head -5
+          systemctl list-units --all --no-pager | grep -i anfrage
+          echo "== node sqlite check =="
+          node -e "const {DatabaseSync}=require('node:sqlite'); const d=new DatabaseSync(':memory:'); d.exec('create table t(a)'); console.log('node:sqlite ok')" 2>&1 | tail -2
           EOS
