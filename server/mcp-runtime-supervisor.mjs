@@ -1,6 +1,7 @@
 import {
   getMcpServer,
   listMcpServers,
+  setMcpServerStatus,
 } from './mcp-registry.mjs';
 import { discoverMcpServerTools } from './mcp-transport-discovery.mjs';
 import { connectMcpStdioServer } from './mcp-stdio-runtime-adapter.mjs';
@@ -13,21 +14,19 @@ function fail(code, message) {
 
 /**
  * Owns connected MCP runtimes and reconciles them with registry lifecycle state.
- *
- * The supervisor deliberately does not auto-start pending servers: starting a
- * process is an explicit action and still requires the caller's trusted SDK
- * constructors and administrator-owned launch policy. It does, however,
- * close runtimes when a server is disabled or removed.
+ * Pending servers are never auto-started; startup remains an explicit action.
  */
 export function createMcpRuntimeSupervisor({
   connect = connectMcpStdioServer,
   discover = discoverMcpServerTools,
   getServer = getMcpServer,
   listServers = listMcpServers,
+  setStatus = setMcpServerStatus,
   maxConcurrent = 2,
 } = {}) {
   if (typeof connect !== 'function' || typeof discover !== 'function'
-    || typeof getServer !== 'function' || typeof listServers !== 'function'\n    || typeof setStatus !== 'function') {
+    || typeof getServer !== 'function' || typeof listServers !== 'function'
+    || typeof setStatus !== 'function') {
     throw new TypeError('connect, discover, getServer, listServers and setStatus must be functions');
   }
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 32) {
@@ -96,12 +95,16 @@ export function createMcpRuntimeSupervisor({
     }
     const adapter = connections.get(id);
     if (!adapter) {
+      const current = getServer(id);
+      if (current?.status === 'active') setStatus(id, 'pending');
       cancelled.delete(id);
       return Boolean(pending);
     }
     connections.delete(id);
     try {
       await adapter.close();
+      const current = getServer(id);
+      if (current?.status === 'active') setStatus(id, 'pending');
     } finally {
       cancelled.delete(id);
     }
