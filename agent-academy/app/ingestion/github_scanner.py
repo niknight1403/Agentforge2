@@ -21,7 +21,7 @@ SECRET_MARKERS = re.compile(
 SAFE_SECRET_PLACEHOLDERS = {"changeme", "change-me", "replace-me", "your_api_key", "your-token", "placeholder"}
 
 def contains_secret(content: str) -> bool:
-    sample = content[:100_000]
+    sample = content
     if SECRET_MARKERS.search(sample):
         return True
     for match in SECRET_ASSIGNMENTS.finditer(sample):
@@ -67,7 +67,8 @@ class GitHubScanner:
         def operation() -> list[dict[str, str]]:
             chunks: list[dict[str, str]] = []
             for path in repo_path.rglob("*"):
-                if not path.is_file() or any(part in IGNORED_DIRS for part in path.parts):
+                relative = path.relative_to(repo_path)
+                if not path.is_file() or any(part in IGNORED_DIRS for part in relative.parts[:-1]):
                     continue
                 if path.name in IGNORED_NAMES or path.suffix.lower() not in ALLOWED_SUFFIXES:
                     continue
