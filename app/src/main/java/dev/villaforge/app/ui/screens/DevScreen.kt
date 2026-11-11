@@ -467,16 +467,50 @@ private fun BuildCard(state: UiState, viewModel: MainViewModel) {
                 Button(onClick = {
                     val url = state.serverUrl.trimEnd('/') + "/api/villas/${detail.villa.id}/build/download"
                     val name = build?.optString("artifact") ?: "villa-${detail.villa.id}.bin"
+                    val mimeType = build?.optString("mime")?.takeIf { it.isNotBlank() && it != "null" }
+                        ?: if (name.lowercase().endsWith(".tar.gz")) "application/gzip"
+                        else when (name.substringAfterLast('.', "").lowercase()) {
+                            "apk" -> "application/vnd.android.package-archive"
+                            "pdf" -> "application/pdf"
+                            "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            "odt" -> "application/vnd.oasis.opendocument.text"
+                            "rtf" -> "application/rtf"
+                            "epub" -> "application/epub+zip"
+                            "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            "ods" -> "application/vnd.oasis.opendocument.spreadsheet"
+                            "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                            "md" -> "text/markdown"
+                            "txt" -> "text/plain"
+                            "html" -> "text/html"
+                            "csv" -> "text/csv"
+                            "tsv" -> "text/tab-separated-values"
+                            "json" -> "application/json"
+                            "parquet" -> "application/vnd.apache.parquet"
+                            "ics" -> "text/calendar"
+                            "png" -> "image/png"
+                            "jpg", "jpeg" -> "image/jpeg"
+                            "webp" -> "image/webp"
+                            "svg" -> "image/svg+xml"
+                            "mp4", "m4v" -> "video/mp4"
+                            "mov" -> "video/quicktime"
+                            "webm" -> "video/webm"
+                            "mp3" -> "audio/mpeg"
+                            "wav" -> "audio/wav"
+                            "ogg" -> "audio/ogg"
+                            "m4a" -> "audio/mp4"
+                            "flac" -> "audio/flac"
+                            "stl" -> "model/stl"
+                            "step", "stp" -> "model/step"
+                            "obj" -> "model/obj"
+                            "gltf" -> "model/gltf+json"
+                            "glb" -> "model/gltf-binary"
+                            "zip" -> "application/zip"
+                            else -> "application/octet-stream"
+                        }
                     val request = android.app.DownloadManager.Request(android.net.Uri.parse(url))
                         .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                         .setTitle("VillaForge · " + detail.villa.name)
-                        .setMimeType(
-                            when (build?.optString("artifactType")) {
-                                "apk" -> "application/vnd.android.package-archive"
-                                "tar.gz" -> "application/gzip"
-                                else -> "application/zip"
-                            }
-                        )
+                        .setMimeType(mimeType)
                     request.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, name)
                     viewModel.authHeader()?.let { request.addRequestHeader("Authorization", it) }
                     val dm = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as android.app.DownloadManager

@@ -5,7 +5,9 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {db,now} from '../db.mjs';
 import {PROJECT_WORKSPACE} from '../project-verification.mjs';
-import {deliveryProfile,deliveryReadiness} from '../delivery-quality.mjs';
+import {classifyDeliverable,deliveryProfile,deliveryPhases,deliveryReadiness} from '../delivery-quality.mjs';
+import {ROLES} from '../agent-roles.mjs';
+import {assessVillaConfiguration} from '../villa-configuration.mjs';
 import {maturity,developCycle} from '../product.mjs';
 function villa(idea){return Number(db.prepare("INSERT INTO villas(name,idea,status,created_at,updated_at) VALUES (?,?,'PAUSED',?,?)").run('Quality test',idea,now(),now()).lastInsertRowid);}
 function deliverable(id,name){const dir=join(PROJECT_WORKSPACE,`villa-${id}`,'deliverables');mkdirSync(dir,{recursive:true});writeFileSync(join(dir,name),Buffer.alloc(256,1));}
@@ -20,11 +22,66 @@ test('Bild- und Medien-Villen werden nach Artefakttyp erkannt',()=>{
  assert.equal(deliveryProfile(villa('Erstelle einen Pitch für Investoren')).id,'pitch');
  assert.equal(deliveryProfile(villa('Baue einen Hardware-Prototyp')).id,'invention');
 });
+
+test('Text-, Recherche-, Daten-, Bildungs- und Ablaufprojekte erhalten passende Lieferklassen',()=>{
+ const cases=[
+  ['Schreibe einen Roman für Jugendliche','document'],
+  ['Erstelle eine Marktstudie mit Quellen','research'],
+  ['Analysiere diesen Datensatz und liefere eine Excel-Tabelle','data'],
+  ['Erstelle einen Geschäftsplan für ein kleines Unternehmen','business'],
+  ['Baue einen Onlinekurs mit Übungen','education'],
+  ['Plane einen Workshop mit Ablauf und Checkliste','event'],
+  ['Unterstütze ein allgemeines Projekt ohne festgelegtes Ausgabeformat','general']
+ ];
+ for(const [idea,expected] of cases)assert.equal(classifyDeliverable(idea),expected,idea);
+ assert.equal(classifyDeliverable('perfekt'),'software','unknown briefs retain the strict software gate');
+ for(const [idea,expected] of cases.slice(0,-1)){
+  const id=villa(idea),profile=deliveryProfile(id),phases=deliveryPhases(id);
+  assert.equal(profile.id,expected);
+  assert.equal(phases.length,5);
+  assert.ok(phases.every(phase=>ROLES.includes(phase.role)),`${expected} uses supported agent roles`);
+  assert.ok(profile.extensions.length>0);
+ }
+});
+
+test('Projektkontext gibt jedem Aufgaben-Agenten Lieferklasse und passende Abnahmestufen',async()=>{
+ const id=villa('Erstelle eine Marktstudie mit Quellen');
+ const {projectProfile}=await import('../agents.mjs');
+ const context=projectProfile(id);
+ assert.match(context,/Lieferklasse: Recherche \/ Analyse \(research\)/);
+ assert.match(context,/Quellen & Belege \(RESEARCHER\)/);
+ assert.match(context,/Bericht & Quellenliste \(DOCUMENTER\)/);
+});
+
+test('Villa-Diagnose zeigt die passende Lieferklasse und Rollenfolge',()=>{
+ const report=assessVillaConfiguration({villa:{id:987,idea:'Erstelle eine Marktstudie mit Quellen',status:'PAUSED',autonomy:0}});
+ assert.equal(report.delivery.id,'research');
+ assert.ok(report.delivery.expectedFormats.includes('.pdf'));
+ assert.ok(report.delivery.phases.some(phase=>phase.role==='RESEARCHER'));
+});
+
+test('Build-Metadaten behalten den echten Dateityp für Medien und Dokumente',async()=>{
+ const {artifactTypeForExtension,artifactMime}=await import('../builds.mjs');
+ assert.equal(artifactTypeForExtension('.mp4'),'media');
+ assert.equal(artifactTypeForExtension('.pdf'),'deliverable');
+ assert.equal(artifactTypeForExtension('.xlsx'),'deliverable');
+ assert.equal(artifactMime('villa-4.pdf','deliverable'),'application/pdf');
+ assert.equal(artifactMime('villa-4.xlsx','deliverable'),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+ assert.equal(artifactMime('villa-4.tar.gz','tar.gz'),'application/gzip');
+});
 test('Kreativprojekt bleibt gesperrt, bis finales Artefakt und Review durch unabhängigen Agenten vorliegen',()=>{
  const id=villa('Erstelle ein Kampagnenbild');deliverable(id,'hero.png');
  assert.equal(deliveryReadiness(id).verified,false);
  assert.ok(deliveryReadiness(id).blockers.some(b=>b.includes('Review')));
  review(id);assert.equal(deliveryReadiness(id).verified,true);
+});
+
+test('Datenprojekt braucht ein passendes Tabellenartefakt und ein unabhängiges Review',()=>{
+ const id=villa('Analysiere den Datensatz und liefere eine Excel-Tabelle');
+ deliverable(id,'analysis.xlsx');
+ assert.equal(deliveryReadiness(id).verified,false);
+ review(id);
+ assert.equal(deliveryReadiness(id).verified,true);
 });
 test('Erledigtes Review ohne echte Ergebnisdatei gilt nicht als Abnahme',()=>{
  const id=villa('Produziere ein kurzes Video');review(id);

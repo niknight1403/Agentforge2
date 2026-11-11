@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {inspectProductZip,verifyProductAcceptance} from '../../scripts/lib/product-release-gate.mjs';
+import {inspectProductZip,isValidDeliverableArtifact,verifyProductAcceptance} from '../../scripts/lib/product-release-gate.mjs';
 function zip(name='index.html'){
  const n=Buffer.from(name),data=Buffer.from('<main>Fixture app</main>');
  const local=Buffer.alloc(30);local.writeUInt32LE(0x04034b50);local.writeUInt32LE(data.length,18);local.writeUInt32LE(data.length,22);local.writeUInt16LE(n.length,26);
@@ -19,4 +19,15 @@ test('Release acceptance requires product evidence, no blockers, ready build and
  assert.equal((await run({...accepted,unfinishedTasks:81})).villaId,1);
  for(const p of [{...accepted,verified:false},{...accepted,blockers:['missing source']}])await assert.rejects(run(p),/ACCEPTANCE_MISSING/);
  await assert.rejects(run(accepted,'unverified'),/ACCEPTANCE_MISSING/);assert.equal(downloaded,2);
+});
+test('Release acceptance validates document/data files instead of treating them as ZIPs or playable media',async()=>{
+ const csv=Buffer.from('name,value\nalpha,12\nbeta,25\n');
+ assert.equal(isValidDeliverableArtifact(csv,'.csv'),true);
+ assert.equal(isValidDeliverableArtifact(Buffer.alloc(32),'.csv'),false);
+ const result=await verifyProductAcceptance({
+  requestJson:async path=>path==='/api/villas'?[{id:2}]:path.endsWith('/product')
+   ?{verified:true,blockers:[]}:{status:'ready',artifact:'villa-2.csv',artifactType:'deliverable'},
+  download:async()=>csv
+ });
+ assert.deepEqual(result.deliverable,{extension:'.csv',bytes:csv.length});
 });

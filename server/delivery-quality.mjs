@@ -45,33 +45,129 @@ const PROFILES = {
     ['PROTOTYPE','Prototyp erstellen','Liefere einen prüfbaren Prototyp, CAD-/Schaltungsartefakt oder ausführbaren Demonstrator.'],
     ['REVIEW','Prototyp unabhängig prüfen','Prüfe Anforderungen, Belastbarkeit, Bedienbarkeit und Sicherheit; dokumentiere Tests und Mängel.'],
     ['VALIDATION','Validierungsplan & Übergabe','Liefere Stückliste/Material, Kostenannahmen und einen priorisierten Testplan für den nächsten Reifegrad.']
+  ]},
+  document: { label:'Text / Dokument', extensions:['.md','.txt','.pdf','.docx','.odt','.rtf','.epub','.html'], phases:[
+    ['BRIEF','Zielgruppe & Zweck','Lege Leser, Einsatz, Ton, Umfang und überprüfbare Kriterien fest.'],
+    ['OUTLINE','Gliederung & Belege','Erstelle eine nachvollziehbare Gliederung und markiere belegpflichtige Aussagen.'],
+    ['DRAFT','Vollständigen Text erstellen','Liefere einen vollständigen, nutzbaren Entwurf im passenden Zielformat.'],
+    ['REVIEW','Text unabhängig prüfen','Prüfe Fakten, Verständlichkeit, Vollständigkeit, Rechte und sprachliche Qualität.'],
+    ['DELIVERY','Dokument übergeben','Liefere die finale Datei und eine kurze Nutzungs- oder Änderungsnotiz.']
+  ]},
+  research: { label:'Recherche / Analyse', extensions:['.md','.txt','.pdf','.docx','.html','.csv','.xlsx','.pptx'], phases:[
+    ['QUESTION','Fragestellung & Umfang','Definiere Fragestellung, Zielgruppe, Zeitraum und Entscheidung, die die Recherche stützen soll.'],
+    ['SOURCES','Quellen & Belege','Sammle überprüfbare Quellen mit Datum und trenne Belege von Annahmen.'],
+    ['ANALYSIS','Befunde auswerten','Vergleiche Befunde, Unsicherheiten, Gegenargumente und praktische Konsequenzen.'],
+    ['REVIEW','Ergebnisse kritisch prüfen','Prüfe Quellenqualität, Rechenwege, Aktualität und unbelegte Schlussfolgerungen.'],
+    ['DELIVERY','Bericht & Quellenliste','Liefere den Bericht mit Quellen, Datum, Grenzen und konkreten nächsten Schritten.']
+  ]},
+  data: { label:'Daten / Tabelle', extensions:['.csv','.tsv','.xlsx','.ods','.json','.parquet','.pdf','.html'], phases:[
+    ['DATA_BRIEF','Datenziel & Schema','Definiere Eingaben, Felder, Einheiten, Zielgruppe und erwartete Ausgaben.'],
+    ['DATA_SOURCE','Daten & Qualität','Dokumentiere Herkunft, Lizenz, fehlende Werte, Formate und Datenschutzgrenzen.'],
+    ['ANALYSIS','Auswertung erstellen','Erzeuge die angeforderte Tabelle, Auswertung oder Visualisierung mit nachvollziehbaren Berechnungen.'],
+    ['VALIDATION','Ergebnisse validieren','Prüfe Summen, Randfälle, Stichproben, Formeln und Reproduzierbarkeit unabhängig.'],
+    ['DELIVERY','Datenartefakt übergeben','Liefere die finale Datei mit Spaltenbeschreibung, Annahmen und Aktualisierungsanleitung.']
+  ]},
+  business: { label:'Geschäft / Strategie', extensions:['.md','.pdf','.docx','.pptx','.xlsx','.csv','.html'], phases:[
+    ['OBJECTIVE','Ziel & Entscheidung','Definiere Geschäftsziel, Zielgruppe, Entscheidung und messbare Erfolgssignale.'],
+    ['EVIDENCE','Markt & Annahmen','Prüfe Marktbelege, Alternativen, Kosten und Annahmen mit Quellen oder klarer Kennzeichnung.'],
+    ['MODEL','Umsetzbares Modell','Erstelle einen priorisierten Plan mit Verantwortlichkeiten, Aufwand, Risiken und Kennzahlen.'],
+    ['REVIEW','Plan kritisch prüfen','Prüfe Machbarkeit, Zahlen, Abhängigkeiten, Risiken und Gegenargumente unabhängig.'],
+    ['HANDOFF','Arbeitsplan übergeben','Liefere ein direkt nutzbares Entscheidungs- oder Umsetzungspaket mit nächsten Schritten.']
+  ]},
+  education: { label:'Lernen / Schulung', extensions:['.md','.pdf','.docx','.pptx','.html','.zip'], phases:[
+    ['LEARNER','Lernende & Ziele','Definiere Zielgruppe, Vorkenntnisse und beobachtbare Lernziele.'],
+    ['CURRICULUM','Lernpfad & Inhalte','Ordne Inhalte in aufeinander aufbauende Einheiten mit Beispielen und Übungen.'],
+    ['MATERIAL','Material erstellen','Liefere vollständige, verständliche Lernmaterialien und passende Aufgaben.'],
+    ['ASSESSMENT','Lernerfolg prüfen','Prüfe Aufgaben, Lösungen, Barrierefreiheit und die Zuordnung zu Lernzielen.'],
+    ['DELIVERY','Kurs übergeben','Liefere den nutzbaren Kurs samt Ablauf, Materialien und Hinweisen für Lehrende.']
+  ]},
+  event: { label:'Ablauf / Veranstaltung', extensions:['.md','.pdf','.docx','.xlsx','.csv','.ics','.html'], phases:[
+    ['PURPOSE','Ziel & Rahmen','Definiere Anlass, Teilnehmende, Ort/Format, Zeitrahmen, Budget und Erfolgskriterien.'],
+    ['PLAN','Ablauf & Ressourcen','Erstelle Zeitplan, Zuständigkeiten, Materialbedarf und Abhängigkeiten.'],
+    ['OPERATIONS','Durchführung vorbereiten','Liefere Checklisten, Kommunikation, Zugänglichkeit und einen realistischen Ablauf.'],
+    ['CONTINGENCY','Risiken & Alternativen','Prüfe kritische Abhängigkeiten, Sicherheitsaspekte und konkrete Ausweichpläne.'],
+    ['HANDOFF','Paket übergeben','Liefere ein vollständiges Organisationspaket mit finalen Terminen und offenen Entscheidungen.']
+  ]},
+  general: { label:'Allgemeines Projekt', extensions:['.md','.txt','.pdf','.docx','.odt','.rtf','.epub','.html','.csv','.tsv','.xlsx','.ods','.json','.pptx','.png','.jpg','.jpeg','.webp','.svg','.mp4','.webm','.mp3','.wav','.stl','.step','.stp','.obj','.gltf','.glb','.zip'], phases:[
+    ['GOAL','Ziel & Abnahme','Kläre das gewünschte Ergebnis, Zielgruppe, Grenzen und überprüfbare Abnahmekriterien.'],
+    ['PLAN','Plan & Abhängigkeiten','Zerlege das Vorhaben in konkrete Ergebnisse, Rollen, Abhängigkeiten und Prüfschritte.'],
+    ['PRODUCTION','Ergebnis erstellen','Liefere das angeforderte nutzbare Artefakt im passenden Format, nicht nur einen Plan.'],
+    ['REVIEW','Ergebnis unabhängig prüfen','Prüfe das Artefakt gegen die Abnahmekriterien und dokumentiere offene Grenzen.'],
+    ['HANDOFF','Nutzbares Ergebnis übergeben','Liefere Dateien, kurze Anleitung, Annahmen und konkrete nächste Schritte.']
   ]}
 };
 const SOFTWARE_HINT = /\b(app|application|software|webseite|website|webapp|plattform|dashboard|api|saas|code|programm|tool|system|entwickel|implementier|generator)\b/i;
+const PROJECT_TARGET = /\b(market research|market analysis|business plan|businessplan|operations plan|event plan|travel plan|app|application|software|anwendung|webapp|webseite|website|program|programm|tool|generator|editor|plattform|platform|dashboard|api|saas|code|system|video|film|clip|animation|reel|audio|musik|music|song|podcast|bild|bilder|grafik|graphic|logo|poster|pitch|praesentation|deck|hardware|prototyp|cad|roman|buch|book|novel|artikel|article|blog|bericht|report|guide|leitfaden|handbuch|dokumentation|documentation|whitepaper|essay|newsletter|research|recherche|studie|marktstudie|marktforschung|study|marktanalyse|wettbewerbsanalyse|data|daten|dataset|datensatz|spreadsheet|excel|tabelle|budget|analysis|business|geschaeftsplan|strategie|strategy|marketing|roadmap|plan|kurs|onlinekurs|course|training|lesson|unterricht|lehrplan|curriculum|tutorial|event|veranstaltung|workshop|konferenz|conference|reiseplan|ablaufplan|projekt|project)\b/i;
+
+const PROFILE_ROLES = {
+  image:['PLANNER','ARCHITECT','PROFI','CRITIC','INTEGRATOR'],
+  video:['PLANNER','DOCUMENTER','PROFI','CRITIC','INTEGRATOR'],
+  audio:['PLANNER','ARCHITECT','PROFI','CRITIC','INTEGRATOR'],
+  pitch:['RESEARCHER','STRATEGIST','DOCUMENTER','CRITIC','INTEGRATOR'],
+  invention:['PLANNER','ARCHITECT','PROFI','TESTER','INTEGRATOR'],
+  document:['PLANNER','RESEARCHER','DOCUMENTER','CRITIC','INTEGRATOR'],
+  research:['RESEARCHER','RESEARCHER','REASONER','CRITIC','DOCUMENTER'],
+  data:['PLANNER','RESEARCHER','REASONER','TESTER','DOCUMENTER'],
+  business:['PLANNER','RESEARCHER','BUSINESS','CRITIC','INTEGRATOR'],
+  education:['PLANNER','RESEARCHER','DOCUMENTER','TESTER','INTEGRATOR'],
+  event:['PLANNER','RESEARCHER','PLANNER','CRITIC','INTEGRATOR'],
+  general:['PLANNER','ARCHITECT','WORKER','CRITIC','INTEGRATOR']
+};
+
+function foldProjectText(value) {
+  return String(value || '').toLowerCase()
+    .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss');
+}
+
+function targetProfile(target) {
+  const t=foldProjectText(target);
+  if(/^(app|application|software|anwendung|webapp|webseite|website|program|programm|tool|generator|editor|plattform|platform|dashboard|api|saas|code|system)$/.test(t))return 'software';
+  if(/^(video|film|clip|animation|reel|werbespot)$/.test(t))return 'video';
+  if(/^(audio|musik|music|song|podcast|soundtrack|voiceover)$/.test(t))return 'audio';
+  if(/^(bild|bilder|grafik|graphic|logo|poster|cover|thumbnail|illustration)$/.test(t))return 'image';
+  if(/^(pitch|praesentation|deck)$/.test(t))return 'pitch';
+  if(/^(hardware|prototyp|cad|erfindung)$/.test(t))return 'invention';
+  if(/^(roman|buch|book|novel|artikel|article|blog|bericht|report|guide|leitfaden|handbuch|dokumentation|documentation|whitepaper|essay|newsletter)$/.test(t))return 'document';
+  if(/^(market research|market analysis|research|recherche|studie|marktstudie|marktforschung|study|marktanalyse|wettbewerbsanalyse)$/.test(t))return 'research';
+  if(/^(data|daten|dataset|datensatz|spreadsheet|excel|tabelle|budget|analysis)$/.test(t))return 'data';
+  if(/^(business plan|businessplan|operations plan|business|geschaeftsplan|strategie|strategy|marketing|roadmap|plan)$/.test(t))return 'business';
+  if(/^(kurs|onlinekurs|course|training|lesson|unterricht|lehrplan|curriculum|tutorial)$/.test(t))return 'education';
+  if(/^(event plan|travel plan|event|veranstaltung|workshop|konferenz|conference|reiseplan|ablaufplan)$/.test(t))return 'event';
+  if(/^(projekt|project)$/.test(t))return 'general';
+  return null;
+}
+
 export function classifyDeliverable(idea='') {
-  const s=String(idea);
-  // Determine the requested deliverable, not a later feature/marketing subject.
-  // An audio app needs software gates; a video about an app needs a video export.
-  const normalized=s.replace(/\b(?:audio|musik|video|bildbearbeitungs|dj)[- ]app\b/gi,'App').replace(/\b(?:logo|bild|bilder|image|video|audio|musik|music)[- ]?(?:generator|editor|bearbeitungsprogramm)\b/gi,'Software');
-  const softwareTargets=['app','application','software','anwendung','webapp','webseite','website','program','programm','tool','generator','editor','plattform','dashboard','api','saas','code','system'];
-  const action=/\b(?:develop\w*|build|create|entwickl\w*|erstelle?|baue?|programmier\w*|implementier\w*|produzier\w*|generier\w*)\s+([^.!?\n]{0,180})/i.exec(normalized);
-  const target=action?.[1].match(/\b(app|application|software|anwendung|webapp|webseite|website|program|programm|tool|generator|editor|plattform|dashboard|api|saas|code|system|video|film|clip|audio|musik|song|bild|bilder|grafik|logo|pitch|präsentation|praesentation|hardware|prototyp)\b/i)?.[1].toLowerCase();
-  if(target){
-    if(softwareTargets.includes(target))return 'software';
-    if(['video','film','clip'].includes(target))return 'video';
-    if(['audio','musik','song'].includes(target))return 'audio';
-    if(['bild','bilder','grafik','logo'].includes(target))return 'image';
-    if(['pitch','präsentation','praesentation'].includes(target))return 'pitch';
-    if(['hardware','prototyp'].includes(target))return 'invention';
-  }
-  const heading=normalized.slice(0,600).match(/\b(app|application|software|anwendung|webapp|webseite|website|program|programm|tool|generator|editor|plattform|dashboard|api|saas|code|system|video|film|audio|musik|song|bild|bilder|grafik|logo|pitch|hardware|prototyp)\b/i)?.[1].toLowerCase();
-  if(softwareTargets.includes(heading))return 'software';
-  if(SOFTWARE_HINT.test(s)&&/\b(apk|aab|android[- ]app|ios[- ]app|flutter|gradle|react[- ]native)\b/i.test(s))return 'software';
-  if (/\b(video|film|clip|animation|werbespot|reel)\b/i.test(s)) return 'video';
-  if (/\b(audio|musik|song|soundtrack|voiceover|podcast|jingle)\b/i.test(s)) return 'audio';
-  if (/\b(pitch|präsentation|praesentation|pitchdeck|deck|investorenpräsentation|investorenpraesentation)\b/i.test(s)) return 'pitch';
-  if (/\b(erfindung|invention|prototyp|cad|produktentwicklung|hardware)\b/i.test(s)) return 'invention';
-  if (/\b(bild|bilder|bilderstellung|bildgenerierung|kampagnenbild|grafik|illustration|logo|poster|cover|thumbnail|visual|kunstwerk|artwork)\b/i.test(s) && !SOFTWARE_HINT.test(s)) return 'image';
+  const original=foldProjectText(idea);
+  // Treat an editor/generator as software, not as the media it edits or creates.
+  // The requested output still wins over later mentions such as "video about our app".
+  const normalized=original
+    .replace(/\b(?:audio|musik|music|video|bild|bilder|image|logo|report|bericht|text|dokument|document|dj)[- ]?app\b/g,'app')
+    .replace(/\b(?:audio|musik|music|video|bild|bilder|image|logo|report|bericht|text|dokument|document)[- ]?(?:generator|editor|bearbeitungsprogramm)\b/g,'software');
+  const action=/\b(?:develop\w*|build|create|entwickl\w*|erstelle?|baue?|programmier\w*|implementier\w*|produzier\w*|generier\w*|schreib\w*|write|plan\w*|analysier\w*|research\w*)\s+([^.!?\n]{0,180})/i.exec(normalized);
+  const actionTarget=action?.[1].match(PROJECT_TARGET)?.[1];
+  const actionClass=targetProfile(actionTarget);
+  if(actionClass)return actionClass;
+
+  // Without an action, prefer the first explicit product/result named in the brief.
+  const heading=normalized.slice(0,800).match(PROJECT_TARGET)?.[1];
+  const headingClass=targetProfile(heading);
+  if(headingClass)return headingClass;
+
+  if(/\b(?:market research|market analysis|research|recherche|studie|study|marktanalyse|wettbewerbsanalyse)\b/i.test(normalized))return 'research';
+  if(/\b(?:dataset|datensatz|spreadsheet|excel|csv|tsv|datenanalyse|data analysis|daten|data)\b/i.test(normalized))return 'data';
+  if(/\b(?:business plan|operations plan|event plan|geschaeftsplan|business|strategie|strategy|marketingplan|marketing plan|roadmap|umsatzplan)\b/i.test(normalized))return 'business';
+  if(/\b(?:kurs|course|training|lesson|unterricht|lehrplan|curriculum|tutorial|schulung)\b/i.test(normalized))return 'education';
+  if(/\b(?:event|veranstaltung|workshop|konferenz|conference|reiseplan|travel plan|ablaufplan)\b/i.test(normalized))return 'event';
+  if(/\b(?:roman|buch|book|novel|artikel|article|blog|bericht|report|guide|leitfaden|handbuch|dokumentation|documentation|whitepaper|essay|newsletter)\b/i.test(normalized))return 'document';
+  if(/\b(?:video|film|clip|animation|werbespot|reel)\b/i.test(normalized))return 'video';
+  if(/\b(?:audio|musik|song|soundtrack|voiceover|podcast|jingle)\b/i.test(normalized))return 'audio';
+  if(/\b(?:pitch|praesentation|pitchdeck|deck)\b/i.test(normalized))return 'pitch';
+  if(/\b(?:erfindung|invention|prototyp|cad|produktentwicklung|hardware)\b/i.test(normalized))return 'invention';
+  if(/\b(?:bild|bilder|bilderstellung|bildgenerierung|kampagnenbild|grafik|illustration|logo|poster|cover|thumbnail|visual|kunstwerk|artwork)\b/i.test(normalized))return 'image';
+  if(SOFTWARE_HINT.test(normalized)||/\b(?:apk|aab|android[- ]app|ios[- ]app|flutter|gradle|react[- ]native)\b/i.test(normalized))return 'software';
+  // Unknown briefs keep the stricter, independently executable software gate.
+  // A general artifact workflow must be explicit; ambiguity must not weaken acceptance.
   return 'software';
 }
 /** Erwartete Datei-Endungen je Lieferklasse (leer bei Software). */
@@ -80,9 +176,9 @@ export function deliverableExtensions(id) {
   return Array.isArray(profile?.extensions) ? [...profile.extensions] : [];
 }
 
-export function deliveryProfile(villaId) {
+export function deliveryProfile(villaId, ideaOverride) {
   const villa=db.prepare('SELECT idea,name FROM villas WHERE id=?').get(Number(villaId));
-  const id=classifyDeliverable(villa?.idea || villa?.name || '');
+  const id=classifyDeliverable(typeof ideaOverride==='string'?ideaOverride:(villa?.idea || villa?.name || ''));
   return { id, ...PROFILES[id] };
 }
 function outputs(villaId, profile) {
@@ -126,7 +222,10 @@ export function deliveryReadiness(villaId) {
   if(failed)blockers.push(`${failed} fehlgeschlagene Aufgabe(n) müssen behoben oder begründet geschlossen werden`);
   return {domain:profile.id,label:profile.label,verified:blockers.length===0,status:blockers.length?'blocked':'verified',blockers,checks:{artifact:{status:artifacts.length?'passed':'missing'},review:{status:review?'passed':'missing'},openTasks:{status:open?'blocked':'passed'}},artifacts,sourceFiles:artifacts.length};
 }
-export function deliveryPhases(villaId) {
-  const profile=deliveryProfile(villaId);
-  return profile.id==='software'?null:profile.phases.map(([id,title,desc],i)=>({id,title,weight:[15,20,25,25,15][i],goal:desc,musts:[{key:id.toLowerCase(),role:i===3?'CRITIC':i===2?'CREATOR':'PLANNER',title,desc:`${desc} Abnahme: nachvollziehbare Datei, belegte Entscheidungen und explizite Prüfkriterien.`}]}));
+export function deliveryPhases(villaId, ideaOverride) {
+  const profile=deliveryProfile(villaId,ideaOverride);
+  return profile.id==='software'?null:profile.phases.map(([id,title,desc],i)=>{
+    const role=PROFILE_ROLES[profile.id]?.[i]||'WORKER';
+    return {id,title,weight:[15,20,25,25,15][i],goal:desc,role,musts:[{key:id.toLowerCase(),role,title,desc:`${desc} Abnahme: nachvollziehbare Datei, belegte Entscheidungen und explizite Prüfkriterien.`}]};
+  });
 }

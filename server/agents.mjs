@@ -27,6 +27,7 @@ import { normalizeSwarmBlueprint } from './swarm.mjs';
 import { villaLock } from './verification-lock.mjs';
 import { publishIntegration, integrationBranchName } from './integration-publish.mjs';
 import { villaRepo } from './repo-target.mjs';
+import { deliveryProfile, deliveryPhases } from './delivery-quality.mjs';
 export { normalizeSwarmBlueprint } from './swarm.mjs';
 
 
@@ -1086,7 +1087,19 @@ export async function runAgent(agent, userPrompt, { maxSteps = 5, maxTokens = 15
 export function projectProfile(villaId, maxChars = 1600) {
   const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(villaId);
   if (!villa) return '';
-  const lines = [`Ziel: ${String(villa.idea || '').slice(0, 300)}`];
+  const delivery = deliveryProfile(villaId);
+  const phases = deliveryPhases(villaId);
+  const lines = [
+    `Ziel: ${String(villa.idea || '').slice(0, 300)}`,
+    `Lieferklasse: ${delivery.label} (${delivery.id}).`,
+    ...(phases?.length ? [
+      `Lieferfolge: ${phases.map((phase) => `${phase.title} (${phase.role})`).join(' → ')}.`,
+      `Zielformate: ${delivery.extensions.join(', ')}.`
+    ] : [
+      'Software-Abnahme: echte Projektdateien, Build, Tests und Smoke am unveränderten Quellstand.',
+      'Ein Textabschluss oder ein Quellcode-Archiv allein ist kein fertiges Produkt.'
+    ])
+  ];
   if (villa.mode && villa.mode !== 'BUILD') {
     lines.push(`Vorgehen: ${villa.mode} - bestehende Substanz erhalten und gezielt verbessern, kein Neubau ohne Not.`);
   }

@@ -107,7 +107,42 @@ async function sh(cmd, args, opts, L) {
 }
 
 export function buildStatus(villaId) {
-  return state[String(villaId)] || { status: 'none' };
+  const record = state[String(villaId)] || { status: 'none' };
+  return record.artifact ? { ...record, mime: artifactMime(record.artifact, record.artifactType) } : record;
+}
+
+const FILE_MIME_TYPES = {
+  '.md':'text/markdown; charset=utf-8','.txt':'text/plain; charset=utf-8','.pdf':'application/pdf',
+  '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.odt':'application/vnd.oasis.opendocument.text','.rtf':'application/rtf','.epub':'application/epub+zip',
+  '.html':'text/html; charset=utf-8','.csv':'text/csv; charset=utf-8','.tsv':'text/tab-separated-values; charset=utf-8',
+  '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ods':'application/vnd.oasis.opendocument.spreadsheet','.json':'application/json',
+  '.parquet':'application/vnd.apache.parquet',
+  '.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml',
+  '.mp4':'video/mp4','.m4v':'video/mp4','.mov':'video/quicktime','.webm':'video/webm',
+  '.mp3':'audio/mpeg','.wav':'audio/wav','.ogg':'audio/ogg','.m4a':'audio/mp4','.flac':'audio/flac',
+  '.ics':'text/calendar; charset=utf-8','.stl':'model/stl','.step':'model/step','.stp':'model/step',
+  '.obj':'model/obj','.gltf':'model/gltf+json','.glb':'model/gltf-binary','.zip':'application/zip'
+};
+const MEDIA_TYPE_BY_EXTENSION = {
+  '.png':'image','.jpg':'image','.jpeg':'image','.webp':'image','.svg':'image',
+  '.mp4':'video','.m4v':'video','.mov':'video','.webm':'video',
+  '.mp3':'audio','.wav':'audio','.ogg':'audio','.m4a':'audio','.flac':'audio'
+};
+function mediaTypeForExtension(extension) {
+  return MEDIA_TYPE_BY_EXTENSION[String(extension||'').toLowerCase()]||null;
+}
+export function artifactTypeForExtension(extension) {
+  return mediaTypeForExtension(extension)?'media':'deliverable';
+}
+export function artifactMime(name, artifactType = '') {
+  const lower=String(name||'').toLowerCase();
+  if(artifactType==='apk'||lower.endsWith('.apk'))return 'application/vnd.android.package-archive';
+  if(artifactType==='tar.gz'||lower.endsWith('.tar.gz'))return 'application/gzip';
+  const extension=lower.includes('.')?lower.slice(lower.lastIndexOf('.')):'';
+  return FILE_MIME_TYPES[extension]||'application/octet-stream';
 }
 
 export function buildArtifact(villaId) {
@@ -115,11 +150,7 @@ export function buildArtifact(villaId) {
   if (!['ready','unverified'].includes(rec.status) || !rec.artifact) return null;
   const file = join(OUT, rec.artifact);
   if (!existsSync(file)) return null;
-  return {
-    file, name: rec.artifact,
-    mime: rec.artifactType === 'apk' ? 'application/vnd.android.package-archive'
-      : rec.artifactType === 'tar.gz' ? 'application/gzip' : 'application/zip'
-  };
+  return { file, name: rec.artifact, mime: rec.mime || artifactMime(rec.artifact,rec.artifactType) };
 }
 
 
@@ -443,16 +474,18 @@ export async function startBuild(villaId, { auto = false } = {}) {
         }
       }
       if (mediaExtensions.length) {
-        const media = findMediaArtifact(dir, mediaExtensions);
-        if (!media) {
+        const outputArtifact = findMediaArtifact(dir, mediaExtensions);
+        if (!outputArtifact) {
           throw new Error(`MEDIA_DELIVERABLE_MISSING: kein ${deliverable}-Artefakt (${mediaExtensions.join(', ')}) im Projekt gefunden.`);
         }
-        const output = join(OUT, `villa-${villaId}${media.extension}`);
-        copyFileSync(media.path, output);
-        record.artifactType = 'media';
-        record.artifact = `villa-${villaId}${media.extension}`;
-        record.media = {extension: media.extension, bytes: media.bytes, deliverable};
-        L(`Medien-Artefakt bereit: ${media.extension} (${media.bytes} B).`);
+        const output = join(OUT, `villa-${villaId}${outputArtifact.extension}`);
+        copyFileSync(outputArtifact.path, output);
+        const mediaType=mediaTypeForExtension(outputArtifact.extension);
+        record.artifactType = artifactTypeForExtension(outputArtifact.extension);
+        record.artifact = `villa-${villaId}${outputArtifact.extension}`;
+        if(mediaType)record.media = {extension:outputArtifact.extension,bytes:outputArtifact.bytes,deliverable:mediaType};
+        else record.deliverable = {extension:outputArtifact.extension,bytes:outputArtifact.bytes,kind:deliverable};
+        L(`${mediaType?'Medien-':'Projekt'}Artefakt bereit: ${outputArtifact.extension} (${outputArtifact.bytes} B).`);
       }
       if (!mode) throw new Error('Villa-Workspace ist leer - erst Entwicklungsaufgaben ausfuehren lassen.');
       if (mode) perfManifest(dir, record, L); // Phase 3: vermessen statt nur bauen

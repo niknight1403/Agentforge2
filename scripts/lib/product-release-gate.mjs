@@ -21,6 +21,28 @@ export function inspectProductZip(bytes){
  if(cursor!==offset+size||!names.some(n=>/(?:^|\/)(?:index\.html|package\.json|AndroidManifest\.xml)$/.test(n)))throw Error('PRODUCT_APP_FILES_MISSING');
  return {entries:count,bytes:b.length};
 }
+export function isValidDeliverableArtifact(bytes,extension){
+ const b=Buffer.from(bytes||[]),ext=String(extension||'').toLowerCase();
+ if(b.length<16)return false;
+ if(ext==='.pdf')return b.subarray(0,5).toString('ascii')==='%PDF-';
+ if(['.docx','.xlsx','.pptx','.odt','.epub'].includes(ext))return b.length>=22&&b.readUInt32LE(0)===0x04034b50;
+ if(ext==='.parquet')return b.subarray(0,4).toString('ascii')==='PAR1'&&b.subarray(-4).toString('ascii')==='PAR1';
+ if(ext==='.glb')return b.subarray(0,4).toString('ascii')==='glTF';
+ if(ext==='.gltf'||ext==='.json'){
+  try{JSON.parse(b.toString('utf8'));return true;}catch{return false;}
+ }
+ if(ext==='.step'||ext==='.stp')return /^ISO-10303-21/i.test(b.toString('utf8',0,200));
+ if(ext==='.stl'){
+  if(b.length>=84&&84+b.readUInt32LE(80)*50===b.length)return true;
+  return /^solid\b/i.test(b.toString('utf8',0,100));
+ }
+ if(ext==='.obj')return /^(?:v|o|g|f)\s/m.test(b.toString('utf8',0,2000));
+ if(['.md','.txt','.html','.csv','.tsv','.ics'].includes(ext)){
+  const text=b.toString('utf8');
+  return !text.includes('\u0000')&&text.trim().length>=16;
+ }
+ return false;
+}
 export async function verifyProductAcceptance({requestJson,download,preferredVillaId}={}){
  const all=await requestJson('/api/villas'),rows=Array.isArray(all)?all:all.villas;
  if(!Array.isArray(rows))throw Error('PRODUCT_LIST_INVALID');
@@ -40,6 +62,10 @@ export async function verifyProductAcceptance({requestJson,download,preferredVil
    if(!isPlayableArtifact(bytes,extension))continue;
    return {villaId:id,verified:true,media:{extension,bytes:Buffer.from(bytes).length}};
   }
+   if(build.artifactType==='deliverable'){
+    if(!isValidDeliverableArtifact(bytes,extension))continue;
+    return {villaId:id,verified:true,deliverable:{extension,bytes:Buffer.from(bytes).length}};
+   }
   const archive=inspectProductZip(bytes);
   return {villaId:id,verified:true,archive};
  }
