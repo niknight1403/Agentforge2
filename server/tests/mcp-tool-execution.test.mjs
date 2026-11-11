@@ -77,3 +77,30 @@ test('execution rejects oversized SDK results and audits failure', async () => {
   const row = db.prepare('SELECT * FROM mcp_tool_execution_audit WHERE server_id=? ORDER BY created_at DESC LIMIT 1').get(server.id);
   assert.equal(row.outcome, 'failed');
 });
+
+test('execution rejects non-JSON argument values before calling the client', async () => {
+  const { server, tool } = setup('exec-json-values');
+  setMcpToolPolicy(tool.id, 'approved', 'reviewed');
+  setMcpServerStatus(server.id, 'active');
+  let called = false;
+  const client = { async callTool() { called = true; return {}; } };
+  for (const argumentsValue of [
+    { nested: new Date() },
+    { nested: undefined },
+    { nested: Number.POSITIVE_INFINITY },
+    { nested: 1n },
+  ]) {
+    await assert.rejects(executeApprovedMcpTool({
+      serverId: server.id, toolName: tool.name, arguments: argumentsValue, client,
+    }), { code: 'MCP_INVALID_TOOL_ARGUMENTS' });
+  }
+  const circular = {};
+  circular.self = circular;
+  await assert.rejects(executeApprovedMcpTool({
+    serverId: server.id, toolName: tool.name, arguments: circular, client,
+  }), { code: 'MCP_INVALID_TOOL_ARGUMENTS' });
+  assert.equal(called, false);
+  const rows = db.prepare("SELECT outcome FROM mcp_tool_execution_audit WHERE server_id=?").all(server.id);
+  assert.equal(rows.length, 5);
+  assert.ok(rows.every((row) => row.outcome === 'denied'));
+});
