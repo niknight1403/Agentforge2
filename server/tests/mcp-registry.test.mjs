@@ -23,6 +23,9 @@ test('registry rejects invalid URLs, unsupported transports and inline secrets',
   assert.throws(() => registerMcpServer({ name: 'bad2', transport: 'mqtt', url: 'https://example.test' }), /transport/);
   assert.throws(() => registerMcpServer({ name: 'bad3', transport: 'http', url: 'https://user:pass@example.test' }), /URL/);
   assert.throws(() => registerMcpServer({ name: 'bad4', transport: 'http', url: 'https://example.test', config: { api_key: 'leak' } }), /Sensitive field/);
+  for (const parameter of ['access_token', 'x-api-key', 'credential', 'X-Amz-Signature', 'auth']) {
+    assert.throws(() => registerMcpServer({ name: `query-secret-${parameter}`, transport: 'http', url: `https://example.test/mcp?${parameter}=secret` }), /credential-like parameters/);
+  }
   assert.throws(() => registerMcpServer({ name: 'auth-missing-ref', transport: 'http', url: 'https://example.test', authMode: 'oauth2' }), /credentialRef/);
 });
 
