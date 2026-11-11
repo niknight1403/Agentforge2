@@ -36,7 +36,7 @@ export function isValidDeliverableArtifact(bytes,extension){
  if(['.docx','.xlsx','.pptx','.odt','.epub','.ods','.key','.3mf','.zip'].includes(ext))return hasZipContainer(b);
  if(ext==='.rtf')return /^\\{\\\\rtf\\d/i.test(b.toString('utf8',0,32));
  if(['.tif','.tiff'].includes(ext)){
-  return b.length>=8&&((b[0]===0x49&&b[1]===0x49&&((b[2]===0x2a&&b[3]===0x00)||(b[2]===0x2b&&b[3]===0x00)))||(b[0]===0x4d&&b[1]===0x4d&&((b[2]===0x00&&b[3]===0x2a)||(b[2]===0x00&&b[3]===0x2b)));
+  return b.length>=8&&((b[0]===0x49&&b[1]===0x49&&((b[2]===0x2a&&b[3]===0x00)||(b[2]===0x2b&&b[3]===0x00)))||(b[0]===0x4d&&b[1]===0x4d&&((b[2]===0x00&&b[3]===0x2a)||(b[2]===0x00&&b[3]===0x2b))));
  }
  if(ext==='.aac')return b[0]===0xff&&(b[1]&0xf6)===0xf0;
  if(ext==='.parquet')return b.subarray(0,4).toString('ascii')==='PAR1'&&b.subarray(-4).toString('ascii')==='PAR1';
