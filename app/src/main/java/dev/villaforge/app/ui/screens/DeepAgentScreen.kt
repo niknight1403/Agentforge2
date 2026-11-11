@@ -269,11 +269,17 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                                             return try {
                                                 val targetUrl = URL(target)
                                                 val connection = targetUrl.openConnection() as HttpURLConnection
-                                                if (targetUrl.host.equals(URL(state.serverUrl).host, ignoreCase = true)) {
-                                                    viewModel.authHeader()?.let { connection.setRequestProperty("Authorization", it) }
-                                                }
+                                                val hubOrigin = URL(state.serverUrl)
+                                                val sameOrigin = targetUrl.protocol.equals(hubOrigin.protocol, ignoreCase = true) &&
+                                                    targetUrl.host.equals(hubOrigin.host, ignoreCase = true) &&
+                                                    (if (targetUrl.port >= 0) targetUrl.port else targetUrl.defaultPort) ==
+                                                    (if (hubOrigin.port >= 0) hubOrigin.port else hubOrigin.defaultPort)
+                                                connection.instanceFollowRedirects = false
                                                 connection.connectTimeout = 8000
                                                 connection.readTimeout = 15000
+                                                if (sameOrigin) {
+                                                    viewModel.authHeader()?.let { connection.setRequestProperty("Authorization", it) }
+                                                }
                                                 connection.connect()
                                                 val mime = connection.contentType?.substringBefore(';') ?: "application/octet-stream"
                                                 val encoding = connection.contentEncoding ?: "UTF-8"
@@ -281,7 +287,8 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                                             } catch (_: Exception) { null }
                                         }
                                     }
-                                    loadUrl(viewModel.deepPreviewUrl(projectId, entry), viewModel.authHeader()?.let { mapOf("Authorization" to it) } ?: emptyMap())
+                                    // The interceptor attaches credentials only after an exact Hub-origin check.
+                                    loadUrl(viewModel.deepPreviewUrl(projectId, entry))
                                 }
                             },
                             update = { }
@@ -292,6 +299,9 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                     WorkspaceMetric("Villa", if (project.villaId > 0) "#${project.villaId}" else "noch offen", Modifier.weight(1f))
                     WorkspaceMetric("Live-Vorschau", if (completion?.optBoolean("liveViewAvailable") == true) "bereit" else "in Arbeit", Modifier.weight(1f))
                     WorkspaceMetric("Admin-Werkzeuge", "$availableTools / ${runtimeTools.length()}", Modifier.weight(1f))
+                }
+                if (workspace?.optBoolean("capabilitiesRestricted") == true) {
+                    Text("Admin-Werkzeuge sind nur mit Administratorrechten sichtbar.", color = TextMuted, style = MaterialTheme.typography.labelSmall)
                 }
                 if (runtimeTools.length() > 0) {
                     Text("VERFÜGBARE RUNTIME-WERKZEUGE", style = MaterialTheme.typography.labelSmall, color = NeonCyan, fontWeight = FontWeight.Bold)
