@@ -27,6 +27,45 @@ function fail(code, message) {
   return error;
 }
 
+function assertJsonSafe(value, seen = new WeakSet()) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool arguments must not contain non-finite numbers');
+    return;
+  }
+  if (typeof value !== 'object') throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool arguments must contain only JSON values');
+  if (seen.has(value)) throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool arguments must not contain circular references');
+  const isArray = Array.isArray(value);
+  const prototype = Object.getPrototypeOf(value);
+  if (isArray ? prototype !== Array.prototype : (prototype !== Object.prototype && prototype !== null)) {
+    throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool arguments must use plain JSON objects and arrays');
+  }
+  seen.add(value);
+  try {
+    const keys = Reflect.ownKeys(value);
+    if (isArray) {
+      if (keys.some((key) => key !== 'length' && (typeof key !== 'string' || !/^(0|[1-9]\\d*)$/.test(key)))) {
+        throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool argument arrays must not contain custom properties');
+      }
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool argument arrays must not contain holes');
+        assertJsonSafe(value[index], seen);
+      }
+    } else {
+      for (const key of keys) {
+        if (typeof key !== 'string') throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool arguments must not contain symbol keys');
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
+          throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool arguments must contain only enumerable data properties');
+        }
+        assertJsonSafe(descriptor.value, seen);
+      }
+    }
+  } finally {
+    seen.delete(value);
+  }
+}
+
 function jsonBytes(value, code, label, maxBytes) {
   let encoded;
   try { encoded = JSON.stringify(value); } catch {
@@ -61,12 +100,14 @@ export async function executeApprovedMcpTool({
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) {
     throw new TypeError('timeoutMs must be an integer between 100 and 120000');
   }
-  if (!toolArguments || typeof toolArguments !== 'object' || Array.isArray(toolArguments)) {
-    throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool arguments must be a JSON object');
+  if (!toolArguments || typeof toolArguments !== 'object' || Array.isArray(toolArguments)
+    || (Object.getPrototypeOf(toolArguments) !== Object.prototype && Object.getPrototypeOf(toolArguments) !== null)) {
+    throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool arguments must be a plain JSON object');
   }
 
   let argsEncoded;
   try {
+    assertJsonSafe(toolArguments);
     argsEncoded = jsonBytes(toolArguments, 'MCP_INVALID_TOOL_ARGUMENTS', 'Tool arguments', MAX_ARGUMENT_BYTES);
   } catch (error) {
     audit({ serverId, toolId: 'unknown', toolName: String(toolName ?? '').slice(0, 160), argsHash: 'invalid', outcome: 'denied', errorCode: error.code || 'MCP_INVALID_TOOL_ARGUMENTS', startedAt });
