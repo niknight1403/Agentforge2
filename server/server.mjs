@@ -42,7 +42,7 @@ import { deepMissionBrief } from './deep-mission.mjs';
 import { classifyDeepDevelopmentIntent } from './deep-intent.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
-import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
+import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deepPreviewFile, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { projectReadiness } from './deep-completion.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
@@ -1451,6 +1451,21 @@ async function api(req, res, url) {
     } catch (e) {
       return json(res, 400, { error: String(e.message || e).slice(0, 300) });
     }
+  }
+  if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'preview' && parts.length >= 6 && m === 'GET') {
+    const f = deepPreviewFile(Number(parts[3]), parts.slice(5).join('/'));
+    if (!f) return json(res, 404, { error: 'Keine Deep-Projekt-Vorschau-Datei' });
+    res.writeHead(200, {
+      'Content-Type': f.mime, 'Cache-Control': 'no-store',
+      'Content-Security-Policy': "sandbox allow-scripts; frame-ancestors 'self'; form-action 'none'",
+      'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'
+    });
+    if (f.mime.startsWith('text/html')) {
+      const html = readFileSync(f.file, 'utf8').replace(/(src|href)=("|')\\//g, '$1=$2');
+      return res.end(html);
+    }
+    createReadStream(f.file).pipe(res);
+    return;
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'files' && parts[3] && m === 'GET') {
     const f = deepFileById(Number(parts[3]));
