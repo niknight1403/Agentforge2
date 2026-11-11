@@ -6,7 +6,7 @@
 - The named tool must exist in the persisted discovery snapshot and have explicit `approved` policy status. A schema change resets approval through the registry.
 - Arguments must be a plain JSON object no larger than 64 KiB. Nested values reject custom prototypes, accessors, symbols, sparse/custom arrays, cycles, undefined, non-finite numbers, and other non-JSON values. The SDK result must be JSON-serializable and no larger than 1 MiB.
 - Calls have a bounded deadline (100 ms–120 s; default 30 s).
-- An append-only SQLite audit row records server/tool identifiers, SHA-256 of arguments, outcome, error code, and duration. Raw arguments, credentials, and tool results are not written to this audit table.
+- An append-only SQLite audit row records server/tool identifiers, SHA-256 of arguments, outcome, error code, and duration. For a client-identity mismatch, arguments are not inspected and the audit uses the explicit `unavailable` digest marker. Raw arguments, credentials, and tool results are not written to this audit table.
 - The MCP client is injected; this module does not create transports, spawn processes, resolve DNS, enforce network pinning, or provide an OS/container sandbox.
 
 ## Integration contract
