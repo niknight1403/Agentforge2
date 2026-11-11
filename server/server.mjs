@@ -1300,7 +1300,7 @@ async function api(req, res, url) {
   /* ---- Deep Agent: eigene App-Projekte abseits der Villen (v1.37.0) ---- */
   // Deep projects, chat, uploads and previews contain private project data. Require
   // an authenticated user outside the explicitly configured legacy open mode.
-  if (p.startsWith('/api/deep/') && !openMode && !user) {
+  if ((p === '/api/deep/projects' || p.startsWith('/api/deep/')) && !openMode && !user) {
     return json(res, 401, { error: 'Login erforderlich.' });
   }
   if (p === '/api/deep/projects' && m === 'GET') {
