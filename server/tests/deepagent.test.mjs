@@ -120,7 +120,9 @@ test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeich
   writeFileSync(join(dist, 'app.js'), 'console.log("preview")');
   const projectRoot = join(TMP, 'deep-files', String(project.id));
   writeFileSync(join(projectRoot, 'index.html'), '<!doctype html><script src="/assets/app.js"></script>');
-  assert.equal(deepPreviewFile(project.id, 'index.html'), null, 'root project files are not preview roots');
+  const rootEntry = deepPreviewFile(project.id, 'index.html');
+  assert.equal(rootEntry.mime, 'text/html; charset=utf-8', 'only the explicit root entry point is served');
+  closeSync(rootEntry.fd);
   const rootAssets = join(projectRoot, 'assets');
   mkdirSync(rootAssets, { recursive: true });
   writeFileSync(join(rootAssets, 'app.js'), 'console.log("root preview asset")');
