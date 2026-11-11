@@ -540,6 +540,9 @@ class HubClient(context: Context) {
         JSONObject(execute("POST", "/api/deep/projects/$projectId/files",
             JSONObject().put("name", name).put("mime", mime).put("data", base64)))
 
+    fun deepPreviewUrl(projectId: Long, entry: String): String =
+        url("/api/deep/projects/$projectId/preview/" + entry.trimStart('/'))
+
     fun authHeaderValue(): String? =
         if (apiToken.isNotBlank()) "Bearer $apiToken" else null
 
