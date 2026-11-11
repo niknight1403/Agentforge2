@@ -483,10 +483,15 @@ class HubClient(context: Context) {
     /** Live-Arbeitsplatz: belegter Fertigstellungsstand plus Admin-Runtime-Werkzeuge. */
     suspend fun deepWorkspace(id: Long): JSONObject = withContext(Dispatchers.IO) {
         val completion = JSONObject(execute("GET", "/api/deep/projects/$id/completion"))
-        val runtime = JSONObject(execute("GET", "/api/system/runtime-capabilities"))
+        // Runtime inventory is intentionally admin-only. A 403 must not hide
+        // the project completion report from ordinary authenticated users.
+        val runtime = runCatching {
+            JSONObject(execute("GET", "/api/system/runtime-capabilities"))
+        }.getOrNull()
         JSONObject()
             .put("completion", completion)
-            .put("capabilities", runtime.optJSONArray("capabilities") ?: JSONArray())
+            .put("capabilities", runtime?.optJSONArray("capabilities") ?: JSONArray())
+            .put("capabilitiesRestricted", runtime == null)
     }
 
     /** Löscht genau dieses Deep-Projekt samt Chat und Anhängen. */
