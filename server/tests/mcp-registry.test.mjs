@@ -1,4 +1,5 @@
 import './_env.mjs';
+import { db } from '../db.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -97,4 +98,33 @@ test('invalid capability metadata rolls back the entire discovery snapshot', () 
     { name: 'invalid_candidate', capabilities: [''] },
   ]), /capabilities/);
   assert.deepEqual(listMcpTools({ serverId: server.id }).map((tool) => tool.name), ['safe_read']);
+});
+
+
+test('server registration and outbox event commit or roll back together', () => {
+  db.exec(`
+    CREATE TRIGGER fail_mcp_server_event
+    BEFORE INSERT ON mcp_registry_events
+    WHEN NEW.event_type = 'mcp.server.registered'
+    BEGIN SELECT RAISE(ABORT, 'forced outbox failure'); END;
+  `);
+  try {
+    assert.throws(() => registerMcpServer({
+      name: 'outbox-atomicity-server', transport: 'stdio', command: 'node',
+    }), /forced outbox failure/);
+    assert.equal(listMcpServers().some((server) => server.name === 'outbox-atomicity-server'), false);
+  } finally {
+    db.exec('DROP TRIGGER IF EXISTS fail_mcp_server_event');
+  }
+});
+
+test('tool descriptions and capability metadata are bounded', () => {
+  const server = registerMcpServer({ name: 'bounded-metadata-server', transport: 'stdio', command: 'node' });
+  assert.throws(() => replaceMcpServerTools(server.id, [{
+    name: 'too_long', description: 'x'.repeat(4001),
+  }]), /description/);
+  assert.throws(() => replaceMcpServerTools(server.id, [{
+    name: 'too_many_chars', capabilities: ['x'.repeat(81)],
+  }]), /capabilities/);
+  assert.equal(listMcpTools({ serverId: server.id }).length, 0);
 });
