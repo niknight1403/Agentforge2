@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +14,14 @@ class Settings(BaseSettings):
 
     project_name: str = "Agent Academy"
     api_token: str = Field(default="", repr=False)
+
+    @field_validator("api_token")
+    @classmethod
+    def reject_weak_token(cls, value: str) -> str:
+        """Reject public placeholders and configured tokens shorter than 32 characters."""
+        if value and (len(value) < 32 or value.lower().startswith(("replace-", "changeme", "your-"))):
+            raise ValueError("ACADEMY_API_TOKEN must be a non-placeholder value of at least 32 characters")
+        return value
     data_dir: Path = Path("./data")
     github_allowed_orgs: str = "niknight1403"
     max_file_bytes: int = Field(default=50_000, ge=1_024, le=1_000_000)
