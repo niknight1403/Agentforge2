@@ -27,8 +27,8 @@ export function createMcpRuntimeSupervisor({
   maxConcurrent = 2,
 } = {}) {
   if (typeof connect !== 'function' || typeof discover !== 'function'
-    || typeof getServer !== 'function' || typeof listServers !== 'function') {
-    throw new TypeError('connect, discover, getServer and listServers must be functions');
+    || typeof getServer !== 'function' || typeof listServers !== 'function'\n    || typeof setStatus !== 'function') {
+    throw new TypeError('connect, discover, getServer, listServers and setStatus must be functions');
   }
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 32) {
     throw new TypeError('maxConcurrent must be an integer between 1 and 32');
