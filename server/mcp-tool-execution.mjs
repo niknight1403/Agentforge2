@@ -103,15 +103,21 @@ export async function executeApprovedMcpTool({
   if (!client || typeof client.callTool !== 'function') throw fail('MCP_CLIENT_REQUIRED', 'A connected MCP SDK client with callTool() is required');
   if (client.serverId !== serverId) {
     const error = fail('MCP_CLIENT_SERVER_MISMATCH', 'The connected MCP client must be explicitly bound to the requested serverId');
-    audit({
-      serverId,
-      toolId: 'unknown',
-      toolName: typeof toolName === 'string' ? toolName.slice(0, 160) : 'unknown',
-      argsHash: 'unavailable',
-      outcome: 'denied',
-      errorCode: error.code,
-      startedAt,
-    });
+    try {
+      audit({
+        serverId,
+        toolId: 'unknown',
+        toolName: typeof toolName === 'string' ? toolName.slice(0, 160) : 'unknown',
+        argsHash: 'unavailable',
+        outcome: 'denied',
+        errorCode: error.code,
+        startedAt,
+      });
+    } catch {
+      // Audit persistence is best-effort on this denial path: never replace the
+      // security decision with a secondary storage failure.
+      Object.defineProperty(error, 'auditWriteFailed', { value: true });
+    }
     throw error;
   }
   if (typeof toolName !== 'string' || !toolName.trim() || toolName.length > 160) {
