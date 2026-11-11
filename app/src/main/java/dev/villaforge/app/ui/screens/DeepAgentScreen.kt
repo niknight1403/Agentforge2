@@ -53,6 +53,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import java.net.HttpURLConnection
+import java.net.URL
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -180,6 +187,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
     var input by remember { mutableStateOf("") }
     var showAttachMenu by remember { mutableStateOf(false) }
     var showRepoDialog by remember { mutableStateOf(false) }
+    var showPreview by remember { mutableStateOf(false) }
     var repoUrl by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val context = LocalContext.current
@@ -238,6 +246,43 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                         },
                         if (completion?.optBoolean("ready") == true) NeonCyan else ElectricBlue
                     )
+                }
+                if (completion?.optBoolean("liveViewAvailable") == true) {
+                    val live = completion.optJSONObject("live")
+                    val entry = live?.optString("entry").orEmpty()
+                    TextButton(onClick = { showPreview = !showPreview }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (showPreview) "Live-Vorschau schließen" else "Live-App-Vorschau öffnen", color = NeonCyan)
+                    }
+                    if (showPreview && entry.isNotBlank()) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(12.dp)),
+                            factory = { ctx ->
+                                WebView(ctx).apply {
+                                    settings.javaScriptEnabled = true
+                                    settings.domStorageEnabled = true
+                                    settings.allowFileAccess = false
+                                    settings.allowContentAccess = false
+                                    webViewClient = object : WebViewClient() {
+                                        override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                                            val target = request?.url?.toString() ?: return null
+                                            return try {
+                                                val connection = URL(target).openConnection() as HttpURLConnection
+                                                viewModel.authHeader()?.let { connection.setRequestProperty("Authorization", it) }
+                                                connection.connectTimeout = 8000
+                                                connection.readTimeout = 15000
+                                                connection.connect()
+                                                val mime = connection.contentType?.substringBefore(';') ?: "application/octet-stream"
+                                                val encoding = connection.contentEncoding ?: "UTF-8"
+                                                WebResourceResponse(mime, encoding, connection.inputStream)
+                                            } catch (_: Exception) { null }
+                                        }
+                                    }
+                                    loadUrl(viewModel.deepPreviewUrl(projectId, entry), viewModel.authHeader()?.let { mapOf("Authorization" to it) } ?: emptyMap())
+                                }
+                            },
+                            update = { }
+                        )
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                     WorkspaceMetric("Villa", if (project.villaId > 0) "#${project.villaId}" else "noch offen", Modifier.weight(1f))
