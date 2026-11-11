@@ -55,8 +55,17 @@ db.exec(`
     created_at INTEGER NOT NULL,
     published_at INTEGER
   );
-  CREATE INDEX IF NOT EXISTS idx_mcp_registry_events_pending ON mcp_registry_events(published_at, created_at);
+  CREATE INDEX IF NOT EXISTS idx_mcp_registry_events_pending ON mcp_registry_events(published_at, claim_expires_at, created_at);
 `);
+
+function ensureColumn(table, column, definition) {
+  const columns = db.prepare('PRAGMA table_info(' + table + ')').all();
+  if (!columns.some((item) => item.name === column)) db.exec('ALTER TABLE ' + table + ' ADD COLUMN ' + column + ' ' + definition);
+}
+ensureColumn('mcp_registry_events', 'claim_token', "TEXT NOT NULL DEFAULT ''");
+ensureColumn('mcp_registry_events', 'claim_expires_at', 'INTEGER');
+ensureColumn('mcp_registry_events', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+
 
 function plainObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${label} must be an object`);
@@ -316,12 +325,37 @@ export function setMcpToolPolicy(id, policyStatus, reason = '') {
   });
 }
 
-export function claimMcpRegistryEvents(limit = 100) {
+export function claimMcpRegistryEvents(limit = 100, { leaseMs = 30_000 } = {}) {
   const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
-  return db.prepare('SELECT * FROM mcp_registry_events WHERE published_at IS NULL ORDER BY created_at LIMIT ?').all(safeLimit)
-    .map((row) => ({ id: row.id, serverId: row.server_id, type: row.event_type, payload: JSON.parse(row.payload_json), createdAt: row.created_at }));
+  if (!Number.isInteger(leaseMs) || leaseMs < 1_000 || leaseMs > 15 * 60_000) {
+    throw new TypeError('leaseMs must be an integer between 1000 and 900000');
+  }
+  return withRegistryTransaction(() => {
+    const timestamp = now();
+    const eligible = db.prepare(
+      "SELECT id FROM mcp_registry_events WHERE published_at IS NULL AND (claim_token='' OR claim_expires_at IS NULL OR claim_expires_at<=?) ORDER BY created_at LIMIT ?"
+    ).all(timestamp, safeLimit);
+    const claim = db.prepare(
+      "UPDATE mcp_registry_events SET claim_token=?, claim_expires_at=?, attempts=attempts+1 WHERE id=? AND published_at IS NULL AND (claim_token='' OR claim_expires_at IS NULL OR claim_expires_at<=?)"
+    );
+    const read = db.prepare('SELECT * FROM mcp_registry_events WHERE id=?');
+    const claimed = [];
+    for (const item of eligible) {
+      const claimToken = randomUUID();
+      const expiresAt = timestamp + leaseMs;
+      if (!claim.run(claimToken, expiresAt, item.id, timestamp).changes) continue;
+      const row = read.get(item.id);
+      claimed.push({ id: row.id, serverId: row.server_id, type: row.event_type,
+        payload: JSON.parse(row.payload_json), createdAt: row.created_at,
+        claimToken: row.claim_token, leaseExpiresAt: row.claim_expires_at, attempts: row.attempts });
+    }
+    return claimed;
+  });
 }
 
-export function markMcpRegistryEventPublished(id) {
-  return db.prepare('UPDATE mcp_registry_events SET published_at=? WHERE id=? AND published_at IS NULL').run(now(), String(id)).changes > 0;
+export function markMcpRegistryEventPublished(id, claimToken) {
+  if (typeof claimToken !== 'string' || !claimToken) return false;
+  return db.prepare(
+    "UPDATE mcp_registry_events SET published_at=?, claim_token='', claim_expires_at=NULL WHERE id=? AND published_at IS NULL AND claim_token=?"
+  ).run(now(), String(id), claimToken).changes > 0;
 }
