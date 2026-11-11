@@ -69,3 +69,10 @@ await supervisor.closeAll();
 ```
 
 This is an in-process lifecycle owner, not a hardened process supervisor. A production deployment still needs OS/container resource limits, crash detection/restart policy, and isolation outside Node.js.
+
+### Lifecycle concurrency hardening
+
+The supervisor serializes stop/restart for a given server. A restart requested while
+the previous transport is closing waits for teardown and creates a fresh adapter;
+it cannot receive the closing client. Duplicate stop requests share one teardown
+operation. The runtime snapshot includes in-progress stops for operational visibility.
