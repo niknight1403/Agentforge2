@@ -49,7 +49,11 @@ function assertJsonSafe(value, seen = new WeakSet()) {
       }
       for (let index = 0; index < value.length; index += 1) {
         if (!Object.hasOwn(value, index)) throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool argument arrays must not contain holes');
-        assertJsonSafe(value[index], seen);
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
+          throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool argument arrays must contain only enumerable data elements');
+        }
+        assertJsonSafe(descriptor.value, seen);
       }
     } else {
       for (const key of keys) {
