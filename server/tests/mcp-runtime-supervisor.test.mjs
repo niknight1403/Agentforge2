@@ -358,3 +358,25 @@ test('a non-cancelled connection failure is recorded in registry status', async 
   assert.equal(servers.get('one').lastErrorCode, 'MCP_EXECUTABLE_NOT_ALLOWED');
   assert.deepEqual(supervisor.getSnapshot().startingServerIds, []);
 });
+
+test('a transport close failure marks the runtime degraded and propagates the error', async () => {
+  const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    setStatus: (id, status, options = {}) => {
+      servers.set(id, { ...servers.get(id), status, lastErrorCode: options.errorCode ?? null });
+    },
+    connect: async ({ serverId }) => ({
+      ...fakeAdapter(serverId),
+      async close() { throw Object.assign(new Error('transport close failed'), { code: 'MCP_TRANSPORT_CLOSE_FAILED' }); },
+    }),
+    discover: async ({ serverId }) => servers.set(serverId, { ...servers.get(serverId), status: 'active' }),
+  });
+  await supervisor.startServer('one');
+  await assert.rejects(supervisor.stopServer('one'), { code: 'MCP_TRANSPORT_CLOSE_FAILED' });
+  assert.equal(servers.get('one').status, 'degraded');
+  assert.equal(servers.get('one').lastErrorCode, 'MCP_TRANSPORT_CLOSE_FAILED');
+  assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
+  assert.deepEqual(supervisor.getSnapshot().stoppingServerIds, []);
+});
