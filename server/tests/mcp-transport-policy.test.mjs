@@ -30,7 +30,7 @@ test('stdio policy rejects relative or non-allowlisted executables', () => {
 test('stdio policy rejects sandbox escapes, unsafe argv and unapproved environment keys', () => {
   assert.throws(() => validateStdioLaunch({ command: '/usr/bin/node', cwd: '/tmp', args: ['/srv/mcp-sandboxes/demo/server.mjs'] }, stdioPolicy), { code: 'MCP_WORKDIR_NOT_ALLOWED' });
   assert.throws(() => validateStdioLaunch({ command: '/usr/bin/node', cwd: '/srv/mcp-sandboxes/demo', args: ['--eval=process.exit()'] }, stdioPolicy), { code: 'MCP_ARGUMENT_POLICY_REJECTED' });
-  assert.throws(() => validateStdioLaunch({ command: '/usr/bin/node', cwd: '/srv/mcp-sandboxes/demo', env: { API_TOKEN: 'secret' } }, stdioPolicy), { code: 'MCP_ENV_KEY_NOT_ALLOWED' });
+  assert.throws(() => validateStdioLaunch({ command: '/usr/bin/node', cwd: '/srv/mcp-sandboxes/demo', args: ['/srv/mcp-sandboxes/demo/server.mjs'], env: { API_TOKEN: 'secret' } }, stdioPolicy), { code: 'MCP_ENV_KEY_NOT_ALLOWED' });
 });
 
 const remotePolicy = {
