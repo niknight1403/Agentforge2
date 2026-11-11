@@ -9,7 +9,26 @@ from app.config import settings
 ALLOWED_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".yml", ".yaml", ".toml", ".sql"}
 IGNORED_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "coverage", ".next"}
 IGNORED_NAMES = {".env", ".env.local", ".env.production", "id_rsa", "id_ed25519"}
-SECRET_HINTS = re.compile(r"(api[_-]?key|secret|password|token)\s*[:=]", re.IGNORECASE)
+SECRET_ASSIGNMENTS = re.compile(
+    r"""(?im)\b(?:api[_-]?key|client[_-]?secret|secret|password|passwd|access[_-]?token|auth[_-]?token|private[_-]?key)\b\s*[:=]\s*["']?([^\s"'#,;]{6,})"""
+)
+SECRET_MARKERS = re.compile(
+    r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
+    r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
+    r"AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{20,})\b",
+    re.IGNORECASE,
+)
+SAFE_SECRET_PLACEHOLDERS = {"changeme", "change-me", "replace-me", "your_api_key", "your-token", "placeholder"}
+
+def contains_secret(content: str) -> bool:
+    sample = content[:100_000]
+    if SECRET_MARKERS.search(sample):
+        return True
+    for match in SECRET_ASSIGNMENTS.finditer(sample):
+        value = match.group(1).strip().strip("\"'")
+        if value.lower() not in SAFE_SECRET_PLACEHOLDERS and not value.lower().startswith(("your-", "replace-", "example")):
+            return True
+    return False
 
 
 class GitHubScanner:
@@ -58,10 +77,8 @@ class GitHubScanner:
                     content = path.read_text(encoding="utf-8")
                 except (OSError, UnicodeError):
                     continue
-                # Avoid indexing files that look like they contain credentials.
-                if SECRET_HINTS.search(content[:10_000]) and any(
-                    marker in content.lower() for marker in ("-----begin ", "ghp_", "sk-proj-", "akia")
-                ):
+                # Never index files with credential assignments or recognizable secret formats.
+                if contains_secret(content):
                     continue
                 chunks.append({
                     "path": path.relative_to(repo_path).as_posix(),
