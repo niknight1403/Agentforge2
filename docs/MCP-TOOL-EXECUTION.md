@@ -12,3 +12,7 @@
 ## Integration contract
 
 The caller must supply a connected, trusted MCP SDK client with a `serverId` property exactly matching the registered `serverId`; the gate rejects mismatches before invoking `callTool`. The property is an adapter contract, not cryptographic proof: only trusted adapter code may construct or pass clients. Do not reuse a client across tenants or credential scopes. A timeout does not prove that the remote operation was cancelled; adapters must implement cancellation/teardown and idempotency where supported. Tool approval is an explicit governance decision, not a guarantee that the remote server is benign. Apply least privilege and external sandbox/network controls before enabling untrusted servers.
+
+## Audit storage failure on identity denial
+
+A client/server identity mismatch is rejected regardless of audit database availability. The denial audit write is attempted without inspecting tool arguments; if persistence fails, the original `MCP_CLIENT_SERVER_MISMATCH` error is still thrown with a non-enumerable `auditWriteFailed=true` diagnostic flag. In that case no durable audit row can be guaranteed. This is a deliberate fail-closed execution decision with best-effort denial telemetry; operators must monitor audit storage health separately.
