@@ -470,3 +470,36 @@ test('reconciliation closes connected runtimes when registry state is degraded, 
   assert.deepEqual(closed.sort(), ['degraded', 'failed', 'pending', 'remote']);
   assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
 });
+
+
+test('a timed-out MCP tool retires its stdio runtime and records degraded health', async () => {
+  const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
+  let closeCount = 0;
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    setStatus: (id, status, options = {}) => {
+      servers.set(id, { ...servers.get(id), status, lastErrorCode: options.errorCode ?? null });
+    },
+    connect: async ({ serverId }) => fakeAdapter(serverId, () => { closeCount += 1; }),
+    discover: async ({ serverId }) => servers.set(serverId, { ...servers.get(serverId), status: 'active' }),
+    executeTool: async () => {
+      throw Object.assign(new Error('tool deadline exceeded'), { code: 'MCP_TOOL_EXECUTION_TIMEOUT' });
+    },
+  });
+
+  await supervisor.startServer('one');
+  await assert.rejects(
+    supervisor.executeApprovedTool({ serverId: 'one', toolName: 'slow-tool' }),
+    { code: 'MCP_TOOL_EXECUTION_TIMEOUT' },
+  );
+  assert.equal(closeCount, 1, 'timed-out runtime transport must be closed');
+  assert.equal(servers.get('one').status, 'degraded');
+  assert.equal(servers.get('one').lastErrorCode, 'MCP_TOOL_EXECUTION_TIMEOUT');
+  assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
+  assert.deepEqual(supervisor.getSnapshot().activeExecutions, {});
+  await assert.rejects(
+    supervisor.executeApprovedTool({ serverId: 'one', toolName: 'another-tool' }),
+    { code: 'MCP_RUNTIME_NOT_CONNECTED' },
+  );
+});
