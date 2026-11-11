@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { db, now } from './db.mjs';
 
+db.exec('PRAGMA foreign_keys = ON;');
+
 const SERVER_STATES = new Set(['pending', 'active', 'degraded', 'failed', 'disabled']);
 const TRANSPORTS = new Set(['stdio', 'sse', 'http', 'websocket']);
 const AUTH_MODES = new Set(['none', 'bearer', 'oauth2']);
