@@ -100,15 +100,22 @@ fun FileManagerScreen() {
     fun plan(text: String) {
         val q = text.trim().lowercase()
         if (q.isBlank()) return
+        // Resolve an explicitly named file before interpreting words such as "jpg"
+        // as a MIME category. This prevents "Lösche Urlaub.jpg" from selecting every photo.
+        val needle = q.replace(
+            Regex("^(bitte\\s+)?(lösche|loesche|entferne|zeige|finde|suche|sortiere|ordne|verschiebe)\\s+(die\\s+)?(datei|dateien)?\\s*"),
+            ""
+        ).trim().trim('"', '\'')
+        val exactNamedFiles = if (needle.contains('.')) {
+            files.filter { it.name.equals(needle, ignoreCase = true) }
+        } else emptyList()
         val selected = when {
+            exactNamedFiles.isNotEmpty() -> exactNamedFiles
             listOf("bild", "foto", "image", "jpg", "png").any(q::contains) -> files.filter { it.mime.startsWith("image/") }
             listOf("video", "film", "mp4").any(q::contains) -> files.filter { it.mime.startsWith("video/") }
             listOf("musik", "audio", "mp3").any(q::contains) -> files.filter { it.mime.startsWith("audio/") }
             listOf("spiel", "game", "apk").any(q::contains) -> files.filter { it.name.endsWith(".apk", true) || it.name.contains("game", true) }
-            else -> {
-                val needle = q.replace(Regex("^(bitte\\s+)?(lösche|loesche|entferne|zeige|finde|suche|sortiere|ordne|verschiebe)\\s+(die\\s+)?(datei|dateien)?\\s*"), "").trim()
-                files.filter { it.name.contains(needle.ifBlank { q }, true) }
-            }
+            else -> files.filter { it.name.contains(needle.ifBlank { q }, true) }
         }
         when {
             q.contains("duplikat") || q.contains("doppelt") -> {
