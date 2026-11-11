@@ -67,6 +67,24 @@ test('stdio adapter connects an SDK client with policy-validated launch settings
   await assert.rejects(adapter.listTools(), { code: 'MCP_CLIENT_CLOSED' });
 });
 
+test('stdio adapter falls back to transport teardown when client close fails', async () => {
+  const server = register('stdio-adapter-close-fallback');
+  let transportClosed = false;
+  class FakeTransport {
+    async close() { transportClosed = true; }
+  }
+  class FakeClient {
+    async connect() {}
+    async close() { throw new Error('simulated client shutdown failure'); }
+  }
+  const adapter = await connectMcpStdioServer({
+    serverId: server.id, policy, Client: FakeClient, StdioClientTransport: FakeTransport,
+  });
+  await assert.rejects(adapter.close(), /simulated client shutdown failure/);
+  assert.equal(transportClosed, true);
+  await adapter.close();
+});
+
 test('stdio adapter rejects a registered server that is not stdio', async () => {
   const server = register('stdio-adapter-transport-mismatch', { transport: 'http', url: 'https://mcp.example.test/mcp' });
   await assert.rejects(connectMcpStdioServer({
