@@ -119,8 +119,17 @@ test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeich
   writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Preview</title>');
   writeFileSync(join(dist, 'app.js'), 'console.log("preview")');
   const projectRoot = join(TMP, 'deep-files', String(project.id));
-  writeFileSync(join(projectRoot, 'index.html'), '<!doctype html><title>Root entry</title>');
+  writeFileSync(join(projectRoot, 'index.html'), '<!doctype html><script src="/assets/app.js"></script>');
   assert.equal(deepPreviewFile(project.id, 'index.html'), null, 'root project files are not preview roots');
+  const rootAssets = join(projectRoot, 'assets');
+  mkdirSync(rootAssets, { recursive: true });
+  writeFileSync(join(rootAssets, 'app.js'), 'console.log("root preview asset")');
+  assert.equal(
+    deepPreviewFile(project.id, 'assets/app.js').mime,
+    'text/javascript; charset=utf-8',
+    'only conventional root asset directories are exposed for a root index.html'
+  );
+  assert.equal(deepPreviewFile(project.id, 'server/secrets.json'), null, 'arbitrary project-root files remain private');
   const outside = join(TMP, 'outside-secret.txt');
   writeFileSync(outside, 'must not be served');
   symlinkSync(outside, join(dist, 'leak.txt'));
