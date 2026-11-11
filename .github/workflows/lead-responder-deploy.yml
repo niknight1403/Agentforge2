@@ -115,7 +115,7 @@ jobs:
           chmod 600 /root/lead-responder-credentials.txt
           echo "== credentials geschrieben =="; sed 's/=.*/=<gesetzt>/' /root/lead-responder-credentials.txt
           systemctl is-active lead-responder
-EOS
+          EOS
 
       - name: Oeffentliche URL verifizieren
         run: |
