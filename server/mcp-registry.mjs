@@ -128,6 +128,28 @@ function decodeServer(row) {
   };
 }
 
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  }
+  const encoded = JSON.stringify(value);
+  if (encoded === undefined) throw new TypeError('value must be JSON-serializable');
+  return encoded;
+}
+
+function withRegistryTransaction(work) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = work();
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 function registryEvent(serverId, eventType, payload = {}) {
   db.prepare('INSERT INTO mcp_registry_events (id, server_id, event_type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)')
     .run(randomUUID(), serverId, eventType, JSON.stringify(payload), now());
@@ -137,14 +159,16 @@ export function registerMcpServer(input) {
   const item = normalizeDefinition(input);
   const timestamp = now();
   const id = randomUUID();
-  db.prepare(`
-    INSERT INTO mcp_servers
-      (id,name,transport,endpoint,command,args_json,cwd,auth_mode,credential_ref,config_json,status,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?)
-  `).run(id, item.name, item.transport, item.endpoint, item.command, JSON.stringify(item.args), item.cwd,
-    item.authMode, item.credentialRef, JSON.stringify(item.config), timestamp, timestamp);
-  registryEvent(id, 'mcp.server.registered', { name: item.name, transport: item.transport });
-  return getMcpServer(id);
+  return withRegistryTransaction(() => {
+    db.prepare(`
+      INSERT INTO mcp_servers
+        (id,name,transport,endpoint,command,args_json,cwd,auth_mode,credential_ref,config_json,status,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?)
+    `).run(id, item.name, item.transport, item.endpoint, item.command, JSON.stringify(item.args), item.cwd,
+      item.authMode, item.credentialRef, JSON.stringify(item.config), timestamp, timestamp);
+    registryEvent(id, 'mcp.server.registered', { name: item.name, transport: item.transport });
+    return getMcpServer(id);
+  });
 }
 
 export function updateMcpServer(id, input) {
@@ -152,15 +176,17 @@ export function updateMcpServer(id, input) {
   if (!current) return null;
   const item = normalizeDefinition({ ...input, name: input.name ?? current.name });
   const timestamp = now();
-  db.prepare(`
-    UPDATE mcp_servers SET name=?,transport=?,endpoint=?,command=?,args_json=?,cwd=?,auth_mode=?,
-      credential_ref=?,config_json=?,status='pending',last_error_code='',updated_at=? WHERE id=?
-  `).run(item.name, item.transport, item.endpoint, item.command, JSON.stringify(item.args), item.cwd,
-    item.authMode, item.credentialRef, JSON.stringify(item.config), timestamp, id);
-  db.prepare("UPDATE mcp_tools SET policy_status='pending', policy_reason='server_definition_changed', updated_at=? WHERE server_id=?")
-    .run(timestamp, id);
-  registryEvent(id, 'mcp.server.updated', { name: item.name });
-  return getMcpServer(id);
+  return withRegistryTransaction(() => {
+    db.prepare(`
+      UPDATE mcp_servers SET name=?,transport=?,endpoint=?,command=?,args_json=?,cwd=?,auth_mode=?,
+        credential_ref=?,config_json=?,status='pending',last_error_code='',updated_at=? WHERE id=?
+    `).run(item.name, item.transport, item.endpoint, item.command, JSON.stringify(item.args), item.cwd,
+      item.authMode, item.credentialRef, JSON.stringify(item.config), timestamp, id);
+    db.prepare("UPDATE mcp_tools SET policy_status='pending', policy_reason='server_definition_changed', updated_at=? WHERE server_id=?")
+      .run(timestamp, id);
+    registryEvent(id, 'mcp.server.updated', { name: item.name });
+    return getMcpServer(id);
+  });
 }
 
 export function getMcpServer(id) {
@@ -179,23 +205,27 @@ export function listMcpServers({ status, limit = 100, offset = 0 } = {}) {
 export function setMcpServerStatus(id, status, { errorCode = null } = {}) {
   if (!SERVER_STATES.has(status)) throw new TypeError('invalid MCP server status');
   const timestamp = now();
-  const result = db.prepare(`
-    UPDATE mcp_servers SET status=?, last_error_code=?, last_error_at=?, last_seen_at=?,
-      consecutive_failures=CASE WHEN ?='active' THEN 0 WHEN ? IN ('degraded','failed') THEN consecutive_failures+1 ELSE consecutive_failures END,
-      updated_at=? WHERE id=?
-  `).run(status, errorCode ? String(errorCode).slice(0, 120) : '', errorCode ? timestamp : null,
-    status === 'active' ? timestamp : null, status, status, timestamp, String(id));
-  if (!result.changes) return null;
-  registryEvent(String(id), 'mcp.server.status_changed', { status, errorCode: errorCode ? String(errorCode).slice(0, 120) : null });
-  return getMcpServer(id);
+  return withRegistryTransaction(() => {
+    const result = db.prepare(`
+      UPDATE mcp_servers SET status=?, last_error_code=?, last_error_at=?, last_seen_at=?,
+        consecutive_failures=CASE WHEN ?='active' THEN 0 WHEN ? IN ('degraded','failed') THEN consecutive_failures+1 ELSE consecutive_failures END,
+        updated_at=? WHERE id=?
+    `).run(status, errorCode ? String(errorCode).slice(0, 120) : '', errorCode ? timestamp : null,
+      status === 'active' ? timestamp : null, status, status, timestamp, String(id));
+    if (!result.changes) return null;
+    registryEvent(String(id), 'mcp.server.status_changed', { status, errorCode: errorCode ? String(errorCode).slice(0, 120) : null });
+    return getMcpServer(id);
+  });
 }
 
 export function removeMcpServer(id) {
   const server = getMcpServer(id);
   if (!server) return false;
-  db.prepare('DELETE FROM mcp_servers WHERE id=?').run(String(id));
-  registryEvent(null, 'mcp.server.removed', { serverId: String(id), name: server.name });
-  return true;
+  return withRegistryTransaction(() => {
+    db.prepare('DELETE FROM mcp_servers WHERE id=?').run(String(id));
+    registryEvent(null, 'mcp.server.removed', { serverId: String(id), name: server.name });
+    return true;
+  });
 }
 
 export function replaceMcpServerTools(serverId, tools) {
@@ -224,8 +254,13 @@ export function replaceMcpServerTools(serverId, tools) {
       const description = String(tool.description ?? '').slice(0, 4000);
       const schema = tool.inputSchema ?? {};
       plainObject(schema, 'inputSchema');
-      const capabilities = Array.isArray(tool.capabilities) ? [...new Set(tool.capabilities.map(String))].slice(0, 40) : [];
-      const schemaJson = JSON.stringify(schema);
+      const rawCapabilities = tool.capabilities ?? [];
+      if (!Array.isArray(rawCapabilities) || rawCapabilities.some((item) => typeof item !== 'string' || !item.trim() || item.length > 80)) {
+        throw new TypeError('capabilities must be an array of non-empty strings up to 80 characters');
+      }
+      if (description.length > 4000) throw new TypeError('tool description is too long');
+      const capabilities = [...new Set(rawCapabilities.map((item) => item.trim()))].slice(0, 40);
+      const schemaJson = stableJson(schema);
       const capsJson = JSON.stringify(capabilities);
       const hash = createHash('sha256').update(schemaJson).digest('hex');
       const existing = db.prepare('SELECT id FROM mcp_tools WHERE server_id=? AND name=?').get(String(serverId), name);
@@ -263,9 +298,16 @@ export function listMcpTools({ serverId, policyStatus, limit = 500 } = {}) {
 
 export function setMcpToolPolicy(id, policyStatus, reason = '') {
   if (!['pending', 'approved', 'blocked'].includes(policyStatus)) throw new TypeError('invalid tool policy status');
-  const result = db.prepare('UPDATE mcp_tools SET policy_status=?,policy_reason=?,updated_at=? WHERE id=?')
-    .run(policyStatus, String(reason).slice(0, 500), now(), String(id));
-  return result.changes ? db.prepare('SELECT * FROM mcp_tools WHERE id=?').get(String(id)) : null;
+  return withRegistryTransaction(() => {
+    const result = db.prepare('UPDATE mcp_tools SET policy_status=?,policy_reason=?,updated_at=? WHERE id=?')
+      .run(policyStatus, String(reason).slice(0, 500), now(), String(id));
+    if (!result.changes) return null;
+    const row = db.prepare('SELECT * FROM mcp_tools WHERE id=?').get(String(id));
+    registryEvent(row.server_id, 'mcp.tool.policy_changed', {
+      toolId: row.id, name: row.name, policyStatus, reason: String(reason).slice(0, 500),
+    });
+    return row;
+  });
 }
 
 export function claimMcpRegistryEvents(limit = 100) {

@@ -74,3 +74,27 @@ test('registry supports update and cascade delete', () => {
   assert.equal(getMcpServer(server.id), null);
   assert.equal(listMcpTools({ serverId: server.id }).length, 0);
 });
+
+
+test('schema fingerprints are canonical across object key ordering', () => {
+  const server = registerMcpServer({ name: 'canonical-schema-server', transport: 'stdio', command: 'node' });
+  const first = replaceMcpServerTools(server.id, [{
+    name: 'lookup', inputSchema: { type: 'object', properties: { alpha: { type: 'string' }, beta: { type: 'number' } } },
+  }])[0];
+  setMcpToolPolicy(first.id, 'approved', 'reviewed');
+  const second = replaceMcpServerTools(server.id, [{
+    name: 'lookup', inputSchema: { properties: { beta: { type: 'number' }, alpha: { type: 'string' } }, type: 'object' },
+  }])[0];
+  assert.equal(second.schemaHash, first.schemaHash);
+  assert.equal(second.policyStatus, 'approved');
+});
+
+test('invalid capability metadata rolls back the entire discovery snapshot', () => {
+  const server = registerMcpServer({ name: 'capability-validation-server', transport: 'stdio', command: 'node' });
+  replaceMcpServerTools(server.id, [{ name: 'safe_read' }]);
+  assert.throws(() => replaceMcpServerTools(server.id, [
+    { name: 'valid_candidate' },
+    { name: 'invalid_candidate', capabilities: [''] },
+  ]), /capabilities/);
+  assert.deepEqual(listMcpTools({ serverId: server.id }).map((tool) => tool.name), ['safe_read']);
+});
