@@ -102,3 +102,8 @@ If transport shutdown itself fails, the supervisor removes the adapter from the
 usable connection map, records the server as `degraded` with an error code, and
 propagates the teardown error to the caller. This avoids falsely reporting an
 active runtime after its client has been detached.
+
+Before closing a connected transport, the supervisor drains in-flight approved tool
+executions for that server. New calls are rejected as soon as teardown begins.
+This keeps a normal shutdown from killing an operation that already passed the
+registry approval and audit gate. The existing execution timeout bounds the wait.
