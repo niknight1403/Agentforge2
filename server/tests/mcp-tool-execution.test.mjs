@@ -60,7 +60,7 @@ test('execution times out and audits the failure', async () => {
   setMcpServerStatus(server.id, 'active');
   await assert.rejects(executeApprovedMcpTool({
     serverId: server.id, toolName: tool.name, timeoutMs: 100,
-    client: { callTool() { return new Promise(() => {}); } },
+    client: { serverId: server.id, callTool() { return new Promise(() => {}); } },
   }), { code: 'MCP_TOOL_EXECUTION_TIMEOUT' });
   const row = db.prepare('SELECT * FROM mcp_tool_execution_audit WHERE server_id=? ORDER BY created_at DESC LIMIT 1').get(server.id);
   assert.equal(row.outcome, 'timeout');
@@ -103,4 +103,16 @@ test('execution rejects non-JSON argument values before calling the client', asy
   const rows = db.prepare("SELECT outcome FROM mcp_tool_execution_audit WHERE server_id=?").all(server.id);
   assert.equal(rows.length, 5);
   assert.ok(rows.every((row) => row.outcome === 'denied'));
+});
+
+test('execution rejects a client bound to a different registered server', async () => {
+  const { server, tool } = setup('exec-client-binding');
+  setMcpToolPolicy(tool.id, 'approved', 'reviewed');
+  setMcpServerStatus(server.id, 'active');
+  let called = false;
+  await assert.rejects(executeApprovedMcpTool({
+    serverId: server.id, toolName: tool.name,
+    client: { serverId: 'another-server', async callTool() { called = true; return {}; } },
+  }), { code: 'MCP_CLIENT_SERVER_MISMATCH' });
+  assert.equal(called, false);
 });
