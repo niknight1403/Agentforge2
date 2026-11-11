@@ -139,3 +139,8 @@ export function sanitizeForStream(event) {
   }
   return out;
 }
+
+/** Selects the SSE representation according to the requester's authorization. */
+export function eventForStream(event, { isAdmin = false } = {}) {
+  return isAdmin ? event : sanitizeForStream(event);
+}
