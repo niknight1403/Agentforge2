@@ -124,17 +124,20 @@ test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeich
   const rootAssets = join(projectRoot, 'assets');
   mkdirSync(rootAssets, { recursive: true });
   writeFileSync(join(rootAssets, 'app.js'), 'console.log("root preview asset")');
-  assert.equal(
-    deepPreviewFile(project.id, 'assets/app.js').mime,
-    'text/javascript; charset=utf-8',
-    'only conventional root asset directories are exposed for a root index.html'
-  );
+  const rootAsset = deepPreviewFile(project.id, 'assets/app.js');
+  assert.equal(rootAsset.mime, 'text/javascript; charset=utf-8',
+    'only conventional root asset directories are exposed for a root index.html');
+  closeSync(rootAsset.fd);
   assert.equal(deepPreviewFile(project.id, 'server/secrets.json'), null, 'arbitrary project-root files remain private');
   const outside = join(TMP, 'outside-secret.txt');
   writeFileSync(outside, 'must not be served');
   symlinkSync(outside, join(dist, 'leak.txt'));
-  assert.equal(deepPreviewFile(project.id, 'dist/index.html').mime, 'text/html; charset=utf-8');
-  assert.equal(deepPreviewFile(project.id, 'dist/app.js').mime, 'text/javascript; charset=utf-8');
+  const htmlEntry = deepPreviewFile(project.id, 'dist/index.html');
+  assert.equal(htmlEntry.mime, 'text/html; charset=utf-8');
+  closeSync(htmlEntry.fd);
+  const appEntry = deepPreviewFile(project.id, 'dist/app.js');
+  assert.equal(appEntry.mime, 'text/javascript; charset=utf-8');
+  closeSync(appEntry.fd);
   const pinned = deepPreviewFile(project.id, 'dist/app.js');
   assert.ok(Number.isInteger(pinned.fd), 'preview returns an already-open file descriptor');
   const original = join(dist, 'app-original.js');
