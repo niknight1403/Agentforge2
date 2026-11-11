@@ -2,7 +2,7 @@ name: CodeQL Security Analysis
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/mcp-orchestration-registry]
     paths:
       - 'app/**'
       - 'server/**'
