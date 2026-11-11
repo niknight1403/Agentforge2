@@ -143,3 +143,95 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const ownerDelete = await fetch(`${base}/api/deep/projects/${projectId}`, { method: 'DELETE', headers: auth(tokenA) });
   assert.equal(ownerDelete.status, 200);
 });
+
+
+test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin events', async (t) => {
+  const suffix = String(process.pid);
+  const user = createUser({ email: `sse-user-${suffix}@example.invalid`, password: 'sse-test-password', role: 'user' });
+  const admin = createUser({ email: `sse-admin-${suffix}@example.invalid`, password: 'sse-test-password', role: 'admin' });
+  const userToken = createSession(user.id);
+  const adminToken = createSession(admin.id);
+  const port = 20000 + (process.pid % 10000);
+  const base = `http://127.0.0.1:${port}`;
+  const script = `
+    import { bus } from './server/events.mjs';
+    process.on('SIGUSR1', () => bus.emit('event', {
+      type: 'tool', ts: Date.now(), villaId: 99, tool: 'project_write',
+      args: { content: 'private source code' }, prompt: 'private project prompt'
+    }));
+    await import('./server/server.mjs');
+  `;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: process.cwd(),
+    env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', VF_RESUME: '0' },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => { output += chunk.toString(); });
+  child.stderr.on('data', (chunk) => { output += chunk.toString(); });
+  t.after(async () => {
+    if (child.exitCode === null && !child.killed) child.kill('SIGTERM');
+    await new Promise((resolve) => {
+      if (child.exitCode !== null) return resolve();
+      const timeout = setTimeout(resolve, 3000);
+      child.once('exit', () => { clearTimeout(timeout); resolve(); });
+    });
+  });
+
+  let ready = false;
+  let lastError;
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (child.exitCode !== null) break;
+    try {
+      const response = await fetch(`${base}/api/health`);
+      if (response.ok) { ready = true; break; }
+    } catch (error) { lastError = error; }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  assert.equal(ready, true, `SSE Hub did not become ready: ${lastError?.message || ''}\\n${output}`);
+
+  const userAbort = new AbortController();
+  const adminAbort = new AbortController();
+  const userResponse = await fetch(`${base}/api/events`, {
+    headers: { Authorization: `Bearer ${userToken}` }, signal: userAbort.signal
+  });
+  const adminResponse = await fetch(`${base}/api/events`, {
+    headers: { Authorization: `Bearer ${adminToken}` }, signal: adminAbort.signal
+  });
+  assert.equal(userResponse.status, 200);
+  assert.equal(adminResponse.status, 200);
+  assert.match(userResponse.headers.get('content-type') || '', /text\/event-stream/);
+  assert.match(adminResponse.headers.get('content-type') || '', /text\/event-stream/);
+
+  const nextPayload = async (response) => {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error('SSE stream closed before test event arrived');
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split(/\\r?\\n\\r?\\n/);
+      buffer = frames.pop() || '';
+      for (const frame of frames) {
+        const data = frame.split(/\\r?\\n/).find((line) => line.startsWith('data:'));
+        if (data) return JSON.parse(data.slice(5).trim());
+      }
+    }
+  };
+  const userPayloadPromise = nextPayload(userResponse);
+  const adminPayloadPromise = nextPayload(adminResponse);
+  child.kill('SIGUSR1');
+  try {
+    const [userPayload, adminPayload] = await Promise.all([userPayloadPromise, adminPayloadPromise]);
+    assert.equal(userPayload.type, 'tool');
+    assert.equal(userPayload.villaId, 99);
+    assert.equal(userPayload.args, undefined, 'authenticated non-admin must not receive tool arguments');
+    assert.equal(userPayload.prompt, undefined, 'authenticated non-admin must not receive prompts');
+    assert.deepEqual(adminPayload.args, { content: 'private source code' });
+    assert.equal(adminPayload.prompt, 'private project prompt');
+  } finally {
+    userAbort.abort();
+    adminAbort.abort();
+  }
+});
