@@ -1,0 +1,172 @@
+import './_env.mjs';
+import { db } from '../db.mjs';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
+process.env.MCP_CREDENTIAL_MASTER_KEY = randomBytes(32).toString('base64');
+const { storeMcpCredential } = await import('../mcp-credential-vault.mjs');
+const {
+  registerMcpServer, getMcpServer, listMcpServers, updateMcpServer,
+  setMcpServerStatus, removeMcpServer, replaceMcpServerTools,
+  listMcpTools, setMcpToolPolicy, claimMcpRegistryEvents, markMcpRegistryEventPublished, dispatchMcpRegistryEvents,
+} = await import('../mcp-registry.mjs');
+
+test('registry validates and persists stdio and remote transport definitions', () => {
+  const stdio = registerMcpServer({ name: 'local-files', transport: 'stdio', command: 'node', args: ['server.js'] });
+  assert.equal(stdio.status, 'pending');
+  assert.equal(stdio.command, 'node');
+  const credential = storeMcpCredential('remote-search-test-token');
+  const remote = registerMcpServer({ name: 'remote-search', transport: 'http', url: 'https://mcp.example.test/rpc', authMode: 'bearer', credentialRef: credential.credentialRef });
+  assert.equal(remote.url, 'https://mcp.example.test/rpc');
+  assert.equal(remote.credentialRef, credential.credentialRef);
+  assert.equal(listMcpServers().length, 2);
+});
+
+test('registry rejects invalid URLs, unsupported transports and inline secrets', () => {
+  assert.throws(() => registerMcpServer({ name: 'bad', transport: 'http', url: 'file:///etc/passwd' }), /URL/);
+  assert.throws(() => registerMcpServer({ name: 'bad2', transport: 'mqtt', url: 'https://example.test' }), /transport/);
+  assert.throws(() => registerMcpServer({ name: 'bad3', transport: 'http', url: 'https://user:pass@example.test' }), /URL/);
+  assert.throws(() => registerMcpServer({ name: 'bad4', transport: 'http', url: 'https://example.test', config: { api_key: 'leak' } }), /Sensitive field/);
+  for (const parameter of ['access_token', 'x-api-key', 'credential', 'X-Amz-Signature', 'auth']) {
+    assert.throws(() => registerMcpServer({ name: `query-secret-${parameter}`, transport: 'http', url: `https://example.test/mcp?${parameter}=secret` }), /credential-like parameters/);
+  }
+  assert.throws(() => registerMcpServer({ name: 'auth-missing-ref', transport: 'http', url: 'https://example.test', authMode: 'oauth2' }), /credentialRef/);
+  assert.throws(() => registerMcpServer({ name: 'auth-unknown-ref', transport: 'http', url: 'https://example.test', authMode: 'bearer', credentialRef: 'mcpcred:00000000-0000-4000-8000-000000000000' }), { code: 'MCP_CREDENTIAL_NOT_FOUND' });
+});
+
+test('registry enforces unique names and supports lifecycle status changes', () => {
+  const server = registerMcpServer({ name: 'unique-server', transport: 'stdio', command: 'node' });
+  assert.throws(() => registerMcpServer({ name: 'unique-server', transport: 'stdio', command: 'node' }));
+  assert.equal(setMcpServerStatus(server.id, 'active').status, 'active');
+  assert.equal(setMcpServerStatus(server.id, 'degraded', { errorCode: 'E_TIMEOUT' }).consecutiveFailures, 1);
+  assert.equal(setMcpServerStatus(server.id, 'active').consecutiveFailures, 0);
+  assert.throws(() => setMcpServerStatus(server.id, 'unknown'));
+});
+
+test('tool discovery preserves approval only when the input schema is unchanged', () => {
+  const server = registerMcpServer({ name: 'tool-server', transport: 'stdio', command: 'node' });
+  let tools = replaceMcpServerTools(server.id, [{ name: 'read_pdf', description: 'Read PDF', inputSchema: { type: 'object', properties: { path: { type: 'string' } } }, capabilities: ['filesystem', 'pdf'] }]);
+  const id = tools[0].id;
+  assert.equal(tools[0].policyStatus, 'pending');
+  setMcpToolPolicy(id, 'approved', 'read-only allowlist');
+  tools = replaceMcpServerTools(server.id, [{ name: 'read_pdf', description: 'Read PDF', inputSchema: { type: 'object', properties: { path: { type: 'string' } } }, capabilities: ['filesystem', 'pdf'] }]);
+  assert.equal(tools[0].policyStatus, 'approved');
+  tools = replaceMcpServerTools(server.id, [{ name: 'read_pdf', inputSchema: { type: 'object', required: ['path'] } }]);
+  assert.equal(tools[0].policyStatus, 'pending');
+  assert.equal(tools[0].policyReason, 'schema_changed');
+});
+
+test('tool discovery is atomic and removes tools no longer advertised', () => {
+  const server = registerMcpServer({ name: 'atomic-server', transport: 'stdio', command: 'node' });
+  replaceMcpServerTools(server.id, [{ name: 'first' }]);
+  assert.throws(() => replaceMcpServerTools(server.id, [{ name: 'second' }, { name: 'second' }]));
+  assert.deepEqual(listMcpTools({ serverId: server.id }).map((tool) => tool.name), ['first']);
+  assert.deepEqual(replaceMcpServerTools(server.id, [{ name: 'second' }]).map((tool) => tool.name), ['second']);
+});
+
+test('registry event outbox is claimable and idempotently marked published', () => {
+  const server = registerMcpServer({ name: 'outbox-server', transport: 'stdio', command: 'node' });
+  const events = claimMcpRegistryEvents();
+  assert.ok(events.some((event) => event.serverId === server.id && event.type === 'mcp.server.registered'));
+  const event = events.find((item) => item.serverId === server.id);
+  assert.equal(markMcpRegistryEventPublished(event.id, event.claimToken), true);
+  assert.equal(markMcpRegistryEventPublished(event.id, event.claimToken), false);
+});
+
+test('registry outbox leases prevent concurrent duplicate claims and reject stale acknowledgements', () => {
+  const server = registerMcpServer({ name: 'leased-outbox-server', transport: 'stdio', command: 'node' });
+  const firstBatch = claimMcpRegistryEvents();
+  const first = firstBatch.find((event) => event.serverId === server.id && event.type === 'mcp.server.registered');
+  assert.ok(first);
+  assert.ok(first.claimToken);
+  assert.equal(first.attempts, 1);
+  assert.equal(claimMcpRegistryEvents().some((event) => event.id === first.id), false);
+  db.prepare('UPDATE mcp_registry_events SET claim_expires_at=0 WHERE id=?').run(first.id);
+  assert.equal(markMcpRegistryEventPublished(first.id, first.claimToken), false);
+  const retried = claimMcpRegistryEvents().find((event) => event.id === first.id);
+  assert.ok(retried);
+  assert.notEqual(retried.claimToken, first.claimToken);
+  assert.equal(retried.attempts, 2);
+  assert.equal(markMcpRegistryEventPublished(first.id, first.claimToken), false);
+  assert.equal(markMcpRegistryEventPublished(retried.id, retried.claimToken), true);
+});
+
+test('outbox dispatcher acknowledges successful publishes and leaves failures leased for retry', async () => {
+  const server = registerMcpServer({ name: 'dispatch-outbox-server', transport: 'stdio', command: 'node' });
+  const successfulServer = registerMcpServer({ name: 'dispatch-success-server', transport: 'stdio', command: 'node' });
+  const seen = [];
+  const result = await dispatchMcpRegistryEvents({ publish: async (event) => {
+    if (event.serverId === server.id && event.type === 'mcp.server.registered') throw Object.assign(new Error('temporary broker outage'), { code: 'BROKER_UNAVAILABLE' });
+    seen.push(event);
+  } });
+  assert.ok(result.claimed >= 2);
+  assert.ok(result.published >= 1);
+  assert.equal(result.failed, 1);
+  assert.equal(result.failures[0].code, 'BROKER_UNAVAILABLE');
+  assert.ok(seen.some((event) => event.serverId === successfulServer.id && event.type === 'mcp.server.registered'));
+  assert.equal(typeof dispatchMcpRegistryEvents, 'function');
+});
+
+test('registry supports update and cascade delete', () => {
+  const server = registerMcpServer({ name: 'update-server', transport: 'stdio', command: 'node' });
+  replaceMcpServerTools(server.id, [{ name: 'write_file' }]);
+  const updated = updateMcpServer(server.id, { transport: 'stdio', command: 'node', config: { mode: 'safe' } });
+  assert.equal(updated.status, 'pending');
+  assert.equal(listMcpTools({ serverId: server.id })[0].policyStatus, 'pending');
+  assert.equal(removeMcpServer(server.id), true);
+  assert.equal(getMcpServer(server.id), null);
+  assert.equal(listMcpTools({ serverId: server.id }).length, 0);
+});
+
+
+test('schema fingerprints are canonical across object key ordering', () => {
+  const server = registerMcpServer({ name: 'canonical-schema-server', transport: 'stdio', command: 'node' });
+  const first = replaceMcpServerTools(server.id, [{
+    name: 'lookup', inputSchema: { type: 'object', properties: { alpha: { type: 'string' }, beta: { type: 'number' } } },
+  }])[0];
+  setMcpToolPolicy(first.id, 'approved', 'reviewed');
+  const second = replaceMcpServerTools(server.id, [{
+    name: 'lookup', inputSchema: { properties: { beta: { type: 'number' }, alpha: { type: 'string' } }, type: 'object' },
+  }])[0];
+  assert.equal(second.schemaHash, first.schemaHash);
+  assert.equal(second.policyStatus, 'approved');
+});
+
+test('invalid capability metadata rolls back the entire discovery snapshot', () => {
+  const server = registerMcpServer({ name: 'capability-validation-server', transport: 'stdio', command: 'node' });
+  replaceMcpServerTools(server.id, [{ name: 'safe_read' }]);
+  assert.throws(() => replaceMcpServerTools(server.id, [
+    { name: 'valid_candidate' },
+    { name: 'invalid_candidate', capabilities: [''] },
+  ]), /capabilities/);
+  assert.deepEqual(listMcpTools({ serverId: server.id }).map((tool) => tool.name), ['safe_read']);
+});
+
+
+test('server registration and outbox event commit or roll back together', () => {
+  db.exec(`
+    CREATE TRIGGER fail_mcp_server_event
+    BEFORE INSERT ON mcp_registry_events
+    WHEN NEW.event_type = 'mcp.server.registered'
+    BEGIN SELECT RAISE(ABORT, 'forced outbox failure'); END;
+  `);
+  try {
+    assert.throws(() => registerMcpServer({
+      name: 'outbox-atomicity-server', transport: 'stdio', command: 'node',
+    }), /forced outbox failure/);
+    assert.equal(listMcpServers().some((server) => server.name === 'outbox-atomicity-server'), false);
+  } finally {
+    db.exec('DROP TRIGGER IF EXISTS fail_mcp_server_event');
+  }
+});
+
+test('tool descriptions and capability metadata are bounded', () => {
+  const server = registerMcpServer({ name: 'bounded-metadata-server', transport: 'stdio', command: 'node' });
+  assert.throws(() => replaceMcpServerTools(server.id, [{
+    name: 'too_long', description: 'x'.repeat(4001),
+  }]), /description/);
+  assert.throws(() => replaceMcpServerTools(server.id, [{
+    name: 'too_many_chars', capabilities: ['x'.repeat(81)],
+  }]), /capabilities/);
+  assert.equal(listMcpTools({ serverId: server.id }).length, 0);
+});
