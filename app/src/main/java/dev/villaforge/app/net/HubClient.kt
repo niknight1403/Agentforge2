@@ -485,9 +485,11 @@ class HubClient(context: Context) {
         val completion = JSONObject(execute("GET", "/api/deep/projects/$id/completion"))
         // Runtime inventory is intentionally admin-only. A 403 must not hide
         // the project completion report from ordinary authenticated users.
-        val runtime = runCatching {
+        val runtime = try {
             JSONObject(execute("GET", "/api/system/runtime-capabilities"))
-        }.getOrNull()
+        } catch (error: HubException) {
+            if (error.code == 403) null else throw error
+        }
         JSONObject()
             .put("completion", completion)
             .put("capabilities", runtime?.optJSONArray("capabilities") ?: JSONArray())
