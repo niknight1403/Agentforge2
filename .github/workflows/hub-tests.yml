@@ -2,7 +2,7 @@ name: Hub-Tests
 
 on:
   pull_request:
-    branches: [main, feat/mcp-orchestration-registry]
+    branches: [main, feat/mcp-orchestration-registry, feat/mcp-stdio-runtime-adapter]
   push:
     branches: [main]
     paths:
@@ -69,6 +69,9 @@ jobs:
 
       - name: TypeScript Runtime-Abhaengigkeiten installieren
         run: npm ci --prefix runtime --no-audit --no-fund
+
+      - name: Offizielles MCP-SDK fuer den echten stdio-Integrationstest installieren
+        run: npm install --no-save --package-lock=false --no-audit --no-fund @modelcontextprotocol/client@2.4.0
 
       - name: Runtime-Abhaengigkeiten auf bekannte Schwachstellen pruefen
         run: npm audit --prefix runtime --audit-level=high
