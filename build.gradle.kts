@@ -1,5 +1,5 @@
 plugins {
-    id("com.android.application") version "9.5.0" apply false
+    id("com.android.application") version "9.5.1" apply false
     // AGP 9 bringt Kotlin-Support selbst mit (built-in Kotlin), das Plugin
     // "org.jetbrains.kotlin.android" darf nicht mehr angewendet werden.
     // Der Compose-Compiler kommt weiterhin aus dem Compose-Plugin.
