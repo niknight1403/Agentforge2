@@ -197,7 +197,13 @@ export function createMcpRuntimeSupervisor({
     const operation = (async () => {
       const registered = new Map(listAllServers().map((server) => [server.id, server]));
       const stale = [...new Set([...connections.keys(), ...starting.keys()])]
-        .filter((id) => !registered.has(id) || registered.get(id).status === 'disabled');
+        .filter((id) => {
+          const server = registered.get(id);
+          if (!server || server.status === 'disabled' || server.status === 'failed' || server.transport !== 'stdio') return true;
+          // A connected runtime must remain active in the registry. Pending is
+          // allowed only while startup/discovery is in flight.
+          return connections.has(id) && server.status !== 'active';
+        });
       const results = await Promise.allSettled(stale.map((id) => stopServer(id)));
       return {
         stopped: results.filter((item) => item.status === 'fulfilled' && item.value).length,
