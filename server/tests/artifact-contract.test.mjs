@@ -57,3 +57,16 @@ test('classifyDeliverable erkennt Software trotz Audio-/Video-Woertern',async()=
  assert.equal(classifyDeliverable('Ableton Push Controller Software: Audio-Optimierung, Video-Tutorials'),'software');
  assert.equal(classifyDeliverable('Erstelle ein Video ueber mein Produkt'),'video');
 });
+
+test('AAC audio and TIFF image extensions satisfy their media contracts', () => {
+ const cases = [
+  {idea:'Erstelle einen Song',deliverable:'audio',artifactName:'track.aac',artifactType:'media'},
+  {idea:'Erstelle ein Bild',deliverable:'image',artifactName:'poster.tif',artifactType:'image'},
+  {idea:'Erstelle ein Bild',deliverable:'image',artifactName:'poster.tiff',artifactType:'image'}
+ ];
+ for (const input of cases) {
+  const result = artifactContract({kind:'generic',...input});
+  assert.equal(result.ok,true,input.artifactName);
+  assert.deepEqual(result.blockers,[]);
+ }
+});
