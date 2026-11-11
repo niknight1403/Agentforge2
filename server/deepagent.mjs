@@ -20,7 +20,7 @@ import { db, now } from './db.mjs';
 import { deepMissionBrief } from './deep-mission.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { chat as realChat } from './llm.mjs';
-import { mkdirSync, writeFileSync, statSync, readFileSync, rmSync, realpathSync } from 'node:fs';
+import { mkdirSync, writeFileSync, statSync, readFileSync, rmSync, realpathSync, openSync, closeSync, fstatSync, constants as fsConstants } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 
 db.exec(`
@@ -344,7 +344,26 @@ export function deepPreviewFile(projectId, rest) {
   const allowedRootAssets = ['assets', 'static'].some((folder) =>
     target.startsWith(join(root, folder) + '/')
   );
-  try { if (!(allowedBuildRoot || allowedRootAssets) || !statSync(target).isFile()) return null; } catch { return null; }
+  if (!(allowedBuildRoot || allowedRootAssets)) return null;
+  // Pin the exact file before returning it. A path-only check followed by a
+  // later createReadStream(path) is vulnerable to a symlink/file swap in
+  // between. O_NOFOLLOW blocks a final-component symlink; inode comparison
+  // rejects parent-directory swaps that redirected the open outside the root.
+  let fd;
+  try {
+    fd = openSync(target, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    const opened = fstatSync(fd);
+    const canonicalAfterOpen = realpathSync(target);
+    const current = statSync(target);
+    if (!opened.isFile() || canonicalAfterOpen !== target ||
+        opened.dev !== current.dev || opened.ino !== current.ino) {
+      closeSync(fd);
+      return null;
+    }
+  } catch {
+    if (fd !== undefined) { try { closeSync(fd); } catch { /* already closed */ } }
+    return null;
+  }
   const mimeMap = {
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
     '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -352,7 +371,7 @@ export function deepPreviewFile(projectId, rest) {
     '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
     '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2'
   };
-  return { file: target, mime: mimeMap[extname(target).toLowerCase()] || 'application/octet-stream' };
+  return { file: target, fd, mime: mimeMap[extname(target).toLowerCase()] || 'application/octet-stream' };
 }
 
 /** Gespeicherten Anhang fuer die Auslieferung finden. */
