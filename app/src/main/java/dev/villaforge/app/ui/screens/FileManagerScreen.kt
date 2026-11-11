@@ -109,11 +109,21 @@ fun FileManagerScreen() {
         val exactNamedFiles = if (needle.contains('.')) {
             files.filter { it.name.equals(needle, ignoreCase = true) }
         } else emptyList()
+        val isDeleteCommand = listOf("lösch", "loesch", "entfern", "delete").any(q::contains)
+
+        // A filename-bearing delete is always handled as a filename operation,
+        // never as a global duplicate/category operation. Fail closed on missing
+        // or ambiguous names so a typo or repeated basename cannot widen deletion.
+        if (needle.contains('.') && isDeleteCommand) {
+            when (exactNamedFiles.size) {
+                0 -> result = "Keine Datei mit dem exakten Namen '" + needle + "' gefunden. Es wurde nichts ausgewählt."
+                1 -> pending = FileAction("1 Datei löschen", exactNamedFiles, delete = true)
+                else -> result = "Der Dateiname '" + needle + "' kommt " + exactNamedFiles.size + "-mal vor. Bitte wähle einen eindeutigeren Namen oder schränke den freigegebenen Ordner ein. Es wurde nichts ausgewählt."
+            }
+            return
+        }
+
         val selected = when {
-            exactNamedFiles.isNotEmpty() -> exactNamedFiles
-            // A filename-like query must never broaden into a whole MIME category
-            // when the exact name is absent; this keeps typoed delete commands safe.
-            needle.contains('.') -> emptyList()
             listOf("bild", "foto", "image", "jpg", "png").any(q::contains) -> files.filter { it.mime.startsWith("image/") }
             listOf("video", "film", "mp4").any(q::contains) -> files.filter { it.mime.startsWith("video/") }
             listOf("musik", "audio", "mp3").any(q::contains) -> files.filter { it.mime.startsWith("audio/") }
