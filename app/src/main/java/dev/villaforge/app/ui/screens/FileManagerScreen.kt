@@ -124,6 +124,10 @@ fun FileManagerScreen() {
         }
 
         val selected = when {
+            needle.contains('.') && exactNamedFiles.size == 1 -> exactNamedFiles
+            // Keep filename-like searches exact too; never broaden a missing or
+            // ambiguous basename into a MIME category.
+            needle.contains('.') -> emptyList()
             listOf("bild", "foto", "image", "jpg", "png").any(q::contains) -> files.filter { it.mime.startsWith("image/") }
             listOf("video", "film", "mp4").any(q::contains) -> files.filter { it.mime.startsWith("video/") }
             listOf("musik", "audio", "mp3").any(q::contains) -> files.filter { it.mime.startsWith("audio/") }
