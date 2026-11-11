@@ -106,7 +106,6 @@ export async function connectMcpStdioServer({
       args: launch.args,
       cwd: launch.cwd,
       env: launch.env,
-      shell: launch.shell,
     });
     client = new Client(clientInfo);
     await withTimeout(
