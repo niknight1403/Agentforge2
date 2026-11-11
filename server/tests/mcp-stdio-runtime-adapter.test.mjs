@@ -95,9 +95,9 @@ test('stdio adapter makes concurrent close callers await one teardown', async ()
 
 test('stdio adapter falls back to transport teardown when client close fails', async () => {
   const server = register('stdio-adapter-close-fallback');
-  let transportClosed = false;
+  let transportCloseCalls = 0;
   class FakeTransport {
-    async close() { transportClosed = true; }
+    async close() { transportCloseCalls += 1; }
   }
   class FakeClient {
     async connect() {}
@@ -107,8 +107,10 @@ test('stdio adapter falls back to transport teardown when client close fails', a
     serverId: server.id, policy, Client: FakeClient, StdioClientTransport: FakeTransport,
   });
   await assert.rejects(adapter.close(), /simulated client shutdown failure/);
-  assert.equal(transportClosed, true);
-  await adapter.close();
+  assert.equal(transportCloseCalls, 1);
+  // Teardown is single-flight and its original failure remains observable.
+  await assert.rejects(adapter.close(), /simulated client shutdown failure/);
+  assert.equal(transportCloseCalls, 1);
 });
 
 test('stdio adapter rejects a registered server that is not stdio', async () => {
