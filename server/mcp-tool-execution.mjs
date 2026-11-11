@@ -101,6 +101,10 @@ export async function executeApprovedMcpTool({
   if (!server) throw fail('MCP_SERVER_NOT_FOUND', 'MCP server is not registered');
   if (server.status !== 'active') throw fail('MCP_SERVER_NOT_ACTIVE', 'MCP server must be active before tool execution');
   if (!client || typeof client.callTool !== 'function') throw fail('MCP_CLIENT_REQUIRED', 'A connected MCP SDK client with callTool() is required');
+  if (client.serverId !== serverId) throw fail('MCP_CLIENT_SERVER_MISMATCH', 'The connected MCP client must be explicitly bound to the requested serverId');
+  if (typeof toolName !== 'string' || !toolName.trim() || toolName.length > 160) {
+    throw fail('MCP_INVALID_TOOL_NAME', 'toolName must contain 1..160 characters');
+  }
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) {
     throw new TypeError('timeoutMs must be an integer between 100 and 120000');
   }
