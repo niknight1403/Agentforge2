@@ -25,7 +25,7 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
       VF_ADMIN_PASSWORD: 'test-only-password-never-reused',
       VF_RESUME: '0'
     },
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['pipe', 'pipe', 'pipe']
   });
   let output = '';
   child.stdout.on('data', (chunk) => { output += chunk.toString(); });
@@ -155,7 +155,8 @@ test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin ev
   const base = `http://127.0.0.1:${port}`;
   const script = `
     import { bus } from './server/events.mjs';
-    process.on('SIGUSR1', () => bus.emit('event', {
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', () => bus.emit('event', {
       type: 'tool', ts: Date.now(), villaId: 99, tool: 'project_write',
       args: { content: 'private source code' }, prompt: 'private project prompt'
     }));
@@ -221,7 +222,8 @@ test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin ev
   };
   const userPayloadPromise = nextPayload(userResponse);
   const adminPayloadPromise = nextPayload(adminResponse);
-  child.kill('SIGUSR1');
+  const eventTimeout = setTimeout(() => { userAbort.abort(); adminAbort.abort(); }, 8000);
+  child.stdin.write('emit\n');
   try {
     const [userPayload, adminPayload] = await Promise.all([userPayloadPromise, adminPayloadPromise]);
     assert.equal(userPayload.type, 'tool');
@@ -231,6 +233,7 @@ test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin ev
     assert.deepEqual(adminPayload.args, { content: 'private source code' });
     assert.equal(adminPayload.prompt, 'private project prompt');
   } finally {
+    clearTimeout(eventTimeout);
     userAbort.abort();
     adminAbort.abort();
   }
