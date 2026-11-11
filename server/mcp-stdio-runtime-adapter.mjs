@@ -37,6 +37,16 @@ export async function connectMcpStdioServer({
   policy,
   Client,
   StdioClientTransport,
+  loadSdk = async () => {
+    const [clientSdk, stdioSdk] = await Promise.all([
+      import('@modelcontextprotocol/client'),
+      import('@modelcontextprotocol/client/stdio'),
+    ]);
+    return {
+      Client: clientSdk.Client,
+      StdioClientTransport: stdioSdk.StdioClientTransport,
+    };
+  },
   clientInfo = { name: 'agentforge2-hub', version: '1.0.0' },
   credentialEnvKey,
   connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS,
@@ -45,8 +55,19 @@ export async function connectMcpStdioServer({
   if (!server) throw fail('MCP_SERVER_NOT_FOUND', 'MCP server is not registered');
   if (server.transport !== 'stdio') throw fail('MCP_TRANSPORT_MISMATCH', 'Only registered stdio servers can use this adapter');
   if (server.status === 'disabled') throw fail('MCP_SERVER_DISABLED', 'Disabled MCP servers cannot be connected');
+  if (typeof loadSdk !== 'function') throw new TypeError('loadSdk must be a function');
+  if (Client === undefined || StdioClientTransport === undefined) {
+    let sdk;
+    try {
+      sdk = await loadSdk();
+    } catch {
+      throw fail('MCP_SDK_NOT_INSTALLED', 'Install the pinned @modelcontextprotocol/client production dependency');
+    }
+    Client ??= sdk?.Client;
+    StdioClientTransport ??= sdk?.StdioClientTransport;
+  }
   if (typeof Client !== 'function' || typeof StdioClientTransport !== 'function') {
-    throw fail('MCP_SDK_CONSTRUCTORS_REQUIRED', 'Inject the official MCP SDK Client and StdioClientTransport constructors');
+    throw fail('MCP_SDK_CONSTRUCTORS_REQUIRED', 'The official MCP SDK must provide Client and StdioClientTransport constructors');
   }
   if (!Number.isInteger(connectTimeoutMs) || connectTimeoutMs < 100 || connectTimeoutMs > 120_000) {
     throw new TypeError('connectTimeoutMs must be an integer between 100 and 120000');
