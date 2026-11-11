@@ -67,6 +67,32 @@ test('stdio adapter connects an SDK client with policy-validated launch settings
   await assert.rejects(adapter.listTools(), { code: 'MCP_CLIENT_CLOSED' });
 });
 
+test('stdio adapter makes concurrent close callers await one teardown', async () => {
+  const server = register('stdio-adapter-concurrent-close');
+  let finishClose;
+  let closeCalls = 0;
+  class FakeTransport { async close() {} }
+  class FakeClient {
+    async connect() {}
+    async close() {
+      closeCalls += 1;
+      await new Promise((resolve) => { finishClose = resolve; });
+    }
+  }
+  const adapter = await connectMcpStdioServer({
+    serverId: server.id, policy, Client: FakeClient, StdioClientTransport: FakeTransport,
+  });
+  let secondFinished = false;
+  const first = adapter.close();
+  const second = adapter.close().then(() => { secondFinished = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closeCalls, 1);
+  assert.equal(secondFinished, false);
+  finishClose();
+  await Promise.all([first, second]);
+  assert.equal(secondFinished, true);
+});
+
 test('stdio adapter falls back to transport teardown when client close fails', async () => {
   const server = register('stdio-adapter-close-fallback');
   let transportClosed = false;
