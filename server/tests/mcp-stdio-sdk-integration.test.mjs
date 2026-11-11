@@ -32,7 +32,7 @@ test('official MCP SDK completes a real disposable stdio handshake and tool call
   const serverSource = String.raw`
     const readline = require('node:readline');
     const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-    const send = (message) => process.stdout.write(JSON.stringify(message) + '\\n');
+    const send = (message) => process.stdout.write(JSON.stringify(message) + '\n');
     rl.on('line', (line) => {
       let message;
       try { message = JSON.parse(line); } catch { process.exitCode = 2; return; }
