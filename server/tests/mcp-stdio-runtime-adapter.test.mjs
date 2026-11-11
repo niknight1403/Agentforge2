@@ -110,3 +110,32 @@ test('stdio adapter times out SDK connection and tears it down', async () => {
   }), { code: 'MCP_CONNECT_TIMEOUT' });
   assert.equal(closed, true);
 });
+
+
+test('stdio adapter resolves official SDK constructors through its default loader contract', async () => {
+  const server = register('stdio-adapter-default-sdk-loader');
+  let connected = false;
+  class FakeTransport { async close() {} }
+  class FakeClient {
+    async connect(transport) { assert.ok(transport instanceof FakeTransport); connected = true; }
+    async listTools() { return { tools: [] }; }
+    async callTool() { return {}; }
+    async close() {}
+  }
+  const adapter = await connectMcpStdioServer({
+    serverId: server.id,
+    policy,
+    loadSdk: async () => ({ Client: FakeClient, StdioClientTransport: FakeTransport }),
+  });
+  assert.equal(connected, true);
+  await adapter.close();
+});
+
+test('stdio adapter reports a stable error when the official SDK package is unavailable', async () => {
+  const server = register('stdio-adapter-sdk-missing');
+  await assert.rejects(connectMcpStdioServer({
+    serverId: server.id,
+    policy,
+    loadSdk: async () => { throw new Error('ERR_MODULE_NOT_FOUND'); },
+  }), { code: 'MCP_SDK_NOT_INSTALLED' });
+});
