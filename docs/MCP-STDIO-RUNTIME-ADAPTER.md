@@ -85,3 +85,10 @@ delegates to the existing registry-backed `executeApprovedMcpTool` policy gate. 
 raw client is not returned by this method. Tool approval, active registry status,
 argument/result bounds, timeout handling, and execution audit remain enforced by
 the existing execution gate.
+
+The supervisor also provides `startReconciliationLoop({ intervalMs, onError })`
+(default interval: 5 seconds, minimum: 100 ms). Reconciliation calls are single-flight
+so slow registry operations cannot overlap. The returned stop function and
+`stopReconciliationLoop()` stop polling; `closeAll()` stops the loop before teardown.
+Call this explicitly from the Hub lifecycle after constructing the supervisor with
+administrator-owned SDK constructors and launch policy.
