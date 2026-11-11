@@ -430,7 +430,10 @@ async function api(req, res, url) {
     }
     return rpcErr(-32601, `Unbekannte Methode: ${body.method}`);
   }
-  if (p === '/api/system/runtime-capabilities' && m === 'GET') return json(res,200,{capabilities:runtimeCapabilityInventory(),note:'Availability only; not proof of configured, tested or verified product output.'});
+  if (p === '/api/system/runtime-capabilities' && m === 'GET') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Administrator role required.' });
+    return json(res,200,{capabilities:runtimeCapabilityInventory(),note:'Availability only; not proof of configured, tested or verified product output.'});
+  }
   if (p === '/api/system/audit') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     const audit = systemAudit();
