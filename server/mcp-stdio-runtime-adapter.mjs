@@ -70,12 +70,18 @@ export async function connectMcpStdioServer({
     throw fail('MCP_AUTH_MODE_UNSUPPORTED', 'This stdio adapter currently supports none and bearer authentication only');
   }
 
-  const launch = validateStdioLaunch({
-    command: server.command,
-    args: server.args,
-    cwd: server.cwd,
-    env,
-  }, policy);
+  let launch;
+  try {
+    launch = validateStdioLaunch({
+      command: server.command,
+      args: server.args,
+      cwd: server.cwd,
+      env,
+    }, policy);
+  } finally {
+    // Keep the decrypted secret only in the validated launch copy.
+    if (credentialEnvKey && Object.hasOwn(env, credentialEnvKey)) delete env[credentialEnvKey];
+  }
 
   let transport;
   let client;
@@ -100,6 +106,7 @@ export async function connectMcpStdioServer({
       args: launch.args,
       cwd: launch.cwd,
       env: launch.env,
+      shell: launch.shell,
     });
     client = new Client(clientInfo);
     await withTimeout(
