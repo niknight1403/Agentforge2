@@ -15,7 +15,7 @@ import { closeSync } from 'node:fs';
 
 /** Live-Ansicht nur melden, wenn der Einstiegspunkt aus einem erlaubten Build-Root sicher auslieferbar ist. */
 export function liveViewState(projectId) {
-  const candidates = ['dist/index.html', 'build/index.html', 'out/index.html', 'public/index.html', 'web-dist/index.html'];
+  const candidates = ['dist/index.html', 'build/index.html', 'out/index.html', 'public/index.html', 'web-dist/index.html', 'index.html'];
   const found = candidates.find((relative) => {
     const preview = deepPreviewFile(projectId, relative);
     if (!preview) return false;
@@ -29,7 +29,7 @@ export function liveViewState(projectId) {
     entry: found || null,
     detail: found
       ? 'Vorschau-Einstiegspunkt in einem freigegebenen Build-Verzeichnis vorhanden.'
-      : 'Kein sicher auslieferbarer Einstiegspunkt in dist/, build/, out/, public/ oder web-dist/ — die Live-Ansicht ist noch nicht verfügbar.'
+      : 'Kein sicher auslieferbarer Einstiegspunkt in dist/, build/, out/, public/, web-dist/ oder als explizite Projekt-Root-index.html — die Live-Ansicht ist noch nicht verfügbar.'
   };
 }
 
