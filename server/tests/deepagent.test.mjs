@@ -1,7 +1,7 @@
 import './_env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TMP } from './_env.mjs';
 
@@ -101,8 +101,12 @@ test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeich
   mkdirSync(dist, { recursive: true });
   writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Preview</title>');
   writeFileSync(join(dist, 'app.js'), 'console.log("preview")');
+  const outside = join(TMP, 'outside-secret.txt');
+  writeFileSync(outside, 'must not be served');
+  symlinkSync(outside, join(dist, 'leak.txt'));
   assert.equal(deepPreviewFile(project.id, 'dist/index.html').mime, 'text/html; charset=utf-8');
   assert.equal(deepPreviewFile(project.id, 'dist/app.js').mime, 'text/javascript; charset=utf-8');
   assert.equal(deepPreviewFile(project.id, 'dist/../../../../etc/passwd'), null);
   assert.equal(deepPreviewFile(project.id, '.env'), null);
+  assert.equal(deepPreviewFile(project.id, 'dist/leak.txt'), null);
 });
