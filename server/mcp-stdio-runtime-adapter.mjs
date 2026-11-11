@@ -118,7 +118,6 @@ export async function connectMcpStdioServer({
     return Object.freeze({
       serverId,
       transport: 'stdio',
-      client,
       async listTools() {
         if (closed) throw fail('MCP_CLIENT_CLOSED', 'MCP stdio client is closed');
         return client.listTools();
