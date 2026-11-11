@@ -121,3 +121,34 @@ test('execution rejects a client bound to a different registered server', async 
   assert.equal(row.tool_id, 'unknown');
   assert.equal(row.arguments_sha256, 'unavailable');
 });
+
+test('client mismatch denial survives an audit storage failure', async () => {
+  const { server } = setup('exec-client-binding-audit-failure');
+  setMcpServerStatus(server.id, 'active');
+  let called = false;
+  db.exec(`
+    CREATE TRIGGER fail_mcp_identity_audit
+    BEFORE INSERT ON mcp_tool_execution_audit
+    BEGIN
+      SELECT RAISE(ABORT, 'forced audit storage failure');
+    END;
+  `);
+  try {
+    await assert.rejects(
+      executeApprovedMcpTool({
+        serverId: server.id,
+        toolName: 'safe_lookup',
+        client: { serverId: 'another-server', async callTool() { called = true; return {}; } },
+      }),
+      (error) => {
+        assert.equal(error.code, 'MCP_CLIENT_SERVER_MISMATCH');
+        assert.equal(error.auditWriteFailed, true);
+        return true;
+      },
+    );
+    assert.equal(called, false);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM mcp_tool_execution_audit WHERE server_id=?').get(server.id).count, 0);
+  } finally {
+    db.exec('DROP TRIGGER IF EXISTS fail_mcp_identity_audit;');
+  }
+});
