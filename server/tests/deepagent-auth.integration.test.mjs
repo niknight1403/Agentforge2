@@ -2,6 +2,8 @@ import './_env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { join } from 'node:path';
+import { TMP } from './_env.mjs';
 import { createUser, createSession } from '../auth.mjs';
 
 test('DeepAgent endpoints require login and isolate projects, chat and files by owner', async (t) => {
@@ -9,6 +11,7 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const userB = createUser({ email: 'deepagent-owner-b@example.invalid', password: 'test-only-password-b', role: 'user' });
   const tokenA = createSession(userA.id);
   const tokenB = createSession(userB.id);
+  process.env.DEEP_DIR = join(TMP, 'deep-projects');
   const port = 18000 + (process.pid % 10000);
   const base = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server/server.mjs'], {
@@ -66,8 +69,9 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
     headers: { ...auth(tokenA), 'Content-Type': 'application/json' },
     body: JSON.stringify({ idea: 'Eine private Projekt-App mit getrennten Benutzerbereichen' })
   });
-  assert.equal(createdResponse.status, 200, await createdResponse.text());
-  const created = await createdResponse.json();
+  const createdText = await createdResponse.text();
+  assert.equal(createdResponse.status, 200, createdText);
+  const created = JSON.parse(createdText);
   assert.ok(created.id > 0);
   const projectId = created.id;
 
