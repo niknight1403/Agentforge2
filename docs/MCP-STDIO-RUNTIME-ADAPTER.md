@@ -4,11 +4,11 @@
 
 ## Integration
 
-Inject the official MCP SDK constructors so the host application controls the pinned SDK version:
+Use the official MCP TypeScript SDK v2 client package (the current stable line) and inject its constructors so the host application controls the pinned SDK version:
 
 ```js
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { connectMcpStdioServer } from './mcp-stdio-runtime-adapter.mjs';
 
 const adapter = await connectMcpStdioServer({
@@ -26,7 +26,7 @@ For bearer-authenticated stdio servers, pass an explicit `credentialEnvKey` mapp
 ## Security boundary and limitations
 
 - SDK constructors are injected; this module intentionally does not add or silently upgrade the repository's SDK dependency.
-- The SDK transport owns child-process creation and teardown. The adapter passes only validated argv and `shell: false` policy output.
+- The SDK transport owns child-process creation and teardown. Its stdio parameter contract does not expose a `shell` option; the adapter passes only the validated command, argv, cwd, and environment. The SDK uses Node's process-spawn API; verify the exact SDK version in the deployment lockfile.
 - The administrator must provide realpath-backed executable and sandbox allowlists, an environment-key allowlist, and a command-specific argv validator.
 - This is not an OS sandbox. Use a dedicated low-privilege account/container, resource limits, read-only mounts, and network egress restrictions.
 - Remote HTTP/SSE/WebSocket transports, DNS/socket pinning, redirect enforcement, process supervision, and OAuth are not implemented here.
