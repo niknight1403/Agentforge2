@@ -11,11 +11,19 @@ import { productGateForProjectDir } from './deep-product-gate.mjs';
 import { deepProjectDetail, deepProjectDir, deepPreviewFile } from './deepagent.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
 import { db } from './db.mjs';
+import { closeSync } from 'node:fs';
 
 /** Live-Ansicht nur melden, wenn der Einstiegspunkt aus einem erlaubten Build-Root sicher auslieferbar ist. */
 export function liveViewState(projectId) {
   const candidates = ['dist/index.html', 'build/index.html', 'out/index.html', 'public/index.html', 'web-dist/index.html'];
-  const found = candidates.find((relative) => deepPreviewFile(projectId, relative));
+  const found = candidates.find((relative) => {
+    const preview = deepPreviewFile(projectId, relative);
+    if (!preview) return false;
+    // This is only an availability probe; the HTTP route opens its own pinned
+    // descriptor when the user actually requests the preview.
+    closeSync(preview.fd);
+    return true;
+  });
   return {
     available: Boolean(found),
     entry: found || null,
