@@ -76,3 +76,12 @@ The supervisor serializes stop/restart for a given server. A restart requested w
 the previous transport is closing waits for teardown and creates a fresh adapter;
 it cannot receive the closing client. Duplicate stop requests share one teardown
 operation. The runtime snapshot includes in-progress stops for operational visibility.
+
+### Approved tool execution
+
+The supervisor exposes `executeApprovedTool({ serverId, toolName, arguments, timeoutMs })`.
+It refuses calls unless that server has a live adapter owned by this supervisor, then
+delegates to the existing registry-backed `executeApprovedMcpTool` policy gate. The
+raw client is not returned by this method. Tool approval, active registry status,
+argument/result bounds, timeout handling, and execution audit remain enforced by
+the existing execution gate.
