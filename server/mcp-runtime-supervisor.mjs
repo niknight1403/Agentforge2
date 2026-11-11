@@ -158,6 +158,7 @@ export function createMcpRuntimeSupervisor({
     stopServer,
     reconcile,
     closeAll,
+    executeApprovedTool,
     getSnapshot() {
       return Object.freeze({
         connectedServerIds: [...connections.keys()],
