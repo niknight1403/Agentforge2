@@ -34,7 +34,7 @@ export function isValidDeliverableArtifact(bytes,extension){
  if(b.length<16)return false;
  if(ext==='.pdf')return b.subarray(0,5).toString('ascii')==='%PDF-';
  if(['.docx','.xlsx','.pptx','.odt','.epub','.ods','.key','.3mf','.zip'].includes(ext))return hasZipContainer(b);
- if(ext==='.rtf')return /^\\{\\\\rtf\\d/i.test(b.toString('utf8',0,32));
+ if(ext==='.rtf')return /^\{\\rtf\d/i.test(b.toString('utf8',0,32));
  if(['.tif','.tiff'].includes(ext)){
   return b.length>=8&&((b[0]===0x49&&b[1]===0x49&&((b[2]===0x2a&&b[3]===0x00)||(b[2]===0x2b&&b[3]===0x00)))||(b[0]===0x4d&&b[1]===0x4d&&((b[2]===0x00&&b[3]===0x2a)||(b[2]===0x00&&b[3]===0x2b))));
  }
@@ -52,7 +52,7 @@ export function isValidDeliverableArtifact(bytes,extension){
  if(ext==='.obj')return /^(?:v|o|g|f)\\s/m.test(b.toString('utf8',0,2000));
  if(['.md','.txt','.html','.csv','.tsv','.ics','.ino'].includes(ext)){
   const text=b.toString('utf8');
-  return !text.includes('\\u0000')&&text.trim().length>=16;
+  return !text.includes('\u0000')&&text.trim().length>=16;
  }
  return false;
 }
