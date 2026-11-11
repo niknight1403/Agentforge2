@@ -21,3 +21,14 @@ def test_replace_repository_removes_stale_files(tmp_path):
     store.replace_repository("sample", [{"path": "new.py", "language": "py", "content": "current entry"}])
     assert store.search("obsolete") == []
     assert store.search("current")[0]["path"] == "new.py"
+
+def test_search_treats_fts_operators_as_literal_terms(tmp_path):
+    store = KnowledgeStore(tmp_path / "academy.sqlite3")
+    store.replace_repository("sample", [{
+        "path": "README.md",
+        "language": "md",
+        "content": "and or not near are ordinary words here",
+    }])
+
+    assert store.search("and")
+    assert store.search("verified OR") == []
