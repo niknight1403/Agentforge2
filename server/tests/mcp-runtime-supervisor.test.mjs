@@ -285,3 +285,33 @@ test('approved tool execution is only routed through the connected supervised cl
     { code: 'MCP_RUNTIME_NOT_CONNECTED' },
   );
 });
+
+test('runtime capacity remains occupied until the old child has fully closed', async () => {
+  const servers = new Map([
+    ['one', { id: 'one', transport: 'stdio', status: 'pending' }],
+    ['two', { id: 'two', transport: 'stdio', status: 'pending' }],
+  ]);
+  let releaseClose;
+  const supervisor = createMcpRuntimeSupervisor({
+    maxConcurrent: 1,
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    setStatus: (id, status) => servers.set(id, { ...servers.get(id), status }),
+    connect: async ({ serverId }) => ({
+      ...fakeAdapter(serverId),
+      async close() {
+        if (serverId === 'one') await new Promise((resolve) => { releaseClose = resolve; });
+      },
+    }),
+    discover: async ({ serverId }) => servers.set(serverId, { ...servers.get(serverId), status: 'active' }),
+  });
+  await supervisor.startServer('one');
+  const stopping = supervisor.stopServer('one');
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(supervisor.startServer('two'), { code: 'MCP_RUNTIME_CAPACITY_REACHED' });
+  releaseClose();
+  await stopping;
+  const second = await supervisor.startServer('two');
+  assert.equal(second.serverId, 'two');
+  await supervisor.closeAll();
+});
