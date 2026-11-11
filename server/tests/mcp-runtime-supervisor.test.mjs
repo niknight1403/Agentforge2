@@ -102,7 +102,7 @@ test('runtime supervisor closes a runtime when registry reconciliation sees disa
   assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
 });
 
-test('runtime supervisor tears down an adapter if discovery fails or the server is disabled during startup', async () => {
+test('runtime supervisor tears down an adapter when discovery fails', async () => {
   let closeCount = 0;
   const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
   const supervisor = createMcpRuntimeSupervisor({
@@ -112,6 +112,29 @@ test('runtime supervisor tears down an adapter if discovery fails or the server 
     discover: async () => { throw Object.assign(new Error('discovery failed'), { code: 'MCP_DISCOVERY_FAILED' }); },
   });
   await assert.rejects(supervisor.startServer('one'), { code: 'MCP_DISCOVERY_FAILED' });
+  assert.equal(closeCount, 1);
+  assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
+});
+
+test('stop cancels an in-flight startup and the late adapter is always closed', async () => {
+  const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
+  let releaseConnect;
+  let closeCount = 0;
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    connect: async ({ serverId }) => {
+      await new Promise((resolve) => { releaseConnect = resolve; });
+      return fakeAdapter(serverId, () => { closeCount += 1; });
+    },
+    discover: async () => { throw new Error('must not discover a cancelled runtime'); },
+  });
+  const starting = supervisor.startServer('one');
+  await new Promise((resolve) => setImmediate(resolve));
+  const stopping = supervisor.stopServer('one');
+  releaseConnect();
+  await assert.rejects(starting, { code: 'MCP_RUNTIME_START_CANCELLED' });
+  assert.equal(await stopping, true);
   assert.equal(closeCount, 1);
   assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
 });
