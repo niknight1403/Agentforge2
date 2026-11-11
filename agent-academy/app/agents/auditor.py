@@ -2,6 +2,7 @@ class AuditorAgent:
     """Deterministic first-pass quality auditor; it never equates indexing with verification."""
 
     def audit(self, repositories: dict[str, list[dict[str, str]]]) -> dict:
+        """Report basic source, README and test-directory evidence per repository."""
         findings = []
         for name, files in repositories.items():
             paths = {item["path"] for item in files}
