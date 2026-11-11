@@ -9,6 +9,22 @@ process.env.DEEP_DIR = join(TMP, 'deep-files');
 const { createDeepProject, deepChat, addDeepFile, deepPreviewFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping } = await import('../deepagent.mjs');
 const reply = async () => ({ content: 'Bauplan: MVP, Tests und Startanleitung.' });
 
+test('DeepAgent öffnet den Projektchat sofort und erzeugt den initialen Plan im Hintergrund', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const project = await createDeepProject('Eine App mit sofortigem Entwicklungsworkspace', {
+    deferInitialPlan: true,
+    chatFn: async () => { await gate; return reply(); }
+  });
+  assert.equal(project.initialPending, true);
+  assert.match(deepProjectDetail(project.id).messages[0].content, /analysiere deine Idee/i);
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const messages = deepProjectDetail(project.id).messages;
+  assert.ok(messages.some((message) => /Bauplan: MVP/.test(message.content)));
+  assert.ok(!messages.some((message) => /analysiere deine Idee/i.test(message.content)));
+});
+
 test('Deep Agent übergibt lesbare Textanhänge mit klarer Datenabgrenzung', async () => {
   const project = await createDeepProject('Eine App für professionelle Projektplanung', { chatFn: reply });
   const file = addDeepFile(project.id, 'anforderungen.md', 'text/markdown', Buffer.from('# Abnahmekriterien\nNutzer kann Projekte exportieren.').toString('base64'));
