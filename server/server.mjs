@@ -11,7 +11,7 @@ import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { createMasterControl } from './master-control.mjs';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, closeSync, createReadStream as createReadStreamFromFd } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
 import { telemetrySummary } from './telemetry.mjs';
@@ -1483,10 +1483,12 @@ async function api(req, res, url) {
       'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'
     });
     if (f.mime.startsWith('text/html')) {
-      const html = readFileSync(f.file, 'utf8').replace(/(src|href)=("|')\//g, '$1=$2');
+      let html;
+      try { html = readFileSync(f.fd, 'utf8').replace(/(src|href)=("|')\//g, '$1=$2'); }
+      finally { closeSync(f.fd); }
       return res.end(html);
     }
-    createReadStream(f.file).pipe(res);
+    createReadStreamFromFd(null, { fd: f.fd, autoClose: true }).pipe(res);
     return;
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'files' && parts[3] && m === 'GET') {
