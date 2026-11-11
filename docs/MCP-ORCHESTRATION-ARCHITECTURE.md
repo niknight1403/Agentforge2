@@ -16,7 +16,7 @@ Credentials are never stored inline. Authenticated definitions require an opaque
 
 `registerMcpServer`, `updateMcpServer`, `getMcpServer`, `listMcpServers`, `setMcpServerStatus`, `removeMcpServer`, `replaceMcpServerTools`, `listMcpTools`, `setMcpToolPolicy` and outbox claim/ack functions are exported from `server/mcp-registry.mjs`.
 
-Tool discovery is atomic. Existing approval is retained only when the input schema fingerprint is unchanged; changed schemas return to `pending`. Tools absent from the latest `tools/list` snapshot are removed. This phase does not connect to arbitrary servers or execute tools.
+Registry mutations and their outbox events are committed in the same SQLite transaction. Tool discovery is atomic. Input-schema fingerprints use recursively sorted object keys, so semantically identical schemas do not lose approval due to key ordering. Existing approval is retained only when the canonical input schema is unchanged; changed schemas return to `pending`. Capability metadata is validated before it is persisted. Tools absent from the latest `tools/list` snapshot are removed. This phase does not connect to arbitrary servers or execute tools.
 
 ### Planned phases
 

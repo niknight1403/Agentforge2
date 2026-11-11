@@ -251,7 +251,7 @@ export function replaceMcpServerTools(serverId, tools) {
       const name = String(tool.name ?? '').trim();
       if (!name || name.length > 160 || names.has(name)) throw new TypeError('tool names must be unique and 1..160 characters');
       names.add(name);
-      const description = String(tool.description ?? '').slice(0, 4000);
+      const description = String(tool.description ?? '');
       const schema = tool.inputSchema ?? {};
       plainObject(schema, 'inputSchema');
       const rawCapabilities = tool.capabilities ?? [];
