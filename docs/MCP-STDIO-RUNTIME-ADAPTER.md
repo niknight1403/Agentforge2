@@ -107,3 +107,7 @@ Before closing a connected transport, the supervisor drains in-flight approved t
 executions for that server. New calls are rejected as soon as teardown begins.
 This keeps a normal shutdown from killing an operation that already passed the
 registry approval and audit gate. The existing execution timeout bounds the wait.
+
+Registry reconciliation pages through the complete registry (500 entries per page),
+rather than relying on the registry's default first-page limit. Disabled or removed
+servers beyond the first page are therefore still detected and closed.
