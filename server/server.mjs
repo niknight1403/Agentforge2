@@ -1461,7 +1461,7 @@ async function api(req, res, url) {
       'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'
     });
     if (f.mime.startsWith('text/html')) {
-      const html = readFileSync(f.file, 'utf8').replace(/(src|href)=("|')\\//g, '$1=$2');
+      const html = readFileSync(f.file, 'utf8').replace(/(src|href)=("|')\//g, '$1=$2');
       return res.end(html);
     }
     createReadStream(f.file).pipe(res);
