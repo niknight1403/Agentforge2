@@ -21,3 +21,5 @@ These functions validate policy inputs; they do not spawn processes, resolve DNS
 ## Registry event outbox delivery
 
 The SQLite outbox uses short-lived per-event claim tokens and leases. A worker claims a bounded batch in an immediate transaction; concurrent workers cannot claim the same unexpired event. Expired leases become eligible for retry and increment the attempt counter. Acknowledgement requires the matching claim token and an unexpired lease, preventing stale workers from acknowledging work reclaimed by another worker. Delivery remains at-least-once: consumers must be idempotent because a worker can publish successfully and crash before acknowledging.
+
+The exported `dispatchMcpRegistryEvents({ publish })` helper provides the delivery loop without coupling the registry to a Redis client. It claims one event immediately before publishing, acknowledges only after the injected publisher resolves, and leaves failed events leased for retry after expiry. The publisher should use the event ID as its downstream idempotency key (for example, a Redis Stream field) to tolerate the unavoidable publish-before-ack crash window.
