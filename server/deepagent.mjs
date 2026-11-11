@@ -20,8 +20,8 @@ import { db, now } from './db.mjs';
 import { deepMissionBrief } from './deep-mission.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { chat as realChat } from './llm.mjs';
-import { mkdirSync, writeFileSync, statSync, readFileSync, rmSync } from 'node:fs';
-import { extname, join } from 'node:path';
+import { mkdirSync, writeFileSync, statSync, readFileSync, rmSync, realpathSync } from 'node:fs';
+import { extname, join, resolve } from 'node:path';
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS deep_projects (
@@ -290,6 +290,31 @@ export function addDeepFile(projectId, name, mime, dataBase64) {
   const r = db.prepare('INSERT INTO deep_files (project_id, name, mime, size, path, created_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(Number(projectId), safe, String(mime || 'application/octet-stream'), data.length, path, now());
   return { id: Number(r.lastInsertRowid), name: safe, mime: mime || 'application/octet-stream', size: data.length, url: `/api/deep/files/${r.lastInsertRowid}` };
+}
+
+/** Sicher begrenzte statische Auslieferung des Deep-Projekt-Web-Builds. */
+export function deepPreviewFile(projectId, rest) {
+  const dir = projectDir(Number(projectId));
+  let decoded;
+  try { decoded = decodeURIComponent(String(rest || '')); } catch { return null; }
+  const clean = decoded.replace(/\\/g, '/').split('/').filter(Boolean);
+  if (!clean.length || clean.some((part) => part === '..' || part === '.' || part.startsWith('.env'))) return null;
+  let target;
+  try { target = realpathSync(resolve(join(dir, ...clean))); } catch { return null; }
+  let root;
+  try { root = realpathSync(dir); } catch { return null; }
+  const allowed = ['dist', 'build', 'out', 'public', 'web-dist'].some((folder) =>
+    target.startsWith(join(root, folder) + '/')
+  ) || (clean.length === 1 && clean[0] === 'index.html' && target === join(root, 'index.html'));
+  if (!allowed || !statSync(target).isFile()) return null;
+  const mimeMap = {
+    '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+    '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+    '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png',
+    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+    '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2'
+  };
+  return { file: target, mime: mimeMap[extname(target).toLowerCase()] || 'application/octet-stream' };
 }
 
 /** Gespeicherten Anhang fuer die Auslieferung finden. */
