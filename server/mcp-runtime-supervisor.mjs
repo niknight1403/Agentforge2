@@ -5,6 +5,7 @@ import {
 } from './mcp-registry.mjs';
 import { discoverMcpServerTools } from './mcp-transport-discovery.mjs';
 import { connectMcpStdioServer } from './mcp-stdio-runtime-adapter.mjs';
+import { executeApprovedMcpTool } from './mcp-tool-execution.mjs';
 
 function fail(code, message) {
   const error = new Error(message);
@@ -22,12 +23,13 @@ export function createMcpRuntimeSupervisor({
   getServer = getMcpServer,
   listServers = listMcpServers,
   setStatus = setMcpServerStatus,
+  executeTool = executeApprovedMcpTool,
   maxConcurrent = 2,
 } = {}) {
   if (typeof connect !== 'function' || typeof discover !== 'function'
     || typeof getServer !== 'function' || typeof listServers !== 'function'
-    || typeof setStatus !== 'function') {
-    throw new TypeError('connect, discover, getServer, listServers and setStatus must be functions');
+    || typeof setStatus !== 'function' || typeof executeTool !== 'function') {
+    throw new TypeError('connect, discover, getServer, listServers, setStatus and executeTool must be functions');
   }
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 32) {
     throw new TypeError('maxConcurrent must be an integer between 1 and 32');
@@ -121,6 +123,13 @@ export function createMcpRuntimeSupervisor({
     });
     stopping.set(id, operation);
     return operation;
+  }
+
+  async function executeApprovedTool({ serverId, toolName, arguments: toolArguments = {}, timeoutMs } = {}) {
+    const id = String(serverId ?? '');
+    const adapter = connections.get(id);
+    if (!adapter) throw fail('MCP_RUNTIME_NOT_CONNECTED', 'MCP server must have an active supervised runtime before tool execution');
+    return executeTool({ serverId: id, toolName, arguments: toolArguments, client: adapter, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
   }
 
   async function reconcile() {
