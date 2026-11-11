@@ -40,7 +40,7 @@ The unit tests use fake SDK constructors to verify the adapter contract and life
 
 - Startup is explicit; pending servers are never launched automatically.
 - Startup validates the adapter's server binding, performs tool discovery, and only retains the connection after discovery succeeds.
-- Concurrent starts for the same server share one startup promise. A configurable concurrency cap (default: two) applies to starting plus connected runtimes.
+- Concurrent starts for the same server share one startup promise. A configurable concurrency cap (default: two) applies to starting, connected, and still-tearing-down runtimes.
 - Stop requests cancel in-flight startup and close any late-arriving adapter. Close is idempotent at the supervisor boundary.
 - `reconcile()` closes connected or starting runtimes whose registry entry was removed or disabled; it does not start pending servers.
 - `closeAll()` is intended for orderly Hub shutdown.
