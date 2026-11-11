@@ -48,9 +48,11 @@ test('remote policy returns an explicit pinned address set for the transport', (
   assert.equal(result.port, 443);
 });
 
-test('remote policy rejects insecure schemes, unapproved hosts and unpinned DNS answers', () => {
+test('remote policy rejects insecure schemes, unapproved hosts, query credentials and unpinned DNS answers', () => {
   assert.throws(() => validateRemoteEndpoint({ url: 'http://mcp.example.test', resolvedAddresses: ['203.0.113.10'] }, remotePolicy), { code: 'MCP_REMOTE_SCHEME_REJECTED' });
   assert.throws(() => validateRemoteEndpoint({ url: 'https://other.example.test', resolvedAddresses: ['203.0.113.10'] }, remotePolicy), { code: 'MCP_REMOTE_HOST_NOT_ALLOWED' });
+  assert.throws(() => validateRemoteEndpoint({ url: 'https://mcp.example.test/mcp?access_token=secret', resolvedAddresses: ['203.0.113.10'] }, remotePolicy), { code: 'MCP_REMOTE_QUERY_SECRET_REJECTED' });
+  assert.throws(() => validateRemoteEndpoint({ url: 'https://mcp.example.test/mcp?client_secret=secret', resolvedAddresses: ['203.0.113.10'] }, remotePolicy), { code: 'MCP_REMOTE_QUERY_SECRET_REJECTED' });
   assert.throws(() => validateRemoteEndpoint({ url: 'https://mcp.example.test', resolvedAddresses: ['198.51.100.7'] }, remotePolicy), { code: 'MCP_RESOLVED_ADDRESS_NOT_ALLOWED' });
   assert.throws(() => validateRemoteEndpoint({ url: 'https://mcp.example.test' }, remotePolicy), { code: 'MCP_DNS_RESULT_REQUIRED' });
 });
