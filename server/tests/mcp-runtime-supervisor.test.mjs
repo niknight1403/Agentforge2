@@ -380,3 +380,38 @@ test('a transport close failure marks the runtime degraded and propagates the er
   assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
   assert.deepEqual(supervisor.getSnapshot().stoppingServerIds, []);
 });
+
+test('runtime shutdown drains an active approved tool call before closing its transport', async () => {
+  const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
+  let releaseExecution;
+  let executionStarted;
+  const started = new Promise((resolve) => { executionStarted = resolve; });
+  let closed = false;
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    setStatus: (id, status) => servers.set(id, { ...servers.get(id), status }),
+    connect: async ({ serverId }) => ({
+      ...fakeAdapter(serverId),
+      async close() { closed = true; },
+    }),
+    discover: async ({ serverId }) => servers.set(serverId, { ...servers.get(serverId), status: 'active' }),
+    executeTool: async () => {
+      executionStarted();
+      return new Promise((resolve) => { releaseExecution = resolve; });
+    },
+  });
+  await supervisor.startServer('one');
+  const execution = supervisor.executeApprovedTool({ serverId: 'one', toolName: 'slow-tool' });
+  await started;
+  const stopping = supervisor.stopServer('one');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(closed, false, 'transport must remain alive while a tool call is in flight');
+  assert.deepEqual(supervisor.getSnapshot().stoppingServerIds, ['one']);
+  assert.deepEqual(supervisor.getSnapshot().activeExecutions, { one: 1 });
+  releaseExecution({ ok: true });
+  assert.deepEqual(await execution, { ok: true });
+  assert.equal(await stopping, true);
+  assert.equal(closed, true);
+  assert.deepEqual(supervisor.getSnapshot().activeExecutions, {});
+});
