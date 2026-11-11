@@ -297,7 +297,7 @@ function perfManifest(dir, record, L) {
 // verlangt index.html, package.json oder AndroidManifest.xml - ohne Geruest
 // scheiterte jede Produktabnahme, obwohl die Villa fertig war.
 const APP_ENTRY = /^(?:index\.html|package\.json|AndroidManifest\.xml)$/;
-const SCAFFOLD_SKIP = new Set(['node_modules', '.git', '.gradle', 'backups', '__pycache__']);
+const SCAFFOLD_SKIP = new Set(['node_modules', '.git', '.gradle', 'backups', '__pycache__', 'app-shell']);
 
 /** Find the newest content-validated project artifact, including non-media deliverables. */
 export function findDeliverableArtifact(dir, extensions, {maxBytes = 512 * 1024 * 1024} = {}) {
@@ -420,7 +420,7 @@ export async function startBuild(villaId, { auto = false } = {}) {
     const L = (s) => { record.log.push(String(s).slice(0, 400)); if (record.log.length > 60) record.log.shift(); save(); };
     try {
       // Ohne Einstiegspunkt ist das Paket kein Produkt: Geruest aus der Vorlage.
-      if (kind !== 'empty' && !hasAppEntryPoint(dir)) {
+      if (['android', 'android-cloud'].includes(kind) && !hasAppEntryPoint(dir)) {
         record.scaffold = scaffoldAppShell(villa, dir, L);
       }
       // Build-Modus entscheiden: Cloud-APK braucht ein Git-Remote im
