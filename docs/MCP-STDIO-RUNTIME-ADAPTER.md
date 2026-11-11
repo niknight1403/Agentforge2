@@ -26,7 +26,7 @@ For bearer-authenticated stdio servers, pass an explicit `credentialEnvKey` mapp
 ## Security boundary and limitations
 
 - SDK constructors are injected; this module intentionally does not add or silently upgrade the repository's SDK dependency.
-- The SDK transport owns child-process creation and teardown. Its stdio parameter contract does not expose a `shell` option; the adapter passes only the validated command, argv, cwd, and environment. The SDK uses Node's process-spawn API; verify the exact SDK version in the deployment lockfile.
+- The SDK transport owns child-process creation and teardown. Its stdio parameter contract does not expose a `shell` option; the SDK itself launches without a shell. SDK v2 merges a fixed set of host environment variables into every child even when `env` is supplied, so the adapter explicitly overrides those POSIX keys with empty values after policy validation. Windows is currently rejected because its inherited environment set needs a separate safe platform policy. Verify the exact SDK version in the deployment lockfile.
 - The administrator must provide realpath-backed executable and sandbox allowlists, an environment-key allowlist, and a command-specific argv validator.
 - This is not an OS sandbox. Use a dedicated low-privilege account/container, resource limits, read-only mounts, and network egress restrictions.
 - Remote HTTP/SSE/WebSocket transports, DNS/socket pinning, redirect enforcement, process supervision, and OAuth are not implemented here.
