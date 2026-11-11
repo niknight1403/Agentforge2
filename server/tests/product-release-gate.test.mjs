@@ -41,8 +41,13 @@ test('Release acceptance validates document/data files instead of treating them 
 
 
 test('declared document, archive, CAD, firmware and media formats validate by content', () => {
- for (const extension of ['.ods', '.key', '.3mf', '.zip']) {
-  assert.equal(isValidDeliverableArtifact(zip(), extension), true, extension);
+ for (const [extension, entries] of [
+  ['.ods', ['mimetype', 'content.xml']],
+  ['.key', ['index.apxl']],
+  ['.3mf', ['3D/3dmodel.model']],
+  ['.zip', ['index.html']]
+ ]) {
+  assert.equal(isValidDeliverableArtifact(zip(entries), extension), true, extension);
  }
  assert.equal(isValidDeliverableArtifact(Buffer.from('{\\rtf1\\ansi A valid rich text document body}'), '.rtf'), true);
  const tiff = Buffer.alloc(1024);
