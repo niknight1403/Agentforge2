@@ -35,6 +35,30 @@ jobs:
       - name: Packen
         run: tar -czf /tmp/lead-responder.tgz -C /tmp/lr .
 
+      - name: LLM-Modelle proben
+        env:
+          GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_KEY: ${{ secrets.VF_GEMINI_KEY }}
+        run: |
+          set -uo pipefail
+          GROQ_PICK=""
+          for m in llama-3.3-70b-versatile openai/gpt-oss-120b openai/gpt-oss-20b qwen/qwen3-32b groq/compound-mini llama-3.1-8b-instant; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 https://api.groq.com/openai/v1/chat/completions -H "Authorization: Bearer $GROQ_KEY" -H 'content-type: application/json' -d "{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":5}" || true)
+            echo "groq $m -> $code"
+            if [ "$code" = "200" ]; then GROQ_PICK="$m"; break; fi
+          done
+          GEMINI_PICK=""
+          for m in gemini-3.8-flash gemini-3-flash gemini-2.5-flash gemini-2.5-flash-lite gemini-flash-latest; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 "https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$GEMINI_KEY" -H 'content-type: application/json' -d '{"contents":[{"parts":[{"text":"ping"}]}]}' || true)
+            echo "gemini $m -> $code"
+            if [ "$code" = "200" ]; then GEMINI_PICK="$m"; break; fi
+          done
+          : > /tmp/models.env
+          if [ -n "$GROQ_PICK" ]; then echo "GROQ_MODEL=$GROQ_PICK" >> /tmp/models.env; fi
+          if [ -n "$GEMINI_PICK" ]; then echo "GEMINI_MODEL=$GEMINI_PICK" >> /tmp/models.env; fi
+          echo "gewaehlt: $(tr '\n' ' ' < /tmp/models.env)"
+          test -s /tmp/models.env
+
       - name: .env bauen
         env:
           GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -65,6 +89,7 @@ jobs:
             echo 'RATE_LIMIT_PER_MINUTE=120'
             echo 'DEMO_RATE_LIMIT_PER_MINUTE=20'
             echo "ADMIN_API_KEY=$(openssl rand -hex 24)"
+            cat /tmp/models.env
           } > /tmp/lead-responder.env
           echo "env-Zeilen: $(wc -l < /tmp/lead-responder.env)"
 
@@ -76,7 +101,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 /tmp/lead-responder.tgz /tmp/lead-responder.env ubuntu@92.5.177.159:/tmp/
+          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 /tmp/lead-responder.tgz /tmp/lead-responder.env /tmp/models.env ubuntu@92.5.177.159:/tmp/
           ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 ubuntu@92.5.177.159 'sudo bash -s' <<'EOS'
           set -euo pipefail
           APP=/opt/lead-responder
@@ -84,6 +109,16 @@ jobs:
           tar -xzf /tmp/lead-responder.tgz -C "$APP" --exclude='./.env' --exclude='./data' --exclude='./.git'
           if [ ! -f "$APP/.env" ]; then install -m 600 -o ubuntu -g ubuntu /tmp/lead-responder.env "$APP/.env"; echo "env: neu angelegt"; else echo "env: vorhanden, bleibt unveraendert"; fi
           chown -R ubuntu:ubuntu "$APP"; chmod 600 "$APP/.env"
+          if [ -s /tmp/models.env ]; then
+            while IFS= read -r line; do
+              k=${line%%=*}
+              grep -v "^${k}=" "$APP/.env" > /tmp/env.new || true
+              printf '%s\n' "$line" >> /tmp/env.new
+              cat /tmp/env.new > "$APP/.env"
+            done < /tmp/models.env
+            echo "env: Modelle aktualisiert"
+          fi
+
           echo 'W1VuaXRdCkRlc2NyaXB0aW9uPUxlYWQgUmVzcG9uZGVyIChTcGVlZC10by1MZWFkIEVuZ2luZSkKQWZ0ZXI9bmV0d29yay1vbmxpbmUudGFyZ2V0CldhbnRzPW5ldHdvcmstb25saW5lLnRhcmdldAoKW1NlcnZpY2VdClR5cGU9c2ltcGxlClVzZXI9dWJ1bnR1CldvcmtpbmdEaXJlY3Rvcnk9L29wdC9sZWFkLXJlc3BvbmRlcgpFbnZpcm9ubWVudEZpbGU9L29wdC9sZWFkLXJlc3BvbmRlci8uZW52CkV4ZWNTdGFydD0vdXNyL2Jpbi9ub2RlIC0tZGlzYWJsZS13YXJuaW5nPUV4cGVyaW1lbnRhbFdhcm5pbmcgL29wdC9sZWFkLXJlc3BvbmRlci9zcmMvaW5kZXguanMKUmVzdGFydD1hbHdheXMKUmVzdGFydFNlYz0zCk5vTmV3UHJpdmlsZWdlcz10cnVlClByaXZhdGVUbXA9dHJ1ZQpQcm90ZWN0U3lzdGVtPWZ1bGwKUmVhZFdyaXRlUGF0aHM9L29wdC9sZWFkLXJlc3BvbmRlci9kYXRhCgpbSW5zdGFsbF0KV2FudGVkQnk9bXVsdGktdXNlci50YXJnZXQK' | base64 -d > /etc/systemd/system/lead-responder.service
           systemctl daemon-reload
           systemctl enable lead-responder >/dev/null 2>&1 || true
