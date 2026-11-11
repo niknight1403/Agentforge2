@@ -68,6 +68,7 @@ import dev.villaforge.app.ui.theme.TextMuted
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 /*
  * DEEP AGENT (v1.37.0): Eigener Entwicklungs-Bereich ABSEITS der Villen.
@@ -195,6 +196,18 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
     LaunchedEffect(state.deepMessages.size) {
         if (state.deepMessages.isNotEmpty()) listState.animateScrollToItem(state.deepMessages.size - 1)
     }
+    LaunchedEffect(projectId) {
+        while (true) {
+            viewModel.refreshDeepWorkspace(projectId)
+            delay(5_000)
+        }
+    }
+
+    val workspace = state.deepWorkspace
+    val completion = workspace?.optJSONObject("completion")
+    val runtimeTools = workspace?.optJSONArray("capabilities") ?: org.json.JSONArray()
+    val availableTools = (0 until runtimeTools.length()).count { runtimeTools.optJSONObject(it)?.optString("status") == "available" }
+    val projectEvents = if (project.villaId > 0) state.events.filter { it.villaId == project.villaId }.takeLast(5).reversed() else emptyList()
 
     Column(Modifier.fillMaxSize().padding(12.dp).imePadding()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -204,12 +217,61 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                 Text("Deep Agent · ${project.status}", style = MaterialTheme.typography.labelSmall, color = TextMuted)
             }
             TextButton(
-                onClick = { viewModel.developDeepProject(projectId, onOpenVilla) },
+                onClick = { viewModel.developDeepProject(projectId) },
                 enabled = !state.busy
             ) {
                 Text(if (project.villaId > 0) "Villa öffnen" else "Autonom umsetzen", color = NeonCyan, fontSize = 11.sp)
             }
             if (state.busy) CircularProgressIndicator(Modifier.size(20.dp), color = NeonCyan)
+        }
+        Spacer(Modifier.height(8.dp))
+
+        GlassCard(accent = NeonCyan, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text("LIVE-ENTWICKLUNGSFENSTER", style = MaterialTheme.typography.labelSmall, color = TextMain, fontWeight = FontWeight.Bold)
+                    NeonChip(
+                        when {
+                            completion?.optBoolean("ready") == true -> "ABNAHMEBEREIT"
+                            project.villaId > 0 -> "ENTWICKLUNG AKTIV"
+                            else -> "PLANUNG / GATES"
+                        },
+                        if (completion?.optBoolean("ready") == true) NeonCyan else ElectricBlue
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    WorkspaceMetric("Villa", if (project.villaId > 0) "#${project.villaId}" else "noch offen", Modifier.weight(1f))
+                    WorkspaceMetric("Live-Vorschau", if (completion?.optBoolean("liveViewAvailable") == true) "bereit" else "in Arbeit", Modifier.weight(1f))
+                    WorkspaceMetric("Admin-Werkzeuge", "$availableTools / ${runtimeTools.length()}", Modifier.weight(1f))
+                }
+                if (workspace?.has("error") == true) {
+                    Text("Live-Status: ${workspace.optString("error")}", color = TextMuted, style = MaterialTheme.typography.labelSmall)
+                } else if (completion != null) {
+                    val blockers = completion.optJSONArray("blockers")?.length() ?: 0
+                    Text(
+                        if (blockers == 0) completion.optString("note", "Qualitätsprüfungen bestanden.")
+                        else "$blockers offene Qualitäts-/Übergabepunkte · keine ungeprüfte Fertigmeldung",
+                        color = TextMuted, style = MaterialTheme.typography.labelSmall
+                    )
+                    val next = completion.optJSONArray("nextActions")
+                    if (next != null && next.length() > 0) {
+                        Text("Nächster Schritt: ${next.optString(0)}", color = TextMain, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                    }
+                } else {
+                    Text("Projektstatus und Werkzeugverfügbarkeit werden geladen …", color = TextMuted, style = MaterialTheme.typography.labelSmall)
+                }
+                if (projectEvents.isNotEmpty()) {
+                    Text("LIVE-ARBEITSPROTOKOLL", style = MaterialTheme.typography.labelSmall, color = NeonCyan, fontWeight = FontWeight.Bold)
+                    projectEvents.forEach { event ->
+                        Text("• ${event.type}: ${event.text}", color = TextMain, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                    }
+                } else {
+                    Text(
+                        if (project.villaId > 0) "Warte auf das nächste Agenten-/Werkzeugereignis …" else "Nach dem Start der autonomen Umsetzung erscheinen hier Agenten-, Werkzeug-, Build- und Testereignisse.",
+                        color = TextMuted, style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(8.dp))
 
@@ -325,6 +387,16 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                 },
                 enabled = input.isNotBlank() && !state.busy
             ) { Icon(Icons.Filled.Send, "senden", tint = NeonCyan) }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    GlassCard(accent = ElectricBlue, modifier = modifier) {
+        Column(Modifier.padding(7.dp)) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = TextMuted, maxLines = 1)
+            Text(value, style = MaterialTheme.typography.bodySmall, color = TextMain, fontWeight = FontWeight.Bold, maxLines = 1)
         }
     }
 }
