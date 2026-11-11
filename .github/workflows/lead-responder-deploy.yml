@@ -1,0 +1,126 @@
+name: Lead Responder - Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git-Ref in niknight1403/lead-responder'
+        required: true
+        default: main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Quelle holen (Tarball)
+        env:
+          PAT: ${{ secrets.AGENTFORGE_PAT }}
+        run: |
+          set -euo pipefail
+          curl -sSfL -H "Authorization: Bearer $PAT" "https://api.github.com/repos/niknight1403/lead-responder/tarball/${{ inputs.ref }}" -o /tmp/lr.tar.gz
+          mkdir -p /tmp/lr && tar -xzf /tmp/lr.tar.gz -C /tmp/lr --strip-components=1
+          test -f /tmp/lr/src/index.js
+          echo "files: $(find /tmp/lr -type f | wc -l)"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Gate - Syntax + Tests
+        working-directory: /tmp/lr
+        run: |
+          npm run check
+          npm test
+
+      - name: Packen
+        run: tar -czf /tmp/lead-responder.tgz -C /tmp/lr .
+
+      - name: .env bauen
+        env:
+          GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_KEY: ${{ secrets.VF_GEMINI_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          {
+            echo 'NODE_ENV=production'
+            echo 'HOST=127.0.0.1'
+            echo 'PORT=8080'
+            echo 'PUBLIC_BASE_URL=https://hub.cybersarah-ki.com/leads'
+            echo 'LOG_LEVEL=info'
+            echo 'DATA_DIR=/opt/lead-responder/data'
+            echo 'DB_FILE=/opt/lead-responder/data/lead-responder.sqlite'
+            echo 'TRUST_PROXY=true'
+            echo 'LLM_ORDER=groq,gemini,openai'
+            echo "GROQ_API_KEY=${GROQ_KEY}"
+            echo "GEMINI_API_KEY=${GEMINI_KEY}"
+            echo 'LLM_TIMEOUT_MS=8000'
+            echo 'WEBHOOK_TIMEOUT_MS=7000'
+            echo 'MAX_DISPATCH_ATTEMPTS=8'
+            echo 'SCAN_INTERVAL_MS=600000'
+            echo 'FOLLOWUP_AFTER_MS=86400000'
+            echo 'AUTO_FOLLOWUP=true'
+            echo 'MAIL_DRIVER=none'
+            echo 'ALLOW_PRIVATE_WEBHOOKS=false'
+            echo 'RATE_LIMIT_PER_MINUTE=120'
+            echo 'DEMO_RATE_LIMIT_PER_MINUTE=20'
+            echo "ADMIN_API_KEY=$(openssl rand -hex 24)"
+          } > /tmp/lead-responder.env
+          echo "env-Zeilen: $(wc -l < /tmp/lead-responder.env)"
+
+      - name: Auf Produktionshost ausrollen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 /tmp/lead-responder.tgz /tmp/lead-responder.env ubuntu@92.5.177.159:/tmp/
+          ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 ubuntu@92.5.177.159 'sudo bash -s' <<'EOS'
+          set -euo pipefail
+          APP=/opt/lead-responder
+          mkdir -p "$APP/data"
+          tar -xzf /tmp/lead-responder.tgz -C "$APP" --exclude='./.env' --exclude='./data' --exclude='./.git'
+          if [ ! -f "$APP/.env" ]; then install -m 600 -o ubuntu -g ubuntu /tmp/lead-responder.env "$APP/.env"; echo "env: neu angelegt"; else echo "env: vorhanden, bleibt unveraendert"; fi
+          chown -R ubuntu:ubuntu "$APP"; chmod 600 "$APP/.env"
+          echo 'W1VuaXRdCkRlc2NyaXB0aW9uPUxlYWQgUmVzcG9uZGVyIChTcGVlZC10by1MZWFkIEVuZ2luZSkKQWZ0ZXI9bmV0d29yay1vbmxpbmUudGFyZ2V0CldhbnRzPW5ldHdvcmstb25saW5lLnRhcmdldAoKW1NlcnZpY2VdClR5cGU9c2ltcGxlClVzZXI9dWJ1bnR1CldvcmtpbmdEaXJlY3Rvcnk9L29wdC9sZWFkLXJlc3BvbmRlcgpFbnZpcm9ubWVudEZpbGU9L29wdC9sZWFkLXJlc3BvbmRlci8uZW52CkV4ZWNTdGFydD0vdXNyL2Jpbi9ub2RlIC0tZGlzYWJsZS13YXJuaW5nPUV4cGVyaW1lbnRhbFdhcm5pbmcgL29wdC9sZWFkLXJlc3BvbmRlci9zcmMvaW5kZXguanMKUmVzdGFydD1hbHdheXMKUmVzdGFydFNlYz0zCk5vTmV3UHJpdmlsZWdlcz10cnVlClByaXZhdGVUbXA9dHJ1ZQpQcm90ZWN0U3lzdGVtPWZ1bGwKUmVhZFdyaXRlUGF0aHM9L29wdC9sZWFkLXJlc3BvbmRlci9kYXRhCgpbSW5zdGFsbF0KV2FudGVkQnk9bXVsdGktdXNlci50YXJnZXQK' | base64 -d > /etc/systemd/system/lead-responder.service
+          systemctl daemon-reload
+          systemctl enable lead-responder >/dev/null 2>&1 || true
+          systemctl restart lead-responder
+          for i in $(seq 1 40); do if curl -fsS http://127.0.0.1:8080/api/v1/health > /tmp/lr-health.json 2>/dev/null; then break; fi; sleep 1; done
+          echo "== health =="; cat /tmp/lr-health.json; echo
+          F=/etc/nginx/sites-enabled/villaforge-hub
+          if grep -q 'location /leads/' "$F"; then echo "nginx: Route vorhanden"; else
+            BK=/root/villaforge-hub.bak.$(date +%s); cp "$F" "$BK"
+            echo 'ICAgICMgTGVhZCBSZXNwb25kZXIgKFNwZWVkLXRvLUxlYWQgRW5naW5lKSAtIHZvbiBDSSB2ZXJ3YWx0ZXQ6IC5naXRodWIvd29ya2Zsb3dzL2xlYWQtcmVzcG9uZGVyLWRlcGxveS55bWwKICAgIGxvY2F0aW9uIC9sZWFkcy8gewogICAgICAgIHByb3h5X3Bhc3MgaHR0cDovLzEyNy4wLjAuMTo4MDgwLzsKICAgICAgICBwcm94eV9odHRwX3ZlcnNpb24gMS4xOwogICAgICAgIHByb3h5X3NldF9oZWFkZXIgSG9zdCAkaG9zdDsKICAgICAgICBwcm94eV9zZXRfaGVhZGVyIFgtUmVhbC1JUCAkcmVtb3RlX2FkZHI7CiAgICAgICAgcHJveHlfc2V0X2hlYWRlciBYLUZvcndhcmRlZC1Gb3IgJHByb3h5X2FkZF94X2ZvcndhcmRlZF9mb3I7CiAgICAgICAgcHJveHlfc2V0X2hlYWRlciBYLUZvcndhcmRlZC1Qcm90byAkc2NoZW1lOwogICAgICAgIHByb3h5X3JlYWRfdGltZW91dCAzNXM7CiAgICAgICAgY2xpZW50X21heF9ib2R5X3NpemUgMW07CiAgICB9Cgo=' | base64 -d > /tmp/leads-block.conf
+            awk 'BEGIN{d=0} /^[[:space:]]*location \/ccc\/ \{/ && !d { while ((getline l < "/tmp/leads-block.conf") > 0) print l; d=1 } {print}' "$F" > /tmp/hub.new
+            if grep -q 'location /leads/' /tmp/hub.new; then cat /tmp/hub.new > "$F"; else echo "INSERT_FAILED"; exit 1; fi
+            if nginx -t; then echo "nginx: config ok"; else cp "$BK" "$F"; echo "ROLLBACK auf $BK"; exit 1; fi
+          fi
+          systemctl reload nginx
+          KEY=$(grep -m1 '^ADMIN_API_KEY=' "$APP/.env" | cut -d= -f2-)
+          API=http://127.0.0.1:8080/api/v1
+          DEMO=$(curl -sS -X POST "$API/clients" -H "x-admin-key: $KEY" -H 'content-type: application/json' -d '{"name":"Demo (Musterbetrieb)","system_prompt":"Handwerksbetrieb in Heinsberg, Meisterbetrieb, Rueckruf Mo-Sa 8-19 Uhr, Einzugsgebiet Heinsberg-Aachen."}')
+          DEMOKEY=$(printf '%s' "$DEMO" | python3 -c 'import json,sys;print(json.load(sys.stdin)["api_key"])')
+          DEMOURL=$(printf '%s' "$DEMO" | python3 -c 'import json,sys;print(json.load(sys.stdin)["demo_url"])')
+          SMOKE=$(curl -sS -X POST "$API/clients" -H "x-admin-key: $KEY" -H 'content-type: application/json' -d '{"name":"CI-Smoke","system_prompt":"Testbetrieb.","webhook_outbound_url":"https://httpbin.org/post"}')
+          SMOKEID=$(printf '%s' "$SMOKE" | python3 -c 'import json,sys;print(json.load(sys.stdin)["client"]["id"])')
+          SMOKEKEY=$(printf '%s' "$SMOKE" | python3 -c 'import json,sys;print(json.load(sys.stdin)["api_key"])')
+          INB=$(curl -sS -m 40 -X POST "$API/lead/inbound" -H "x-api-key: $SMOKEKEY" -H 'content-type: application/json' -d '{"name":"Familie Kern","email":"kern@example.com","phone":"+49 151 2345678","inquiry":"Wir wollen unsere Terrasse bis zum Sommer neu pflastern lassen, ca. 40 qm, Ort Heinsberg.","source":"ci-smoke"}')
+          echo "== inbound (mit Webhook-Dispatch) =="
+          printf '%s' "$INB" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("status:",d.get("status"),"| delivered:",d.get("delivered"),"| ms:",d.get("response_ms"),"| degraded:",d.get("degraded"));print("antwort:",(d.get("response") or "")[:400])'
+          curl -sS -o /dev/null -X DELETE "$API/clients/$SMOKEID" -H "x-admin-key: $KEY"
+          printf 'ADMIN_API_KEY=%s\nDEMO_CLIENT_KEY=%s\nDEMO_URL=%s\n' "$KEY" "$DEMOKEY" "$DEMOURL" > /root/lead-responder-credentials.txt
+          chmod 600 /root/lead-responder-credentials.txt
+          echo "== credentials geschrieben =="; sed 's/=.*/=<gesetzt>/' /root/lead-responder-credentials.txt
+          systemctl is-active lead-responder
+EOS
+
+      - name: Oeffentliche URL verifizieren
+        run: |
+          set -euo pipefail
+          echo "== health =="
+          curl -fsS -m 20 https://hub.cybersarah-ki.com/leads/api/v1/health | head -c 600; echo
+          echo "== demo seite =="
+          curl -fsS -m 20 -o /tmp/demo.html -w "HTTP %{http_code} bytes=%{size_download}\n" "https://hub.cybersarah-ki.com/leads/"
