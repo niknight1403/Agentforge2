@@ -37,7 +37,7 @@ test('declared document, archive, CAD, firmware and media formats validate by co
  for (const extension of ['.ods', '.key', '.3mf', '.zip']) {
   assert.equal(isValidDeliverableArtifact(zip(), extension), true, extension);
  }
- assert.equal(isValidDeliverableArtifact(Buffer.from('{\\\\rtf1\\\\ansi A valid rich text document body}'), '.rtf'), true);
+ assert.equal(isValidDeliverableArtifact(Buffer.from('{\\rtf1\\ansi A valid rich text document body}'), '.rtf'), true);
  const tiff = Buffer.alloc(1024);
  tiff.set([0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00]);
  assert.equal(isValidDeliverableArtifact(tiff, '.tif'), true);
