@@ -111,14 +111,17 @@ fun FileManagerScreen() {
         } else emptyList()
         val isDeleteCommand = listOf("lösch", "loesch", "entfern", "delete").any(q::contains)
 
-        // A filename-bearing delete is always handled as a filename operation,
-        // never as a global duplicate/category operation. Fail closed on missing
-        // or ambiguous names so a typo or repeated basename cannot widen deletion.
-        if (needle.contains('.') && isDeleteCommand) {
-            when (exactNamedFiles.size) {
+        val hasExplicitBulkIntent = listOf("bild", "bilder", "foto", "fotos", "video", "videos", "film", "filme", "musik", "audio", "spiele", "game", "apk", "duplikat", "duplikate", "doppelt").any(q::contains)
+
+        // Filename deletes (with or without extension) are exact-only. Missing
+        // and duplicate basenames fail closed; category and duplicate operations
+        // remain available only when the command explicitly names that operation.
+        if (isDeleteCommand && !hasExplicitBulkIntent) {
+            val exactMatches = files.filter { it.name.equals(needle, ignoreCase = true) }
+            when (exactMatches.size) {
                 0 -> result = "Keine Datei mit dem exakten Namen '" + needle + "' gefunden. Es wurde nichts ausgewählt."
-                1 -> pending = FileAction("1 Datei löschen", exactNamedFiles, delete = true)
-                else -> result = "Der Dateiname '" + needle + "' kommt " + exactNamedFiles.size + "-mal vor. Bitte wähle einen eindeutigeren Namen oder schränke den freigegebenen Ordner ein. Es wurde nichts ausgewählt."
+                1 -> pending = FileAction("1 Datei löschen", exactMatches, delete = true)
+                else -> result = "Der Dateiname '" + needle + "' kommt " + exactMatches.size + "-mal vor. Bitte wähle einen eindeutigeren Namen. Es wurde nichts ausgewählt."
             }
             return
         }
