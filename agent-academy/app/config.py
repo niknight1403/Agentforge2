@@ -31,11 +31,13 @@ class Settings(BaseSettings):
 
     @property
     def allowed_orgs(self) -> set[str]:
+        """Return the normalized GitHub owner allowlist."""
         return {item.strip().lower() for item in self.github_allowed_orgs.split(",") if item.strip()}
 
 
 @lru_cache
 def get_settings() -> Settings:
+    """Load settings once and ensure the persistent data directory exists."""
     settings = Settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     return settings
