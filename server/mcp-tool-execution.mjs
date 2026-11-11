@@ -44,7 +44,7 @@ function assertJsonSafe(value, seen = new WeakSet()) {
   try {
     const keys = Reflect.ownKeys(value);
     if (isArray) {
-      if (keys.some((key) => key !== 'length' && (typeof key !== 'string' || !/^(0|[1-9]\\d*)$/.test(key)))) {
+      if (keys.some((key) => key !== 'length' && (typeof key !== 'string' || !/^(0|[1-9]\d*)$/.test(key)))) {
         throw fail('MCP_INVALID_TOOL_ARGUMENTS', 'Tool argument arrays must not contain custom properties');
       }
       for (let index = 0; index < value.length; index += 1) {
