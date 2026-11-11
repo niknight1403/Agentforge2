@@ -12,6 +12,8 @@ function isWithin(root, candidate) {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+const SENSITIVE_QUERY_PARAMETER = /^(?:access[_-]?token|refresh[_-]?token|id[_-]?token|token|api[_-]?key|secret|password|passwd|authorization|client[_-]?secret)$/i;
+
 function requireString(value, label, max = 2048) {
   if (typeof value !== 'string' || !value.trim() || value.length > max || value.includes('\0')) {
     throw fail('MCP_INVALID_LAUNCH_CONFIG', `${label} must be a non-empty bounded string`);
@@ -89,6 +91,11 @@ export function validateRemoteEndpoint({ url, resolvedAddresses } = {}, policy =
   const allowedProtocols = policy.allowInsecureTransport ? ['https:', 'wss:', 'http:', 'ws:'] : ['https:', 'wss:'];
   if (!allowedProtocols.includes(parsed.protocol) || parsed.username || parsed.password || parsed.hash) {
     throw fail('MCP_REMOTE_SCHEME_REJECTED', 'remote MCP transport must use an approved secure scheme without credentials or fragments');
+  }
+  for (const key of parsed.searchParams.keys()) {
+    if (SENSITIVE_QUERY_PARAMETER.test(key)) {
+      throw fail('MCP_REMOTE_QUERY_SECRET_REJECTED', 'remote MCP URLs must not carry credentials or secrets in query parameters; use credentialRef');
+    }
   }
   const host = parsed.hostname.toLowerCase();
   if (!new Set(policy.allowedHosts ?? []).has(host)) {
