@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 async def require_token(authorization: str | None = Header(default=None)) -> None:
+    """Require a configured service token and a valid Bearer authorization header."""
     if not settings.api_token:
         raise HTTPException(status_code=503, detail="Academy API token is not configured")
     scheme, _, supplied = (authorization or "").partition(" ")
@@ -28,6 +29,7 @@ async def require_token(authorization: str | None = Header(default=None)) -> Non
 
 @router.post("/sync-repos", dependencies=[Depends(require_token)])
 async def sync_repositories(payload: SyncRequest):
+    """Clone and index allowlisted repositories, reporting failures per target."""
     results = {}
     for target in payload.repositories:
         try:
@@ -45,6 +47,7 @@ async def sync_repositories(payload: SyncRequest):
 
 @router.post("/analyze-synergies", dependencies=[Depends(require_token)])
 async def analyze_synergies(payload: AnalyzeRequest):
+    """Build a deterministic audit from persistent repository file metadata."""
     selected = payload.repository_names or store.list_repositories()
     if not selected:
         raise HTTPException(status_code=404, detail="No repositories indexed")
@@ -72,6 +75,7 @@ async def analyze_synergies(payload: AnalyzeRequest):
 
 @router.post("/optimize-agents", dependencies=[Depends(require_token)])
 async def optimize_agents(payload: OptimizeRequest):
+    """Return advisory workflow suggestions without applying any changes."""
     if not payload.use_llm:
         return {"status": "success", "optimization_report": "LLM disabled for this request; no prompt or workflow changes were applied."}
     try:
@@ -83,4 +87,5 @@ async def optimize_agents(payload: OptimizeRequest):
 
 @router.get("/knowledge/search", dependencies=[Depends(require_token)])
 async def search_knowledge(q: str, limit: int = 10):
+    """Search the persistent knowledge index for matching source excerpts."""
     return {"results": store.search(q, limit)}
