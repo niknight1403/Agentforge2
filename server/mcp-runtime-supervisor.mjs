@@ -39,6 +39,8 @@ export function createMcpRuntimeSupervisor({
   const starting = new Map();
   const stopping = new Map();
   const cancelled = new Set();
+  const activeExecutions = new Map();
+  const executionDrainWaiters = new Map();
   let reconcileInFlight = null;
   let reconcileTimer = null;
   let reconciliationStop = null;
@@ -123,6 +125,14 @@ export function createMcpRuntimeSupervisor({
       // Remove it before awaiting close so a concurrent start cannot reuse a
       // client whose transport is already being torn down.
       connections.delete(id);
+      const active = activeExecutions.get(id) ?? 0;
+      if (active > 0) {
+        await new Promise((resolve) => {
+          const waiters = executionDrainWaiters.get(id) ?? [];
+          waiters.push(resolve);
+          executionDrainWaiters.set(id, waiters);
+        });
+      }
       try {
         await adapter.close();
       } catch (error) {
@@ -150,8 +160,24 @@ export function createMcpRuntimeSupervisor({
   async function executeApprovedTool({ serverId, toolName, arguments: toolArguments = {}, timeoutMs } = {}) {
     const id = String(serverId ?? '');
     const adapter = connections.get(id);
-    if (!adapter) throw fail('MCP_RUNTIME_NOT_CONNECTED', 'MCP server must have an active supervised runtime before tool execution');
-    return executeTool({ serverId: id, toolName, arguments: toolArguments, client: adapter, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+    if (!adapter || stopping.has(id)) throw fail('MCP_RUNTIME_NOT_CONNECTED', 'MCP server must have an active supervised runtime before tool execution');
+    activeExecutions.set(id, (activeExecutions.get(id) ?? 0) + 1);
+    try {
+      return await executeTool({
+        serverId: id, toolName, arguments: toolArguments, client: adapter,
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      });
+    } finally {
+      const remaining = Math.max(0, (activeExecutions.get(id) ?? 1) - 1);
+      if (remaining === 0) {
+        activeExecutions.delete(id);
+        const waiters = executionDrainWaiters.get(id) ?? [];
+        executionDrainWaiters.delete(id);
+        for (const resolve of waiters) resolve();
+      } else {
+        activeExecutions.set(id, remaining);
+      }
+    }
   }
 
   function reconcile() {
@@ -219,6 +245,7 @@ export function createMcpRuntimeSupervisor({
         startingServerIds: [...starting.keys()],
         stoppingServerIds: [...stopping.keys()],
         reconciliationLoopRunning: Boolean(reconcileTimer),
+        activeExecutions: Object.fromEntries(activeExecutions),
         maxConcurrent,
       });
     },
