@@ -341,10 +341,11 @@ export function deepPreviewFile(projectId, rest) {
   const allowedBuildRoot = ['dist', 'build', 'out', 'public', 'web-dist'].some((folder) =>
     target.startsWith(join(root, folder) + '/')
   );
+  const allowedRootEntry = clean.length === 1 && clean[0] === 'index.html' && target === join(root, 'index.html');
   const allowedRootAssets = ['assets', 'static'].some((folder) =>
     target.startsWith(join(root, folder) + '/')
   );
-  if (!(allowedBuildRoot || allowedRootAssets)) return null;
+  if (!(allowedBuildRoot || allowedRootEntry || allowedRootAssets)) return null;
   // Pin the exact file before returning it. A path-only check followed by a
   // later createReadStream(path) is vulnerable to a symlink/file swap in
   // between. O_NOFOLLOW blocks a final-component symlink; inode comparison
