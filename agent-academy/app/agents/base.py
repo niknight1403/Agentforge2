@@ -1,5 +1,3 @@
-from litellm import acompletion
-
 from app.config import settings
 
 
@@ -9,8 +7,13 @@ class BaseAgent:
         self.system_prompt = system_prompt
 
     async def execute(self, user_prompt: str) -> str:
+        """Run an explicitly enabled advisory completion against the configured local model."""
         if not settings.llm_enabled:
             raise RuntimeError("LLM execution is disabled; set ACADEMY_LLM_ENABLED=true explicitly")
+        try:
+            from litellm import acompletion
+        except ImportError as exc:
+            raise RuntimeError("Install the optional 'llm' dependencies to enable LLM execution") from exc
         response = await acompletion(
             model=settings.default_model,
             api_base=settings.ollama_base_url,
