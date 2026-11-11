@@ -381,6 +381,8 @@ li span{color:#7F92A0;font-size:13px;white-space:nowrap}
  * Legt das App-Geruest aus villa-apk-template/ ins Projekt, wenn keins da ist.
  * Die Startseite zeigt den Inhalt der Villa statt eines Platzhalters.
  */
+export function shouldScaffoldAppShell(kind) { return ['android', 'android-cloud'].includes(String(kind)); }
+
 export function scaffoldAppShell(villa, dir, L = () => {}) {
   const source = join(process.cwd(), 'villa-apk-template');
   if (!existsSync(source)) { L('App-Vorlage villa-apk-template/ fehlt - kein Geruest ergaenzt.'); return false; }
@@ -420,7 +422,7 @@ export async function startBuild(villaId, { auto = false } = {}) {
     const L = (s) => { record.log.push(String(s).slice(0, 400)); if (record.log.length > 60) record.log.shift(); save(); };
     try {
       // Ohne Einstiegspunkt ist das Paket kein Produkt: Geruest aus der Vorlage.
-      if (['android', 'android-cloud'].includes(kind) && !hasAppEntryPoint(dir)) {
+      if (shouldScaffoldAppShell(kind) && !hasAppEntryPoint(dir)) {
         record.scaffold = scaffoldAppShell(villa, dir, L);
       }
       // Build-Modus entscheiden: Cloud-APK braucht ein Git-Remote im
