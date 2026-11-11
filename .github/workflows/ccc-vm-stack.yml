@@ -109,10 +109,21 @@ jobs:
           MIGRC=$?
           set -e
           if [ $MIGRC -ne 0 ]; then
-            echo "MIGRATION FEHLGESCHLAGEN (exit $MIGRC) - letzte 40 Zeilen:"
-            tail -n 40 /tmp/migrate.log | sed "s#postgresql://[^ ]*#postgresql://***#g"
-            echo "== bereits angewandte Migrationen =="
-            sudo -u postgres psql -d cybersarah -Atc "SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 5;" 2>&1 | head -6
+            echo "MIGRATION FEHLGESCHLAGEN (exit $MIGRC)"
+            echo "== Fehlerausgabe (ANSI/Spinner entfernt, Zugangsdaten maskiert) =="
+            sed -e "s/\x1b\[[0-9;]*[a-zA-Z]//g" -e "s/\r/\n/g" /tmp/migrate.log \
+              | sed "s#postgresql://[^ ]*#postgresql://***#g" \
+              | grep -vE "^\s*$" | tail -n 60 || true
+            echo "== Stand der Migrationstabelle =="
+            sudo -u postgres psql -d cybersarah -Atc \
+              "SELECT count(*) FROM drizzle.__drizzle_migrations;" 2>&1 | head -3
+            echo "== Journal-Reihenfolge im Repo (erste 3 / letzte 3) =="
+            node -e "const j=require('./drizzle/meta/_journal.json').entries;const s=[...j.slice(0,3),...j.slice(-3)];console.log(s.map(e=>e.idx+':'+e.tag).join(' '))" 2>&1 | head -3
+            echo "== Naechste noch nicht angewandte Migrationen =="
+            sudo -u postgres psql -d cybersarah -Atc \
+              "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" 2>&1 | head -3
+            echo "== drizzle-kit Version =="
+            npx drizzle-kit --version 2>&1 | tail -2
             exit 1
           fi
           echo "Schema aktuell."
