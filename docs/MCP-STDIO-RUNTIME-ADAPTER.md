@@ -92,3 +92,8 @@ so slow registry operations cannot overlap. The returned stop function and
 `stopReconciliationLoop()` stop polling; `closeAll()` stops the loop before teardown.
 Call this explicitly from the Hub lifecycle after constructing the supervisor with
 administrator-owned SDK constructors and launch policy.
+
+Startup failures are persisted as registry status `failed` with a bounded error code
+when the server still exists and the start was not cancelled. Discovery failures
+already recorded by the discovery layer are not double-counted. Cancellation and
+intentional disable/remove operations do not become false health failures.
