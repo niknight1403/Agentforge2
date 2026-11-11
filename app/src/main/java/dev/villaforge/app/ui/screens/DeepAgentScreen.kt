@@ -268,18 +268,22 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                                             val target = request?.url?.toString() ?: return null
                                             return try {
                                                 val targetUrl = URL(target)
-                                                val connection = targetUrl.openConnection() as HttpURLConnection
                                                 val hubOrigin = URL(state.serverUrl)
                                                 val sameOrigin = targetUrl.protocol.equals(hubOrigin.protocol, ignoreCase = true) &&
                                                     targetUrl.host.equals(hubOrigin.host, ignoreCase = true) &&
                                                     (if (targetUrl.port >= 0) targetUrl.port else targetUrl.defaultPort) ==
                                                     (if (hubOrigin.port >= 0) hubOrigin.port else hubOrigin.defaultPort)
+                                                // Project HTML/JavaScript is untrusted. Never lend it the user's
+                                                // Hub bearer for arbitrary same-origin API requests: credentials
+                                                // are attached only to this project's confined preview subtree.
+                                                val previewPathPrefix = URL(viewModel.deepPreviewUrl(projectId, entry))
+                                                    .path.substringBefore("/preview/") + "/preview/"
+                                                if (!sameOrigin || !targetUrl.path.startsWith(previewPathPrefix)) return null
+                                                val connection = targetUrl.openConnection() as HttpURLConnection
                                                 connection.instanceFollowRedirects = false
                                                 connection.connectTimeout = 8000
                                                 connection.readTimeout = 15000
-                                                if (sameOrigin) {
-                                                    viewModel.authHeader()?.let { connection.setRequestProperty("Authorization", it) }
-                                                }
+                                                viewModel.authHeader()?.let { connection.setRequestProperty("Authorization", it) }
                                                 connection.connect()
                                                 val mime = connection.contentType?.substringBefore(';') ?: "application/octet-stream"
                                                 val encoding = connection.contentEncoding ?: "UTF-8"
@@ -287,7 +291,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                                             } catch (_: Exception) { null }
                                         }
                                     }
-                                    // The interceptor attaches credentials only after an exact Hub-origin check.
+                                    // Credentials are restricted to this project's preview path and exact Hub origin.
                                     loadUrl(viewModel.deepPreviewUrl(projectId, entry))
                                 }
                             },
