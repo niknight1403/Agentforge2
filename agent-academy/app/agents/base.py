@@ -3,6 +3,7 @@ from app.config import settings
 
 class BaseAgent:
     def __init__(self, name: str, system_prompt: str):
+        """Initialize an agent with a stable name and constrained system prompt."""
         self.name = name
         self.system_prompt = system_prompt
 
