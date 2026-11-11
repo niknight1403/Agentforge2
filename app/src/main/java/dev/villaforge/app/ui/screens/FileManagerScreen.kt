@@ -113,10 +113,10 @@ fun FileManagerScreen() {
 
         // Bulk intent must be a standalone word, not a substring in a filename.
         val hasExplicitBulkIntent = !needle.contains('.') &&
-            Regex("\\b(bilder?|fotos?|videos?|filme?|musik|audio|spiele?|games?|apk|duplikate?|doppelt)\\b").containsMatchIn(q)
+            Regex("\\b(bild(?:er)?|fotos?|videos?|filme?|musik|audio|spiele?|games?|apk|duplikate?|doppelt)\\b").containsMatchIn(q)
         val hasExplicitDuplicateIntent = !needle.contains('.') &&
             Regex("\\b(duplikate?|doppelt)\\b").containsMatchIn(q)
-        val hasExplicitImageIntent = Regex("\\b(bilder?|fotos?|images?|jpg|png)\\b").containsMatchIn(q)
+        val hasExplicitImageIntent = Regex("\\b(bild(?:er)?|fotos?|images?|jpg|png)\\b").containsMatchIn(q)
         val hasExplicitVideoIntent = Regex("\\b(videos?|filme?|mp4)\\b").containsMatchIn(q)
         val hasExplicitAudioIntent = Regex("\\b(musik|audio|mp3)\\b").containsMatchIn(q)
         val hasExplicitGameIntent = Regex("\\b(spiele?|games?|apk)\\b").containsMatchIn(q)
