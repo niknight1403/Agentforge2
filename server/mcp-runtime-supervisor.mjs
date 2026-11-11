@@ -162,11 +162,20 @@ export function createMcpRuntimeSupervisor({
     const adapter = connections.get(id);
     if (!adapter || stopping.has(id)) throw fail('MCP_RUNTIME_NOT_CONNECTED', 'MCP server must have an active supervised runtime before tool execution');
     activeExecutions.set(id, (activeExecutions.get(id) ?? 0) + 1);
+    let timedOut = false;
     try {
       return await executeTool({
         serverId: id, toolName, arguments: toolArguments, client: adapter,
         ...(timeoutMs === undefined ? {} : { timeoutMs }),
       });
+    } catch (error) {
+      if (error?.code === 'MCP_TOOL_EXECUTION_TIMEOUT') {
+        timedOut = true;
+        try {
+          setStatus(id, 'degraded', { errorCode: 'MCP_TOOL_EXECUTION_TIMEOUT' });
+        } catch { /* the timeout remains the primary failure */ }
+      }
+      throw error;
     } finally {
       const remaining = Math.max(0, (activeExecutions.get(id) ?? 1) - 1);
       if (remaining === 0) {
@@ -176,6 +185,12 @@ export function createMcpRuntimeSupervisor({
         for (const resolve of waiters) resolve();
       } else {
         activeExecutions.set(id, remaining);
+      }
+      // A Promise.race timeout does not cancel the SDK request. Retire the
+      // whole stdio runtime after releasing this execution slot so the child
+      // transport is closed and cannot accept more calls.
+      if (timedOut) {
+        try { await stopServer(id); } catch { /* preserve the tool timeout */ }
       }
     }
   }
