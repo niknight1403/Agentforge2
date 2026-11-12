@@ -27,20 +27,20 @@ jobs:
           L=$(curl -sS -m 40 -X POST "$API/lead/inbound" -H "x-api-key: $CK" -H 'content-type: application/json' -d '{"name":"Followup Test","email":"fu@example.com","inquiry":"Waermepumpe Angebot, Reihenhaus Aachen."}')
           LID=$(printf '%s' "$L" | j 'd["lead_id"]')
           printf '%s' "$L" | j '"lead="+d["lead_id"]+" status="+str(d.get("status"))+" delivered="+str(d.get("delivered"))'
-          echo "== delivered_at auf vor 25h setzen (responded_at/followup_sent_at bleiben NULL) =="
+          echo "== created_at und delivered_at auf vor 25h setzen =="
           node -e '
           const {DatabaseSync}=require("node:sqlite");
           const db=new DatabaseSync(process.argv[1]);
           const past=new Date(Date.now()-25*3600*1000).toISOString();
-          db.prepare("UPDATE leads SET delivered_at = ?, responded_at = NULL, followup_sent_at = NULL, updated_at = ? WHERE id = ?")
-            .run(past, new Date().toISOString(), process.argv[2]);
-          console.log("gesetzt:", JSON.stringify(db.prepare("SELECT status, delivered_at, responded_at, followup_sent_at FROM leads WHERE id = ?").get(process.argv[2])));
+          db.prepare("UPDATE leads SET created_at = ?, delivered_at = ?, responded_at = NULL, followup_sent_at = NULL, updated_at = ? WHERE id = ?")
+            .run(past, past, new Date().toISOString(), process.argv[2]);
+          console.log("gesetzt:", JSON.stringify(db.prepare("SELECT status, created_at, delivered_at, responded_at, followup_sent_at FROM leads WHERE id = ?").get(process.argv[2])));
           ' "$DB" "$LID"
           echo "== Cron-Zyklus ausloesen =="
           sleep 2
           curl -sS -X POST "$API/admin/scan" -H "x-admin-key: $KEY" | j '"followups: "+str(d["scan"]["followups"])'
-          curl -sS "$API/leads/$LID" -H "x-admin-key: $KEY" | j '"lead danach: status="+str(d["lead"]["status"])+" followup_sent_at="+str(d["lead"].get("followup_sent_at"))+"\nfollowup-antwort: "+str((d["lead"].get("followup_response") or ""))[:220]'
+          curl -sS "$API/leads/$LID" -H "x-admin-key: $KEY" | j '"status="+str(d["lead"]["status"])+" followup_sent_at="+str(d["lead"].get("followup_sent_at"))+"\nfollowup-antwort: "+str(d["lead"].get("followup_response") or "")[:260]'
           echo "== Zustellereignisse =="
-          curl -sS "$API/admin/deliveries?lead_id=$LID&limit=10" -H "x-admin-key: $KEY" | j '"total="+str(d["total"])+"\n"+"\n".join("  "+e["type"]+" "+json.dumps(e["detail"])[:120] for e in d["events"])'
+          curl -sS "$API/admin/deliveries?lead_id=$LID&limit=10" -H "x-admin-key: $KEY" | j '"total="+str(d["total"])+"\n"+"\n".join("  "+e["type"]+" "+json.dumps(e["detail"])[:110] for e in d["events"])'
           curl -sS -o /dev/null -X DELETE "$API/clients/$CID" -H "x-admin-key: $KEY"; echo "verify-client geloescht"
           EOS
