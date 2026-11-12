@@ -146,7 +146,8 @@ export function createMcpAdminApi({ registry, supervisor } = {}) {
         : error?.code === 'MCP_SERVER_NOT_FOUND' ? 404
           : error?.code === 'MCP_SERVER_DISABLED' ? 409
             : error?.code === 'MCP_LAUNCH_POLICY_NOT_CONFIGURED' ? 503
-              : error?.code === 'MCP_SDK_NOT_INSTALLED' ? 503 : 400;
+              : error?.code === 'MCP_SDK_NOT_INSTALLED' || error?.code === 'MCP_PROCESS_GROUP_UNSUPPORTED'
+                || error?.code === 'MCP_PROCESS_GROUP_TERMINATION_UNCONFIRMED' ? 503 : 400;
       return response(status, { error: String(error?.message || 'MCP administration request failed').slice(0, 300), code });
     }
   };
