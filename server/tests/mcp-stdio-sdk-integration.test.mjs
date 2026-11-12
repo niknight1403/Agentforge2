@@ -14,11 +14,9 @@ const { registerMcpServer } = await import('../mcp-registry.mjs');
 const { connectMcpStdioServer } = await import('../mcp-stdio-runtime-adapter.mjs');
 
 let Client;
-let StdioClientTransport;
 let sdkAvailable = true;
 try {
   ({ Client } = await import('@modelcontextprotocol/client'));
-  ({ StdioClientTransport } = await import('@modelcontextprotocol/client/stdio'));
 } catch {
   sdkAvailable = false;
 }
@@ -75,7 +73,6 @@ test('official MCP SDK completes a real disposable stdio handshake and tool call
       serverId: server.id,
       policy,
       Client,
-      StdioClientTransport,
       connectTimeoutMs: 8_000,
     });
     const discovered = await adapter.listTools();
