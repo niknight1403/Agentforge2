@@ -350,7 +350,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 content = res.optString("reply", "(keine Antwort)"),
                 createdAt = System.currentTimeMillis()
             )
-            _state.update { it.copy(deepMessages = it.deepMessages + reply, busy = false) }
+            val developedVillaId = res.optJSONObject("development")?.optLong("villaId", 0L) ?: 0L
+            _state.update { current ->
+                val activeProject = current.deepActiveProject
+                val updatedProject = if (activeProject != null && activeProject.id == projectId && developedVillaId > 0) {
+                    activeProject.copy(villaId = developedVillaId)
+                } else activeProject
+                current.copy(deepMessages = current.deepMessages + reply, deepActiveProject = updatedProject, busy = false)
+            }
         } catch (e: Exception) {
             _state.update {
                 it.copy(busy = false, deepMessages = it.deepMessages + DeepMessage(
