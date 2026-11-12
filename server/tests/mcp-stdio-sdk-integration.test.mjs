@@ -14,11 +14,9 @@ const { registerMcpServer } = await import('../mcp-registry.mjs');
 const { connectMcpStdioServer } = await import('../mcp-stdio-runtime-adapter.mjs');
 
 let Client;
-let StdioClientTransport;
 let sdkAvailable = true;
 try {
   ({ Client } = await import('@modelcontextprotocol/client'));
-  ({ StdioClientTransport } = await import('@modelcontextprotocol/client/stdio'));
 } catch {
   sdkAvailable = false;
 }
@@ -29,6 +27,9 @@ test('official MCP SDK completes a real disposable stdio handshake and tool call
 }, async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'agentforge-mcp-stdio-'));
   const node = realpathSync(process.execPath);
+  const hostSecretKey = 'AGENTFORGE_HOST_SECRET_PROBE';
+  const hostSecret = randomBytes(24).toString('hex');
+  process.env[hostSecretKey] = hostSecret;
   const serverSource = String.raw`
     const readline = require('node:readline');
     const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -45,9 +46,12 @@ test('official MCP SDK completes a real disposable stdio handshake and tool call
       } else if (message.method === 'tools/list') {
         send({ jsonrpc: '2.0', id: message.id, result: { tools: [{
           name: 'ping', description: 'Return pong', inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+        }, {
+          name: 'env_probe', description: 'Report whether a host-only secret leaked', inputSchema: { type: 'object', properties: {}, additionalProperties: false }
         }]}});
       } else if (message.method === 'tools/call') {
-        send({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: 'pong' }] } });
+        const text = message.params?.name === 'env_probe' ? (process.env.AGENTFORGE_HOST_SECRET_PROBE ?? 'not-present') : 'pong';
+        send({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text }] } });
       } else if (message.id !== undefined) {
         send({ jsonrpc: '2.0', id: message.id, result: {} });
       }
@@ -75,15 +79,17 @@ test('official MCP SDK completes a real disposable stdio handshake and tool call
       serverId: server.id,
       policy,
       Client,
-      StdioClientTransport,
       connectTimeoutMs: 8_000,
     });
     const discovered = await adapter.listTools();
-    assert.deepEqual(discovered.tools.map((tool) => tool.name), ['ping']);
+    assert.deepEqual(discovered.tools.map((tool) => tool.name), ['ping', 'env_probe']);
     const result = await adapter.callTool({ name: 'ping', arguments: {} });
     assert.equal(result.content?.[0]?.text, 'pong');
+    const envProbe = await adapter.callTool({ name: 'env_probe', arguments: {} });
+    assert.equal(envProbe.content?.[0]?.text, 'not-present', 'host-only secrets must not be inherited by MCP child processes');
   } finally {
     if (adapter) await adapter.close();
+    delete process.env[hostSecretKey];
     await rm(cwd, { recursive: true, force: true });
   }
 });
