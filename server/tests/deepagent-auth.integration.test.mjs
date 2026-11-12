@@ -103,8 +103,8 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   assert.equal(ownerCss.status, 200);
   assert.match(ownerCss.headers.get('content-type') || '', /text\/css/);
   const ownerCssText = await ownerCss.text();
-  assert.match(ownerCssText, /url\\(['"]?\\/api\\/deep\\/projects\\/\\d+\\/preview\\/dist\\/assets\\/hero\\.png['"]?\\)/);
-  assert.match(ownerCssText, /@import ['"]\\/api\\/deep\\/projects\\/\\d+\\/preview\\/dist\\/assets\\/theme\\.css['"]/);
+  assert.match(ownerCssText, /url\(['"]?\/api\/deep\/projects\/\d+\/preview\/dist\/assets\/hero\.png['"]?\)/);
+  assert.match(ownerCssText, /@import ['"]\/api\/deep\/projects\/\d+\/preview\/dist\/assets\/theme\.css['"]/);
   const ownerJs = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/assets/app.js`, { headers: auth(tokenA) });
   assert.equal(ownerJs.status, 200);
   assert.match(ownerJs.headers.get('content-type') || '', /javascript/);
