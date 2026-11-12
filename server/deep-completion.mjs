@@ -24,7 +24,7 @@ export function liveViewState(projectId) {
     // descriptor when the user actually requests the preview.
     try {
       const stat = fstatSync(preview.fd);
-      revision = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+      revision = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
       return true;
     } catch {
       return false;

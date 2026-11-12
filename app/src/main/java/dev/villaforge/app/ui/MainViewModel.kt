@@ -223,7 +223,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (villaId <= 0) throw IllegalStateException(result.optString("error", "Entwicklung noch nicht freigegeben"))
             _state.update { current ->
                 val activeProject = current.deepActiveProject
-                if (activeProject?.id != id) current
+                if (activeProject == null || activeProject.id != id) current
                 else current.copy(
                     deepActiveProject = activeProject.copy(villaId = villaId),
                     message = result.optString("message", "Autonome Entwicklung gestartet. Live-Arbeitsplatz bleibt geöffnet.")
