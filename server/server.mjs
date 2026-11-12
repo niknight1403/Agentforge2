@@ -1490,8 +1490,8 @@ async function api(req, res, url) {
       try { css = readFileSync(f.fd, 'utf8'); }
       finally { closeSync(f.fd); }
       css = css
-        .replace(/url\\(\\s*(["']?)\\/(?!\\/)([^)"']+)\\1\\s*\\)/g, (_match, quote, assetPath) => `url(${quote}${previewBase}${assetPath}${quote})`)
-        .replace(/(@import\\s+)(["'])\\/(?!\\/)([^"']+)\\2/g, (_match, prefix, quote, assetPath) => `${prefix}${quote}${previewBase}${assetPath}${quote}`);
+        .replace(/url\(\s*(["']?)\/(?!\/)([^)"']+)\1\s*\)/g, (_match, quote, assetPath) => \`url(\${quote}\${previewBase}\${assetPath}\${quote})\`)
+        .replace(/(@import\s+)(["'])\/(?!\/)([^"']+)\2/g, (_match, prefix, quote, assetPath) => \`\${prefix}\${quote}\${previewBase}\${assetPath}\${quote}\`);
       return res.end(css);
     }
     if (f.mime.startsWith('text/html')) {
