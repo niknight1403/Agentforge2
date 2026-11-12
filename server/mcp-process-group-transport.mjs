@@ -49,6 +49,15 @@ function signalProcessGroup(pid, signal) {
   }
 }
 
+async function waitForGroupGone(pid, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processGroupExists(pid)) return true;
+    await delay(25);
+  }
+  return !processGroupExists(pid);
+}
+
 /**
  * POSIX stdio transport for the official MCP Client.
  *
@@ -193,7 +202,7 @@ export function createMcpProcessGroupTransport({
     if (!Number.isInteger(pid) || pid <= 1) return;
     if (processGroupExists(pid)) {
       signalProcessGroup(pid, 'SIGTERM');
-      await Promise.race([waitForExit(processHandle, shutdownTimeoutMs), delay(shutdownTimeoutMs)]);
+      await waitForGroupGone(pid, shutdownTimeoutMs);
     }
     if (processGroupExists(pid)) {
       signalProcessGroup(pid, 'SIGKILL');
