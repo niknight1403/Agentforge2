@@ -50,7 +50,7 @@ test('MCP process-group transport kills a SIGTERM-resistant grandchild on close'
     cwd,
     env: { PID_FILE: pidFile },
     stderr: 'ignore',
-    shutdownTimeoutMs: 200,
+    shutdownTimeoutMs: 1_500,
   });
   let grandchildPid;
   try {
