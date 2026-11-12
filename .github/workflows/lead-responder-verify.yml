@@ -29,11 +29,11 @@ jobs:
           LID=$(printf '%s' "$L1" | j 'd["lead_id"]')
           echo "== Schritt 2: Webhook reparieren und Cron-Zyklus erzwingen =="
           curl -sS -o /dev/null -X PATCH "$API/clients/$CID" -H "x-admin-key: $KEY" -H 'content-type: application/json' -d '{"webhook_outbound_url":"https://httpbin.org/post"}'
-          sleep 32
+          sleep 80
           echo "scan: $(curl -sS -X POST "$API/admin/scan" -H "x-admin-key: $KEY" | head -c 300)"
           sleep 3
           D=$(curl -sS "$API/leads/$LID" -H "x-admin-key: $KEY")
-          echo "lead1 nach Scan: $(printf '%s' "$D" | j 'd["lead"]["status"]+" | attempts="+str(d["lead"].get("dispatch_attempts"))')"
+          echo "lead1 nach Scan: $(printf '%s' "$D" | j 'd["lead"]["status"]+" | last_error="+str(d["lead"].get("last_error"))[:60]')"
           echo "== Schritt 3: Zustellhistorie =="
           curl -sS "$API/admin/deliveries?limit=4" -H "x-admin-key: $KEY" | head -c 700; echo
           echo "== Schritt 4: Stats =="
