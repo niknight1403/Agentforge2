@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Backoff-Stufen und automatischer Cron-Zyklus
+      - name: Automatischer Cron-Retry ohne manuellen Scan
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
@@ -20,28 +20,21 @@ jobs:
           KEY=$(grep -m1 '^ADMIN_API_KEY=' "$APP/.env" | cut -d= -f2-)
           API=http://127.0.0.1:8080/api/v1
           j() { python3 -c "import json,sys;d=json.load(sys.stdin);print($1)" 2>/dev/null || echo PARSE_ERROR; }
-          echo "== T0: Ausgangslage Scheduler =="
-          H0=$(curl -sS "$API/health")
-          printf '%s' "$H0" | j '"cycles="+str(d["scheduler"]["cycles"])+" last_run="+str(d["scheduler"]["last_run"])'
-          C=$(curl -sS -X POST "$API/clients" -H "x-admin-key: $KEY" -H 'content-type: application/json' -d '{"name":"Retry Verify","system_prompt":"Dachdeckerei Testbetrieb.","webhook_outbound_url":"https://httpbin.org/status/500"}')
+          echo "== T0 =="
+          curl -sS "$API/health" | j '"cycles="+str(d["scheduler"]["cycles"])+" last_run="+str(d["scheduler"]["last_run"])'
+          C=$(curl -sS -X POST "$API/clients" -H "x-admin-key: $KEY" -H 'content-type: application/json' -d '{"name":"Retry Auto","system_prompt":"Testbetrieb.","webhook_outbound_url":"https://httpbin.org/status/500"}')
           CID=$(printf '%s' "$C" | j 'd["client"]["id"]')
           CK=$(printf '%s' "$C" | j 'd["api_key"]')
-          L=$(curl -sS -m 40 -X POST "$API/lead/inbound" -H "x-api-key: $CK" -H 'content-type: application/json' -d '{"name":"Retry Ende","email":"retry2@example.com","inquiry":"Flachdach sanieren, 60 qm, Aachen."}')
+          L=$(curl -sS -m 40 -X POST "$API/lead/inbound" -H "x-api-key: $CK" -H 'content-type: application/json' -d '{"name":"Auto Retry","email":"auto@example.com","inquiry":"Dachrinne erneuern, Aachen."}')
           LID=$(printf '%s' "$L" | j 'd["lead_id"]')
-          echo "lead=$LID client=$CID"
-          printf '%s' "$L" | j '"Versuch 1: status="+str(d.get("status"))+" delivered="+str(d.get("delivered"))'
-          echo "== T0+75s: Backoff-Stufe 1 abwarten, Stufe 2 per Scan anstossen =="
-          sleep 75
-          echo "scan1: $(curl -sS -X POST "$API/admin/scan" -H "x-admin-key: $KEY" | j 'str(d["scan"]["retry"])')"
-          curl -sS "$API/leads/$LID" -H "x-admin-key: $KEY" | j '"Versuch 2: status="+str(d["lead"]["status"])'
-          curl -sS "$API/admin/deliveries?lead_id=$LID&limit=3" -H "x-admin-key: $KEY" | j '[(e["type"], e["detail"]) for e in d["events"]][:3]'
-          echo "== T0+640s: auf den AUTOMATISCHEN 10-Minuten-Zyklus warten (kein Scan in dieser Zeit) =="
-          sleep 565
-          H1=$(curl -sS "$API/health")
-          printf '%s' "$H1" | j '"cycles="+str(d["scheduler"]["cycles"])+" last_run="+str(d["scheduler"]["last_run"])+" last_error="+str(d["scheduler"]["last_error"])'
-          curl -sS "$API/leads/$LID" -H "x-admin-key: $KEY" | j '"nach Cron: status="+str(d["lead"]["status"])+" next_attempt_at="+str(d["lead"].get("next_attempt_at"))+" attempts="+str(d["lead"].get("attempts"))'
-          echo "== Zustellereignisse dieses Leads insgesamt =="
-          curl -sS "$API/admin/deliveries?lead_id=$LID&limit=10" -H "x-admin-key: $KEY" | j '"total="+str(d["total"])+" | "+" ; ".join(e["type"]+"@"+e["created_at"] for e in d["events"])'
-          echo "== Aufraeumen =="
+          printf '%s' "$L" | j '"lead="+d["lead_id"]+" | status="+str(d.get("status"))+" delivered="+str(d.get("delivered"))'
+          curl -sS "$API/admin/deliveries?lead_id=$LID&limit=2" -H "x-admin-key: $KEY" | j '"erwartet: "+str([(e["type"],e["detail"].get("next_attempt_at")) for e in d["events"]][:1])'
+          echo "== warte 11 Minuten auf automatische Cron-Zyklen (KEIN admin/scan in dieser Zeit) =="
+          sleep 660
+          echo "== T0+11min =="
+          curl -sS "$API/health" | j '"cycles="+str(d["scheduler"]["cycles"])+" last_run="+str(d["scheduler"]["last_run"])+" last_error="+str(d["scheduler"]["last_error"])'
+          curl -sS "$API/leads/$LID" -H "x-admin-key: $KEY" | j '"status="+str(d["lead"]["status"])+" attempts="+str(d["lead"].get("attempts"))+" next_attempt_at="+str(d["lead"].get("next_attempt_at"))'
+          echo "== Ereignisverlauf (ohne manuellen Scan) =="
+          curl -sS "$API/admin/deliveries?lead_id=$LID&limit=10" -H "x-admin-key: $KEY" | j '"total="+str(d["total"])+"\n"+"\n".join("  "+e["type"]+" @"+e["created_at"]+" wait="+str(e["detail"].get("wait_ms")) for e in d["events"])'
           curl -sS -o /dev/null -X DELETE "$API/clients/$CID" -H "x-admin-key: $KEY"; echo "verify-client geloescht"
           EOS
