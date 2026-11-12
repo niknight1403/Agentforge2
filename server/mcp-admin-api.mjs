@@ -7,8 +7,23 @@ function response(status, body) {
 
 function publicServer(server) {
   if (!server) return null;
-  const { credentialRef, config, ...safe } = server;
-  return safe;
+  const { credentialRef, config, args, url, ...safe } = server;
+  const argumentCount = Array.isArray(args) ? args.length : 0;
+  let publicUrl;
+  if (typeof url === 'string' && url) {
+    try {
+      // Never return URL userinfo, path, query or fragment: remote endpoint
+      // paths and query strings are frequently used to carry bearer tokens.
+      publicUrl = new URL(url).origin;
+    } catch {
+      publicUrl = '[invalid URL redacted]';
+    }
+  }
+  return {
+    ...safe,
+    ...(Array.isArray(args) ? { argumentCount } : {}),
+    ...(publicUrl ? { url: publicUrl } : {}),
+  };
 }
 
 function validateServerInput(input) {
