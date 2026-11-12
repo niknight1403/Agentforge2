@@ -10,7 +10,7 @@ ALLOWED_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".yml",
 IGNORED_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "coverage", ".next"}
 IGNORED_NAMES = {".env", ".env.local", ".env.production", "id_rsa", "id_ed25519"}
 SECRET_ASSIGNMENTS = re.compile(
-    r"""(?im)(?<![A-Za-z0-9_-])_*(?:[A-Za-z0-9]+[_-]+)*(?:aws[_-]?secret[_-]?access[_-]?key|api[_-]?key|client[_-]?secret|secret|password|passwd|access[_-]?token|auth[_-]?token|private[_-]?key)"?\\s*[:=]\\s*(?:(?P<quote>["'])(?P<quoted>(?:\\\\.|(?!(?P=quote))[^\\\\\\r\\n])*)(?P=quote)|(?P<bare>[^\\s#()]+)(?=\\s*(?:#.*)?$))"""
+    r"""(?im)(?<![A-Za-z0-9_-])_*(?:[A-Za-z0-9]+[_-]+)*(?:aws[_-]?secret[_-]?access[_-]?key|api[_-]?key|client[_-]?secret|secret|password|passwd|access[_-]?token|auth[_-]?token|private[_-]?key)"?\s*[:=]\s*(?:(?P<quote>["'])(?P<quoted>(?:\\.|(?!(?P=quote))[^\\\r\n])*)(?P=quote)|(?P<bare>[^\s#()]+)(?=\s*(?:#.*)?$))"""
 )
 SECRET_MARKERS = re.compile(
     r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
