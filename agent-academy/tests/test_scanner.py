@@ -76,6 +76,8 @@ def test_short_yaml_and_aws_credentials_are_rejected():
     assert contains_secret('password: correct.horse.battery.staple')
     assert contains_secret('password = "admin"')
     assert contains_secret('AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"')
+    assert contains_secret('_api_key = "x"')
+    assert contains_secret('DB__PASSWORD = "x"')
 
 
 def test_secret_scanner_handles_long_underscore_runs_without_false_positive():
@@ -91,6 +93,8 @@ async def test_scan_does_not_index_unquoted_yaml_credentials(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "config.yml").write_text("password: correct.horse.battery.staple\\n", encoding="utf-8")
+    (repo / "aws.py").write_text('AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"\\n', encoding="utf-8")
+    (repo / "short.py").write_text('password = "admin"\\n', encoding="utf-8")
     (repo / "README.md").write_text("# Public documentation\\n", encoding="utf-8")
 
     chunks = await GitHubScanner().scan(repo)
