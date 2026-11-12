@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import process from 'node:process';
 
@@ -33,6 +34,24 @@ function waitForExit(child, timeoutMs) {
 }
 
 function processGroupExists(pid) {
+  // On Linux, kill(-pgid, 0) also reports zombie-only groups as present.
+  // Zombies cannot execute; inspect /proc so a reaped process tree is not
+  // misreported as a live descendant after SIGKILL.
+  if (process.platform === 'linux') {
+    try {
+      for (const entry of readdirSync('/proc')) {
+        if (!/^\\d+$/.test(entry)) continue;
+        try {
+          const stat = readFileSync(`/proc/${entry}/stat`, 'utf8');
+          const fields = stat.slice(stat.lastIndexOf(') ') + 2).trim().split(/\\s+/);
+          const state = fields[0];
+          const processGroupId = Number(fields[2]);
+          if (processGroupId === pid && state !== 'Z' && state !== 'X') return true;
+        } catch { /* process exited while /proc was scanned */ }
+      }
+      return false;
+    } catch { /* fall back to kill(0) when /proc is unavailable */ }
+  }
   try {
     process.kill(-pid, 0);
     return true;
