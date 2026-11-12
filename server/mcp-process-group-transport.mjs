@@ -40,10 +40,10 @@ function processGroupExists(pid) {
   if (process.platform === 'linux') {
     try {
       for (const entry of readdirSync('/proc')) {
-        if (!/^\\d+$/.test(entry)) continue;
+        if (!/^\d+$/.test(entry)) continue;
         try {
           const stat = readFileSync(`/proc/${entry}/stat`, 'utf8');
-          const fields = stat.slice(stat.lastIndexOf(') ') + 2).trim().split(/\\s+/);
+          const fields = stat.slice(stat.lastIndexOf(') ') + 2).trim().split(/\s+/);
           const state = fields[0];
           const processGroupId = Number(fields[2]);
           if (processGroupId === pid && state !== 'Z' && state !== 'X') return true;
