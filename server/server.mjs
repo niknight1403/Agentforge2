@@ -1490,13 +1490,13 @@ async function api(req, res, url) {
       try { css = readFileSync(f.fd, 'utf8'); }
       finally { closeSync(f.fd); }
       css = css
-        .replace(/url\(\s*(["']?)\/(?!\/)([^)"']+)\1\s*\)/g, (_match, quote, assetPath) => \`url(\${quote}\${previewBase}\${assetPath}\${quote})\`)
-        .replace(/(@import\s+)(["'])\/(?!\/)([^"']+)\2/g, (_match, prefix, quote, assetPath) => \`\${prefix}\${quote}\${previewBase}\${assetPath}\${quote}\`);
+        .replace(/url\(\s*(["']?)\/(?!\/)([^)"']+)\1\s*\)/g, (_match, quote, assetPath) => 'url(' + quote + previewBase + assetPath + quote + ')')
+        .replace(/(@import\s+)(["'])\/(?!\/)([^"']+)\2/g, (_match, prefix, quote, assetPath) => prefix + quote + previewBase + assetPath + quote);
       return res.end(css);
     }
     if (f.mime.startsWith('text/html')) {
       let html;
-      try { html = readFileSync(f.fd, 'utf8').replace(/(src|href)=("|')\\//g, '$1=$2'); }
+      try { html = readFileSync(f.fd, 'utf8').replace(/(src|href)=("|')\//g, '$1=$2'); }
       finally { closeSync(f.fd); }
       return res.end(html);
     }
