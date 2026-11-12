@@ -54,6 +54,26 @@ test('MCP admin API never returns credential references or server config', async
   assert.equal(result.body.servers[0].config, undefined);
 });
 
+test('MCP admin API redacts URL userinfo, path, query, fragments and process arguments', async () => {
+  const { api, servers } = fixture();
+  servers.set('remote_1', {
+    id: 'remote_1', name: 'remote', transport: 'http', status: 'pending',
+    url: 'https://alice:password@example.test/private/token-path?access_token=secret#fragment',
+    command: '/usr/bin/node', cwd: '/srv/mcp',
+    args: ['--token=secret-value'],
+    credentialRef: 'vault-secret-ref',
+    config: { env: { TOKEN: 'secret-value' } },
+  });
+  const result = await api({ method: 'GET', pathname: '/api/admin/mcp/servers', isAdmin: true });
+  const remote = result.body.servers.find((server) => server.id === 'remote_1');
+  assert.equal(remote.url, 'https://example.test');
+  assert.equal(remote.argumentCount, 1);
+  assert.equal(remote.args, undefined);
+  assert.equal(remote.credentialRef, undefined);
+  assert.equal(remote.config, undefined);
+  assert.doesNotMatch(JSON.stringify(remote), /password|access_token|secret-value|token-path|fragment/);
+});
+
 test('MCP admin API registers only bounded server definitions and rejects caller launch policy', async () => {
   const { api } = fixture();
   const created = await api({
