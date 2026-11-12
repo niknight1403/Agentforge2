@@ -49,10 +49,17 @@ accept it through the registry API. Configure the Hub under a dedicated
 unprivileged OS identity and enforce filesystem, network egress, memory, CPU,
 and process limits outside Node.js.
 
-## Operational boundary
+## Process lifecycle and operational boundary
 
-This integration wires the admin API to the registry and supervisor and drains
-managed runtimes during graceful Hub shutdown. It does not itself provide an
-OS/container sandbox or prove that every descendant process is killed after a
-hung SDK request. Do not enable untrusted MCP servers until process-group or
-cgroup termination is verified in the target deployment.
+The Hub uses its own POSIX stdio transport with a detached process group. It
+closes stdin, sends SIGTERM to the complete process group, waits for the group
+to disappear, then sends SIGKILL if needed. A process group that remains after
+the forced-kill deadline is reported as an unconfirmed teardown and the admin
+API returns HTTP 503. Windows startup is deliberately disabled until equivalent
+Job Object process-tree teardown is implemented and tested.
+
+This process-group teardown is not a complete OS/container sandbox. The
+deployment must still enforce a dedicated low-privilege identity, filesystem
+and network egress restrictions, CPU/memory/PID limits, and cgroup or systemd
+containment. Do not enable untrusted MCP servers until those controls are
+verified in the target deployment.
