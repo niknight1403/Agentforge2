@@ -89,7 +89,9 @@ export function createMcpProcessGroupTransport({
   args = [],
   cwd,
   env,
-  stderr = 'inherit',
+  // Child stderr may contain credentials or server-provided sensitive data.
+  // Keep it out of Hub logs unless a deployment explicitly opts in.
+  stderr = 'ignore',
   maxBufferSize = DEFAULT_MAX_BUFFER_BYTES,
   shutdownTimeoutMs = 1_500,
   spawnProcess = spawn,
@@ -176,6 +178,12 @@ export function createMcpProcessGroupTransport({
             continue;
           }
           transport.onmessage?.(message);
+        }
+        // A single chunk may contain complete lines followed by an oversized
+        // unterminated frame. Bound that trailing fragment immediately too.
+        if (Buffer.byteLength(buffer, 'utf8') > maxBufferSize) {
+          transport.onerror?.(fail('MCP_STDIO_BUFFER_LIMIT', 'MCP stdio message exceeded the configured buffer limit'));
+          void transport.close().catch(() => {});
         }
       });
       child.stdout.on('error', (error) => transport.onerror?.(error));
