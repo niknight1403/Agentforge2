@@ -126,10 +126,19 @@ jobs:
             echo "== Fehlerausgabe (ANSI/Spinner entfernt, Zugangsdaten maskiert) =="
             sed -e "s/\x1b\[[0-9;]*[a-zA-Z]//g" -e "s/\r/\n/g" /tmp/migrate.log \
               | sed "s#postgresql://[^ ]*#postgresql://***#g" \
-              | grep -vE "^\s*$" | tail -n 80 || true
-            echo "== Stand der Migrationstabelle =="
+              | grep -vE "^\s*$" | grep -vE "^\[[^]]*\] applying migrations" \
+              | tail -n 120 || true
+            echo "== Rohe Logzeilen gesamt =="
+            wc -l /tmp/migrate.log || true
+            echo "== Stand der Migrationstabelle (id, hash, created_at) =="
+            sudo -u postgres psql -d cybersarah -Atc \
+              "SELECT id, created_at FROM drizzle.__drizzle_migrations ORDER BY id;" 2>&1 | tail -25
+            echo "== Angewandte Anzahl =="
             sudo -u postgres psql -d cybersarah -Atc \
               "SELECT count(*) FROM drizzle.__drizzle_migrations;" 2>&1 | head -3
+            echo "== Vorhandene public-Tabellen =="
+            sudo -u postgres psql -d cybersarah -Atc \
+              "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY 1;" 2>&1 | tr '\n' ' ' | head -c 2000
             echo "== Journal-Reihenfolge im Repo (erste 3 / letzte 3) =="
             node -e "const j=require('./drizzle/meta/_journal.json').entries;const s=[...j.slice(0,3),...j.slice(-3)];console.log(s.map(e=>e.idx+':'+e.tag).join(' '))" 2>&1 | head -3
             echo "== Naechste noch nicht angewandte Migrationen =="
@@ -308,3 +317,4 @@ jobs:
       - name: Aufraeumen
         if: always()
         run: rm -f /tmp/ccc.env /tmp/cccstack.sh /tmp/ccc-nginx-route.py ~/.ssh/oracle_key
+
