@@ -32,6 +32,12 @@ def contains_secret(content: str) -> bool:
         return True
     for match in SECRET_ASSIGNMENTS.finditer(sample):
         value = (match.group("quoted") or match.group("bare") or "").strip()
+        if match.group("bare") and re.fullmatch(
+            r"(?:process\\.env\\.[A-Za-z_][A-Za-z0-9_]*|env\\.[A-Za-z_][A-Za-z0-9_]*)",
+            value,
+            re.IGNORECASE,
+        ):
+            continue
         if value.lower() not in SAFE_SECRET_PLACEHOLDERS and not value.lower().startswith(("your-", "replace-", "example")):
             return True
     return False
