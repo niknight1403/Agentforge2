@@ -168,12 +168,14 @@ export function createMcpProcessGroupTransport({
             void transport.close().catch(() => {});
             return;
           }
+          let message;
           try {
-            transport.onmessage?.(JSON.parse(line));
-          } catch (error) {
+            message = JSON.parse(line);
+          } catch {
             transport.onerror?.(fail('MCP_STDIO_INVALID_MESSAGE', 'MCP stdio emitted invalid JSON'));
-            void error;
+            continue;
           }
+          transport.onmessage?.(message);
         }
       });
       child.stdout.on('error', (error) => transport.onerror?.(error));
