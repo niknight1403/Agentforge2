@@ -81,7 +81,20 @@ jobs:
             sudo -u postgres psql -c "CREATE ROLE ccc LOGIN PASSWORD '$DBPASS';"
           sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='cybersarah'" | grep -q 1 || \
             sudo -u postgres createdb -O ccc cybersarah
-          echo "DB bereit."
+          # PostgreSQL 15+ entzieht Nicht-Eigentuemern das CREATE-Recht auf dem
+          # Schema public. Ohne diese Grants scheitert JEDE Migration ab 0016 mit
+          # "permission denied for schema public" — und drizzle-kit verschluckt
+          # die Meldung hinter dem Spinner. Idempotent, daher gefahrlos wiederholbar.
+          sudo -u postgres psql -d cybersarah -v ON_ERROR_STOP=1 <<'GRANTSQL'
+          GRANT USAGE, CREATE ON SCHEMA public TO ccc;
+          GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ccc;
+          GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ccc;
+          ALTER DEFAULT PRIVILEGES FOR ROLE ccc IN SCHEMA public
+            GRANT ALL PRIVILEGES ON TABLES TO ccc;
+          ALTER DEFAULT PRIVILEGES FOR ROLE ccc IN SCHEMA public
+            GRANT ALL PRIVILEGES ON SEQUENCES TO ccc;
+          GRANTSQL
+          echo "DB bereit (Rechte auf Schema public gesetzt)."
 
           echo "== [3/7] CCC-Repo klonen/aktualisieren =="
           if [ ! -d "$CCC_DIR/repo/.git" ]; then
@@ -113,7 +126,7 @@ jobs:
             echo "== Fehlerausgabe (ANSI/Spinner entfernt, Zugangsdaten maskiert) =="
             sed -e "s/\x1b\[[0-9;]*[a-zA-Z]//g" -e "s/\r/\n/g" /tmp/migrate.log \
               | sed "s#postgresql://[^ ]*#postgresql://***#g" \
-              | grep -vE "^\s*$" | tail -n 60 || true
+              | grep -vE "^\s*$" | tail -n 80 || true
             echo "== Stand der Migrationstabelle =="
             sudo -u postgres psql -d cybersarah -Atc \
               "SELECT count(*) FROM drizzle.__drizzle_migrations;" 2>&1 | head -3
