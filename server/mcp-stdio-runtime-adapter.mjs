@@ -2,6 +2,7 @@ import process from 'node:process';
 import { getMcpServer } from './mcp-registry.mjs';
 import { readMcpCredential } from './mcp-credential-vault.mjs';
 import { validateStdioLaunch } from './mcp-transport-policy.mjs';
+import { createMcpProcessGroupTransport } from './mcp-process-group-transport.mjs';
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 // SDK v2 merges these host variables into every stdio child even when env is supplied.
@@ -37,15 +38,10 @@ export async function connectMcpStdioServer({
   policy,
   Client,
   StdioClientTransport,
+  transportFactory,
   loadSdk = async () => {
-    const [clientSdk, stdioSdk] = await Promise.all([
-      import('@modelcontextprotocol/client'),
-      import('@modelcontextprotocol/client/stdio'),
-    ]);
-    return {
-      Client: clientSdk.Client,
-      StdioClientTransport: stdioSdk.StdioClientTransport,
-    };
+    const clientSdk = await import('@modelcontextprotocol/client');
+    return { Client: clientSdk.Client };
   },
   clientInfo = { name: 'agentforge2-hub', version: '1.0.0' },
   credentialEnvKey,
@@ -56,7 +52,7 @@ export async function connectMcpStdioServer({
   if (server.transport !== 'stdio') throw fail('MCP_TRANSPORT_MISMATCH', 'Only registered stdio servers can use this adapter');
   if (server.status === 'disabled') throw fail('MCP_SERVER_DISABLED', 'Disabled MCP servers cannot be connected');
   if (typeof loadSdk !== 'function') throw new TypeError('loadSdk must be a function');
-  if (Client === undefined || StdioClientTransport === undefined) {
+  if (Client === undefined) {
     let sdk;
     try {
       sdk = await loadSdk();
@@ -66,8 +62,9 @@ export async function connectMcpStdioServer({
     Client ??= sdk?.Client;
     StdioClientTransport ??= sdk?.StdioClientTransport;
   }
-  if (typeof Client !== 'function' || typeof StdioClientTransport !== 'function') {
-    throw fail('MCP_SDK_CONSTRUCTORS_REQUIRED', 'The official MCP SDK must provide Client and StdioClientTransport constructors');
+  if (typeof Client !== 'function' || (StdioClientTransport !== undefined && typeof StdioClientTransport !== 'function')
+    || (transportFactory !== undefined && typeof transportFactory !== 'function')) {
+    throw fail('MCP_SDK_CONSTRUCTORS_REQUIRED', 'The official MCP SDK Client constructor and optional transport factory must be valid');
   }
   if (!Number.isInteger(connectTimeoutMs) || connectTimeoutMs < 100 || connectTimeoutMs > 120_000) {
     throw new TypeError('connectTimeoutMs must be an integer between 100 and 120000');
@@ -151,12 +148,19 @@ export async function connectMcpStdioServer({
   };
 
   try {
-    transport = new StdioClientTransport({
+    const transportOptions = {
       command: launch.command,
       args: launch.args,
       cwd: launch.cwd,
       env: launch.env,
-    });
+    };
+    // Prefer the Hub-owned process-group transport. The injected SDK transport
+    // remains available only for deterministic unit tests and compatibility.
+    transport = transportFactory
+      ? transportFactory(transportOptions)
+      : StdioClientTransport
+        ? new StdioClientTransport(transportOptions)
+        : createMcpProcessGroupTransport(transportOptions);
     client = new Client(clientInfo);
     await withTimeout(
       client.connect(transport),
