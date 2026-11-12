@@ -93,7 +93,7 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   mkdirSync(previewDir, { recursive: true });
   writeFileSync(join(previewDir, 'index.html'), '<!doctype html><html><head><link rel="stylesheet" href="/assets/app.css"></head><body><script src="/assets/app.js"></script></body></html>');
   mkdirSync(join(previewDir, 'assets'), { recursive: true });
-  writeFileSync(join(previewDir, 'assets', 'app.css'), 'body{color:#123456}');
+  writeFileSync(join(previewDir, 'assets', 'app.css'), "body{color:#123456}.hero{background-image:url('/assets/hero.png')}@import '/assets/theme.css';");
   writeFileSync(join(previewDir, 'assets', 'app.js'), 'window.__deepPreviewSmoke = true;');
 
   const ownerPreview = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/index.html`, { headers: auth(tokenA) });
@@ -102,7 +102,9 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const ownerCss = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/assets/app.css`, { headers: auth(tokenA) });
   assert.equal(ownerCss.status, 200);
   assert.match(ownerCss.headers.get('content-type') || '', /text\/css/);
-  assert.equal(await ownerCss.text(), 'body{color:#123456}');
+  const ownerCssText = await ownerCss.text();
+  assert.match(ownerCssText, /url\\(['"]?\\/api\\/deep\\/projects\\/\\d+\\/preview\\/dist\\/assets\\/hero\\.png['"]?\\)/);
+  assert.match(ownerCssText, /@import ['"]\\/api\\/deep\\/projects\\/\\d+\\/preview\\/dist\\/assets\\/theme\\.css['"]/);
   const ownerJs = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/assets/app.js`, { headers: auth(tokenA) });
   assert.equal(ownerJs.status, 200);
   assert.match(ownerJs.headers.get('content-type') || '', /javascript/);
