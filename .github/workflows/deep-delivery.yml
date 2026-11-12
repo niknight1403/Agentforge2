@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Auf Funktionsauftraege warten, bauen, Oberflaechen pruefen
         env:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Lagebild der Deep Villa lesen
         env:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
@@ -61,16 +61,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: JDK 17 einrichten
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Gradle einrichten
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "9.8.2"
 
@@ -107,7 +107,7 @@ jobs:
         run: python3 scripts/ops/deep_delivery.py apk-verify mybabes-studio.apk
 
       - name: APK hochladen
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mybabes-studio-apk
           path: mybabes-studio.apk
@@ -118,7 +118,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Funktionsauftraege anlegen und Villa starten
         env:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
@@ -130,7 +130,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Oberflaechen im Web-Build pruefen
         env:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
@@ -142,7 +142,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Produkt-Gate der Deep Villa pruefen
         env:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
@@ -154,7 +154,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Deep Villa exklusiv starten
         env:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
@@ -173,7 +173,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Web-Build im Hub anstossen
         env:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
@@ -185,16 +185,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: JDK 17 einrichten
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Gradle einrichten
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "9.8.2"
 
@@ -249,7 +249,7 @@ jobs:
         run: python3 scripts/ops/deep_delivery.py apk-verify deep-villa.apk
 
       - name: APK hochladen
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deep-villa-apk
           path: deep-villa.apk
