@@ -1,0 +1,37 @@
+name: CCC-Migrate-Diagnose 2 (SQL einzeln, ohne Schreiben)
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Ausstehende Migrationen einzeln in Transaktion mit ROLLBACK testen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          WD=$(systemctl show cybersarah-ccc -p WorkingDirectory --value)
+          cd "$WD" || exit 1
+          DBPASS=$(cat /opt/ccc/.dbpass)
+          export PGPASSWORD="$DBPASS"
+          PSQL="psql -h 127.0.0.1 -U ccc -d cybersarah -v ON_ERROR_STOP=1 -q"
+          echo "== Existieren Tabellen aus 0016? =="
+          $PSQL -Atc "select to_regclass('public.revenue_jobs'), to_regclass('public.agentforge_mesh_nodes'), to_regclass('public.b2b_influencer_learnings');" 2>&1
+          echo "== Tabellenzahl public =="
+          $PSQL -Atc "select count(*) from information_schema.tables where table_schema='public';" 2>&1
+          for f in drizzle/0016_revenue_autopilot_v2.sql drizzle/0017_agentforge_mesh.sql drizzle/0018_b2b_influencer_learning.sql; do
+            echo "=== TESTE $f (ROLLBACK) ==="
+            { echo "BEGIN;"; cat "$f"; echo "ROLLBACK;"; } > /tmp/probe.sql
+            $PSQL -f /tmp/probe.sql 2>&1 | grep -viE '^(BEGIN|ROLLBACK|CREATE|ALTER|INSERT|DO|COMMENT)$' | head -12
+            echo "rc=$?"
+          done
+          echo "== Ende =="
+          EOS
