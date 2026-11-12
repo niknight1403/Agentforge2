@@ -11,22 +11,31 @@ import { productGateForProjectDir } from './deep-product-gate.mjs';
 import { deepProjectDetail, deepProjectDir, deepPreviewFile } from './deepagent.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
 import { db } from './db.mjs';
-import { closeSync } from 'node:fs';
+import { closeSync, fstatSync } from 'node:fs';
 
 /** Live-Ansicht nur melden, wenn der Einstiegspunkt aus einem erlaubten Build-Root sicher auslieferbar ist. */
 export function liveViewState(projectId) {
   const candidates = ['dist/index.html', 'build/index.html', 'out/index.html', 'public/index.html', 'web-dist/index.html', 'index.html'];
+  let revision = null;
   const found = candidates.find((relative) => {
     const preview = deepPreviewFile(projectId, relative);
     if (!preview) return false;
     // This is only an availability probe; the HTTP route opens its own pinned
     // descriptor when the user actually requests the preview.
-    closeSync(preview.fd);
-    return true;
+    try {
+      const stat = fstatSync(preview.fd);
+      revision = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      closeSync(preview.fd);
+    }
   });
   return {
     available: Boolean(found),
     entry: found || null,
+    revision: found ? revision : null,
     detail: found
       ? 'Vorschau-Einstiegspunkt in einem freigegebenen Build-Verzeichnis vorhanden.'
       : 'Kein sicher auslieferbarer Einstiegspunkt in dist/, build/, out/, public/, web-dist/ oder als explizite Projekt-Root-index.html — die Live-Ansicht ist noch nicht verfügbar.'

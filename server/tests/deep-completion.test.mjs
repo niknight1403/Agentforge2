@@ -104,6 +104,12 @@ test('liveViewState only advertises entries from confined build roots', async ()
 
   mkdirSync(join(root, 'dist'), { recursive: true });
   writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html><title>Dist</title>');
-  assert.equal(liveViewState(project.id).available, true);
-  assert.equal(liveViewState(project.id).entry, 'dist/index.html');
+  const firstDistPreview = liveViewState(project.id);
+  assert.equal(firstDistPreview.available, true);
+  assert.equal(firstDistPreview.entry, 'dist/index.html');
+  assert.ok(firstDistPreview.revision, 'the preview exposes a stable build-entry revision');
+  writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html><title>Dist v2</title><main>updated build</main>');
+  const updatedDistPreview = liveViewState(project.id);
+  assert.notEqual(updatedDistPreview.revision, firstDistPreview.revision,
+    'a rebuilt entry point changes the revision used by the Android WebView');
 });

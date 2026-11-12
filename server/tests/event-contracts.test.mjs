@@ -87,7 +87,7 @@ test('assertMeshEvent wirft bei Vertragsbruch', () => {
 
 test('sanitizeForStream entfernt Inhalte aus dem Live-Strom', () => {
   const raw = {
-    type: 'tool', ts: 1, villaId: 18, agentId: 382, tool: 'project_write',
+    type: 'tool', ts: 1, villaId: 18, taskId: 42, agentId: 382, tool: 'project_write',
     args: { path: 'a.js', content: 'const secret = 1;' }, prompt: 'GEHEIM', response: 'Antwort',
   };
   const safe = sanitizeForStream(raw);
@@ -97,6 +97,7 @@ test('sanitizeForStream entfernt Inhalte aus dem Live-Strom', () => {
   assert.equal(safe.type, 'tool');
   assert.equal(safe.villaId, 18);
   assert.equal(safe.tool, 'project_write');
+  assert.equal(safe.taskId, 42, 'the sanitized SSE payload retains the safe task identifier');
 });
 
 test('sanitizeForStream kuerzt lange Texte und vertraegt Unsinn', () => {

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -216,7 +217,11 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
     val completion = workspace?.optJSONObject("completion")
     val runtimeTools = workspace?.optJSONArray("capabilities") ?: org.json.JSONArray()
     val availableTools = (0 until runtimeTools.length()).count { runtimeTools.optJSONObject(it)?.optString("status") == "available" }
-    val projectEvents = if (project.villaId > 0) state.events.filter { it.villaId == project.villaId }.takeLast(5).reversed() else emptyList()
+    val livePreview = completion?.optJSONObject("live")
+    val entry = livePreview?.optString("entry").orEmpty()
+    val previewUrl = if (entry.isNotBlank()) viewModel.deepPreviewUrl(projectId, entry) else ""
+    val previewReloadKey = "$previewUrl|${livePreview?.optString("revision").orEmpty()}"
+    val projectEvents = if (project.villaId > 0) state.events.filter { it.villaId == project.villaId }.take(5) else emptyList()
 
     Column(Modifier.fillMaxSize().padding(12.dp).imePadding()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -236,7 +241,10 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
         Spacer(Modifier.height(8.dp))
 
         GlassCard(accent = NeonCyan, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 240.dp).verticalScroll(rememberScrollState()).padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                     Text("LIVE-ENTWICKLUNGSFENSTER", style = MaterialTheme.typography.labelSmall, color = TextMain, fontWeight = FontWeight.Bold)
                     NeonChip(
@@ -249,14 +257,12 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                     )
                 }
                 if (completion?.optBoolean("liveViewAvailable") == true) {
-                    val live = completion.optJSONObject("live")
-                    val entry = live?.optString("entry").orEmpty()
                     TextButton(onClick = { showPreview = !showPreview }, modifier = Modifier.fillMaxWidth()) {
                         Text(if (showPreview) "Live-Vorschau schließen" else "Live-App-Vorschau öffnen", color = NeonCyan)
                     }
                     if (showPreview && entry.isNotBlank()) {
                         AndroidView(
-                            modifier = Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(12.dp)),
+                            modifier = Modifier.fillMaxWidth().height(170.dp).clip(RoundedCornerShape(12.dp)),
                             factory = { ctx ->
                                 WebView(ctx).apply {
                                     settings.javaScriptEnabled = true
@@ -276,7 +282,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                                                 // Project HTML/JavaScript is untrusted. Never lend it the user's
                                                 // Hub bearer for arbitrary same-origin API requests: credentials
                                                 // are attached only to this project's confined preview subtree.
-                                                val previewPathPrefix = URL(viewModel.deepPreviewUrl(projectId, entry))
+                                                val previewPathPrefix = URL(previewUrl)
                                                     .path.substringBefore("/preview/") + "/preview/"
                                                 if (!sameOrigin || !targetUrl.path.startsWith(previewPathPrefix)) return null
                                                 val connection = targetUrl.openConnection() as HttpURLConnection
@@ -306,10 +312,16 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                                         }
                                     }
                                     // Credentials are restricted to this project's preview path and exact Hub origin.
-                                    loadUrl(viewModel.deepPreviewUrl(projectId, entry))
+                                    tag = previewReloadKey
+                                    loadUrl(previewUrl)
                                 }
                             },
-                            update = { }
+                            update = { webView ->
+                                if (webView.tag != previewReloadKey) {
+                                    webView.tag = previewReloadKey
+                                    webView.loadUrl(previewUrl)
+                                }
+                            }
                         )
                     }
                 }
