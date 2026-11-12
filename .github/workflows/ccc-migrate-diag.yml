@@ -1,0 +1,39 @@
+name: CCC-Migrate-Diagnose (nur lesen + Migrationstest)
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Migration auf der VM diagnostizieren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          WD=$(systemctl show cybersarah-ccc -p WorkingDirectory --value)
+          echo "WD=$WD"
+          cd "$WD" || exit 1
+          echo "== HEAD =="; git log -1 --oneline
+          echo "== git status (kurz) =="; git status --porcelain | head -20
+          echo "== SQL-Dateien im Repo =="; ls drizzle/*.sql | wc -l
+          echo "== Journal =="; node -e "const j=require('./drizzle/meta/_journal.json').entries;console.log(j.length, j[j.length-1].tag)"
+          echo "== Angewandte Migrationen in der DB (id | created_at | hash) =="
+          sudo -u postgres psql -d cybersarah -Atc "SELECT id, created_at, hash FROM drizzle.__drizzle_migrations ORDER BY id;"
+          echo "== drizzle-Konfiguration =="; sed -n '1,40p' drizzle.config.ts
+          echo "== MIGRATE (volle Ausgabe) =="
+          DBPASS=$(grep -oP '^DB_PASSWORD=\K.*' /tmp/ccc.env 2>/dev/null || true)
+          [ -n "$DBPASS" ] || DBPASS=$(grep -rhoP 'postgres(ql)?://ccc:\K[^@]+' "$WD/.env" 2>/dev/null | head -1)
+          echo "DBPASS gesetzt: ${DBPASS:+ja}"
+          CI=true DATABASE_URL="postgresql://ccc:${DBPASS}@127.0.0.1:5432/cybersarah" \
+            npx drizzle-kit migrate 2>&1 | sed "s#postgresql://[^ ]*#postgresql://***#g" | tail -80
+          echo "MIGRATE_EXIT=$?"
+          echo "== Tabellenzahl =="; sudo -u postgres psql -d cybersarah -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"
+          EOS
