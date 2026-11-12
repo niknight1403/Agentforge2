@@ -41,13 +41,15 @@ jobs:
           GEMINI_KEY: ${{ secrets.VF_GEMINI_KEY }}
         run: |
           set -uo pipefail
+          # Antworten mit >= MIN_CHARS gelten als brauchbar. 15 Zeichen ("Ich helfe gern.") ist gültig.
+          MIN_CHARS=10
           PROMPT="Antworte mit genau einem kurzen deutschen Satz, dass du bei der Terrassenplanung hilfst."
           GROQ_PICK=""
           for m in openai/gpt-oss-20b openai/gpt-oss-120b meta-llama/llama-4-scout-17b-16e-instruct qwen/qwen3-32b mistral-saba-24b gemma2-9b-it llama-3.3-70b-versatile; do
             out=$(curl -s -m 30 https://api.groq.com/openai/v1/chat/completions -H "Authorization: Bearer $GROQ_KEY" -H 'content-type: application/json' -d "{\"model\":\"$m\",\"messages\":[{\"role\":\"user\",\"content\":\"$PROMPT\"}],\"max_tokens\":800}" || true)
             text=$(printf '%s' "$out" | python3 -c 'import json,sys;d=json.load(sys.stdin);c=(d.get("choices") or [{}]);print(((c[0].get("message") or {}).get("content") or ""))' 2>/dev/null || true)
             echo "groq $m -> chars=${#text}"
-            if [ "${#text}" -ge 10 ]; then GROQ_PICK="$m"; break; fi
+            if [ "${#text}" -ge "$MIN_CHARS" ]; then GROQ_PICK="$m"; break; fi
           done
           GEMINI_PICK=""
           MODELS=$(curl -s -m 20 "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_KEY" || true)
@@ -58,7 +60,7 @@ jobs:
             out=$(curl -s -m 30 "https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$GEMINI_KEY" -H 'content-type: application/json' -d "{\"contents\":[{\"parts\":[{\"text\":\"$PROMPT\"}]}],\"generationConfig\":{\"maxOutputTokens\":800}}" || true)
             text=$(printf '%s' "$out" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("".join(p.get("text","") for p in d["candidates"][0]["content"]["parts"]))' 2>/dev/null || true)
             echo "gemini $m -> chars=${#text}"
-            if [ "${#text}" -ge 10 ]; then GEMINI_PICK="$m"; break; fi
+            if [ "${#text}" -ge "$MIN_CHARS" ]; then GEMINI_PICK="$m"; break; fi
           done
           : > /tmp/models.env
           if [ -n "$GROQ_PICK" ]; then echo "GROQ_MODEL=$GROQ_PICK" >> /tmp/models.env; fi
