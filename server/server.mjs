@@ -1649,7 +1649,7 @@ async function api(req, res, url) {
     };
     bus.on('event', onEvent);
     const ping = setInterval(() => res.write(': ping\n\n'), 15000);
-    req.on('close', () => { clearInterval(ping); bus.off('event', onEvent); });
+    res.on('close', () => { clearInterval(ping); bus.off('event', onEvent); });
     return;
   }
 
