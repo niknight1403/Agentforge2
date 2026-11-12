@@ -29,11 +29,19 @@ jobs:
           sudo -u postgres psql -d cybersarah -Atc "SELECT id, created_at, hash FROM drizzle.__drizzle_migrations ORDER BY id;"
           echo "== drizzle-Konfiguration =="; sed -n '1,40p' drizzle.config.ts
           echo "== MIGRATE (volle Ausgabe) =="
-          DBPASS=$(grep -oP '^DB_PASSWORD=\K.*' /tmp/ccc.env 2>/dev/null || true)
-          [ -n "$DBPASS" ] || DBPASS=$(grep -rhoP 'postgres(ql)?://ccc:\K[^@]+' "$WD/.env" 2>/dev/null | head -1)
+          DBPASS=$(cat /opt/ccc/.dbpass 2>/dev/null || true)
+          [ -n "$DBPASS" ] || DBPASS=$(systemctl show cybersarah-ccc -p Environment --value | grep -oP 'DATABASE_URL=postgresql://ccc:\K[^@]+')
           echo "DBPASS gesetzt: ${DBPASS:+ja}"
           CI=true DATABASE_URL="postgresql://ccc:${DBPASS}@127.0.0.1:5432/cybersarah" \
             npx drizzle-kit migrate 2>&1 | sed "s#postgresql://[^ ]*#postgresql://***#g" | tail -80
-          echo "MIGRATE_EXIT=$?"
+          echo "MIGRATE_EXIT=${PIPESTATUS[0]}"
+          echo "== DB-Verbindung als Rolle ccc =="
+          PGPASSWORD="$DBPASS" psql -h 127.0.0.1 -U ccc -d cybersarah -Atc "select current_user, version();" 2>&1 | head -3
+          echo "== Rechte auf drizzle-Schema =="
+          PGPASSWORD="$DBPASS" psql -h 127.0.0.1 -U ccc -d cybersarah -Atc "select table_schema, table_name, privilege_type from information_schema.role_table_grants where grantee='ccc' and table_schema in ('drizzle','public') limit 15;" 2>&1 | head -20
+          echo "== Eigentuemer der Migrationstabelle =="
+          sudo -u postgres psql -d cybersarah -Atc "select schemaname, tablename, tableowner from pg_tables where schemaname='drizzle';"
+          echo "== SQL-Dateien 0038.. vs DB-Stand =="
+          ls drizzle/*.sql | sed -n '17,20p' 
           echo "== Tabellenzahl =="; sudo -u postgres psql -d cybersarah -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"
           EOS
