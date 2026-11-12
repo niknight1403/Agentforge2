@@ -41,8 +41,9 @@ jobs:
           GEMINI_KEY: ${{ secrets.VF_GEMINI_KEY }}
         run: |
           set -uo pipefail
-          # Antworten mit >= MIN_CHARS gelten als brauchbar. 15 Zeichen ("Ich helfe gern.") ist gültig.
-          MIN_CHARS=10
+          # Grenzwert: Antworten mit genau 15 Zeichen oder mehr gelten als brauchbar
+          # (15 = "Ich helfe gern.", kurze Bestaetigungen darunter zaehlen nicht).
+          MIN_CHARS=15
           PROMPT="Antworte mit genau einem kurzen deutschen Satz, dass du bei der Terrassenplanung hilfst."
           GROQ_PICK=""
           for m in openai/gpt-oss-20b openai/gpt-oss-120b meta-llama/llama-4-scout-17b-16e-instruct qwen/qwen3-32b mistral-saba-24b gemma2-9b-it llama-3.3-70b-versatile; do
