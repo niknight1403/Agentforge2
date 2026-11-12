@@ -82,7 +82,7 @@ jobs:
 
       - name: Checkout fuer Villa-Setups
         if: ${{ github.event.inputs.mode == 'agivilla' || github.event.inputs.mode == 'cybervilla' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 

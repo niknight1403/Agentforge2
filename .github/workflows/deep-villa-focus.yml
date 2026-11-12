@@ -25,7 +25,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Shell syntax
         run: bash -n scripts/ops/focus-deep-villa.sh
       - name: Confirm exact-match predicate
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Authenticate, focus Deep Villa, stop competitors and resume target
         env:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}

@@ -20,8 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Verify proof policy in unit tests
@@ -35,7 +35,7 @@ jobs:
         run: node scripts/verify-live-prompt-product.mjs
       - name: Archive verified result or actual blockers
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-product-proof-${{ github.run_id }}
           path: product-factory-e2e-report.json
