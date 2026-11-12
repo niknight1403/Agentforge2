@@ -1482,9 +1482,21 @@ async function api(req, res, url) {
       'Content-Security-Policy': "sandbox allow-scripts; frame-ancestors 'self'; form-action 'none'",
       'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'
     });
+    const previewFilePath = parts.slice(5).join('/');
+    const previewRoot = previewFilePath.includes('/') ? `${previewFilePath.split('/')[0]}/` : '';
+    const previewBase = `/api/deep/projects/${parts[3]}/preview/${previewRoot}`;
+    if (f.mime.startsWith('text/css')) {
+      let css;
+      try { css = readFileSync(f.fd, 'utf8'); }
+      finally { closeSync(f.fd); }
+      css = css
+        .replace(/url\\(\\s*(["']?)\\/(?!\\/)([^)"']+)\\1\\s*\\)/g, (_match, quote, assetPath) => `url(${quote}${previewBase}${assetPath}${quote})`)
+        .replace(/(@import\\s+)(["'])\\/(?!\\/)([^"']+)\\2/g, (_match, prefix, quote, assetPath) => `${prefix}${quote}${previewBase}${assetPath}${quote}`);
+      return res.end(css);
+    }
     if (f.mime.startsWith('text/html')) {
       let html;
-      try { html = readFileSync(f.fd, 'utf8').replace(/(src|href)=("|')\//g, '$1=$2'); }
+      try { html = readFileSync(f.fd, 'utf8').replace(/(src|href)=("|')\\//g, '$1=$2'); }
       finally { closeSync(f.fd); }
       return res.end(html);
     }
