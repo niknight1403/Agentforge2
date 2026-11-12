@@ -1,0 +1,52 @@
+name: MCP Runtime Integration Tests
+
+on:
+  pull_request:
+    branches:
+      - feat/mcp-stdio-runtime-adapter
+    paths:
+      - "server/mcp-*.mjs"
+      - "server/tests/mcp-*.test.mjs"
+      - "server/server.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/mcp-runtime-integration.yml"
+  push:
+    branches:
+      - feat/mcp-hub-admin-integration
+    paths:
+      - "server/mcp-*.mjs"
+      - "server/tests/mcp-*.test.mjs"
+      - "server/server.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/mcp-runtime-integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-runtime-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mcp-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked production dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Syntax-check MCP runtime and Hub integration
+        run: |
+          node --check server/server.mjs
+          for file in server/mcp-*.mjs server/tests/mcp-*.test.mjs; do
+            node --check "$file"
+          done
+      - name: Run MCP unit and supervisor regression tests
+        run: node --import ./server/tests/_env.mjs --test server/tests/mcp-*.test.mjs
