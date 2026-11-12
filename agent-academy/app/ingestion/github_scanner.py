@@ -33,7 +33,7 @@ def contains_secret(content: str) -> bool:
     for match in SECRET_ASSIGNMENTS.finditer(sample):
         value = (match.group("quoted") or match.group("bare") or "").strip()
         if match.group("bare") and re.fullmatch(
-            r"(?:process\\.env\\.[A-Za-z_][A-Za-z0-9_]*|env\\.[A-Za-z_][A-Za-z0-9_]*)",
+            r"(?:process\.env\.[A-Za-z_][A-Za-z0-9_]*|env\.[A-Za-z_][A-Za-z0-9_]*)",
             value,
             re.IGNORECASE,
         ):
