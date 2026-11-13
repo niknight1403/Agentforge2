@@ -10,7 +10,7 @@ ALLOWED_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".yml",
 IGNORED_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "coverage", ".next"}
 IGNORED_NAMES = {".env", ".env.local", ".env.production", "id_rsa", "id_ed25519"}
 SECRET_ASSIGNMENTS = re.compile(
-    r"""(?im)\b(?:api[_-]?key|client[_-]?secret|secret|password|passwd|access[_-]?token|auth[_-]?token|private[_-]?key)\b\s*[:=]\s*["']?([^\s"'#,;]{6,})"""
+    r"""(?im)(?<![A-Za-z0-9_-])_*(?:[A-Za-z0-9]+[_-]+)*(?:aws[_-]?secret[_-]?access[_-]?key|api[_-]?key|client[_-]?secret|secret|password|passwd|access[_-]?token|auth[_-]?token|private[_-]?key)"?\s*[:=]\s*(?:(?P<quote>["'])(?P<quoted>(?:\\.|(?!(?P=quote))[^\\\r\n])*)(?P=quote)|(?P<bare>[^\s#()]+)(?=\s*(?:#.*)?$))"""
 )
 SECRET_MARKERS = re.compile(
     r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
@@ -20,13 +20,24 @@ SECRET_MARKERS = re.compile(
 )
 SAFE_SECRET_PLACEHOLDERS = {"changeme", "change-me", "replace-me", "your_api_key", "your-token", "placeholder"}
 
+
+class RepositoryTargetError(ValueError):
+    """A controlled, user-correctable repository validation failure."""
+
+
 def contains_secret(content: str) -> bool:
     """Return whether content matches known credential assignments or key formats."""
     sample = content
     if SECRET_MARKERS.search(sample):
         return True
     for match in SECRET_ASSIGNMENTS.finditer(sample):
-        value = match.group(1).strip().strip("\"'")
+        value = (match.group("quoted") or match.group("bare") or "").strip()
+        if match.group("bare") and re.fullmatch(
+            r"(?:process\.env\.[A-Za-z_][A-Za-z0-9_]*|env\.[A-Za-z_][A-Za-z0-9_]*)",
+            value,
+            re.IGNORECASE,
+        ):
+            continue
         if value.lower() not in SAFE_SECRET_PLACEHOLDERS and not value.lower().startswith(("your-", "replace-", "example")):
             return True
     return False
@@ -36,12 +47,12 @@ class GitHubScanner:
     def _validate_target(self, name: str, url: str) -> None:
         """Validate repository names, canonical GitHub HTTPS URLs and owner allowlist."""
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", name):
-            raise ValueError("Invalid repository name")
+            raise RepositoryTargetError("Invalid repository name")
         match = re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?", url)
         if not match:
-            raise ValueError("Repository URL must be a canonical GitHub HTTPS URL")
+            raise RepositoryTargetError("Repository URL must be a canonical GitHub HTTPS URL")
         if match.group(1).lower() not in settings.allowed_orgs:
-            raise ValueError("Repository owner is not in ACADEMY_GITHUB_ALLOWED_ORGS")
+            raise RepositoryTargetError("Repository owner is not in ACADEMY_GITHUB_ALLOWED_ORGS")
 
     async def clone_or_update(self, name: str, url: str) -> Path:
         """Clone or fast-forward an allowlisted repository into the confined data root."""
@@ -49,15 +60,15 @@ class GitHubScanner:
         destination = (settings.data_dir / "repos" / name).resolve()
         root = (settings.data_dir / "repos").resolve()
         if root not in destination.parents:
-            raise ValueError("Repository path escapes the data directory")
+            raise RepositoryTargetError("Repository path escapes the data directory")
 
         def operation() -> Path:
             if destination.exists():
                 repo = Repo(destination)
                 if repo.bare or "origin" not in repo.remotes:
-                    raise ValueError("Existing checkout is not a valid managed repository")
+                    raise RepositoryTargetError("Existing checkout is not a valid managed repository")
                 if repo.remotes.origin.url != url:
-                    raise ValueError("Repository URL does not match the existing checkout")
+                    raise RepositoryTargetError("Repository URL does not match the existing checkout")
                 repo.remotes.origin.pull()
             else:
                 destination.parent.mkdir(parents=True, exist_ok=True)

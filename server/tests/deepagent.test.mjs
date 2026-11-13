@@ -1,13 +1,30 @@
 import './_env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, closeSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
+import { createUser } from '../auth.mjs';
 import { TMP } from './_env.mjs';
 
 process.env.DEEP_DIR = join(TMP, 'deep-files');
-const { createDeepProject, deepChat, addDeepFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping } = await import('../deepagent.mjs');
+const { createDeepProject, deepChat, addDeepFile, deepPreviewFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping } = await import('../deepagent.mjs');
 const reply = async () => ({ content: 'Bauplan: MVP, Tests und Startanleitung.' });
+
+test('DeepAgent öffnet den Projektchat sofort und erzeugt den initialen Plan im Hintergrund', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const project = await createDeepProject('Eine App mit sofortigem Entwicklungsworkspace', {
+    deferInitialPlan: true,
+    chatFn: async () => { await gate; return reply(); }
+  });
+  assert.equal(project.initialPending, true);
+  assert.match(deepProjectDetail(project.id).messages[0].content, /analysiere deine Idee/i);
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const messages = deepProjectDetail(project.id).messages;
+  assert.ok(messages.some((message) => /Bauplan: MVP/.test(message.content)));
+  assert.ok(!messages.some((message) => /analysiere deine Idee/i.test(message.content)));
+});
 
 test('Deep Agent übergibt lesbare Textanhänge mit klarer Datenabgrenzung', async () => {
   const project = await createDeepProject('Eine App für professionelle Projektplanung', { chatFn: reply });
@@ -92,4 +109,72 @@ test('Parallele Deep-Projekt-Übergaben teilen denselben Entwicklungsauftrag', a
   assert.deepEqual(await second, { villaId: 99 });
   assert.equal(count, 1);
   assert.equal(isDeepProjectDeveloping(7001), false);
+});
+
+
+test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeichnissen', async () => {
+  const project = await createDeepProject('Eine Web-App mit Live-Vorschau und Dashboard', { chatFn: reply });
+  const dist = join(TMP, 'deep-files', String(project.id), 'dist');
+  mkdirSync(dist, { recursive: true });
+  writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Preview</title>');
+  writeFileSync(join(dist, 'app.js'), 'console.log("preview")');
+  const projectRoot = join(TMP, 'deep-files', String(project.id));
+  writeFileSync(join(projectRoot, 'index.html'), '<!doctype html><script src="/assets/app.js"></script>');
+  const rootEntry = deepPreviewFile(project.id, 'index.html');
+  assert.equal(rootEntry.mime, 'text/html; charset=utf-8', 'only the explicit root entry point is served');
+  closeSync(rootEntry.fd);
+  const rootAssets = join(projectRoot, 'assets');
+  mkdirSync(rootAssets, { recursive: true });
+  writeFileSync(join(rootAssets, 'app.js'), 'console.log("root preview asset")');
+  const rootAsset = deepPreviewFile(project.id, 'assets/app.js');
+  assert.equal(rootAsset.mime, 'text/javascript; charset=utf-8',
+    'only conventional root asset directories are exposed for a root index.html');
+  closeSync(rootAsset.fd);
+  assert.equal(deepPreviewFile(project.id, 'server/secrets.json'), null, 'arbitrary project-root files remain private');
+  const outside = join(TMP, 'outside-secret.txt');
+  writeFileSync(outside, 'must not be served');
+  symlinkSync(outside, join(dist, 'leak.txt'));
+  const htmlEntry = deepPreviewFile(project.id, 'dist/index.html');
+  assert.equal(htmlEntry.mime, 'text/html; charset=utf-8');
+  closeSync(htmlEntry.fd);
+  const appEntry = deepPreviewFile(project.id, 'dist/app.js');
+  assert.equal(appEntry.mime, 'text/javascript; charset=utf-8');
+  closeSync(appEntry.fd);
+  const pinned = deepPreviewFile(project.id, 'dist/app.js');
+  assert.ok(Number.isInteger(pinned.fd), 'preview returns an already-open file descriptor');
+  const original = join(dist, 'app-original.js');
+  renameSync(join(dist, 'app.js'), original);
+  symlinkSync(outside, join(dist, 'app.js'));
+  try {
+    assert.equal(readFileSync(pinned.fd, 'utf8'), 'console.log("preview")',
+      'replacing the checked path cannot redirect the already-open descriptor');
+  } finally { closeSync(pinned.fd); }
+  assert.equal(deepPreviewFile(project.id, 'dist/../../../../etc/passwd'), null);
+  assert.equal(deepPreviewFile(project.id, '.env'), null);
+  assert.equal(deepPreviewFile(project.id, 'dist/leak.txt'), null);
+});
+
+
+test('DeepAgent memory never mixes project titles across owners', async () => {
+  const suffix = process.pid;
+  const ownerAUser = createUser({ email: `deepagent-memory-a-${suffix}@example.invalid`, password: 'test-only-password-a', role: 'user' });
+  const ownerBUser = createUser({ email: `deepagent-memory-b-${suffix}@example.invalid`, password: 'test-only-password-b', role: 'user' });
+  const ownerA = await createDeepProject('Privates Projekt von Nutzer A mit eigenem Kontext', {
+    chatFn: reply,
+    ownerUserId: ownerAUser.id
+  });
+  await createDeepProject('Geheimes Projekt von Nutzer B ohne Freigabe', {
+    chatFn: reply,
+    ownerUserId: ownerBUser.id
+  });
+  let systemContext = '';
+  await deepChat(ownerA.id, 'Erstelle den nächsten Schritt.', [], {
+    chatFn: async (messages) => {
+      systemContext = messages[0].content;
+      return reply();
+    }
+  });
+
+  assert.match(systemContext, /Privates Projekt von Nutzer A/);
+  assert.doesNotMatch(systemContext, /Geheimes Projekt von Nutzer B/);
 });

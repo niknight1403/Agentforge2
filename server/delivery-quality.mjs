@@ -178,7 +178,7 @@ export function deliverableExtensions(id) {
 
 export function deliveryProfile(villaId, ideaOverride) {
   const villa=db.prepare('SELECT idea,name FROM villas WHERE id=?').get(Number(villaId));
-  const id=classifyDeliverable(typeof ideaOverride==='string'?ideaOverride:(villa?.idea || villa?.name || ''));
+  const id=classifyDeliverable(typeof ideaOverride==='string'&&ideaOverride.trim()?ideaOverride:(villa?.idea || villa?.name || ''));
   return { id, ...PROFILES[id] };
 }
 function outputs(villaId, profile) {

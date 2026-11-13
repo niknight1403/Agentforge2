@@ -21,11 +21,65 @@ export function inspectProductZip(bytes){
  if(cursor!==offset+size||!names.some(n=>/(?:^|\/)(?:index\.html|package\.json|AndroidManifest\.xml)$/.test(n)))throw Error('PRODUCT_APP_FILES_MISSING');
  return {entries:count,bytes:b.length};
 }
+function zipEntryNames(bytes) {
+ const b=Buffer.from(bytes||[]);
+ if(b.length<22||b.readUInt32LE(0)!==0x04034b50)return null;
+ let end=-1;
+ for(let i=b.length-22;i>=Math.max(0,b.length-65557);i--){
+  if(b.readUInt32LE(i)===0x06054b50&&i+22+b.readUInt16LE(i+20)===b.length){end=i;break;}
+ }
+ if(end<0)return null;
+ const disk=b.readUInt16LE(end+4),centralDisk=b.readUInt16LE(end+6);
+ const diskCount=b.readUInt16LE(end+8),count=b.readUInt16LE(end+10);
+ const size=b.readUInt32LE(end+12),offset=b.readUInt32LE(end+16);
+ if(disk||centralDisk||diskCount!==count||!count||count>20000||offset+size!==end)return null;
+ let cursor=offset;const names=[];
+ for(let n=0;n<count;n++){
+  if(cursor+46> end||b.readUInt32LE(cursor)!==0x02014b50)return null;
+  const flags=b.readUInt16LE(cursor+8),method=b.readUInt16LE(cursor+10);
+  const packed=b.readUInt32LE(cursor+20),unpacked=b.readUInt32LE(cursor+24);
+  const nameLen=b.readUInt16LE(cursor+28),extraLen=b.readUInt16LE(cursor+30),commentLen=b.readUInt16LE(cursor+32);
+  const next=cursor+46+nameLen+extraLen+commentLen;
+  if(next>end||flags&1||![0,8].includes(method))return null;
+  const name=b.subarray(cursor+46,cursor+46+nameLen).toString('utf8');
+  if(!name||name.startsWith('/')||name.includes('\\')||name.split('/').includes('..'))return null;
+  const local=b.readUInt32LE(cursor+42);
+  if(local+30>offset||b.readUInt32LE(local)!==0x04034b50)return null;
+  const localFlags=b.readUInt16LE(local+6),localMethod=b.readUInt16LE(local+8);
+  const localNameLen=b.readUInt16LE(local+26),localExtraLen=b.readUInt16LE(local+28);
+  const payload=local+30+localNameLen+localExtraLen;
+  if(localFlags!==flags||localMethod!==method||payload+packed>offset)return null;
+  if(b.subarray(local+30,local+30+localNameLen).toString('utf8')!==name)return null;
+  if(unpacked>0&&packed===0)return null;
+  names.push(name);cursor=next;
+ }
+ return cursor===offset+size?names:null;
+}
+function hasZipContainer(bytes, extension) {
+ const names=zipEntryNames(bytes);
+ if(!names||!names.some(name=>!name.endsWith('/')))return false;
+ const required={
+  '.docx':['word/document.xml'],
+  '.xlsx':['xl/workbook.xml'],
+  '.pptx':['ppt/presentation.xml'],
+  '.odt':['mimetype','content.xml'],
+  '.ods':['mimetype','content.xml'],
+  '.epub':['mimetype','META-INF/container.xml'],
+  '.3mf':['3D/3dmodel.model'],
+  '.key':['index.apxl']
+ }[extension];
+ return !required||required.every(entry=>names.includes(entry));
+}
 export function isValidDeliverableArtifact(bytes,extension){
  const b=Buffer.from(bytes||[]),ext=String(extension||'').toLowerCase();
  if(b.length<16)return false;
  if(ext==='.pdf')return b.subarray(0,5).toString('ascii')==='%PDF-';
- if(['.docx','.xlsx','.pptx','.odt','.epub'].includes(ext))return b.length>=22&&b.readUInt32LE(0)===0x04034b50;
+ if(['.docx','.xlsx','.pptx','.odt','.epub','.ods','.key','.3mf','.zip'].includes(ext))return hasZipContainer(b,ext);
+ if(ext==='.rtf')return /^\{\\rtf\d/i.test(b.toString('utf8',0,32));
+ if(['.tif','.tiff'].includes(ext)){
+  return b.length>=8&&((b[0]===0x49&&b[1]===0x49&&((b[2]===0x2a&&b[3]===0x00)||(b[2]===0x2b&&b[3]===0x00)))||(b[0]===0x4d&&b[1]===0x4d&&((b[2]===0x00&&b[3]===0x2a)||(b[2]===0x00&&b[3]===0x2b))));
+ }
+ if(ext==='.aac')return b[0]===0xff&&(b[1]&0xf6)===0xf0;
  if(ext==='.parquet')return b.subarray(0,4).toString('ascii')==='PAR1'&&b.subarray(-4).toString('ascii')==='PAR1';
  if(ext==='.glb')return b.subarray(0,4).toString('ascii')==='glTF';
  if(ext==='.gltf'||ext==='.json'){
@@ -37,7 +91,7 @@ export function isValidDeliverableArtifact(bytes,extension){
   return /^solid\b/i.test(b.toString('utf8',0,100));
  }
  if(ext==='.obj')return /^(?:v|o|g|f)\s/m.test(b.toString('utf8',0,2000));
- if(['.md','.txt','.html','.csv','.tsv','.ics'].includes(ext)){
+ if(['.md','.txt','.html','.csv','.tsv','.ics','.ino'].includes(ext)){
   const text=b.toString('utf8');
   return !text.includes('\u0000')&&text.trim().length>=16;
  }
@@ -58,7 +112,7 @@ export async function verifyProductAcceptance({requestJson,download,preferredVil
   // dann der echte Container (ftyp/RIFF/OggS ...), nicht die Endung.
   const artifact=String(build.artifact||'');
   const extension=artifact.includes('.')?artifact.slice(artifact.lastIndexOf('.')).toLowerCase():'';
-  if(build.artifactType==='media'||(extension&&['.mp4','.webm','.mov','.m4v','.mp3','.wav','.ogg','.m4a','.flac','.png','.jpg','.jpeg','.webp','.svg'].includes(extension))){
+  if(build.artifactType==='media'||(extension&&['.mp4','.webm','.mov','.m4v','.mp3','.wav','.ogg','.m4a','.aac','.flac','.png','.jpg','.jpeg','.webp','.svg','.tif','.tiff'].includes(extension))){
    if(!isPlayableArtifact(bytes,extension))continue;
    return {villaId:id,verified:true,media:{extension,bytes:Buffer.from(bytes).length}};
   }

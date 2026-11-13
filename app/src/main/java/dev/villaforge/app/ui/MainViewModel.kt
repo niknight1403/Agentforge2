@@ -33,6 +33,8 @@ data class UiState(
     val deepActiveProject: DeepProject? = null,
     /** Deep-Agent: Nachrichten des aktiven Projekts. */
     val deepMessages: List<DeepMessage> = emptyList(),
+    /** Deep-Agent: Live-Workspace (Gates, Vorschau, Admin-Werkzeuge). */
+    val deepWorkspace: org.json.JSONObject? = null,
     /** Deep-Agent: noch nicht gesendete Anhaenge. */
     val deepPendingAttachments: List<DeepAttachment> = emptyList(),
     /** SSE-Verbindung zum Hub aktiv (Live-Ereignisse fließen). */
@@ -191,25 +193,64 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openDeepProject(id: Long) = viewModelScope.launch {
         try {
             val (project, messages) = client.deepProjectDetail(id)
-            _state.update { it.copy(deepActiveProject = project, deepMessages = messages, deepPendingAttachments = emptyList()) }
+            _state.update { it.copy(deepActiveProject = project, deepMessages = messages, deepPendingAttachments = emptyList(), deepWorkspace = null) }
+            refreshDeepWorkspace(id)
         } catch (_: Exception) { }
     }
 
-    /** Übergibt das Projekt an Planung, Agentenpool, Tests und Build der VillaForge-Baustraße. */
-    fun developDeepProject(id: Long, onVillaReady: (Long) -> Unit) = viewModelScope.launch {
+    /** Holt neue Chat-Nachrichten nach, ohne Eingabe-Anhänge oder Chat-Zustand zu löschen. */
+    suspend fun refreshDeepMessages(id: Long) {
+        if (_state.value.busy) return
+        try {
+            val (_, messages) = client.deepProjectDetail(id)
+            _state.update { current ->
+                if (current.deepActiveProject?.id != id || current.busy) current
+                else {
+                    val localOnly = current.deepMessages.filter { it.id == 0L }
+                    current.copy(deepMessages = messages + localOnly)
+                }
+            }
+        } catch (_: Exception) { }
+    }
+
+    /** Startet die autonome Umsetzung und bleibt bewusst im Entwicklungs-Workspace. */
+    fun developDeepProject(id: Long) = viewModelScope.launch {
         if (_state.value.busy) return@launch
-        _state.update { it.copy(busy = true, message = "Projekt-Experte erstellt den ausführbaren Entwicklungsplan …") }
+        _state.update { it.copy(busy = true, message = "DeepAgent übergibt an Agentenpool, Tests und Build …") }
         try {
             val result = client.deepDevelopProject(id)
             val villaId = result.optLong("villaId", 0)
-            if (villaId <= 0) throw IllegalStateException(result.optString("error", "Keine Entwicklungs-Villa erstellt"))
-            _state.update { it.copy(message = result.optString("message", "Entwicklung übergeben")) }
+            if (villaId <= 0) throw IllegalStateException(result.optString("error", "Entwicklung noch nicht freigegeben"))
+            _state.update { current ->
+                val activeProject = current.deepActiveProject
+                if (activeProject == null || activeProject.id != id) current
+                else current.copy(
+                    deepActiveProject = activeProject.copy(villaId = villaId),
+                    message = result.optString("message", "Autonome Entwicklung gestartet. Live-Arbeitsplatz bleibt geöffnet.")
+                )
+            }
             loadDeepProjects()
-            openVilla(villaId)
-            onVillaReady(villaId)
+            refreshDeepWorkspace(id)
         } catch (e: Exception) {
-            _state.update { it.copy(message = "Übergabe fehlgeschlagen: ${e.message?.take(180) ?: "Hub nicht erreichbar"}") }
+            _state.update { it.copy(message = "Entwicklungsstart fehlgeschlagen: ${e.message?.take(180) ?: "Hub nicht erreichbar"}") }
+            refreshDeepWorkspace(id)
         } finally { _state.update { it.copy(busy = false) } }
+    }
+
+    /** Aktualisiert den belegten Projektstatus und die installierten Laufzeit-Werkzeuge. */
+    suspend fun refreshDeepWorkspace(id: Long) {
+        try {
+            val workspace = client.deepWorkspace(id)
+            _state.update { current ->
+                if (current.deepActiveProject?.id == id) current.copy(deepWorkspace = workspace) else current
+            }
+        } catch (e: Exception) {
+            _state.update { current ->
+                if (current.deepActiveProject?.id == id) current.copy(
+                    deepWorkspace = org.json.JSONObject().put("error", e.message ?: "Workspace-Status nicht erreichbar")
+                ) else current
+            }
+        }
     }
 
     /** Entfernt ein einzelnes Deep-Projekt samt Verlauf und Uploads. */
@@ -309,7 +350,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 content = res.optString("reply", "(keine Antwort)"),
                 createdAt = System.currentTimeMillis()
             )
-            _state.update { it.copy(deepMessages = it.deepMessages + reply, busy = false) }
+            val developedVillaId = res.optJSONObject("development")?.optLong("villaId", 0L) ?: 0L
+            _state.update { current ->
+                val activeProject = current.deepActiveProject
+                val updatedProject = if (activeProject != null && activeProject.id == projectId && developedVillaId > 0) {
+                    activeProject.copy(villaId = developedVillaId)
+                } else activeProject
+                current.copy(deepMessages = current.deepMessages + reply, deepActiveProject = updatedProject, busy = false)
+            }
         } catch (e: Exception) {
             _state.update {
                 it.copy(busy = false, deepMessages = it.deepMessages + DeepMessage(
@@ -701,6 +749,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Autorisierungs-Header fuer Downloads (DownloadManager/WebView). */
     fun authHeader(): String? = client.authHeaderValue()
+
+    fun deepPreviewUrl(projectId: Long, entry: String): String = client.deepPreviewUrl(projectId, entry)
 
     /** Live-Ansicht: URL mit Auth-Header laden (WebView-Ressource). */
     fun previewResource(url: String): android.webkit.WebResourceResponse? = client.webResource(url)

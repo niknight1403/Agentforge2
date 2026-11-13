@@ -1,6 +1,6 @@
 import { createPublishPost, listPublishPosts, getVillaRevenue } from './publishing.mjs';
 import {capabilityStatus,requestCapability} from './capability-autopilot.mjs';
-import {runtimeCapabilityInventory} from './runtime-capabilities.mjs';
+import {cachedRuntimeCapabilityInventory} from './runtime-capabilities.mjs';
 import {villaDiagnostics} from './villa-diagnostics.mjs';
 import { VERSION } from './version.mjs';
 import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStudioPreview } from './studio.mjs';
@@ -11,7 +11,7 @@ import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { createMasterControl } from './master-control.mjs';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, closeSync, createReadStream as createReadStreamFromFd } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
 import { telemetrySummary } from './telemetry.mjs';
@@ -42,7 +42,7 @@ import { deepMissionBrief } from './deep-mission.mjs';
 import { classifyDeepDevelopmentIntent } from './deep-intent.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
-import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
+import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deepPreviewFile, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { projectReadiness } from './deep-completion.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
@@ -64,7 +64,7 @@ import { createReadStream, existsSync as fsExists } from 'node:fs';
 import { initBillingStore, createCheckoutSession, createBillingPortalSession, billingSummary, adminBillingMetrics, flushStripeUsage } from './billing.mjs';
 import { issueGatewayToken, gatewayPrincipal, hasGatewayScope, canAccessVilla, gatewayRoleScopes, initGatewayStore, createGatewayApiKey, listGatewayApiKeys, revokeGatewayApiKey } from './api-gateway.mjs';
 import { dlqTick, dlqStatus, restartFailedWorkflow, initDlq } from './event-dlq.mjs';
-import { sanitizeForStream } from './event-contracts.mjs';
+import { eventForStream } from './event-contracts.mjs';
 import { redisTryStreamAdd } from './redis.mjs';
 import { GENERATION_STREAM } from './generation-engine.mjs';
 import { initObservabilityStore, tokenBudgetStatus, httpMetrics, recordHttpRequest } from './observability.mjs';
@@ -289,7 +289,7 @@ async function api(req, res, url) {
   // ohne Lockout) oder dauerhaft via VF_OPEN_MODE=1.
   const openMode = process.env.VF_OPEN_MODE === '1' || !usersExist();
   const needAuth = !openMode && !user;
-  const isAdmin = checkIsAdmin(req) || (!!user && (user.role === 'admin' || user.role === 'superadmin' || user.role === 'SUPERADMIN' || Number(user.is_unlimited) === 1));
+  const isAdmin = checkIsAdmin(req);
   // Sicherheitsalarm: offener Modus ist ein stiller Auth-Ausfall (leere users-Tabelle
   // oder bewusst gesetzter Open-Mode-Schalter). Einmal pro Prozess laut protokollieren.
   if (openMode && !globalThis.__vfOpenModeWarned) {
@@ -430,7 +430,10 @@ async function api(req, res, url) {
     }
     return rpcErr(-32601, `Unbekannte Methode: ${body.method}`);
   }
-  if (p === '/api/system/runtime-capabilities' && m === 'GET') return json(res,200,{capabilities:runtimeCapabilityInventory(),note:'Availability only; not proof of configured, tested or verified product output.'});
+  if (p === '/api/system/runtime-capabilities' && m === 'GET') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Administrator role required.' });
+    return json(res,200,{capabilities:cachedRuntimeCapabilityInventory(),note:'Availability only; not proof of configured, tested or verified product output.'});
+  }
   if (p === '/api/system/audit') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     const audit = systemAudit();
@@ -1295,11 +1298,26 @@ async function api(req, res, url) {
   }
 
   /* ---- Deep Agent: eigene App-Projekte abseits der Villen (v1.37.0) ---- */
+  // Deep projects, chat, uploads and previews contain private project data. Require
+  // an authenticated user outside the explicitly configured legacy open mode.
+  if ((p === '/api/deep/projects' || p.startsWith('/api/deep/')) && !openMode && !user) {
+    return json(res, 401, { error: 'Login erforderlich.' });
+  }
+  // Authenticated projects are tenant-scoped. Admins may support legacy/unassigned
+  // projects; open mode remains compatible only when no user session exists.
+  const canAccessDeepProject = (projectId) => {
+    const row = db.prepare('SELECT owner_user_id FROM deep_projects WHERE id = ?').get(Number(projectId));
+    if (!row) return false;
+    if (!user && openMode) return true;
+    if (isAdmin) return true;
+    return Boolean(user && row.owner_user_id !== null && Number(row.owner_user_id) === Number(user.id));
+  };
   if (p === '/api/deep/projects' && m === 'GET') {
-    return json(res, 200, listDeepProjects());
+    return json(res, 200, isAdmin || (!user && openMode) ? listDeepProjects() : listDeepProjects({ ownerUserId: user.id }));
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts.length === 4 && m === 'DELETE') {
     const projectId = Number(parts[3]);
+    if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
     if (isDeepProjectDeveloping(projectId)) return json(res, 409, { error: 'Projekt wird gerade an die Entwicklungs-Villa übergeben.' });
     return deleteDeepProject(projectId)
       ? json(res, 200, { ok: true, deleted: true })
@@ -1307,6 +1325,7 @@ async function api(req, res, url) {
   }
   /* ---- Deep-Projekt: Fertigstellungs-Bericht inkl. Live-Ansicht ---- */
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'completion' && m === 'GET') {
+    if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Projekt nicht gefunden' });
     const report = projectReadiness(Number(parts[3]));
     if (!report) return json(res, 404, { error: 'Projekt nicht gefunden' });
     return json(res, 200, report);
@@ -1329,6 +1348,7 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && (parts[4] === 'develop' || parts[4] === 'bootstrap') && m === 'POST') {
     const projectId = Number(parts[3]);
     const bootstrap = parts[4] === 'bootstrap';
+    if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
     const detail = deepProjectDetail(projectId);
     if (!detail) return json(res, 404, { error: 'Projekt nicht gefunden' });
     return runDeepProjectDevelopmentOnce(projectId, async () => {
@@ -1422,7 +1442,8 @@ async function api(req, res, url) {
   if (p === '/api/deep/projects' && m === 'POST') {
     try {
       const b = await readBody(req);
-      const created=await createDeepProject(b?.idea);
+      if (!user && !openMode) return json(res, 401, { error: 'Login erforderlich.' });
+      const created=await createDeepProject(b?.idea, { deferInitialPlan: true, ownerUserId: user?.id ?? null });
       const intent=classifyDeepDevelopmentIntent(b?.idea,{projectCreation:true});
       const development=intent.action==='AUTO_BUILD'?await autoStartDeepProject(created.id):null;
       return json(res,200,{...created,intent:intent.action,development});
@@ -1432,8 +1453,10 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'chat' && m === 'POST') {
     try {
+      const projectId = Number(parts[3]);
+      if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
       const b = await readBody(req);
-      const r = await deepChat(Number(parts[3]), b?.message || '', Array.isArray(b?.attachments) ? b.attachments : []);
+      const r = await deepChat(projectId, b?.message || '', Array.isArray(b?.attachments) ? b.attachments : []);
       const intent=classifyDeepDevelopmentIntent(b?.message);
       const development=intent.action==='AUTO_BUILD'?await autoStartDeepProject(Number(parts[3])):null;
       return json(res,200,{...r,intent:intent.action,development});
@@ -1443,13 +1466,46 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'files' && m === 'POST') {
     try {
+      if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Projekt nicht gefunden' });
       const b = await readBody(req);
       return json(res, 200, addDeepFile(Number(parts[3]), b?.name, b?.mime, b?.data));
     } catch (e) {
       return json(res, 400, { error: String(e.message || e).slice(0, 300) });
     }
   }
+  if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'preview' && parts.length >= 6 && m === 'GET') {
+    if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Keine Deep-Projekt-Vorschau-Datei' });
+    const f = deepPreviewFile(Number(parts[3]), parts.slice(5).join('/'));
+    if (!f) return json(res, 404, { error: 'Keine Deep-Projekt-Vorschau-Datei' });
+    res.writeHead(200, {
+      'Content-Type': f.mime, 'Cache-Control': 'no-store',
+      'Content-Security-Policy': "sandbox allow-scripts; frame-ancestors 'self'; form-action 'none'",
+      'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'
+    });
+    const previewFilePath = parts.slice(5).join('/');
+    const previewRoot = previewFilePath.includes('/') ? `${previewFilePath.split('/')[0]}/` : '';
+    const previewBase = `/api/deep/projects/${parts[3]}/preview/${previewRoot}`;
+    if (f.mime.startsWith('text/css')) {
+      let css;
+      try { css = readFileSync(f.fd, 'utf8'); }
+      finally { closeSync(f.fd); }
+      css = css
+        .replace(/url\(\s*(["']?)\/(?!\/)([^)"']+)\1\s*\)/g, (_match, quote, assetPath) => 'url(' + quote + previewBase + assetPath + quote + ')')
+        .replace(/(@import\s+)(["'])\/(?!\/)([^"']+)\2/g, (_match, prefix, quote, assetPath) => prefix + quote + previewBase + assetPath + quote);
+      return res.end(css);
+    }
+    if (f.mime.startsWith('text/html')) {
+      let html;
+      try { html = readFileSync(f.fd, 'utf8').replace(/(src|href)=("|')\//g, '$1=$2'); }
+      finally { closeSync(f.fd); }
+      return res.end(html);
+    }
+    createReadStreamFromFd(null, { fd: f.fd, autoClose: true }).pipe(res);
+    return;
+  }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'files' && parts[3] && m === 'GET') {
+    const fileOwner = db.prepare('SELECT project_id FROM deep_files WHERE id = ?').get(Number(parts[3]));
+    if (!fileOwner || !canAccessDeepProject(fileOwner.project_id)) return json(res, 404, { error: 'Anhang nicht gefunden' });
     const f = deepFileById(Number(parts[3]));
     if (!f) return json(res, 404, { error: 'Anhang nicht gefunden' });
     res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'no-store' });
@@ -1457,6 +1513,7 @@ async function api(req, res, url) {
     return;
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && !parts[4] && m === 'GET') {
+    if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Projekt nicht gefunden' });
     const d = deepProjectDetail(Number(parts[3]));
     if (!d) return json(res, 404, { error: 'Projekt nicht gefunden' });
     return json(res, 200, d);
@@ -1584,12 +1641,15 @@ async function api(req, res, url) {
     res.write('retry: 3000\n\n');
     // Ohne Anmeldung nur Metadaten (kein Prompt, keine Tool-Argumente, kein Code).
     const onEvent = (e) => {
-      const payload = user ? e : sanitizeForStream(e);
+      // Only administrators receive the full event payload. Ordinary authenticated
+      // users must get the same metadata-only view as anonymous clients: the bus is
+      // global and events are not yet partitioned by Villa ownership.
+      const payload = eventForStream(e, { isAdmin });
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
     bus.on('event', onEvent);
     const ping = setInterval(() => res.write(': ping\n\n'), 15000);
-    req.on('close', () => { clearInterval(ping); bus.off('event', onEvent); });
+    res.on('close', () => { clearInterval(ping); bus.off('event', onEvent); });
     return;
   }
 

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { buildMeshEvent } from '../event-mesh.mjs';
 import {
   MESH_EVENT_TYPES, MESH_METADATA_FIELDS, MESH_TEXT_MAX,
-  MESH_EVENT_CONTRACTS, validateMeshEvent, assertMeshEvent, sanitizeForStream,
+  MESH_EVENT_CONTRACTS, validateMeshEvent, assertMeshEvent, sanitizeForStream, eventForStream,
 } from '../event-contracts.mjs';
 
 const VILLA = 5, TASK = 42, AGENT = 7;
@@ -87,7 +87,7 @@ test('assertMeshEvent wirft bei Vertragsbruch', () => {
 
 test('sanitizeForStream entfernt Inhalte aus dem Live-Strom', () => {
   const raw = {
-    type: 'tool', ts: 1, villaId: 18, agentId: 382, tool: 'project_write',
+    type: 'tool', ts: 1, villaId: 18, taskId: 42, agentId: 382, tool: 'project_write',
     args: { path: 'a.js', content: 'const secret = 1;' }, prompt: 'GEHEIM', response: 'Antwort',
   };
   const safe = sanitizeForStream(raw);
@@ -97,9 +97,22 @@ test('sanitizeForStream entfernt Inhalte aus dem Live-Strom', () => {
   assert.equal(safe.type, 'tool');
   assert.equal(safe.villaId, 18);
   assert.equal(safe.tool, 'project_write');
+  assert.equal(safe.taskId, 42, 'the sanitized SSE payload retains the safe task identifier');
 });
 
 test('sanitizeForStream kuerzt lange Texte und vertraegt Unsinn', () => {
   assert.equal(sanitizeForStream({ type: 'llm', model: 'x'.repeat(500) }).model.length, MESH_TEXT_MAX);
   assert.deepEqual(Object.keys(sanitizeForStream(null)).sort(), ['ts', 'type']);
+});
+
+test('SSE gibt Rohdaten nur an Administratoren aus', () => {
+  const raw = { type: 'tool', ts: 1, villaId: VILLA, tool: 'project_write', args: { content: 'private source' }, prompt: 'private prompt' };
+  const userPayload = eventForStream(raw, { isAdmin: false });
+  assert.equal(userPayload.args, undefined);
+  assert.equal(userPayload.prompt, undefined);
+  assert.equal(userPayload.tool, 'project_write');
+  const adminPayload = eventForStream(raw, { isAdmin: true });
+  assert.equal(adminPayload, raw);
+  assert.deepEqual(adminPayload.args, { content: 'private source' });
+  assert.equal(adminPayload.prompt, 'private prompt');
 });

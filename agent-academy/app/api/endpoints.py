@@ -6,7 +6,7 @@ from app.agents.auditor import AuditorAgent
 from app.agents.professor import ProfessorAgent
 from app.agents.optimizer import OptimizerAgent
 from app.config import settings
-from app.ingestion.github_scanner import GitHubScanner
+from app.ingestion.github_scanner import GitHubScanner, RepositoryTargetError
 from app.ingestion.knowledge_store import KnowledgeStore
 from app.schemas import AnalyzeRequest, OptimizeRequest, SyncRequest
 
@@ -37,7 +37,7 @@ async def sync_repositories(payload: SyncRequest):
             chunks = await scanner.scan(path)
             store.replace_repository(target.name, chunks)
             results[target.name] = {"status": "indexed", "files": len(chunks)}
-        except ValueError as exc:
+        except RepositoryTargetError as exc:
             results[target.name] = {"status": "failed", "error": str(exc)}
         except Exception:
             logger.exception("Sync failed for repository %s", target.name)
@@ -57,9 +57,10 @@ async def analyze_synergies(payload: AnalyzeRequest):
         files = store.list_files(name)
         if not files:
             raise HTTPException(status_code=404, detail=f"Repository not indexed: {name}")
-        repository_files[name] = files[:200]
+        repository_files[name] = files
+        evidence_files = files[:200]
         evidence.append(f"## {name}\n" + "\n".join(
-            f"- {item['path']} ({item['language']})" for item in repository_files[name]
+            f"- {item['path']} ({item['language']})" for item in evidence_files
         ))
     audit = AuditorAgent().audit(repository_files)
     report = {"repositories": selected, "audit": audit, "evidence": "\n".join(evidence)}
