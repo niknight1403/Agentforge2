@@ -216,6 +216,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
     val workspace = state.deepWorkspace
     val completion = workspace?.optJSONObject("completion")
     val runtimeTools = workspace?.optJSONArray("capabilities") ?: org.json.JSONArray()
+    val capabilityNote = workspace?.optString("capabilityNote").orEmpty()
     val availableTools = (0 until runtimeTools.length()).count { runtimeTools.optJSONObject(it)?.optString("status") == "available" }
     val livePreview = completion?.optJSONObject("live")
     val entry = livePreview?.optString("entry").orEmpty()
@@ -341,6 +342,10 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                             "${tool.optString("id")} · ${tool.optString("family")} · ${tool.optString("status")}",
                             color = TextMuted, style = MaterialTheme.typography.labelSmall
                         )
+                    }
+
+                    if (capabilityNote.isNotBlank()) {
+                        Text(capabilityNote, color = TextMuted, style = MaterialTheme.typography.labelSmall)
                     }
                 }
                 if (workspace?.has("error") == true) {
