@@ -494,6 +494,7 @@ class HubClient(context: Context) {
             .put("completion", completion)
             .put("capabilities", runtime?.optJSONArray("capabilities") ?: JSONArray())
             .put("capabilitiesRestricted", runtime == null)
+            .put("capabilityNote", runtime?.optString("note").orEmpty())
     }
 
     /** Löscht genau dieses Deep-Projekt samt Chat und Anhängen. */
