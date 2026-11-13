@@ -1,0 +1,40 @@
+name: CCC-Migration echte Fehlermeldung
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Migration mit ehrlicher Fehlerausgabe auf der VM
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<'EOS'
+          set -uo pipefail
+          WD=$(systemctl show cybersarah-ccc -p WorkingDirectory --value)
+          cd "$WD" || exit 1
+          echo "HEAD: $(git log -1 --oneline)"
+          DBPASS=$(cat /opt/ccc/.dbpass 2>/dev/null || true)
+          [ -n "$DBPASS" ] || DBPASS=$(systemctl show cybersarah-ccc -p Environment --value | grep -oP 'DATABASE_URL=postgresql://ccc:\K[^@]+' || true)
+          export DATABASE_URL="postgresql://ccc:${DBPASS}@127.0.0.1:5432/cybersarah"
+          echo "== Migrationsrunner (echte Fehler) =="
+          node scripts/run-drizzle-migrations.mjs 2>&1 | sed "s#postgresql://[^ ]*#postgresql://***#g" | tail -40
+          echo "RUNNER_EXIT=${PIPESTATUS[0]}"
+          echo "== Journalstand danach =="
+          sudo -u postgres psql -d cybersarah -Atc "SELECT count(*) FROM drizzle.__drizzle_migrations;" 2>&1 | tail -2
+          sudo -u postgres psql -d cybersarah -Atc "SELECT id, created_at FROM drizzle.__drizzle_migrations ORDER BY id DESC LIMIT 3;" 2>&1 | tail -5
+          echo "== Kandidat Datenkonflikte: Duplikate in credit_ledger_entries =="
+          sudo -u postgres psql -d cybersarah -Atc "SELECT count(*) FROM (SELECT user_open_id, execution_key, kind FROM \"credit_ledger_entries\" GROUP BY 1,2,3 HAVING count(*)>1) d;" 2>&1 | tail -3
+          echo "== Spalten credit_ledger_entries (Index-Kandidat) =="
+          sudo -u postgres psql -d cybersarah -Atc "SELECT string_agg(column_name, ', ' ORDER BY column_name) FROM information_schema.columns WHERE table_schema='public' AND table_name='credit_ledger_entries';" 2>&1 | tail -3
+          echo "== Tabellen aus 0016 (vorhanden?) =="
+          sudo -u postgres psql -d cybersarah -Atc "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('revenue_jobs','revenue_offers','revenue_experiments','revenue_attribution_events','revenue_cost_events','revenue_daily_stats','revenue_loop_runs') ORDER BY 1;" 2>&1 | tr '\n' ' '
+          echo
+          EOS
