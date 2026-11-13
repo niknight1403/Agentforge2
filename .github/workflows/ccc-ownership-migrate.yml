@@ -1,0 +1,76 @@
+name: CCC Schema-Ownership reparieren + migrieren
+on:
+  workflow_dispatch:
+    inputs:
+      apply_migrations:
+        description: "Migrationen direkt anwenden (true) oder nur Ownership reparieren (false)"
+        required: true
+        default: "true"
+permissions:
+  contents: read
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Ownership auf ccc uebertragen und Migration ausfuehren
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          APPLY: ${{ inputs.apply_migrations }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=25 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo bash -s" <<EOS
+          set -uo pipefail
+          WD=\$(systemctl show cybersarah-ccc -p WorkingDirectory --value)
+          cd "\$WD" || exit 1
+          echo "HEAD: \$(git log -1 --oneline)"
+
+          echo "== [1/4] Tabellen/Sequenzen/Views auf Rolle ccc uebertragen =="
+          sudo -u postgres psql -d cybersarah -v ON_ERROR_STOP=1 <<'SQL'
+          DO \$\$
+          DECLARE r record;
+          BEGIN
+            FOR r IN SELECT tablename FROM pg_tables WHERE schemaname='public' AND tableowner <> 'ccc'
+            LOOP EXECUTE format('ALTER TABLE public.%I OWNER TO ccc', r.tablename); END LOOP;
+            FOR r IN SELECT viewname FROM pg_views WHERE schemaname='public' AND viewowner <> 'ccc'
+            LOOP EXECUTE format('ALTER VIEW public.%I OWNER TO ccc', r.viewname); END LOOP;
+            FOR r IN SELECT sequencename FROM pg_sequences WHERE schemaname='public'
+            LOOP EXECUTE format('ALTER SEQUENCE public.%I OWNER TO ccc', r.sequencename); END LOOP;
+          END
+          \$\$;
+          GRANT USAGE, CREATE ON SCHEMA public TO ccc;
+          GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ccc;
+          GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ccc;
+          ALTER DEFAULT PRIVILEGES FOR ROLE ccc IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO ccc;
+          ALTER DEFAULT PRIVILEGES FOR ROLE ccc IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO ccc;
+          SQL
+          echo "Ownership normalisiert."
+          sudo -u postgres psql -d cybersarah -Atc "SELECT count(*) || ' Tabellen noch nicht ccc' FROM pg_tables WHERE schemaname='public' AND tableowner <> 'ccc';"
+
+          if [ "\$APPLY" != "true" ]; then echo "APPLY=false -> Stopp nach Ownership."; exit 0; fi
+
+          echo "== [2/4] Migrationen mit ehrlicher Fehlerausgabe =="
+          DBPASS=\$(cat /opt/ccc/.dbpass 2>/dev/null || true)
+          [ -n "\$DBPASS" ] || DBPASS=\$(systemctl show cybersarah-ccc -p Environment --value | grep -oP 'DATABASE_URL=postgresql://ccc:\K[^@]+' || true)
+          export DATABASE_URL="postgresql://ccc:\${DBPASS}@127.0.0.1:5432/cybersarah"
+          node scripts/run-drizzle-migrations.mjs 2>&1 | sed "s#postgresql://[^ ]*#postgresql://***#g" | tail -30
+          MRC=\${PIPESTATUS[0]}
+          echo "MIGRATE_EXIT=\$MRC"
+          echo "== Journalstand =="
+          sudo -u postgres psql -d cybersarah -Atc "SELECT count(*) FROM drizzle.__drizzle_migrations;" | tail -1
+          if [ "\$MRC" -ne 0 ]; then echo "Migration weiterhin fehlerhaft - Details oben."; exit 1; fi
+
+          echo "== [3/4] Server neu bauen (Repo-Stand nach Migration) =="
+          npm ci --no-audit --no-fund >/dev/null 2>&1 || { mv node_modules node_modules.broken.\$(date +%s) 2>/dev/null || true; npm ci --no-audit --no-fund; }
+          npm run build 2>&1 | tail -6
+
+          echo "== [4/4] Dienst neu starten und Health pruefen =="
+          sudo systemctl restart cybersarah-ccc
+          sleep 6
+          systemctl is-active cybersarah-ccc
+          curl -s -m 10 http://127.0.0.1:13000/api/health; echo
+          echo "Tabellenzahl: \$(sudo -u postgres psql -d cybersarah -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';")"
+          EOS
