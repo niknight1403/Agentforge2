@@ -335,7 +335,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                 }
                 if (runtimeTools.length() > 0) {
                     Text("VERFÜGBARE RUNTIME-WERKZEUGE", style = MaterialTheme.typography.labelSmall, color = NeonCyan, fontWeight = FontWeight.Bold)
-                    (0 until minOf(runtimeTools.length(), 6)).forEach { index ->
+                    (0 until runtimeTools.length()).forEach { index ->
                         val tool = runtimeTools.optJSONObject(index)
                         if (tool != null) Text(
                             "${tool.optString("id")} · ${tool.optString("family")} · ${tool.optString("status")}",
