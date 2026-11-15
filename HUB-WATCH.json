@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-11-14T20:36:28.332817+00:00",
+  "checked_at": "2026-11-15T00:53:22.729235+00:00",
   "hub": {
     "state": "UP",
     "version": "1.66.0",
@@ -9,8 +9,8 @@
     "agents": 479,
     "executing": 1,
     "queued": 1,
-    "open_tasks": 1347
+    "open_tasks": 1348
   },
-  "villa_activity_min": 1,
+  "villa_activity_min": 3,
   "state": "UP"
 }
