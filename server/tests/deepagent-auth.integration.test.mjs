@@ -105,6 +105,22 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const ownerCssText = await ownerCss.text();
   assert.match(ownerCssText, /url\(['"]?\/api\/deep\/projects\/\d+\/preview\/dist\/assets\/hero\.png['"]?\)/);
   assert.match(ownerCssText, /@import ['"]\/api\/deep\/projects\/\d+\/preview\/dist\/assets\/theme\.css['"]/);
+
+  // Root-level assets are their own preview root; do not duplicate the assets/ segment.
+  const rootAssetsDir = join(TMP, 'deep-projects', String(projectId), 'assets');
+  mkdirSync(rootAssetsDir, { recursive: true });
+  writeFileSync(join(rootAssetsDir, 'app.css'), "body{background:url('/assets/root-hero.png')}@import '/assets/root-theme.css';");
+  writeFileSync(join(rootAssetsDir, 'root-hero.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  writeFileSync(join(rootAssetsDir, 'root-theme.css'), 'body{color:#123456}');
+  const rootCss = await fetch(`${base}/api/deep/projects/${projectId}/preview/assets/app.css`, { headers: auth(tokenA) });
+  assert.equal(rootCss.status, 200);
+  const rootCssText = await rootCss.text();
+  assert.match(rootCssText, /url\(['"]?\/api\/deep\/projects\/\d+\/preview\/assets\/root-hero\.png['"]?\)/);
+  assert.match(rootCssText, /@import ['"]\/api\/deep\/projects\/\d+\/preview\/assets\/root-theme\.css['"]/);
+  assert.doesNotMatch(rootCssText, /\/preview\/assets\/assets\//);
+  const rootHero = await fetch(`${base}/api/deep/projects/${projectId}/preview/assets/root-hero.png`, { headers: auth(tokenA) });
+  assert.equal(rootHero.status, 200);
+
   const ownerJs = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/assets/app.js`, { headers: auth(tokenA) });
   assert.equal(ownerJs.status, 200);
   assert.match(ownerJs.headers.get('content-type') || '', /javascript/);

@@ -1483,7 +1483,10 @@ async function api(req, res, url) {
       'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'
     });
     const previewFilePath = parts.slice(5).join('/');
-    const previewRoot = previewFilePath.includes('/') ? `${previewFilePath.split('/')[0]}/` : '';
+    const previewRootName = previewFilePath.split('/')[0].toLowerCase();
+    const previewRoot = ['dist', 'build', 'out', 'public', 'web-dist'].includes(previewRootName)
+      ? `${previewFilePath.split('/')[0]}/`
+      : '';
     const previewBase = `/api/deep/projects/${parts[3]}/preview/${previewRoot}`;
     if (f.mime.startsWith('text/css')) {
       let css;
