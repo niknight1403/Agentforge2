@@ -73,11 +73,7 @@ test('Podman executable and container name must be Hub-controlled', () => {
 });
 
 test('rootless probe rejects an installation that reports rootful mode', async () => {
-  const fakeSpawn = () => {
-    const { EventEmitter } = awaitImportShim();
-    return null;
-  };
-  // A malformed/missing runtime must never be treated as available.
+  // A missing runtime must never be treated as available.
   await assert.rejects(probeMcpPodmanRootless({
     podmanPath: '/usr/bin/podman',
     spawnProcess: () => { throw new Error('not installed'); },
