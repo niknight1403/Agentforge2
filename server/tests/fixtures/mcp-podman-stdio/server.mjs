@@ -20,8 +20,14 @@ for await (const line of input) {
         name: 'healthcheck',
         description: 'Returns a fixture health response',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      }, {
+        name: 'crash',
+        description: 'Terminates the fixture process to exercise cleanup',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       }] },
     }) + '\n');
+  } else if (message.method === 'tools/call' && message.params?.name === 'crash') {
+    process.exit(23);
   } else if (message.method === 'tools/call') {
     process.stdout.write(JSON.stringify({
       jsonrpc: '2.0', id: message.id,
