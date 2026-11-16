@@ -11,9 +11,6 @@ on:
       - "server/agents.mjs"
       - "server/packs.mjs"
       - "server/tests/packs.test.mjs"
-      - "server/agents.mjs"
-      - "server/packs.mjs"
-      - "server/tests/packs.test.mjs"
       - "package.json"
       - "package-lock.json"
       - "docker-compose.agent-mesh.yml"
@@ -27,6 +24,9 @@ on:
       - "server/mcp-*.mjs"
       - "server/tests/mcp-*.test.mjs"
       - "server/server.mjs"
+      - "server/agents.mjs"
+      - "server/packs.mjs"
+      - "server/tests/packs.test.mjs"
       - "package.json"
       - "package-lock.json"
       - "docker-compose.agent-mesh.yml"
@@ -61,11 +61,13 @@ jobs:
           AGENTFORGE_MESH_TOKEN: ci-placeholder-only
         run: |
           docker compose -f docker-compose.agent-mesh.yml -f docker-compose.mcp-hardening.yml config --quiet
-      - name: Syntax-check MCP runtime and Hub integration
+      - name: Syntax-check MCP runtime and agent gateway
         run: |
           node --check server/server.mjs
+          node --check server/agents.mjs
+          node --check server/packs.mjs
           for file in server/mcp-*.mjs server/tests/mcp-*.test.mjs; do
             node --check "$file"
           done
-      - name: Run MCP unit and supervisor regression tests
-        run: node --import ./server/tests/_env.mjs --test server/tests/mcp-*.test.mjs
+      - name: Run MCP runtime and agent pack regression tests
+        run: node --import ./server/tests/_env.mjs --test server/tests/mcp-*.test.mjs server/tests/packs.test.mjs
