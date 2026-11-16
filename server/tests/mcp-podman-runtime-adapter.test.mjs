@@ -80,3 +80,42 @@ test('Podman adapter closes resources after initialization timeout', async () =>
   assert.ok(calls.includes('client.close'));
   assert.ok(calls.includes('transport.close'));
 });
+
+
+test('Podman adapter fails closed when the official SDK is missing or malformed', async () => {
+  const missing = dependencies();
+  await assert.rejects(
+    connectMcpPodmanServer({
+      ...missing.options,
+      Client: undefined,
+      loadSdk: async () => { throw new Error('module missing'); },
+    }),
+    { code: 'MCP_SDK_NOT_INSTALLED' },
+  );
+
+  const malformed = dependencies();
+  await assert.rejects(
+    connectMcpPodmanServer({
+      ...malformed.options,
+      Client: undefined,
+      loadSdk: async () => ({ Client: null }),
+    }),
+    { code: 'MCP_SDK_CONSTRUCTORS_REQUIRED' },
+  );
+  assert.equal(malformed.calls.length, 0);
+});
+
+test('Podman adapter validates the initialization deadline before creating resources', async () => {
+  const { calls, options } = dependencies();
+  let transportCreated = false;
+  await assert.rejects(
+    connectMcpPodmanServer({
+      ...options,
+      connectTimeoutMs: 99,
+      transportFactory: () => { transportCreated = true; return {}; },
+    }),
+    TypeError,
+  );
+  assert.equal(transportCreated, false);
+  assert.equal(calls.length, 0);
+});
