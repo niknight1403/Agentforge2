@@ -138,7 +138,34 @@ export function createMcpRuntimeSupervisor({
     const operation = (async () => {
       const pending = starting.get(id);
       if (pending) {
-        try { await pending; } catch { /* startup owns teardown and its caller receives the failure */ }
+        let startupTimer;
+        let startupTimedOut = false;
+        try {
+          await Promise.race([
+            pending,
+            new Promise((_, reject) => {
+              startupTimer = setTimeout(() => {
+                startupTimedOut = true;
+                reject(fail(
+                  'MCP_RUNTIME_START_STOP_TIMEOUT',
+                  'MCP runtime startup did not settle before the stop deadline; restart is blocked pending host reconciliation',
+                ));
+              }, executionDrainTimeoutMs);
+            }),
+          ]).finally(() => clearTimeout(startupTimer));
+        } catch (error) {
+          if (startupTimedOut) {
+            // Keep cancellation active while the late startup promise is still
+            // observed. Its startup path owns closing any adapter it creates.
+            cleanupBlocked.add(id);
+            const current = getServer(id);
+            if (current && current.status !== 'disabled') {
+              try { setStatus(id, 'degraded', { errorCode: 'MCP_RUNTIME_START_STOP_TIMEOUT' }); } catch { /* preserve stop timeout */ }
+            }
+            throw error;
+          }
+          // Startup failed and its own catch path has attempted adapter cleanup.
+        }
       }
       const adapter = connections.get(id);
       if (!adapter) {
@@ -208,7 +235,9 @@ export function createMcpRuntimeSupervisor({
       if (current?.status === 'active') setStatus(id, 'pending');
       return true;
     })().finally(() => {
-      cancelled.delete(id);
+      // Do not release cancellation while a timed-out startup is still running.
+      // Its own finally block clears the flag once late cleanup has completed.
+      if (!starting.has(id)) cancelled.delete(id);
       stopping.delete(id);
     });
     stopping.set(id, operation);
