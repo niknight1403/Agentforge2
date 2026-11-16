@@ -10,7 +10,7 @@ ALLOWED_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".yml",
 IGNORED_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "coverage", ".next"}
 IGNORED_NAMES = {".env", ".env.local", ".env.production", "id_rsa", "id_ed25519"}
 SECRET_ASSIGNMENTS = re.compile(
-    r"""(?im)(?<![A-Za-z0-9_-])_*(?:[A-Za-z0-9]+[_-]+)*(?:aws[_-]?secret[_-]?access[_-]?key|api[_-]?key|client[_-]?secret|secret|password|passwd|access[_-]?token|auth[_-]?token|private[_-]?key)"?\s*[:=]\s*(?:(?P<quote>["'])(?P<quoted>(?:\\.|(?!(?P=quote))[^\\\r\n])*)(?P=quote)|(?P<bare>[^\s#()]+)(?=\s*(?:#.*)?$))"""
+    r"""(?im)(?<![A-Za-z0-9_-])(?P<key>_*[A-Za-z0-9][A-Za-z0-9_-]*)["']?\s*[:=]\s*(?:(?P<quote>["'])(?P<quoted>(?:\\.|(?!(?P=quote))[^\\\r\n])*)(?P=quote)|(?P<bare>[^\s#(),;]+)(?=\s*(?:#.*)?$))"""
 )
 SECRET_MARKERS = re.compile(
     r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
@@ -19,6 +19,11 @@ SECRET_MARKERS = re.compile(
     re.IGNORECASE,
 )
 SAFE_SECRET_PLACEHOLDERS = {"changeme", "change-me", "replace-me", "your_api_key", "your-token", "placeholder"}
+SECRET_KEY_PARTS = (
+    "aws_secret_access_key", "api_key", "client_secret", "secret",
+    "password", "passwd", "access_token", "auth_token", "private_key",
+)
+
 
 
 class RepositoryTargetError(ValueError):
@@ -26,11 +31,17 @@ class RepositoryTargetError(ValueError):
 
 
 def contains_secret(content: str) -> bool:
-    """Return whether content matches known credential assignments or key formats."""
-    sample = content
-    if SECRET_MARKERS.search(sample):
+    """Return whether content matches known credential assignments or key formats.
+
+    Assignment candidates are scanned once per identifier (rather than restarting
+    a nested prefix expression at every underscore), keeping adversarial input linear.
+    """
+    if SECRET_MARKERS.search(content):
         return True
-    for match in SECRET_ASSIGNMENTS.finditer(sample):
+    for match in SECRET_ASSIGNMENTS.finditer(content):
+        key = match.group("key").lower().replace("-", "_").strip("_")
+        if not any(part in key for part in SECRET_KEY_PARTS):
+            continue
         value = (match.group("quoted") or match.group("bare") or "").strip()
         if match.group("bare") and re.fullmatch(
             r"(?:process\.env\.[A-Za-z_][A-Za-z0-9_]*|env\.[A-Za-z_][A-Za-z0-9_]*)",
