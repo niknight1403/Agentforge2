@@ -16,6 +16,6 @@ jobs:
           chmod 600 ~/.ssh/oracle_key
           ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 ubuntu@92.5.177.159 'sudo bash -s' <<'EOS'
           set -uo pipefail
-          echo "== letzte Mail-Ereignisse im Dienst-Log =="
-          journalctl -u lead-responder --since "-15 min" --no-pager 2>/dev/null | grep -iE "mail|smtp" | tail -12
+          echo "== letzte 25 Logzeilen des Dienstes =="
+          journalctl -u lead-responder --since "-25 min" --no-pager -o cat 2>/dev/null | tail -25
           EOS
