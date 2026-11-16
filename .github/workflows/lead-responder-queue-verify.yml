@@ -1,0 +1,41 @@
+name: Lead Responder - Queue Verify
+on:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Queue und Restart pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 ubuntu@92.5.177.159 'sudo bash -s' <<'EOS'
+          set -uo pipefail
+          KEY=$(grep -m1 "^ADMIN_API_KEY=" /opt/lead-responder/.env | cut -d= -f2-)
+          API=http://127.0.0.1:8080/api/v1
+          j() { python3 -c "import json,sys;d=json.load(sys.stdin);print($1)"; }
+          echo "== 1. Queue-Health =="
+          curl -sS "$API/health" | j '"scheduler_cycles="+str(d["scheduler"]["cycles"])+" | delivery_keys="+str(sorted((d.get("delivery") or {}).keys()))'
+          echo "== 2. Testmandant + Lead =="
+          C=$(curl -sS -X POST "$API/clients" -H "x-admin-key: $KEY" -H "content-type: application/json" -d '{"name":"Queue Verify","system_prompt":"Dachdeckerei.","webhook_outbound_url":"https://httpbin.org/post"}')
+          CID=$(printf "%s" "$C" | j 'd["client"]["id"]')
+          CK=$(printf "%s" "$C" | j 'd["api_key"]')
+          L=$(curl -sS -m 40 -X POST "$API/lead/inbound" -H "x-api-key: $CK" -H "content-type: application/json" -d '{"name":"Queue Test","email":"q@example.com","inquiry":"Dachrinne undicht, Aachen."}')
+          LID=$(printf "%s" "$L" | j 'd["lead_id"]')
+          printf "%s" "$L" | j '"lead: status="+str(d.get("status"))+" delivered="+str(d.get("delivered"))'
+          echo "== 3. Zustell-/Queue-Historie =="
+          curl -sS "$API/admin/deliveries?limit=3" | j '[(e["type"], e.get("status"), (e.get("detail") or {})) for e in d.get("events",[])][:3]'
+          curl -sS "$API/stats" | j 'd["stats"]'
+          echo "== 4. Graceful Shutdown: Neustart =="
+          sudo systemctl restart lead-responder
+          for i in $(seq 1 30); do curl -fsS "$API/health" >/dev/null 2>&1 && break; sleep 1; done
+          sudo journalctl -u lead-responder -n 12 --no-pager | grep -iE "shutdown|drain|closing|stopped|started|listen" | tail -6
+          echo "== 5. Daten nach Neustart =="
+          curl -sS "$API/leads/$LID" -H "x-admin-key: $KEY" | j '"lead nach restart: status="+str(d["lead"]["status"])'
+          curl -sS -o /dev/null -X DELETE "$API/clients/$CID" -H "x-admin-key: $KEY"; echo "aufgeraeumt"
+          EOS
