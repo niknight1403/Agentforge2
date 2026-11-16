@@ -29,6 +29,7 @@ function withTimeout(promise, timeoutMs) {
 export async function connectMcpPodmanServer({
   serverId,
   profile,
+  getServer = getMcpServer,
   Client,
   loadSdk = async () => {
     const sdk = await import('@modelcontextprotocol/client');
@@ -39,7 +40,7 @@ export async function connectMcpPodmanServer({
   transportFactory = createMcpPodmanTransport,
 } = {}) {
   const id = String(serverId ?? '');
-  const server = getMcpServer(id);
+  const server = getServer(id);
   if (!server) throw fail('MCP_SERVER_NOT_FOUND', 'MCP server is not registered');
   if (server.transport !== 'stdio') throw fail('MCP_TRANSPORT_MISMATCH', 'Only stdio MCP registrations can use the Podman image runtime');
   if (server.status === 'disabled') throw fail('MCP_SERVER_DISABLED', 'Disabled MCP servers cannot be connected');
