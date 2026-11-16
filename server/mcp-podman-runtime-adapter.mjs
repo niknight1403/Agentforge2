@@ -81,8 +81,16 @@ export async function connectMcpPodmanServer({
         Promise.resolve().then(() => client.close()),
         Promise.resolve().then(() => transport.close()),
       ]);
-      const failed = closeResults.find((result) => result.status === 'rejected');
-      if (failed) throw failed.reason;
+      // A process that has already exited closes the transport before the
+      // caller reaches close(). The SDK then rejects client.close() with
+      // CONNECTION_CLOSED; that is an expected terminal state, not a cleanup
+      // failure. Transport cleanup errors must still be surfaced.
+      const [clientResult, transportResult] = closeResults;
+      if (transportResult.status === 'rejected') throw transportResult.reason;
+      if (clientResult.status === 'rejected'
+        && clientResult.reason?.code !== 'CONNECTION_CLOSED') {
+        throw clientResult.reason;
+      }
     })();
     closePromise = withTimeout(closePromise, closeTimeoutMs).catch((error) => {
       if (error?.code === 'MCP_PODMAN_CONNECT_TIMEOUT') {
