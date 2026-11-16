@@ -132,7 +132,16 @@ export function createMcpRuntimeSupervisor({
       // Close the transport immediately: SDK tool promises may never settle,
       // and waiting for them before closing can strand the child process.
       try {
-        await adapter.close();
+        let closeTimer;
+        await Promise.race([
+          Promise.resolve().then(() => adapter.close()),
+          new Promise((_, reject) => {
+            closeTimer = setTimeout(() => reject(fail(
+              'MCP_RUNTIME_CLOSE_TIMEOUT',
+              'MCP runtime transport close exceeded its shutdown deadline',
+            )), executionDrainTimeoutMs);
+          }),
+        ]).finally(() => clearTimeout(closeTimer));
       } catch (error) {
         const current = getServer(id);
         if (current && current.status !== 'disabled') {
@@ -148,7 +157,9 @@ export function createMcpRuntimeSupervisor({
       const active = activeExecutions.get(id) ?? 0;
       if (active > 0) {
         let drainTimer;
+        let resolveDrain;
         const drained = new Promise((resolve) => {
+          resolveDrain = resolve;
           const waiters = executionDrainWaiters.get(id) ?? [];
           waiters.push(resolve);
           executionDrainWaiters.set(id, waiters);
@@ -157,10 +168,12 @@ export function createMcpRuntimeSupervisor({
           drained.then(() => false),
           new Promise((resolve) => {
             drainTimer = setTimeout(() => resolve(true), executionDrainTimeoutMs);
-            drainTimer.unref?.();
           }),
         ]).finally(() => clearTimeout(drainTimer));
         if (drainTimedOut) {
+          const waiters = executionDrainWaiters.get(id) ?? [];
+          executionDrainWaiters.set(id, waiters.filter((waiter) => waiter !== resolveDrain));
+          if (executionDrainWaiters.get(id)?.length === 0) executionDrainWaiters.delete(id);
           const current = getServer(id);
           if (current && current.status !== 'disabled') {
             try { setStatus(id, 'degraded', { errorCode: 'MCP_RUNTIME_DRAIN_TIMEOUT' }); } catch { /* preserve drain timeout */ }
