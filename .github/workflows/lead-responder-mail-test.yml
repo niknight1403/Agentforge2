@@ -1,0 +1,31 @@
+name: Lead Responder - Mail Test
+on:
+  workflow_dispatch:
+jobs:
+  mailtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SMTP-Versand pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 ubuntu@92.5.177.159 'bash -s' <<'EOS'
+          set -uo pipefail
+          KEY=$(grep -m1 '^ADMIN_API_KEY=' /opt/lead-responder/.env | cut -d= -f2-)
+          API=http://127.0.0.1:8080/api/v1
+          echo "== Mail-Konfiguration laut Health =="
+          curl -sS "$API/health" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d["mail"])'
+          C=$(curl -sS -X POST "$API/clients" -H "x-admin-key: $KEY" -H 'content-type: application/json' -d '{"name":"Mail Test","system_prompt":"Testbetrieb.","notify_email":"cybersarah1403@gmail.com"}')
+          CID=$(printf '%s' "$C" | python3 -c 'import json,sys;print(json.load(sys.stdin)["client"]["id"])')
+          echo "client=$CID"
+          echo "== SMTP-Testversand =="
+          curl -sS -X POST "$API/clients/$CID/mail-test" -H "x-admin-key: $KEY" -H 'content-type: application/json' | head -c 800
+          echo
+          curl -sS -o /dev/null -X DELETE "$API/clients/$CID" -H "x-admin-key: $KEY"
+          echo "aufgeraeumt"
+          EOS
