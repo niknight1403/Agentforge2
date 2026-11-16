@@ -3,6 +3,21 @@ import process from 'node:process';
 import { buildMcpPodmanRunSpec, probeMcpPodmanRootless } from './mcp-podman-rootless-runner.mjs';
 import { createMcpProcessGroupTransport } from './mcp-process-group-transport.mjs';
 
+function buildPodmanHostEnv(podmanPath, source = process.env) {
+  const pathEntries = [path.dirname(podmanPath), '/usr/bin', '/bin'];
+  const safe = {
+    PATH: [...new Set(pathEntries)].join(path.delimiter),
+    HOME: typeof source.HOME === 'string' && source.HOME.startsWith('/') ? source.HOME : '/',
+  };
+  for (const key of ['XDG_RUNTIME_DIR', 'TMPDIR']) {
+    const value = source[key];
+    if (typeof value === 'string' && value.startsWith('/') && !value.includes('\\0')) {
+      safe[key] = value;
+    }
+  }
+  return Object.freeze(safe);
+}
+
 function fail(code, message) {
   const error = new Error(message);
   error.code = code;
@@ -90,7 +105,7 @@ export function createMcpPodmanTransport({
   });
   let started = false;
   let closePromise;
-  const options = { spawnProcess, timeoutMs: controlTimeoutMs, env };
+  const hostEnv = buildPodmanHostEnv(podmanPath, env);\n  const options = { spawnProcess, timeoutMs: controlTimeoutMs, env: hostEnv };
 
   return Object.freeze({
     get onclose() { return transport.onclose; },
