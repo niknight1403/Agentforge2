@@ -29,7 +29,11 @@ function validateProfile(profile) {
     || !Number.isSafeInteger(profile.memoryBytes)
     || !Number.isSafeInteger(profile.cpuQuotaMicros)
     || !Number.isSafeInteger(profile.pidsLimit)
-    || !Number.isSafeInteger(profile.timeoutMs)) {
+    || !Number.isSafeInteger(profile.timeoutMs)
+    || profile.memoryBytes < 64 * 1024 * 1024 || profile.memoryBytes > 2 * 1024 * 1024 * 1024
+    || profile.cpuQuotaMicros < 10_000 || profile.cpuQuotaMicros > 1_000_000
+    || profile.pidsLimit < 1 || profile.pidsLimit > 512
+    || profile.timeoutMs < 1_000 || profile.timeoutMs > 300_000) {
     throw fail('MCP_PODMAN_PROFILE_INVALID', 'Podman runner requires a validated, immutable, network-disabled profile');
   }
 }
