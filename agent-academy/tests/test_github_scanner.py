@@ -1,4 +1,6 @@
-from app.ingestion.github_scanner import contains_secret
+import asyncio
+
+from app.ingestion.github_scanner import GitHubScanner, contains_secret
 
 
 def test_secret_assignment_allows_opposite_quote_inside_value():
@@ -44,3 +46,33 @@ def test_environment_lookup_is_not_treated_as_embedded_secret():
 def test_long_identifier_and_underscore_runs_are_bounded():
     assert not contains_secret(("a_" * 20000) + "not_a_secret")
     assert not contains_secret("_" * 40000)
+
+
+
+def test_typed_secret_assignment_is_detected():
+    assert contains_secret('api_key: str = "liveCredential123"')
+
+
+def test_secret_configuration_flags_are_not_credentials():
+    assert not contains_secret("secret_scanning_enabled = True")
+    assert not contains_secret("secret_scanning_enabled: bool = True")
+
+
+def test_empty_secret_values_are_not_credentials():
+    assert not contains_secret('{"api_key": ""}')
+    assert not contains_secret('api_key = ""')
+
+
+def test_type_annotation_without_default_is_not_a_secret():
+    assert not contains_secret("class Config:\\n    password: str")
+
+
+def test_scan_excludes_typed_credentials_but_keeps_schema_and_empty_config(tmp_path):
+    (tmp_path / "credentials.py").write_text('api_key: str = "liveCredential123"\\n', encoding="utf-8")
+    (tmp_path / "schema.py").write_text("class Config:\\n    password: str\\n", encoding="utf-8")
+    (tmp_path / "settings.json").write_text('{"api_key": ""}\\n', encoding="utf-8")
+
+    chunks = asyncio.run(GitHubScanner().scan(tmp_path))
+    paths = {item["path"] for item in chunks}
+    assert "credentials.py" not in paths
+    assert {"schema.py", "settings.json"} <= paths
