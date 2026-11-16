@@ -3,7 +3,7 @@ name: MCP Runtime Integration Tests
 on:
   pull_request:
     branches:
-      - feat/mcp-stdio-runtime-adapter
+      - feat/mcp-deployment-owned-rootless-profiles
     paths:
       - "server/mcp-*.mjs"
       - "server/tests/mcp-*.test.mjs"
