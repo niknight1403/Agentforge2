@@ -81,3 +81,15 @@ If a required control cannot be verified, the runner is unavailable and stdio st
 ## Current status
 
 This ADR records the required architecture; it does **not** claim that per-server isolation has been implemented. The current PR #162 process-group transport and Compose hardening remain defense-in-depth only. Untrusted MCP server execution remains blocked pending all acceptance tests and independent review.
+
+## Implementation evidence (PR #162)
+
+The current code is a fail-closed scaffold, not a connected per-server runtime:
+
+- `mcp-podman-rootless-runner.mjs` builds a constrained Podman command and probes `podman info` for rootless mode.
+- `mcp-podman-transport.mjs` can attach the image's configured ENTRYPOINT over stdio and attempts explicit container cleanup. It does not translate registry `command`, `args`, `cwd`, or `config` into an image contract, and it does not deliver a scoped credential from the MCP credential vault.
+- `mcp-rootless-runner-profile.mjs` validates deployment-owned image/resource profiles, but `assertMcpRootlessRunnerAvailable()` intentionally returns `MCP_ROOTLESS_RUNNER_UNAVAILABLE` even when a probe callback is supplied.
+- `mcp-hub-runtime.mjs` still wires only `connectMcpStdioServer` and requires the shared-Hub namespace acknowledgement. The runtime supervisor has no deployment-owned server-id-to-profile resolver or Podman transport selection.
+- Current Podman transport tests inject a fake spawn function and fake successful rootless probe. They verify command construction and lifecycle behavior, not a real Podman daemon, kernel enforcement, or hostile-server isolation.
+
+Consequently, a successful CI run validates the implemented code and its automated tests only. It does not satisfy the target-host integration or security acceptance criteria above. Do not enable `MCP_ROOTLESS_RUNNER_ENABLED` as a production readiness signal, and do not remove the shared-Hub fail-closed guard until the full image/config/credential contract, supervisor routing, real-runtime tests, and independent review are complete.
