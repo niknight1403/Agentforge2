@@ -119,3 +119,30 @@ test('Podman adapter validates the initialization deadline before creating resou
   assert.equal(transportCreated, false);
   assert.equal(calls.length, 0);
 });
+
+
+test('Podman adapter starts client and transport shutdown together when SDK close hangs', async () => {
+  const { options, calls } = dependencies();
+  let transportClosed = false;
+  const hangingClient = class {
+    async connect() {}
+    async listTools() { return { tools: [] }; }
+    async callTool() { return {}; }
+    close() {
+      calls.push('client.close.hanging');
+      return new Promise(() => {});
+    }
+  };
+  options.Client = hangingClient;
+  options.closeTimeoutMs = 100;
+  options.transportFactory = () => ({
+    async close() {
+      calls.push('transport.close.concurrent');
+      transportClosed = true;
+    },
+  });
+  const adapter = await connectMcpPodmanServer(options);
+  await assert.rejects(adapter.close(), { code: 'MCP_PODMAN_CLOSE_TIMEOUT' });
+  assert.equal(transportClosed, true);
+  assert.ok(calls.includes('client.close.hanging'));
+});
