@@ -71,3 +71,39 @@ jobs:
           done
       - name: Run MCP runtime and agent pack regression tests
         run: node --import ./server/tests/_env.mjs --test server/tests/mcp-*.test.mjs server/tests/packs.test.mjs
+
+  mcp-rootless-podman:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install rootless Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes podman
+          if ! grep -q "^$(id -un):" /etc/subuid; then
+            echo "$(id -un):100000:65536" | sudo tee -a /etc/subuid
+          fi
+          if ! grep -q "^$(id -un):" /etc/subgid; then
+            echo "$(id -un):100000:65536" | sudo tee -a /etc/subgid
+          fi
+      - name: Verify rootless Podman
+        run: |
+          test "$(podman info --format '{{.Host.Security.Rootless}}')" = "true"
+      - name: Build isolated MCP fixture image
+        run: |
+          podman build --network=host \
+            --file server/tests/fixtures/mcp-podman-stdio/Containerfile \
+            --tag localhost/agentforge-mcp-fixture:ci \
+            server/tests/fixtures/mcp-podman-stdio
+          digest="$(podman image inspect --format '{{.Digest}}' localhost/agentforge-mcp-fixture:ci)"
+          test -n "$digest"
+          echo "MCP_PODMAN_INTEGRATION_IMAGE=localhost/agentforge-mcp-fixture@$digest" >> "$GITHUB_ENV"
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Exercise real rootless Podman MCP lifecycle
+        run: node --import ./server/tests/_env.mjs --test server/tests/mcp-podman-rootless.integration.test.mjs
