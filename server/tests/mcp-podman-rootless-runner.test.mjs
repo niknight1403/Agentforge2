@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import {
   buildMcpPodmanRunSpec,
   probeMcpPodmanRootless,
@@ -72,8 +74,38 @@ test('Podman executable and container name must be Hub-controlled', () => {
   }), { code: 'MCP_PODMAN_CONTAINER_NAME_INVALID' });
 });
 
-test('rootless probe rejects an installation that reports rootful mode', async () => {
-  // A missing runtime must never be treated as available.
+function fakePodmanSpawn(info, { code = 0, output } = {}) {
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.kill = () => true;
+  queueMicrotask(() => {
+    child.stdout.end(output ?? JSON.stringify(info));
+    child.emit('close', code);
+  });
+  return child;
+}
+
+test('rootless probe accepts only an explicit rootless Podman report', async () => {
+  const result = await probeMcpPodmanRootless({
+    podmanPath: '/usr/bin/podman',
+    spawnProcess: (_command, args, options) => {
+      assert.deepEqual(args, ['info', '--format', 'json']);
+      assert.equal(options.shell, false);
+      return fakePodmanSpawn({ host: { security: { rootless: true } } });
+    },
+  });
+  assert.deepEqual(result, { available: true, rootless: true });
+});
+
+test('rootless probe rejects rootful, invalid and unavailable runtimes', async () => {
+  await assert.rejects(probeMcpPodmanRootless({
+    podmanPath: '/usr/bin/podman',
+    spawnProcess: () => fakePodmanSpawn({ host: { security: { rootless: false } } }),
+  }), { code: 'MCP_PODMAN_NOT_ROOTLESS' });
+  await assert.rejects(probeMcpPodmanRootless({
+    podmanPath: '/usr/bin/podman',
+    spawnProcess: () => fakePodmanSpawn({}, { output: '{invalid' }),
+  }), { code: 'MCP_PODMAN_INFO_INVALID' });
   await assert.rejects(probeMcpPodmanRootless({
     podmanPath: '/usr/bin/podman',
     spawnProcess: () => { throw new Error('not installed'); },
