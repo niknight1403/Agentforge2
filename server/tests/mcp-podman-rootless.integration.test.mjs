@@ -59,7 +59,7 @@ test('rootless Podman runtimes are isolated per server and one stop leaves the o
 }, async () => {
   const listContainers = () => execFileSync('/usr/bin/podman', [
     'ps', '--all', '--filter', 'name=agentforge-mcp-', '--format', '{{.Names}}',
-  ], { encoding: 'utf8' }).trim().split('\\n').filter(Boolean).sort();
+  ], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).sort();
   const before = listContainers();
   const makeAdapter = () => {
     const serverId = randomUUID();
@@ -101,7 +101,7 @@ test('rootless Podman container crash is observable and cleanup removes the exit
 }, async () => {
   const before = execFileSync('/usr/bin/podman', [
     'ps', '--all', '--filter', 'name=agentforge-mcp-', '--format', '{{.Names}}',
-  ], { encoding: 'utf8' }).trim().split('\\n').filter(Boolean).sort();
+  ], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).sort();
   const serverId = randomUUID();
   const profile = Object.freeze({
     backend: 'podman-rootless', image,
@@ -121,6 +121,6 @@ test('rootless Podman container crash is observable and cleanup removes the exit
   await adapter.close();
   const after = execFileSync('/usr/bin/podman', [
     'ps', '--all', '--filter', 'name=agentforge-mcp-', '--format', '{{.Names}}',
-  ], { encoding: 'utf8' }).trim().split('\\n').filter(Boolean).sort();
+  ], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).sort();
   assert.deepEqual(after, before, 'crashed MCP container must not remain in Podman storage');
 });
