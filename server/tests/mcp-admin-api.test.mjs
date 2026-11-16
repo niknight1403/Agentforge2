@@ -69,6 +69,8 @@ test('MCP admin API redacts URL userinfo, path, query, fragments and process arg
   assert.equal(remote.url, 'https://example.test');
   assert.equal(remote.argumentCount, 1);
   assert.equal(remote.args, undefined);
+  assert.equal(remote.command, undefined);
+  assert.equal(remote.cwd, undefined);
   assert.equal(remote.credentialRef, undefined);
   assert.equal(remote.config, undefined);
   assert.doesNotMatch(JSON.stringify(remote), /password|access_token|secret-value|token-path|fragment/);
