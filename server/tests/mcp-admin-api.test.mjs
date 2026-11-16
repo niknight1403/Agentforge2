@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMcpAdminApi } from '../mcp-admin-api.mjs';
+import { createMcpRuntimeSupervisor } from '../mcp-runtime-supervisor.mjs';
 
 function fixture() {
   const servers = new Map([['server_1', {
@@ -189,4 +190,59 @@ test('MCP admin API maps Podman startup and cleanup failures to 503', async () =
     assert.equal(result.status, 503, code);
     assert.equal(result.body.code, code);
   }
+});
+
+
+function supervisorFixture({ executeTool = async () => ({ ok: true }), executionDrainTimeoutMs = 100 } = {}) {
+  const server = { id: 'server-1', transport: 'stdio', status: 'pending' };
+  const statusChanges = [];
+  const calls = [];
+  const adapter = {
+    serverId: server.id,
+    async listTools() { return { tools: [] }; },
+    async callTool() { return { ok: true }; },
+    async close() { calls.push('adapter.close'); },
+  };
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: () => server,
+    listServers: () => [server],
+    setStatus: (_id, status, metadata) => {
+      server.status = status;
+      statusChanges.push({ status, metadata });
+    },
+    connect: async () => adapter,
+    discover: async () => {},
+    executeTool,
+    executionDrainTimeoutMs,
+  });
+  return { supervisor, calls, statusChanges };
+}
+
+test('MCP supervisor closes transport and bounds a permanently pending tool execution', async () => {
+  const { supervisor, calls, statusChanges } = supervisorFixture({
+    executeTool: () => new Promise(() => {}),
+  });
+  await supervisor.startServer('server-1');
+  const pendingCall = supervisor.executeApprovedTool({ serverId: 'server-1', toolName: 'hang' });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  await assert.rejects(
+    supervisor.stopServer('server-1'),
+    { code: 'MCP_RUNTIME_DRAIN_TIMEOUT' },
+  );
+  assert.deepEqual(calls, ['adapter.close']);
+  assert.ok(statusChanges.some((entry) => entry.status === 'degraded'
+    && entry.metadata?.errorCode === 'MCP_RUNTIME_DRAIN_TIMEOUT'));
+  void pendingCall;
+});
+
+test('MCP supervisor closes an idle runtime once during concurrent stop requests', async () => {
+  const { supervisor, calls } = supervisorFixture();
+  await supervisor.startServer('server-1');
+  const results = await Promise.all([
+    supervisor.stopServer('server-1'),
+    supervisor.stopServer('server-1'),
+  ]);
+  assert.deepEqual(results, [true, true]);
+  assert.deepEqual(calls, ['adapter.close']);
 });
