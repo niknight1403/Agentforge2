@@ -28,6 +28,7 @@ import { villaLock } from './verification-lock.mjs';
 import { publishIntegration, integrationBranchName } from './integration-publish.mjs';
 import { villaRepo } from './repo-target.mjs';
 import { deliveryProfile, deliveryPhases } from './delivery-quality.mjs';
+import { mcpRuntimeSupervisor } from './mcp-hub-runtime.mjs';
 export { normalizeSwarmBlueprint } from './swarm.mjs';
 
 
@@ -56,6 +57,7 @@ const TOOLS = {
   studio_status:{description:'Echte Abnahmeblocker, nächste Schritte und Live-Vorschau dieses Projekts.',schema:{},run:ctx=>JSON.stringify(studioStatus(ctx.villaId))},
   studio_designs:{description:'Zwei ideenspezifische UI-Designrichtungen mit Farben, Layout, Nutzerfluss und Abnahmekriterien vorschlagen. Noch keine Umsetzung.',schema:{},run:async ctx=>JSON.stringify(await proposeDesigns(ctx.villaId))},
   connector_read: { description:'Liest JSON über einen konfigurierten HTTPS-Connector (GET).', schema:{connectorId:'string'}, run:async (ctx,a)=>JSON.stringify(await readConnector(String(a.connectorId))).slice(0,12000) },
+  mcp_call: { description:'Fuehrt ein explizit freigegebenes Werkzeug eines aktiven, administrativ gestarteten MCP-Servers aus. Server-ID und Werkzeugname muessen aus dem MCP-Register stammen; nicht freigegebene Werkzeuge werden serverseitig blockiert und auditiert.', schema:{serverId:'string',toolName:'string',arguments:'object'}, run:async (ctx,a)=>JSON.stringify(await mcpRuntimeSupervisor.executeApprovedTool({serverId:String(a.serverId||''),toolName:String(a.toolName||''),arguments:a.arguments??{}})).slice(0,12000) },
   memory_write: {
     description: 'Schreibt einen dauerhaften Eintrag ins Gedaechtnis.',
     schema: { title: 'string', content: 'string', kind: 'FACT|DECISION|ARTIFACT|LESSON|IDEA|CONSTRAINT', importance: '1-10' },
