@@ -37,6 +37,7 @@ export async function connectMcpPodmanServer({
   },
   clientInfo = { name: 'agentforge2-hub', version: '1.0.0' },
   connectTimeoutMs = 15_000,
+  closeTimeoutMs = 10_000,
   transportFactory = createMcpPodmanTransport,
 } = {}) {
   const id = String(serverId ?? '');
@@ -53,6 +54,9 @@ export async function connectMcpPodmanServer({
   }
   if (!Number.isInteger(connectTimeoutMs) || connectTimeoutMs < 100 || connectTimeoutMs > 120_000) {
     throw new TypeError('connectTimeoutMs must be an integer between 100 and 120000');
+  }
+  if (!Number.isInteger(closeTimeoutMs) || closeTimeoutMs < 100 || closeTimeoutMs > 120_000) {
+    throw new TypeError('closeTimeoutMs must be an integer between 100 and 120000');
   }
   if (Client === undefined) {
     let sdk;
@@ -71,11 +75,21 @@ export async function connectMcpPodmanServer({
     if (closePromise) return closePromise;
     closed = true;
     closePromise = (async () => {
-      let closeError;
-      try { await client.close(); } catch (error) { closeError = error; }
-      try { await transport.close(); } catch (error) { closeError ??= error; }
-      if (closeError) throw closeError;
+      // Start both shutdown paths immediately. An SDK close that never settles
+      // must not prevent the transport from killing its child process/container.
+      const closeResults = await Promise.allSettled([
+        Promise.resolve().then(() => client.close()),
+        Promise.resolve().then(() => transport.close()),
+      ]);
+      const failed = closeResults.find((result) => result.status === 'rejected');
+      if (failed) throw failed.reason;
     })();
+    closePromise = withTimeout(closePromise, closeTimeoutMs).catch((error) => {
+      if (error?.code === 'MCP_PODMAN_CONNECT_TIMEOUT') {
+        throw fail('MCP_PODMAN_CLOSE_TIMEOUT', 'MCP Podman client and transport did not finish closing before the deadline');
+      }
+      throw error;
+    });
     return closePromise;
   };
 
