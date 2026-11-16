@@ -118,28 +118,20 @@ if (db.prepare('SELECT COUNT(*) c FROM routes').get().c === 0) {
   console.log('[villaforge] Routen-Katalog initialisiert:', FREE_ROUTE_CATALOG.length);
 }
 
-/* --------------------------- Admin-Autoanlage --------------------------- */
-// Optional: VF_ADMIN_EMAIL + VF_ADMIN_PASSWORD in der Umgebung des Hubs
-// legen beim ersten Start automatisch ein Admin-Konto an (Plan: elite).
-// Das Passwort wird ausschliesslich als Hash in der lokalen DB gespeichert.
+/* --------------------------- Admin-Bootstrap --------------------------- */
+// Ein Superadmin entsteht nur bei explizit konfigurierten Deployment-Secrets.
+// ensureSuperadmin erhaelt bestehende Passwort-Hashes bei jedem Neustart.
 initWebhookStore();
 initBillingStore();
 initGatewayStore();
 initObservabilityStore();
-ensureSuperadmin();
-
-/* v1.44.0 — SUPERADMIN-Anker (Nutzerdirektive 2026-10-19): Der Administrator
- * aus VF_ADMIN_EMAIL wird bei JEDEM Start idempotent gesichert — Rolle
- * SUPERADMIN, Plan elite, is_unlimited=1 (tokenBudget UNLIMITED). Selbst bei
- * DB-Manipulation heilt der Account beim naechsten Start nach. Kein Passwort
- * im Code: Quelle ist die VM-Umgebung (Secret). */
-if (process.env.VF_ADMIN_EMAIL && process.env.VF_ADMIN_PASSWORD) {
-  try {
-    upsertUser({ email: process.env.VF_ADMIN_EMAIL, password: process.env.VF_ADMIN_PASSWORD, role: 'superadmin', plan: 'elite', isUnlimited: true });
-    log('SUPERADMIN dauerhaft verankert (unlimited Tokens, Plan elite).');
-  } catch (err) {
-    logError('SUPERADMIN-Anker fehlgeschlagen:', err.message || err);
-  }
+try {
+  const admin = ensureSuperadmin();
+  if (admin) log('Superadmin-Bootstrap aus Deployment-Secrets abgeschlossen.');
+  else log('Kein Admin-Bootstrap: VF_ADMIN_EMAIL/VF_ADMIN_PASSWORD sind nicht gesetzt.');
+} catch (err) {
+  logError('Admin-Bootstrap fehlgeschlagen:', err.message || err);
+  process.exit(1);
 }
 
 /* --------------------------- Helpers --------------------------- */
