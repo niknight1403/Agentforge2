@@ -1,0 +1,47 @@
+name: Lead Responder - Mail Recon
+on:
+  workflow_dispatch:
+
+jobs:
+  recon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Vorhandenes Postfach pruefen
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 ubuntu@92.5.177.159 'sudo bash -s' <<'EOS'
+          set -uo pipefail
+          echo "== AnfragePilot: vorhandene Konfigurationsschluessel (nur Namen) =="
+          if [ -f /opt/anfragepilot/pilot.env ]; then
+            grep -oE '^[A-Za-z][A-Za-z0-9_]*=' /opt/anfragepilot/pilot.env | tr -d '=' | sort -u | tr '\n' ' '; echo
+            echo "== SMTP-Eckdaten (Passwort wird nicht ausgegeben) =="
+            for k in SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_FROM MAIL_FROM MAIL_FROM_ADDRESS SMTP_FROM_ADDRESS RESEND_API_KEY; do
+              v=$(grep -m1 "^${k}=" /opt/anfragepilot/pilot.env 2>/dev/null | cut -d= -f2-)
+              if [ -n "${v:-}" ]; then
+                case "$k" in
+                  SMTP_PASS|RESEND_API_KEY) echo "  $k=<gesetzt>";;
+                  SMTP_USER|SMTP_FROM|MAIL_FROM|MAIL_FROM_ADDRESS|SMTP_FROM_ADDRESS) echo "  $k=***@${v#*@}";;
+                  *) echo "  $k=$v";;
+                esac
+              fi
+            done
+          else
+            echo "keine pilot.env"
+          fi
+          echo "== Hub-Unit: Mail-relevante Variablennamen =="
+          systemctl show villaforge-hub.service -p Environment --value | tr ' ' '\n' | cut -d= -f1 | grep -Ei 'mail|smtp|resend|ionos|from' | sort -u | tr '\n' ' '; echo
+          echo "== Systemweite Mail-Tools =="
+          for b in msmtp sendmail postfix ssmtp mailx; do command -v $b >/dev/null && echo "  vorhanden: $b"; done
+          echo "== Ports 25/465/587 erreichbar (ausgehend) =="
+          for hp in "smtp.ionos.de 587" "smtp.strato.de 465" "smtp.gmail.com 587"; do
+            set -- $hp
+            timeout 5 bash -c "cat < /dev/null > /dev/tcp/$1/$2" 2>/dev/null && echo "  $1:$2 offen" || echo "  $1:$2 blockiert/kein DNS"
+          done
+          echo "== DNS/Reverse-Check der Server-IP =="
+          hostname -I | awk '{print "  ip:", $1}'
+          EOS
