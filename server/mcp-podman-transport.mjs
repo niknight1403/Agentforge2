@@ -95,18 +95,19 @@ export function createMcpPodmanTransport({
   const spec = buildMcpPodmanRunSpec({ podmanPath, profile });
   if (typeof probe !== 'function') throw new TypeError('A rootless Podman capability probe is required');
 
+  const hostEnv = buildPodmanHostEnv(podmanPath, env);
+  const options = { spawnProcess, timeoutMs: controlTimeoutMs, env: hostEnv };
   const transport = createMcpProcessGroupTransport({
     command: spec.command,
     args: spec.args,
     cwd,
-    env,
+    env: hostEnv,
     spawnProcess,
     shutdownTimeoutMs,
     stderr: 'ignore',
   });
   let started = false;
   let closePromise;
-  const hostEnv = buildPodmanHostEnv(podmanPath, env);\n  const options = { spawnProcess, timeoutMs: controlTimeoutMs, env: hostEnv };
 
   return Object.freeze({
     get onclose() { return transport.onclose; },
