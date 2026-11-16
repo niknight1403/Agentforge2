@@ -84,6 +84,34 @@ test('Podman launch spec rejects unbounded or invalid resource settings', () => 
   }
 });
 
+test('Podman launch spec accepts documented resource boundaries', () => {
+  const minimum = buildMcpPodmanRunSpec({
+    profile: profile({
+      memoryBytes: 16 * 1024 * 1024,
+      cpuQuotaMicros: 10_000,
+      pidsLimit: 1,
+      timeoutMs: 1_000,
+    }),
+  });
+  assert.ok(minimum.args.includes('--memory=16777216'));
+  assert.ok(minimum.args.includes('--cpus=0.10'));
+  assert.ok(minimum.args.includes('--pids-limit=1'));
+  assert.equal(minimum.timeoutMs, 1_000);
+
+  const maximum = buildMcpPodmanRunSpec({
+    profile: profile({
+      memoryBytes: 4 * 1024 * 1024 * 1024,
+      cpuQuotaMicros: 400_000,
+      pidsLimit: 256,
+      timeoutMs: 300_000,
+    }),
+  });
+  assert.ok(maximum.args.includes('--memory=4294967296'));
+  assert.ok(maximum.args.includes('--cpus=4.00'));
+  assert.ok(maximum.args.includes('--pids-limit=256'));
+  assert.equal(maximum.timeoutMs, 300_000);
+});
+
 test('Podman executable and container name must be Hub-controlled', () => {
   assert.throws(() => buildMcpPodmanRunSpec({
     podmanPath: 'podman', profile: profile(),
