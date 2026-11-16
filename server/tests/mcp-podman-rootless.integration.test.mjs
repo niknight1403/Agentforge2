@@ -12,7 +12,7 @@ test('real rootless Podman initializes MCP, lists and calls a tool, then removes
 }, async () => {
   const before = execFileSync('/usr/bin/podman', [
     'ps', '--all', '--filter', 'name=agentforge-mcp-', '--format', '{{.Names}}',
-  ], { encoding: 'utf8' }).trim().split('\\n').filter(Boolean);
+  ], { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
   const serverId = randomUUID();
   const profile = Object.freeze({
     backend: 'podman-rootless',
@@ -48,6 +48,6 @@ test('real rootless Podman initializes MCP, lists and calls a tool, then removes
 
   const after = execFileSync('/usr/bin/podman', [
     'ps', '--all', '--filter', 'name=agentforge-mcp-', '--format', '{{.Names}}',
-  ], { encoding: 'utf8' }).trim().split('\\n').filter(Boolean);
+  ], { encoding: 'utf8' }).trim().split('\n').filter(Boolean);
   assert.deepEqual(after, before, 'the integration runner must leave no MCP container behind');
 });
