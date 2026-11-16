@@ -10,7 +10,6 @@ import {
 import { createMcpRuntimeSupervisor } from './mcp-runtime-supervisor.mjs';
 import { connectMcpPodmanServer } from './mcp-podman-runtime-adapter.mjs';
 import { createMcpRootlessProfileProvider } from './mcp-rootless-profile-registry.mjs';
-import { createMcpDeploymentPolicyProvider } from './mcp-deployment-policy.mjs';
 import { createMcpAdminApi } from './mcp-admin-api.mjs';
 
 
