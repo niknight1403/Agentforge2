@@ -72,6 +72,7 @@ jobs:
       - name: Run MCP runtime and agent pack regression tests
         run: node --import ./server/tests/_env.mjs --test server/tests/mcp-*.test.mjs server/tests/packs.test.mjs
 
+  # Exercise the actual rootless container runtime, not a mocked spawn process.
   mcp-rootless-podman:
     runs-on: ubuntu-latest
     timeout-minutes: 20
