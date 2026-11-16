@@ -115,3 +115,36 @@ test('MCP admin API stops a runtime before removing its registry entry', async (
   assert.equal(servers.has('server_1'), false);
   assert.deepEqual(calls, [['stop', 'server_1']]);
 });
+
+test('MCP admin API returns 503 when the runtime refuses startup without per-server isolation', async () => {
+  const { api } = fixture();
+  const blockedApi = createMcpAdminApi({
+    registry: {
+      registerMcpServer: () => null,
+      listMcpServers: () => [],
+      getMcpServer: (id) => id === 'server_1'
+        ? { id, transport: 'stdio', status: 'pending' }
+        : null,
+      listMcpTools: () => [],
+      setMcpToolPolicy: () => null,
+      setMcpServerStatus: () => {},
+      removeMcpServer: () => true,
+    },
+    supervisor: {
+      async startServer() {
+        throw Object.assign(new Error('Per-server isolation is required'), {
+          code: 'MCP_PER_SERVER_ISOLATION_REQUIRED',
+        });
+      },
+      async stopServer() {},
+      getSnapshot: () => ({ connectedServerIds: [] }),
+    },
+  });
+  const result = await blockedApi({
+    method: 'POST',
+    pathname: '/api/admin/mcp/servers/server_1/start',
+    isAdmin: true,
+  });
+  assert.equal(result.status, 503);
+  assert.equal(result.body.code, 'MCP_PER_SERVER_ISOLATION_REQUIRED');
+});
