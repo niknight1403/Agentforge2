@@ -151,7 +151,12 @@ export function createMcpAdminApi({ registry, supervisor } = {}) {
                 || error?.code === 'MCP_ROOTLESS_PROFILE_NOT_FOUND'
                 || error?.code === 'MCP_PODMAN_NOT_ROOTLESS'
                 || error?.code === 'MCP_PODMAN_UNAVAILABLE'
-                || error?.code === 'MCP_PODMAN_CREDENTIAL_CHANNEL_UNAVAILABLE' ? 503
+                || error?.code === 'MCP_PODMAN_CREDENTIAL_CHANNEL_UNAVAILABLE'
+                || error?.code === 'MCP_PODMAN_CONNECT_TIMEOUT'
+                || error?.code === 'MCP_PODMAN_CONNECT_FAILED'
+                || error?.code === 'MCP_PODMAN_CLEANUP_FAILED'
+                || error?.code === 'MCP_PODMAN_CONTROL_TIMEOUT'
+                || error?.code === 'MCP_SDK_CONSTRUCTORS_REQUIRED' ? 503
               : error?.code === 'MCP_SDK_NOT_INSTALLED' || error?.code === 'MCP_PROCESS_GROUP_UNSUPPORTED'
                 || error?.code === 'MCP_PROCESS_GROUP_TERMINATION_UNCONFIRMED' ? 503 : 400;
       return response(status, { error: String(error?.message || 'MCP administration request failed').slice(0, 300), code });
