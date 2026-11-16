@@ -45,9 +45,33 @@ credentials remain in the encrypted MCP credential vault and are injected
 only through the configured credential environment key.
 
 Set the JSON as a protected deployment secret/environment variable. Never
-accept it through the registry API. Configure the Hub under a dedicated
-unprivileged OS identity and enforce filesystem, network egress, memory, CPU,
-and process limits outside Node.js.
+accept it through the registry API.
+
+## Optional Docker hardening baseline
+
+For the Agent Mesh Compose deployment, an additional baseline is provided in
+`docker-compose.mcp-hardening.yml`. Apply it alongside the existing file:
+
+```sh
+docker compose -f docker-compose.agent-mesh.yml \
+  -f docker-compose.mcp-hardening.yml config
+docker compose -f docker-compose.agent-mesh.yml \
+  -f docker-compose.mcp-hardening.yml up -d --build
+```
+
+The overlay runs the Hub as UID/GID 1000 (the `node` user in
+`Dockerfile.agentforge`), makes the container root filesystem read-only,
+drops Linux capabilities, enables `no-new-privileges`, and sets PID, CPU,
+memory, and temporary-filesystem limits. The persistent `/data` volume
+remains writable for the application database. Review and tune resource limits
+for the actual workload before applying the overlay.
+
+**This is a container-wide baseline, not per-MCP-server isolation.** MCP child
+processes still share the Hub's UID, filesystem mounts, network namespace,
+resource budget, and access to the Hub's writable data volume. The overlay
+does not implement network egress allowlisting, separate per-server cgroups,
+or a separate container for each MCP server. Do not enable untrusted MCP
+servers on this basis.
 
 ## Process lifecycle and operational boundary
 
@@ -58,8 +82,9 @@ the forced-kill deadline is reported as an unconfirmed teardown and the admin
 API returns HTTP 503. Windows startup is deliberately disabled until equivalent
 Job Object process-tree teardown is implemented and tested.
 
-This process-group teardown is not a complete OS/container sandbox. The
-deployment must still enforce a dedicated low-privilege identity, filesystem
-and network egress restrictions, CPU/memory/PID limits, and cgroup or systemd
-containment. Do not enable untrusted MCP servers until those controls are
-verified in the target deployment.
+Process-group teardown plus the optional container baseline is still not a
+complete per-server sandbox. Before enabling untrusted MCP servers, deploy
+each server under a separate low-privilege identity/container with explicit
+filesystem mounts, network egress policy, CPU/memory/PID limits, and cgroup or
+systemd containment, then verify those controls in the target environment.
+Independent security review and deployment evidence remain required.
