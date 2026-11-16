@@ -125,7 +125,8 @@ jobs:
             if [ -n "${MAIL_FROM:-}" ]; then echo "MAIL_FROM_ADDRESS=$MAIL_FROM" >> /tmp/mail.env; fi
             echo "mail-Kanal: Resend aktiviert"
           else
-            echo "mail-Kanal: keine Zugangsdaten hinterlegt, MAIL_DRIVER bleibt wie im .env gesetzt"
+            echo 'MAIL_DRIVER=none' >> /tmp/mail.env
+            echo "mail-Kanal: keine Zugangsdaten, MAIL_DRIVER=none"
           fi
 
       - name: Auf Produktionshost ausrollen
