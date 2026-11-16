@@ -12,7 +12,7 @@ for await (const line of input) {
         capabilities: { tools: {} },
         serverInfo: { name: 'agentforge-podman-fixture', version: '1.0.0' },
       },
-    }) + '\\n');
+    }) + '\n');
   } else if (message.method === 'tools/list') {
     process.stdout.write(JSON.stringify({
       jsonrpc: '2.0', id: message.id,
@@ -21,11 +21,11 @@ for await (const line of input) {
         description: 'Returns a fixture health response',
         inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       }] },
-    }) + '\\n');
+    }) + '\n');
   } else if (message.method === 'tools/call') {
     process.stdout.write(JSON.stringify({
       jsonrpc: '2.0', id: message.id,
       result: { content: [{ type: 'text', text: 'rootless-podman-ok' }], isError: false },
-    }) + '\\n');
+    }) + '\n');
   }
 }
