@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Admin-API-Formen pruefen
+      - name: Admin-Auth eingrenzen
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
         run: |
@@ -18,16 +18,17 @@ jobs:
           set -uo pipefail
           KEY=$(grep -m1 "^ADMIN_API_KEY=" /opt/lead-responder/.env | cut -d= -f2-)
           API=http://127.0.0.1:8080/api/v1
-          echo "== health keys =="
-          curl -sS "$API/health" | python3 -c "import json,sys;d=json.load(sys.stdin);print(list(d.keys()));print(\"delivery:\",d.get(\"delivery\"))"
-          C=$(curl -sS -X POST "$API/clients" -H "x-admin-key: $KEY" -H "content-type: application/json" -d '{"name":"Shape Probe","system_prompt":"Test.","webhook_outbound_url":"https://httpbin.org/post"}')
-          CID=$(printf "%s" "$C" | python3 -c "import json,sys;print(json.load(sys.stdin)[\"client\"][\"id\"])")
-          CK=$(printf "%s" "$C" | python3 -c "import json,sys;print(json.load(sys.stdin)[\"api_key\"])")
-          curl -sS -m 40 -o /dev/null -X POST "$API/lead/inbound" -H "x-api-key: $CK" -H "content-type: application/json" -d '{"name":"Shape","email":"s@example.com","inquiry":"Fenster streichen, Aachen."}'
-          sleep 2
-          echo "== admin/deliveries raw =="; curl -sS "$API/admin/deliveries?limit=3" | head -c 500; echo
-          echo "== admin/delivery-jobs raw =="; curl -sS "$API/admin/delivery-jobs?limit=3" | head -c 700; echo
-          echo "== stats raw =="; curl -sS "$API/stats" | head -c 400; echo
-          echo "== retention/preview raw =="; curl -sS "$API/admin/retention/preview" | head -c 300; echo
-          curl -sS -o /dev/null -X DELETE "$API/clients/$CID" -H "x-admin-key: $KEY"; echo "aufgeraeumt"
+          echo "key_len=${#KEY} cr=$(printf %s "$KEY" | od -An -c | tr -d " \n" | grep -c "\\r" || true)"
+          echo "hint: $(grep -m1 "^ADMIN_API_KEY=" /opt/lead-responder/.env | cut -c1-20)..."
+          code() { curl -s -o /tmp/b.json -w "%{http_code}" "$@"; }
+          echo "GET  /health                 -> $(code "$API/health")"
+          echo "POST /clients (x-admin-key)  -> $(code -X POST "$API/clients" -H "x-admin-key: $KEY" -H "content-type: application/json" -d '{"name":"Auth Probe","system_prompt":"T."}')"
+          head -c 200 /tmp/b.json; echo
+          CID=$(python3 -c "import json;print(json.load(open(\"/tmp/b.json\"))[\"client\"][\"id\"])" 2>/dev/null || echo none)
+          echo "client_id=$CID"
+          echo "GET  /deliveries (x-admin-key) -> $(code "$API/admin/deliveries?limit=2" -H "x-admin-key: $KEY")"; head -c 200 /tmp/b.json; echo
+          echo "GET  /deliveries (Bearer)      -> $(code "$API/admin/deliveries?limit=2" -H "Authorization: Bearer $KEY")"; head -c 200 /tmp/b.json; echo
+          echo "GET  /delivery-jobs (x-admin)  -> $(code "$API/admin/delivery-jobs?limit=2" -H "x-admin-key: $KEY")"; head -c 300 /tmp/b.json; echo
+          echo "GET  /stats (x-admin)          -> $(code "$API/stats" -H "x-admin-key: $KEY")"; head -c 300 /tmp/b.json; echo
+          [ "$CID" != "none" ] && curl -s -o /dev/null -X DELETE "$API/clients/$CID" -H "x-admin-key: $KEY" && echo aufgeraeumt
           EOS
