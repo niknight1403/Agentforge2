@@ -7,7 +7,7 @@ function response(status, body) {
 
 function publicServer(server) {
   if (!server) return null;
-  const { credentialRef, config, args, url, ...safe } = server;
+  const { credentialRef, config, args, url, command, cwd, ...safe } = server;
   const argumentCount = Array.isArray(args) ? args.length : 0;
   let publicUrl;
   if (typeof url === 'string' && url) {
