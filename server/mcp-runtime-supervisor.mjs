@@ -25,6 +25,7 @@ export function createMcpRuntimeSupervisor({
   setStatus = setMcpServerStatus,
   executeTool = executeApprovedMcpTool,
   maxConcurrent = 2,
+  executionDrainTimeoutMs = 5_000,
 } = {}) {
   if (typeof connect !== 'function' || typeof discover !== 'function'
     || typeof getServer !== 'function' || typeof listServers !== 'function'
@@ -33,6 +34,9 @@ export function createMcpRuntimeSupervisor({
   }
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 32) {
     throw new TypeError('maxConcurrent must be an integer between 1 and 32');
+  }
+  if (!Number.isInteger(executionDrainTimeoutMs) || executionDrainTimeoutMs < 100 || executionDrainTimeoutMs > 120_000) {
+    throw new TypeError('executionDrainTimeoutMs must be an integer between 100 and 120000');
   }
 
   const connections = new Map();
@@ -125,14 +129,8 @@ export function createMcpRuntimeSupervisor({
       // Remove it before awaiting close so a concurrent start cannot reuse a
       // client whose transport is already being torn down.
       connections.delete(id);
-      const active = activeExecutions.get(id) ?? 0;
-      if (active > 0) {
-        await new Promise((resolve) => {
-          const waiters = executionDrainWaiters.get(id) ?? [];
-          waiters.push(resolve);
-          executionDrainWaiters.set(id, waiters);
-        });
-      }
+      // Close the transport immediately: SDK tool promises may never settle,
+      // and waiting for them before closing can strand the child process.
       try {
         await adapter.close();
       } catch (error) {
@@ -145,6 +143,30 @@ export function createMcpRuntimeSupervisor({
           } catch { /* preserve the transport close failure */ }
         }
         throw error;
+      }
+
+      const active = activeExecutions.get(id) ?? 0;
+      if (active > 0) {
+        let drainTimer;
+        const drained = new Promise((resolve) => {
+          const waiters = executionDrainWaiters.get(id) ?? [];
+          waiters.push(resolve);
+          executionDrainWaiters.set(id, waiters);
+        });
+        const drainTimedOut = await Promise.race([
+          drained.then(() => false),
+          new Promise((resolve) => {
+            drainTimer = setTimeout(() => resolve(true), executionDrainTimeoutMs);
+            drainTimer.unref?.();
+          }),
+        ]).finally(() => clearTimeout(drainTimer));
+        if (drainTimedOut) {
+          const current = getServer(id);
+          if (current && current.status !== 'disabled') {
+            try { setStatus(id, 'degraded', { errorCode: 'MCP_RUNTIME_DRAIN_TIMEOUT' }); } catch { /* preserve drain timeout */ }
+          }
+          throw fail('MCP_RUNTIME_DRAIN_TIMEOUT', 'MCP runtime transport closed, but active tool executions did not drain before the deadline');
+        }
       }
       const current = getServer(id);
       if (current?.status === 'active') setStatus(id, 'pending');
