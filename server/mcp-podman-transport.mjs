@@ -142,7 +142,6 @@ export function createMcpPodmanTransport({
         transport.onerror?.(error);
         void close().catch((closeError) => transport.onerror?.(closeError));
       }, spec.timeoutMs);
-      runtimeTimer.unref?.();
     },
 
     send(message) {
