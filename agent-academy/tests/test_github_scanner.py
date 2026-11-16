@@ -61,16 +61,17 @@ def test_secret_configuration_flags_are_not_credentials():
 def test_empty_secret_values_are_not_credentials():
     assert not contains_secret('{"api_key": ""}')
     assert not contains_secret('api_key = ""')
+    assert not contains_secret("password = ''")
 
 
 def test_type_annotation_without_default_is_not_a_secret():
-    assert not contains_secret("class Config:\\n    password: str")
+    assert not contains_secret("class Config:\n    password: str")
 
 
 def test_scan_excludes_typed_credentials_but_keeps_schema_and_empty_config(tmp_path):
-    (tmp_path / "credentials.py").write_text('api_key: str = "liveCredential123"\\n', encoding="utf-8")
-    (tmp_path / "schema.py").write_text("class Config:\\n    password: str\\n", encoding="utf-8")
-    (tmp_path / "settings.json").write_text('{"api_key": ""}\\n', encoding="utf-8")
+    (tmp_path / "credentials.py").write_text('api_key: str = "liveCredential123"\n', encoding="utf-8")
+    (tmp_path / "schema.py").write_text("class Config:\n    password: str\n", encoding="utf-8")
+    (tmp_path / "settings.json").write_text('{"api_key": ""}\n', encoding="utf-8")
 
     chunks = asyncio.run(GitHubScanner().scan(tmp_path))
     paths = {item["path"] for item in chunks}
