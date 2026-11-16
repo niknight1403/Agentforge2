@@ -91,15 +91,31 @@ export function createMcpRuntimeSupervisor({
         connections.set(id, adapter);
         return adapter;
       } catch (error) {
+        let cleanupError = null;
         if (adapter) {
-          try { await adapter.close(); } catch { /* preserve the startup failure */ }
+          let cleanupTimer;
+          try {
+            await Promise.race([
+              Promise.resolve().then(() => adapter.close()),
+              new Promise((_, reject) => {
+                cleanupTimer = setTimeout(() => reject(fail(
+                  'MCP_RUNTIME_CLOSE_TIMEOUT',
+                  'MCP runtime startup cleanup exceeded its deadline',
+                )), executionDrainTimeoutMs);
+              }),
+            ]).finally(() => clearTimeout(cleanupTimer));
+          } catch (closeError) {
+            cleanupError = closeError;
+            cleanupBlocked.add(id);
+          }
         }
         const failedServer = getServer(id);
-        if (!cancelled.has(id) && failedServer
-          && failedServer.status !== 'disabled' && failedServer.status !== 'failed') {
+        if (!cancelled.has(id) && failedServer && failedServer.status !== 'disabled') {
           try {
-            setStatus(id, 'failed', {
-              errorCode: typeof error?.code === 'string' ? error.code : 'MCP_RUNTIME_START_FAILED',
+            setStatus(id, cleanupError ? 'degraded' : 'failed', {
+              errorCode: cleanupError
+                ? (typeof cleanupError?.code === 'string' ? cleanupError.code : 'MCP_RUNTIME_CLOSE_FAILED')
+                : (typeof error?.code === 'string' ? error.code : 'MCP_RUNTIME_START_FAILED'),
             });
           } catch { /* preserve the original startup failure */ }
         }
