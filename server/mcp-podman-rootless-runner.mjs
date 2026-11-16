@@ -57,7 +57,6 @@ export function buildMcpPodmanRunSpec({
     '--pull=never',
     '--network=none',
     '--read-only',
-    '--read-only-tmpfs=false',
     '--cap-drop=ALL',
     '--security-opt=no-new-privileges',
     '--userns=auto',
