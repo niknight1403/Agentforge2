@@ -381,16 +381,19 @@ test('a transport close failure marks the runtime degraded and propagates the er
   assert.deepEqual(supervisor.getSnapshot().stoppingServerIds, []);
 });
 
-test('runtime shutdown drains an active approved tool call before closing its transport', async () => {
+test('runtime shutdown closes transport immediately and reports active executions that do not drain', async () => {
   const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
   let releaseExecution;
   let executionStarted;
   const started = new Promise((resolve) => { executionStarted = resolve; });
   let closed = false;
   const supervisor = createMcpRuntimeSupervisor({
+    executionDrainTimeoutMs: 100,
     getServer: (id) => servers.get(id) ?? null,
     listServers: () => [...servers.values()],
-    setStatus: (id, status) => servers.set(id, { ...servers.get(id), status }),
+    setStatus: (id, status, options = {}) => servers.set(id, {
+      ...servers.get(id), status, lastErrorCode: options.errorCode ?? null,
+    }),
     connect: async ({ serverId }) => ({
       ...fakeAdapter(serverId),
       async close() { closed = true; },
@@ -405,17 +408,16 @@ test('runtime shutdown drains an active approved tool call before closing its tr
   const execution = supervisor.executeApprovedTool({ serverId: 'one', toolName: 'slow-tool' });
   await started;
   const stopping = supervisor.stopServer('one');
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(closed, false, 'transport must remain alive while a tool call is in flight');
-  assert.deepEqual(supervisor.getSnapshot().stoppingServerIds, ['one']);
+  await assert.rejects(stopping, { code: 'MCP_RUNTIME_DRAIN_TIMEOUT' });
+  assert.equal(closed, true, 'transport must be closed before waiting for active tool calls');
+  assert.equal(servers.get('one').status, 'degraded');
+  assert.equal(servers.get('one').lastErrorCode, 'MCP_RUNTIME_DRAIN_TIMEOUT');
+  assert.deepEqual(supervisor.getSnapshot().stoppingServerIds, []);
   assert.deepEqual(supervisor.getSnapshot().activeExecutions, { one: 1 });
   releaseExecution({ ok: true });
   assert.deepEqual(await execution, { ok: true });
-  assert.equal(await stopping, true);
-  assert.equal(closed, true);
   assert.deepEqual(supervisor.getSnapshot().activeExecutions, {});
 });
-
 test('registry reconciliation paginates beyond the default first 100 servers', async () => {
   const servers = new Map([['last', { id: 'last', transport: 'stdio', status: 'pending' }]]);
   const offsets = [];
