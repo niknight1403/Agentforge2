@@ -117,8 +117,18 @@ test('rootless Podman container crash is observable and cleanup removes the exit
       ? { id, transport: 'stdio', status: 'pending', authMode: 'none' }
       : null,
   });
-  await assert.rejects(adapter.callTool({ name: 'crash', arguments: {} }));
-  await adapter.close();
+  try {
+    const crashObserved = await Promise.race([
+      adapter.callTool({ name: 'crash', arguments: {} }).then(
+        () => false,
+        () => true,
+      ),
+      new Promise((resolve) => setTimeout(() => resolve(false), 10_000)),
+    ]);
+    assert.equal(crashObserved, true, 'the MCP client must observe the container process crash');
+  } finally {
+    await adapter.close();
+  }
   const after = execFileSync('/usr/bin/podman', [
     'ps', '--all', '--filter', 'name=agentforge-mcp-', '--format', '{{.Names}}',
   ], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).sort();
