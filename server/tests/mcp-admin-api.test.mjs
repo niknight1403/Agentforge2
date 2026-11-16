@@ -276,3 +276,41 @@ test('MCP supervisor fences restart when failed startup cannot confirm adapter c
     { code: 'MCP_RUNTIME_CLEANUP_UNCONFIRMED' },
   );
 });
+
+
+test('MCP supervisor bounds stop during pending startup and cleans a late adapter', async () => {
+  const server = { id: 'server-1', transport: 'stdio', status: 'pending' };
+  let resolveConnect;
+  let closeCount = 0;
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: () => server,
+    listServers: () => [server],
+    setStatus: (_id, status, metadata) => {
+      server.status = status;
+      server.errorCode = metadata?.errorCode;
+    },
+    connect: () => new Promise((resolve) => { resolveConnect = resolve; }),
+    discover: async () => {},
+    executionDrainTimeoutMs: 100,
+  });
+
+  const starting = supervisor.startServer('server-1');
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(
+    supervisor.stopServer('server-1'),
+    { code: 'MCP_RUNTIME_START_STOP_TIMEOUT' },
+  );
+  assert.equal(server.status, 'degraded');
+  assert.equal(server.errorCode, 'MCP_RUNTIME_START_STOP_TIMEOUT');
+  assert.deepEqual(supervisor.getSnapshot().cleanupBlockedServerIds, ['server-1']);
+
+  resolveConnect({
+    serverId: 'server-1',
+    async listTools() { return { tools: [] }; },
+    async callTool() { return {}; },
+    async close() { closeCount += 1; },
+  });
+  await assert.rejects(starting, { code: 'MCP_RUNTIME_START_CANCELLED' });
+  assert.equal(closeCount, 1);
+  assert.deepEqual(supervisor.getSnapshot().cleanupBlockedServerIds, ['server-1']);
+});
