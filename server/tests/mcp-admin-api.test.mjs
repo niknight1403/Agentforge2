@@ -246,3 +246,33 @@ test('MCP supervisor closes an idle runtime once during concurrent stop requests
   assert.deepEqual(results, [true, true]);
   assert.deepEqual(calls, ['adapter.close']);
 });
+
+
+test('MCP supervisor fences restart when failed startup cannot confirm adapter cleanup', async () => {
+  const server = { id: 'server-1', transport: 'stdio', status: 'pending' };
+  const adapter = {
+    serverId: server.id,
+    async listTools() { return { tools: [] }; },
+    async callTool() { return {}; },
+    close() { return new Promise(() => {}); },
+  };
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: () => server,
+    listServers: () => [server],
+    setStatus: (_id, status, metadata) => {
+      server.status = status;
+      server.errorCode = metadata?.errorCode;
+    },
+    connect: async () => adapter,
+    discover: async () => { throw new Error('discovery failed'); },
+    executionDrainTimeoutMs: 100,
+  });
+  await assert.rejects(supervisor.startServer('server-1'), /discovery failed/);
+  assert.equal(server.status, 'degraded');
+  assert.equal(server.errorCode, 'MCP_RUNTIME_CLOSE_TIMEOUT');
+  assert.deepEqual(supervisor.getSnapshot().cleanupBlockedServerIds, ['server-1']);
+  await assert.rejects(
+    supervisor.startServer('server-1'),
+    { code: 'MCP_RUNTIME_CLEANUP_UNCONFIRMED' },
+  );
+});
