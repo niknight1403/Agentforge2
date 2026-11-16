@@ -74,6 +74,12 @@ jobs:
         env:
           GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_KEY: ${{ secrets.VF_GEMINI_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM_ADDRESS }}
+          RESEND_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           set -euo pipefail
           umask 077
@@ -103,6 +109,24 @@ jobs:
             cat /tmp/models.env
           } > /tmp/lead-responder.env
           echo "env-Zeilen: $(wc -l < /tmp/lead-responder.env)"
+          : > /tmp/mail.env
+          if [ -n "${SMTP_HOST:-}" ] && [ -n "${SMTP_USER:-}" ] && [ -n "${SMTP_PASS:-}" ]; then
+            echo 'MAIL_DRIVER=smtp' >> /tmp/mail.env
+            echo "SMTP_HOST=$SMTP_HOST" >> /tmp/mail.env
+            echo "SMTP_PORT=${SMTP_PORT:-587}" >> /tmp/mail.env
+            echo "SMTP_USER=$SMTP_USER" >> /tmp/mail.env
+            echo "SMTP_PASS=$SMTP_PASS" >> /tmp/mail.env
+            if [ -n "${MAIL_FROM:-}" ]; then echo "MAIL_FROM_ADDRESS=$MAIL_FROM" >> /tmp/mail.env; fi
+            echo 'MAIL_FROM_NAME=Speed-to-Lead' >> /tmp/mail.env
+            echo "mail-Kanal: SMTP aktiviert"
+          elif [ -n "${RESEND_KEY:-}" ]; then
+            echo 'MAIL_DRIVER=resend' >> /tmp/mail.env
+            echo "RESEND_API_KEY=$RESEND_KEY" >> /tmp/mail.env
+            if [ -n "${MAIL_FROM:-}" ]; then echo "MAIL_FROM_ADDRESS=$MAIL_FROM" >> /tmp/mail.env; fi
+            echo "mail-Kanal: Resend aktiviert"
+          else
+            echo "mail-Kanal: keine Zugangsdaten hinterlegt, MAIL_DRIVER bleibt wie im .env gesetzt"
+          fi
 
       - name: Auf Produktionshost ausrollen
         env:
@@ -112,7 +136,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 /tmp/lead-responder.tgz /tmp/lead-responder.env /tmp/models.env ubuntu@92.5.177.159:/tmp/
+          scp -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 /tmp/lead-responder.tgz /tmp/lead-responder.env /tmp/models.env /tmp/mail.env ubuntu@92.5.177.159:/tmp/
           ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 -o ServerAliveInterval=15 ubuntu@92.5.177.159 'sudo bash -s' <<'EOS'
           set -euo pipefail
           APP=/opt/lead-responder
@@ -128,6 +152,18 @@ jobs:
               cat /tmp/env.new > "$APP/.env"
             done < /tmp/models.env
             echo "env: Modelle aktualisiert"
+          fi
+          if [ -s /tmp/mail.env ]; then
+            while IFS= read -r line; do
+              k=${line%%=*}
+              grep -v "^${k}=" "$APP/.env" > /tmp/mail.new || true
+              printf '%s\n' "$line" >> /tmp/mail.new
+              cat /tmp/mail.new > "$APP/.env"
+            done < /tmp/mail.env
+            chown ubuntu:ubuntu "$APP/.env"; chmod 600 "$APP/.env"
+            echo "env: Mail-Kanal aktualisiert"
+          else
+            echo "env: Mail-Kanal unveraendert"
           fi
 
           echo 'W1VuaXRdCkRlc2NyaXB0aW9uPUxlYWQgUmVzcG9uZGVyIChTcGVlZC10by1MZWFkIEVuZ2luZSkKQWZ0ZXI9bmV0d29yay1vbmxpbmUudGFyZ2V0CldhbnRzPW5ldHdvcmstb25saW5lLnRhcmdldAoKW1NlcnZpY2VdClR5cGU9c2ltcGxlClVzZXI9dWJ1bnR1CldvcmtpbmdEaXJlY3Rvcnk9L29wdC9sZWFkLXJlc3BvbmRlcgpFbnZpcm9ubWVudEZpbGU9L29wdC9sZWFkLXJlc3BvbmRlci8uZW52CkV4ZWNTdGFydD0vdXNyL2Jpbi9ub2RlIC0tZGlzYWJsZS13YXJuaW5nPUV4cGVyaW1lbnRhbFdhcm5pbmcgL29wdC9sZWFkLXJlc3BvbmRlci9zcmMvaW5kZXguanMKUmVzdGFydD1hbHdheXMKUmVzdGFydFNlYz0zCk5vTmV3UHJpdmlsZWdlcz10cnVlClByaXZhdGVUbXA9dHJ1ZQpQcm90ZWN0U3lzdGVtPWZ1bGwKUmVhZFdyaXRlUGF0aHM9L29wdC9sZWFkLXJlc3BvbmRlci9kYXRhCgpbSW5zdGFsbF0KV2FudGVkQnk9bXVsdGktdXNlci50YXJnZXQK' | base64 -d > /etc/systemd/system/lead-responder.service
