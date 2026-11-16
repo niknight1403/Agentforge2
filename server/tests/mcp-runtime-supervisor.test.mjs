@@ -505,3 +505,37 @@ test('a timed-out MCP tool retires its stdio runtime and records degraded health
     { code: 'MCP_RUNTIME_NOT_CONNECTED' },
   );
 });
+
+
+test('a startup that exceeds the stop deadline is fenced until late adapter cleanup completes', async () => {
+  const servers = new Map([['one', { id: 'one', transport: 'stdio', status: 'pending' }]]);
+  let releaseConnect;
+  let closeCount = 0;
+  const supervisor = createMcpRuntimeSupervisor({
+    executionDrainTimeoutMs: 100,
+    getServer: (id) => servers.get(id) ?? null,
+    listServers: () => [...servers.values()],
+    setStatus: (id, status, options = {}) => servers.set(id, {
+      ...servers.get(id), status, lastErrorCode: options.errorCode ?? null,
+    }),
+    connect: async ({ serverId }) => {
+      await new Promise((resolve) => { releaseConnect = resolve; });
+      return fakeAdapter(serverId, () => { closeCount += 1; });
+    },
+    discover: async () => { throw new Error('cancelled startup must not reach discovery'); },
+  });
+
+  const startup = supervisor.startServer('one');
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(supervisor.stopServer('one'), { code: 'MCP_RUNTIME_START_STOP_TIMEOUT' });
+  assert.deepEqual(supervisor.getSnapshot().cleanupBlockedServerIds, ['one']);
+  await assert.rejects(supervisor.startServer('one'), { code: 'MCP_RUNTIME_CLEANUP_UNCONFIRMED' });
+
+  releaseConnect();
+  await assert.rejects(startup, { code: 'MCP_RUNTIME_START_CANCELLED' });
+  assert.equal(closeCount, 1, 'late adapter must still be closed by the startup owner');
+  assert.deepEqual(supervisor.getSnapshot().connectedServerIds, []);
+  assert.deepEqual(supervisor.getSnapshot().startingServerIds, []);
+  assert.deepEqual(supervisor.getSnapshot().cleanupBlockedServerIds, ['one'],
+    'cleanup fencing remains until explicit host reconciliation');
+});
