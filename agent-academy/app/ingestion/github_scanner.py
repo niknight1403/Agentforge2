@@ -10,7 +10,7 @@ ALLOWED_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".yml",
 IGNORED_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "coverage", ".next"}
 IGNORED_NAMES = {".env", ".env.local", ".env.production", "id_rsa", "id_ed25519"}
 SECRET_ASSIGNMENTS = re.compile(
-    r"""(?im)(?<![A-Za-z0-9_-])(?P<key>_*[A-Za-z0-9][A-Za-z0-9_-]*)["']?\s*[:=]\s*(?:(?P<quote>["'])(?P<quoted>(?:\\.|(?!(?P=quote))[^\\\r\n])*)(?P=quote)|(?P<bare>[^\s#(),;]+)(?=\s*(?:#.*)?$))"""
+    r"""(?im)(?<![A-Za-z0-9_-])(?P<key>_*[A-Za-z0-9][A-Za-z0-9_-]*)["']?\s*(?P<separator>[:=])\s*(?:(?P<annotation>[A-Za-z_][A-Za-z0-9_\[\]. |,]*)\s*=\s*)?(?:(?P<quote>["'])(?P<quoted>(?:\\.|(?!(?P=quote))[^\\\r\n])*)(?P=quote)|(?P<bare>[^\s#(),;]+)(?=\s*(?:#.*)?$))"""
 )
 SECRET_MARKERS = re.compile(
     r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
@@ -23,7 +23,7 @@ SECRET_KEY_PARTS = (
     "aws_secret_access_key", "api_key", "client_secret", "secret",
     "password", "passwd", "access_token", "auth_token", "private_key",
 )
-
+TYPE_ANNOTATIONS = {"str", "string", "bytes", "int", "bool", "float", "any", "dict", "list"}
 
 
 class RepositoryTargetError(ValueError):
@@ -40,9 +40,14 @@ def contains_secret(content: str) -> bool:
         return True
     for match in SECRET_ASSIGNMENTS.finditer(content):
         key = match.group("key").lower().replace("-", "_").strip("_")
-        if not any(part in key for part in SECRET_KEY_PARTS):
+        if not any(key == part or key.endswith("_" + part) for part in SECRET_KEY_PARTS):
             continue
-        value = (match.group("quoted") or match.group("bare") or "").strip()
+        value = (match.group("quoted") if match.group("quote") else match.group("bare") or "").strip()
+        if not value:
+            continue
+        # A Python annotation without a default is schema metadata, not a secret.
+        if match.group("separator") == ":" and value.lower() in TYPE_ANNOTATIONS:
+            continue
         if match.group("bare") and re.fullmatch(
             r"(?:process\.env\.[A-Za-z_][A-Za-z0-9_]*|env\.[A-Za-z_][A-Za-z0-9_]*)",
             value,
