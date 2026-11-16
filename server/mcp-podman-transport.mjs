@@ -108,10 +108,21 @@ export function createMcpPodmanTransport({
   });
   let started = false;
   let closePromise;
+  let runtimeTimer;
+
+  function clearRuntimeTimer() {
+    if (runtimeTimer) clearTimeout(runtimeTimer);
+    runtimeTimer = undefined;
+  }
 
   return Object.freeze({
     get onclose() { return transport.onclose; },
-    set onclose(value) { transport.onclose = value; },
+    set onclose(value) {
+      transport.onclose = (...args) => {
+        clearRuntimeTimer();
+        value?.(...args);
+      };
+    },
     get onerror() { return transport.onerror; },
     set onerror(value) { transport.onerror = value; },
     get onmessage() { return transport.onmessage; },
@@ -125,6 +136,13 @@ export function createMcpPodmanTransport({
       }
       await transport.start();
       started = true;
+      runtimeTimer = setTimeout(() => {
+        const error = fail('MCP_PODMAN_RUNTIME_TIMEOUT',
+          'MCP Podman container exceeded its deployment-owned runtime deadline');
+        transport.onerror?.(error);
+        void close().catch((closeError) => transport.onerror?.(closeError));
+      }, spec.timeoutMs);
+      runtimeTimer.unref?.();
     },
 
     send(message) {
@@ -133,6 +151,7 @@ export function createMcpPodmanTransport({
 
     close() {
       if (closePromise) return closePromise;
+      clearRuntimeTimer();
       closePromise = (async () => {
         let closeError;
         try {
