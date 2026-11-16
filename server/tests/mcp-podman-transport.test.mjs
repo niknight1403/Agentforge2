@@ -118,3 +118,24 @@ test('Podman host process receives only the minimal runtime environment', async 
   assert.equal('DATABASE_URL' in childEnv, false);
   await transport.close();
 });
+
+
+test('Podman transport enforces the deployment-owned runtime deadline and removes the container', async () => {
+  const calls = [];
+  const timedProfile = { ...profile, timeoutMs: 1_000 };
+  const transport = createMcpPodmanTransport({
+    profile: timedProfile,
+    podmanPath: '/usr/bin/podman',
+    spawnProcess: fakeSpawn(calls, 0),
+    probe: async () => ({ available: true, rootless: true }),
+  });
+  let rejectRuntime;
+  const runtimeFailure = new Promise((_, reject) => { rejectRuntime = reject; });
+  transport.onerror = (error) => rejectRuntime(error);
+  await transport.start();
+  await assert.rejects(runtimeFailure, { code: 'MCP_PODMAN_RUNTIME_TIMEOUT' });
+  await transport.close();
+  assert.ok(calls.some((call) => call.args[0] === 'rm'
+    && call.args[1] === '--force'),
+  'runtime timeout must drive process shutdown and explicit container removal');
+});
