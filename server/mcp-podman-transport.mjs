@@ -115,6 +115,26 @@ export function createMcpPodmanTransport({
     runtimeTimer = undefined;
   }
 
+  function closeTransport() {
+    if (closePromise) return closePromise;
+    clearRuntimeTimer();
+    closePromise = (async () => {
+      let closeError;
+      try {
+        await transport.close();
+      } catch (error) {
+        closeError = error;
+      }
+      try {
+        await removeContainer(podmanPath, spec.containerName, options);
+      } catch (error) {
+        if (!closeError) closeError = error;
+      }
+      if (closeError) throw closeError;
+    })();
+    return closePromise;
+  }
+
   return Object.freeze({
     get onclose() { return transport.onclose; },
     set onclose(value) {
@@ -140,7 +160,7 @@ export function createMcpPodmanTransport({
         const error = fail('MCP_PODMAN_RUNTIME_TIMEOUT',
           'MCP Podman container exceeded its deployment-owned runtime deadline');
         transport.onerror?.(error);
-        void close().catch((closeError) => transport.onerror?.(closeError));
+        void closeTransport().catch((closeError) => transport.onerror?.(closeError));
       }, spec.timeoutMs);
     },
 
@@ -149,23 +169,7 @@ export function createMcpPodmanTransport({
     },
 
     close() {
-      if (closePromise) return closePromise;
-      clearRuntimeTimer();
-      closePromise = (async () => {
-        let closeError;
-        try {
-          await transport.close();
-        } catch (error) {
-          closeError = error;
-        }
-        try {
-          await removeContainer(podmanPath, spec.containerName, options);
-        } catch (error) {
-          if (!closeError) closeError = error;
-        }
-        if (closeError) throw closeError;
-      })();
-      return closePromise;
+      return closeTransport();
     },
   });
 }
