@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import process from 'node:process';
+import path from 'node:path';
 import { buildMcpPodmanRunSpec, probeMcpPodmanRootless } from './mcp-podman-rootless-runner.mjs';
 import { createMcpProcessGroupTransport } from './mcp-process-group-transport.mjs';
 
