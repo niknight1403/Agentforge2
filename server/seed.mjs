@@ -8,7 +8,13 @@ import { db, now } from './db.mjs';
 export function ensureSuperadmin() {
   const email = String(process.env.VF_ADMIN_EMAIL || '').trim().toLowerCase();
   const password = String(process.env.VF_ADMIN_PASSWORD || '');
-  if (!email || !password) return null;
+  if (!email || !password) {
+    const hasUsers = db.prepare('SELECT COUNT(*) AS count FROM users').get().count > 0;
+    if (process.env.NODE_ENV === 'production' && !hasUsers) {
+      throw new Error('Production-Start ohne Nutzer blockiert: VF_ADMIN_EMAIL und VF_ADMIN_PASSWORD muessen fuer den Erststart gesetzt sein.');
+    }
+    return null;
+  }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12) {
     throw new Error('VF_ADMIN_EMAIL muss gueltig sein und VF_ADMIN_PASSWORD mindestens 12 Zeichen haben.');
   }
