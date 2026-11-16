@@ -42,6 +42,7 @@ export function createMcpRuntimeSupervisor({
   const connections = new Map();
   const starting = new Map();
   const stopping = new Map();
+  const cleanupBlocked = new Set();
   const cancelled = new Set();
   const activeExecutions = new Map();
   const executionDrainWaiters = new Map();
@@ -52,6 +53,9 @@ export function createMcpRuntimeSupervisor({
   function startServer(serverId, connectOptions = {}) {
     const id = String(serverId ?? '');
     if (!id) return Promise.reject(new TypeError('serverId is required'));
+    if (cleanupBlocked.has(id)) {
+      return Promise.reject(fail('MCP_RUNTIME_CLEANUP_UNCONFIRMED', 'A previous runtime shutdown did not confirm transport cleanup; restart is blocked pending host reconciliation'));
+    }
     if (stopping.has(id)) {
       return stopping.get(id).then(() => startServer(id, connectOptions));
     }
@@ -143,6 +147,9 @@ export function createMcpRuntimeSupervisor({
           }),
         ]).finally(() => clearTimeout(closeTimer));
       } catch (error) {
+        // A timeout or close error does not prove that the child process exited.
+        // Keep the server fenced off until an operator reconciles the host runtime.
+        cleanupBlocked.add(id);
         const current = getServer(id);
         if (current && current.status !== 'disabled') {
           try {
@@ -312,6 +319,7 @@ export function createMcpRuntimeSupervisor({
         connectedServerIds: [...connections.keys()],
         startingServerIds: [...starting.keys()],
         stoppingServerIds: [...stopping.keys()],
+        cleanupBlockedServerIds: [...cleanupBlocked],
         reconciliationLoopRunning: Boolean(reconcileTimer),
         activeExecutions: Object.fromEntries(activeExecutions),
         maxConcurrent,
