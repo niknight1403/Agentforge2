@@ -21,8 +21,12 @@ this runtime; remote transports remain registry-only.
 
 ## Deployment-owned launch policy
 
-Starting a stdio server returns HTTP 503 unless
-`MCP_STDIO_LAUNCH_POLICY_JSON` is configured by the deployment environment.
+Starting a stdio server returns HTTP 503 unless BOTH the deployment-owned
+`MCP_STDIO_LAUNCH_POLICY_JSON` and the explicit shared-namespace acknowledgement
+`MCP_STDIO_ALLOW_SHARED_HUB_NAMESPACE=true` are configured. The acknowledgement
+is an unsafe compatibility switch for trusted, operator-reviewed servers only;
+it does not create per-server isolation and must never be used for untrusted MCP
+servers. Without it, startup is blocked before executable policy evaluation.
 It is a JSON object with an `executables` array. Example:
 
 ```json
