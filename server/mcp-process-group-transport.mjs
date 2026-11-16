@@ -235,7 +235,9 @@ export function createMcpProcessGroupTransport({
     }
     if (processGroupExists(pid)) {
       signalProcessGroup(pid, 'SIGKILL');
-      await Promise.race([waitForExit(processHandle, shutdownTimeoutMs), delay(shutdownTimeoutMs)]);
+      // The leader may already have exited while a descendant ignores SIGTERM.
+      // Wait for the entire process group after SIGKILL, not merely the leader.
+      await waitForGroupGone(pid, shutdownTimeoutMs);
     }
     if (processGroupExists(pid)) {
       throw fail('MCP_PROCESS_GROUP_TERMINATION_UNCONFIRMED', 'MCP process group still exists after SIGKILL');
