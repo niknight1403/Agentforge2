@@ -65,6 +65,25 @@ test('Podman launch spec rejects mutable images and weakened security profile', 
   }
 });
 
+
+test('Podman launch spec rejects unbounded or invalid resource settings', () => {
+  for (const bad of [
+    profile({ memoryBytes: 0 }),
+    profile({ memoryBytes: 4 * 1024 * 1024 * 1024 + 1 }),
+    profile({ memoryBytes: 1.5 }),
+    profile({ cpuQuotaMicros: 0 }),
+    profile({ cpuQuotaMicros: 400_001 }),
+    profile({ pidsLimit: -1 }),
+    profile({ pidsLimit: 257 }),
+    profile({ timeoutMs: 999 }),
+    profile({ timeoutMs: 300_001 }),
+  ]) {
+    assert.throws(() => buildMcpPodmanRunSpec({ profile: bad }), {
+      code: 'MCP_PODMAN_PROFILE_INVALID',
+    });
+  }
+});
+
 test('Podman executable and container name must be Hub-controlled', () => {
   assert.throws(() => buildMcpPodmanRunSpec({
     podmanPath: 'podman', profile: profile(),
