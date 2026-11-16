@@ -49,6 +49,26 @@ test('Podman adapter connects, exposes MCP operations and closes both resources'
   await assert.rejects(adapter.listTools(), { code: 'MCP_CLIENT_CLOSED' });
 });
 
+test('Podman adapter treats an already-closed SDK connection as a completed client shutdown', async () => {
+  const { options, calls } = dependencies();
+  let transportClosed = false;
+  options.Client = class {
+    async connect() {}
+    async close() {
+      const error = new Error('Connection closed');
+      error.code = 'CONNECTION_CLOSED';
+      throw error;
+    }
+  };
+  options.transportFactory = () => ({
+    async close() { transportClosed = true; calls.push('transport.close.after-exit'); },
+  });
+  const adapter = await connectMcpPodmanServer(options);
+  await adapter.close();
+  assert.equal(transportClosed, true);
+  assert.ok(calls.includes('transport.close.after-exit'));
+});
+
 test('Podman adapter refuses unregistered, non-stdio and authenticated servers', async () => {
   const missing = dependencies();
   missing.options.getServer = () => null;
