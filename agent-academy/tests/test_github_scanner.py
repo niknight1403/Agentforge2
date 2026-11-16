@@ -25,4 +25,22 @@ def test_dotted_unquoted_yaml_secret_values_are_detected():
 
 
 def test_aws_secret_access_key_assignment_is_detected():
-    assert contains_secret('AWS_SECRET_ACCESS_KEY = "example-secret-value"')
+    assert contains_secret('AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"')
+
+
+
+def test_prefixed_and_underscored_secret_names_are_detected():
+    assert contains_secret('_api_key = "credential-value"')
+    assert contains_secret('DB__PASSWORD = "credential-value"')
+    assert contains_secret('PAYMENT_API_KEY = "credential-value"')
+    assert contains_secret('{"api_key":"credential-value"}')
+
+
+def test_environment_lookup_is_not_treated_as_embedded_secret():
+    assert not contains_secret('api_key = os.getenv("ACADEMY_API_TOKEN")')
+    assert not contains_secret('api_key = process.env.ACADEMY_API_TOKEN')
+
+
+def test_long_identifier_and_underscore_runs_are_bounded():
+    assert not contains_secret(("a_" * 20000) + "not_a_secret")
+    assert not contains_secret("_" * 40000)
