@@ -88,3 +88,33 @@ test('Podman transport refuses to start if rootless capability is not verified',
   await assert.rejects(transport.start(), { code: 'MCP_PODMAN_NOT_ROOTLESS' });
   assert.equal(calls.length, 0);
 });
+
+
+test('Podman host process receives only the minimal runtime environment', async () => {
+  const calls = [];
+  const transport = createMcpPodmanTransport({
+    profile,
+    podmanPath: '/usr/bin/podman',
+    env: {
+      HOME: '/home/runner',
+      PATH: '/custom/bin',
+      XDG_RUNTIME_DIR: '/run/user/1000',
+      TMPDIR: '/tmp',
+      OPENAI_API_KEY: 'must-not-reach-podman',
+      DATABASE_URL: 'must-not-reach-podman',
+    },
+    spawnProcess: fakeSpawn(calls),
+    probe: async () => ({ available: true, rootless: true }),
+  });
+  await transport.start();
+  const childEnv = calls[0].options.env;
+  assert.deepEqual(childEnv, {
+    PATH: '/usr/bin:/bin',
+    HOME: '/home/runner',
+    XDG_RUNTIME_DIR: '/run/user/1000',
+    TMPDIR: '/tmp',
+  });
+  assert.equal('OPENAI_API_KEY' in childEnv, false);
+  assert.equal('DATABASE_URL' in childEnv, false);
+  await transport.close();
+});
