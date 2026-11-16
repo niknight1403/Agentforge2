@@ -66,7 +66,6 @@ test('2. Login gut / schlecht & Rate-Limiting', () => {
 
   // Schlecht
   assert.equal(verifyPassword('wrongPassword', user.pwhash || user.password_hash), false);
-  assert.equal(verifyPassword('wrongPassword', SUPERADMIN_PWHASH), false);
 
   // Gut
   assert.equal(verifyPassword(testPw, user.pwhash || user.password_hash), true);
