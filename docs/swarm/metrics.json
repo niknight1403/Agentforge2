@@ -1,0 +1,85 @@
+{
+  "ok": true,
+  "source": "agi-swarm-engine",
+  "tenant_id": "default",
+  "generated_at": "2026-11-17T02:12:00Z",
+  "swarm_health": "healthy",
+  "window": {
+    "requested": 200,
+    "events": 19
+  },
+  "throughput": {
+    "processed": 19,
+    "failed": 0,
+    "stuck_processing": 0,
+    "retrying": 0,
+    "success_rate": 1
+  },
+  "latency_ms": {
+    "avg_inference": 640.8,
+    "p50_inference": 689,
+    "p95_inference": 915,
+    "max_inference": 915,
+    "avg_end_to_end": 789.7,
+    "p95_end_to_end": 1524
+  },
+  "quality": {
+    "avg_evaluator_score": 95.1,
+    "min_evaluator_score": 76,
+    "max_evaluator_score": 100,
+    "score_floor": 72,
+    "scored_events": 19
+  },
+  "conversion": {
+    "feedback_events": 1,
+    "won": 1,
+    "lost": 0,
+    "open_leads": 18,
+    "win_rate": 1,
+    "revenue_sum": 3200,
+    "avg_revenue_per_win": 3200
+  },
+  "routing": {
+    "fallback_served": 8,
+    "fallback_rate": 0.421,
+    "cascade_attempts": 58,
+    "providers": [
+      {
+        "provider": "cerebras",
+        "calls": 13,
+        "success_rate": 0.385,
+        "error_rate": 0,
+        "avg_latency_ms": 445
+      },
+      {
+        "provider": "remote-swarm",
+        "calls": 6,
+        "success_rate": 1,
+        "error_rate": 0,
+        "avg_latency_ms": 804
+      },
+      {
+        "provider": "local-heuristic",
+        "calls": 8,
+        "success_rate": 1,
+        "error_rate": 0,
+        "avg_latency_ms": 0
+      }
+    ]
+  },
+  "self_optimization": {
+    "config_version": 8,
+    "prompt_variant": "v1_direct",
+    "temperature": 0.4,
+    "max_tokens": 700,
+    "disabled_providers": "ollama",
+    "cascade_order": [
+      "cerebras",
+      "remote-swarm",
+      "groq",
+      "gemini",
+      "mistral",
+      "ollama"
+    ]
+  }
+}
