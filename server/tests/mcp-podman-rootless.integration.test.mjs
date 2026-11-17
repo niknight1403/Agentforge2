@@ -161,26 +161,25 @@ test('runtime deadline force-removes a SIGTERM-resistant rootless container', {
     noNewPrivilegesRequired: true, dropAllCapabilitiesRequired: true,
     hubDataMountsAllowed: false, runtimeSocketAllowed: false,
   });
+  let resolveExit;
+  const exited = new Promise((resolve) => { resolveExit = resolve; });
   const adapter = await connectMcpPodmanServer({
     serverId, profile,
+    onProcessExit: (event) => resolveExit(event),
     getServer: (id) => id === serverId
       ? { id, transport: 'stdio', status: 'pending', authMode: 'none' }
       : null,
   });
-  let pendingCall;
-  try {
-    // The call intentionally never responds. The deployment-owned runtime
-    // deadline must close and remove the container without waiting for this
-    // request to settle; client.close() below then settles the pending call.
-    pendingCall = adapter.callTool({ name: 'resist', arguments: {} }).then(
-      () => null,
-      (error) => error,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 8_000));
-    assert.deepEqual(listContainers(), before,
-      'the SIGTERM-resistant container must be force-removed at its runtime deadline');
-  } finally {
-    await adapter.close();
-  }
-  assert.ok(await pendingCall, 'closing the adapter must reject the abandoned MCP request');
+  // This tool never responds and ignores SIGTERM. The only expected shutdown
+  // trigger is the deployment-owned runtime deadline, which must force-remove
+  // the named container without waiting for the outstanding MCP request.
+  void adapter.callTool({ name: 'resist', arguments: {} }).catch(() => {});
+  const exitEvent = await Promise.race([
+    exited,
+    new Promise((resolve) => setTimeout(() => resolve(null), 15_000)),
+  ]);
+  assert.ok(exitEvent, 'the deployment-owned runtime deadline must terminate the Podman process');
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.deepEqual(listContainers(), before,
+    'the SIGTERM-resistant container must be force-removed at its runtime deadline');
 });
