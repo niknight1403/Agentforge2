@@ -1,8 +1,8 @@
 {
   "ok": true,
-  "checked_at": "2026-11-17T02:18:02Z",
+  "checked_at": "2026-11-17T02:19:08Z",
   "provider": "cerebras",
   "model": "gpt-oss-120b",
-  "latency_ms": 216,
+  "latency_ms": 1042,
   "ok_count": 2
 }

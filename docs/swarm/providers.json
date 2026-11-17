@@ -1,27 +1,27 @@
 {
   "ok": true,
-  "checked_at": "2026-11-17T02:18:02Z",
+  "checked_at": "2026-11-17T02:19:08Z",
   "ok_count": 2,
   "providers": [
     {
       "provider": "cerebras",
       "model": "gpt-oss-120b",
       "ok": true,
-      "latency_ms": 216,
+      "latency_ms": 1042,
       "reply_chars": 6
     },
     {
       "provider": "groq",
-      "model": "llama-3.3-70b-versatile",
+      "model": "llama-3.1-8b-instant",
       "ok": false,
       "status": 404,
-      "error": "{\"error\":{\"message\":\"The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.\",\"type\":\"invalid_request_error\",\"co"
+      "error": "{\"error\":{\"message\":\"The model `llama-3.1-8b-instant` does not exist or you do not have access to it.\",\"type\":\"invalid_request_error\",\"code\""
     },
     {
       "provider": "openrouter",
       "model": "openai/gpt-4o-mini",
       "ok": true,
-      "latency_ms": 654,
+      "latency_ms": 771,
       "reply_chars": 3
     }
   ]
