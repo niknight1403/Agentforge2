@@ -8,7 +8,11 @@ const MAX_DIAGNOSTIC_STDERR_BYTES = 16 * 1024;
 
 function classifyStderr(stderr) {
   const value = stderr.toLowerCase();
-  if (/cannot clone|newuidmap|newgidmap|user namespace|userns.*(not supported|failed)|operation not permitted/.test(value)) return 'rootless-userns-unavailable';
+  // Keep user-namespace failures distinct from generic kernel/seccomp denials:
+  // "operation not permitted" alone is not proof that user namespaces failed.
+  if (/cannot clone|creating (a )?new user namespace|user namespaces? (are )?(not enabled|not supported)|userns.*(not supported|failed)/.test(value)) return 'rootless-userns-unavailable';
+  if (/newuidmap|newgidmap/.test(value)) return 'rootless-idmap-helper-failed';
+  if (/operation not permitted|operation not allowed/.test(value)) return 'kernel-operation-not-permitted';
   if (/permission denied|permissionerror|access denied/.test(value)) return 'permission-denied';
   if (/no space left|overlay.*(mount|storage)|storage driver|graphroot/.test(value)) return 'container-storage-error';
   if (/image.*(not known|not found|no such)|short-name.*(resolution|alias)/.test(value)) return 'image-resolution-error';
