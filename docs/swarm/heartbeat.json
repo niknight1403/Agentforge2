@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "checked_at": "2026-11-17T02:14:40Z",
+  "provider": "cerebras",
+  "model": "gpt-oss-120b",
+  "latency_ms": 378,
+  "reply_chars": 6
+}
