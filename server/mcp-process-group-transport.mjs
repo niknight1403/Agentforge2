@@ -120,7 +120,8 @@ export function createMcpProcessGroupTransport({
     || !Number.isInteger(maxBufferSize) || maxBufferSize < 1024
     || !Number.isInteger(shutdownTimeoutMs) || shutdownTimeoutMs < 100 || shutdownTimeoutMs > 10_000
     || typeof spawnProcess !== 'function'
-    || !['ignore', 'pipe', 'diagnostic'].includes(stderr)\n    || (onProcessExit !== undefined && typeof onProcessExit !== 'function')) {
+    || !['ignore', 'pipe', 'diagnostic'].includes(stderr)
+    || (onProcessExit !== undefined && typeof onProcessExit !== 'function')) {
     throw new TypeError('command, args, cwd, env and bounded transport options are required');
   }
 
@@ -201,7 +202,15 @@ export function createMcpProcessGroupTransport({
           void transport.close().catch(() => {});
         }
       });
-      child.stdout.on('error', (error) => transport.onerror?.(error));\n      if (stderr !== 'ignore') {\n        child.stderr?.on('data', (chunk) => {\n          if (stderr !== 'diagnostic') return;\n          const remaining = MAX_DIAGNOSTIC_STDERR_BYTES - Buffer.byteLength(diagnosticStderr, 'utf8');\n          if (remaining > 0) diagnosticStderr += chunk.toString('utf8').slice(0, remaining);\n        });\n        child.stderr?.on('error', () => {});\n      }
+      child.stdout.on('error', (error) => transport.onerror?.(error));
+      if (stderr !== 'ignore') {
+        child.stderr?.on('data', (chunk) => {
+          if (stderr !== 'diagnostic') return;
+          const remaining = MAX_DIAGNOSTIC_STDERR_BYTES - Buffer.byteLength(diagnosticStderr, 'utf8');
+          if (remaining > 0) diagnosticStderr += Buffer.from(chunk).subarray(0, remaining).toString('utf8');
+        });
+        child.stderr?.on('error', () => {});
+      }
       child.stdin.on('error', (error) => {
         if (!closing && error?.code !== 'EPIPE') transport.onerror?.(error);
       });
@@ -218,7 +227,7 @@ export function createMcpProcessGroupTransport({
           exitError.exitCode = code;
           exitError.signal = signal;
           try {
-            onProcessExit?.(Object.freeze({ pid: child.pid, exitCode: code, signal }));
+            onProcessExit?.(Object.freeze({ pid: child.pid, exitCode: code, signal, ...(stderr === 'diagnostic' ? { stderrCategory: classifyStderr(diagnosticStderr) } : {}) }));
           } catch { /* diagnostics must never disrupt transport teardown */ }
           transport.onerror?.(exitError);
           transport.onclose?.();
@@ -251,6 +260,7 @@ export function createMcpProcessGroupTransport({
         try { child.stdin?.destroy(); } catch { /* best effort */ }
         try { child.stderr?.destroy(); } catch { /* best effort */ }
         buffer = '';
+        diagnosticStderr = '';
       })();
       return closePromise;
     },
