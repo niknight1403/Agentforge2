@@ -68,6 +68,7 @@ import { sanitizeForStream } from './event-contracts.mjs';
 import { redisTryStreamAdd } from './redis.mjs';
 import { GENERATION_STREAM } from './generation-engine.mjs';
 import { initObservabilityStore, tokenBudgetStatus, httpMetrics, recordHttpRequest } from './observability.mjs';
+import { handleMcpAdminRequest, mcpRuntimeSupervisor } from './mcp-hub-runtime.mjs';
 
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -658,6 +659,14 @@ async function api(req, res, url) {
     if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'});
     res.setHeader('Cache-Control','no-store');
     return json(res,200,villaDiagnostics());
+  }
+  if (p.startsWith('/api/admin/mcp/')) {
+    if (!isAdmin) return json(res, needAuth ? 401 : 403, { error: 'Administrator role required.' });
+    let body = {};
+    if (m === 'POST' || m === 'PUT' || m === 'PATCH') body = await readBody(req);
+    const result = await handleMcpAdminRequest({ method: m, pathname: p, body, isAdmin: true });
+    res.setHeader('Cache-Control', 'no-store');
+    return json(res, result.status, result.body);
   }
   if (p === '/api/admin/metrics' && m === 'GET') { if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'}); return json(res,200,await collectAdminMetrics()); }
   // Live-Dashboard (Stufe 1): statisches Geruest ohne Daten, Daten nur mit Token.
@@ -1873,9 +1882,14 @@ for (const sig of ['SIGINT', 'SIGTERM']) {
     shuttingDown = true;
     log(`${sig} empfangen, fahre herunter ...`);
     telemetryConsumer?.stop?.();
+    const mcpShutdown = mcpRuntimeSupervisor.closeAll().catch((err) => {
+      logError('MCP-Runtimes konnten nicht vollstaendig geschlossen werden:', err?.code || err?.message || err);
+    });
     server.close(() => {
-      log('Server geschlossen.');
-      process.exit(0);
+      Promise.resolve(mcpShutdown).finally(() => {
+        log('Server geschlossen.');
+        process.exit(0);
+      });
     });
     // Notbremse, falls Verbindungen nicht schliessen.
     setTimeout(() => process.exit(0), 5000).unref();

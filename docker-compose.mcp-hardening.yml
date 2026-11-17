@@ -1,0 +1,24 @@
+# Optional hardening overlay for the Agentforge Hub container.
+# Apply with:
+#   docker compose -f docker-compose.agent-mesh.yml -f docker-compose.mcp-hardening.yml up -d --build
+#
+# This constrains the Hub container as a whole. MCP child processes still share
+# its network namespace and UID; this is NOT per-server isolation and is not
+# sufficient for untrusted MCP servers. See docs/MCP-HUB-ADMIN-INTEGRATION.md.
+services:
+  agentforge:
+    # Dockerfile.agentforge runs as the unprivileged node user (UID 1000).
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    cpus: 1.50
+    mem_limit: 768m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    # Keep the persistent application database writable, but nowhere else.
+    volumes:
+      - agentforge-data:/data

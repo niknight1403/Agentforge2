@@ -25,6 +25,7 @@ export function createMcpRuntimeSupervisor({
   setStatus = setMcpServerStatus,
   executeTool = executeApprovedMcpTool,
   maxConcurrent = 2,
+  executionDrainTimeoutMs = 5_000,
 } = {}) {
   if (typeof connect !== 'function' || typeof discover !== 'function'
     || typeof getServer !== 'function' || typeof listServers !== 'function'
@@ -34,10 +35,14 @@ export function createMcpRuntimeSupervisor({
   if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 32) {
     throw new TypeError('maxConcurrent must be an integer between 1 and 32');
   }
+  if (!Number.isInteger(executionDrainTimeoutMs) || executionDrainTimeoutMs < 100 || executionDrainTimeoutMs > 120_000) {
+    throw new TypeError('executionDrainTimeoutMs must be an integer between 100 and 120000');
+  }
 
   const connections = new Map();
   const starting = new Map();
   const stopping = new Map();
+  const cleanupBlocked = new Set();
   const cancelled = new Set();
   const activeExecutions = new Map();
   const executionDrainWaiters = new Map();
@@ -48,6 +53,9 @@ export function createMcpRuntimeSupervisor({
   function startServer(serverId, connectOptions = {}) {
     const id = String(serverId ?? '');
     if (!id) return Promise.reject(new TypeError('serverId is required'));
+    if (cleanupBlocked.has(id)) {
+      return Promise.reject(fail('MCP_RUNTIME_CLEANUP_UNCONFIRMED', 'A previous runtime shutdown did not confirm transport cleanup; restart is blocked pending host reconciliation'));
+    }
     if (stopping.has(id)) {
       return stopping.get(id).then(() => startServer(id, connectOptions));
     }
@@ -83,15 +91,31 @@ export function createMcpRuntimeSupervisor({
         connections.set(id, adapter);
         return adapter;
       } catch (error) {
+        let cleanupError = null;
         if (adapter) {
-          try { await adapter.close(); } catch { /* preserve the startup failure */ }
+          let cleanupTimer;
+          try {
+            await Promise.race([
+              Promise.resolve().then(() => adapter.close()),
+              new Promise((_, reject) => {
+                cleanupTimer = setTimeout(() => reject(fail(
+                  'MCP_RUNTIME_CLOSE_TIMEOUT',
+                  'MCP runtime startup cleanup exceeded its deadline',
+                )), executionDrainTimeoutMs);
+              }),
+            ]).finally(() => clearTimeout(cleanupTimer));
+          } catch (closeError) {
+            cleanupError = closeError;
+            cleanupBlocked.add(id);
+          }
         }
         const failedServer = getServer(id);
-        if (!cancelled.has(id) && failedServer
-          && failedServer.status !== 'disabled' && failedServer.status !== 'failed') {
+        if (!cancelled.has(id) && failedServer && failedServer.status !== 'disabled') {
           try {
-            setStatus(id, 'failed', {
-              errorCode: typeof error?.code === 'string' ? error.code : 'MCP_RUNTIME_START_FAILED',
+            setStatus(id, cleanupError ? 'degraded' : 'failed', {
+              errorCode: cleanupError
+                ? (typeof cleanupError?.code === 'string' ? cleanupError.code : 'MCP_RUNTIME_CLOSE_FAILED')
+                : (typeof error?.code === 'string' ? error.code : 'MCP_RUNTIME_START_FAILED'),
             });
           } catch { /* preserve the original startup failure */ }
         }
@@ -114,7 +138,34 @@ export function createMcpRuntimeSupervisor({
     const operation = (async () => {
       const pending = starting.get(id);
       if (pending) {
-        try { await pending; } catch { /* startup owns teardown and its caller receives the failure */ }
+        let startupTimer;
+        let startupTimedOut = false;
+        try {
+          await Promise.race([
+            pending,
+            new Promise((_, reject) => {
+              startupTimer = setTimeout(() => {
+                startupTimedOut = true;
+                reject(fail(
+                  'MCP_RUNTIME_START_STOP_TIMEOUT',
+                  'MCP runtime startup did not settle before the stop deadline; restart is blocked pending host reconciliation',
+                ));
+              }, executionDrainTimeoutMs);
+            }),
+          ]).finally(() => clearTimeout(startupTimer));
+        } catch (error) {
+          if (startupTimedOut) {
+            // Keep cancellation active while the late startup promise is still
+            // observed. Its startup path owns closing any adapter it creates.
+            cleanupBlocked.add(id);
+            const current = getServer(id);
+            if (current && current.status !== 'disabled') {
+              try { setStatus(id, 'degraded', { errorCode: 'MCP_RUNTIME_START_STOP_TIMEOUT' }); } catch { /* preserve stop timeout */ }
+            }
+            throw error;
+          }
+          // Startup failed and its own catch path has attempted adapter cleanup.
+        }
       }
       const adapter = connections.get(id);
       if (!adapter) {
@@ -125,17 +176,23 @@ export function createMcpRuntimeSupervisor({
       // Remove it before awaiting close so a concurrent start cannot reuse a
       // client whose transport is already being torn down.
       connections.delete(id);
-      const active = activeExecutions.get(id) ?? 0;
-      if (active > 0) {
-        await new Promise((resolve) => {
-          const waiters = executionDrainWaiters.get(id) ?? [];
-          waiters.push(resolve);
-          executionDrainWaiters.set(id, waiters);
-        });
-      }
+      // Close the transport immediately: SDK tool promises may never settle,
+      // and waiting for them before closing can strand the child process.
       try {
-        await adapter.close();
+        let closeTimer;
+        await Promise.race([
+          Promise.resolve().then(() => adapter.close()),
+          new Promise((_, reject) => {
+            closeTimer = setTimeout(() => reject(fail(
+              'MCP_RUNTIME_CLOSE_TIMEOUT',
+              'MCP runtime transport close exceeded its shutdown deadline',
+            )), executionDrainTimeoutMs);
+          }),
+        ]).finally(() => clearTimeout(closeTimer));
       } catch (error) {
+        // A timeout or close error does not prove that the child process exited.
+        // Keep the server fenced off until an operator reconciles the host runtime.
+        cleanupBlocked.add(id);
         const current = getServer(id);
         if (current && current.status !== 'disabled') {
           try {
@@ -146,11 +203,41 @@ export function createMcpRuntimeSupervisor({
         }
         throw error;
       }
+
+      const active = activeExecutions.get(id) ?? 0;
+      if (active > 0) {
+        let drainTimer;
+        let resolveDrain;
+        const drained = new Promise((resolve) => {
+          resolveDrain = resolve;
+          const waiters = executionDrainWaiters.get(id) ?? [];
+          waiters.push(resolve);
+          executionDrainWaiters.set(id, waiters);
+        });
+        const drainTimedOut = await Promise.race([
+          drained.then(() => false),
+          new Promise((resolve) => {
+            drainTimer = setTimeout(() => resolve(true), executionDrainTimeoutMs);
+          }),
+        ]).finally(() => clearTimeout(drainTimer));
+        if (drainTimedOut) {
+          const waiters = executionDrainWaiters.get(id) ?? [];
+          executionDrainWaiters.set(id, waiters.filter((waiter) => waiter !== resolveDrain));
+          if (executionDrainWaiters.get(id)?.length === 0) executionDrainWaiters.delete(id);
+          const current = getServer(id);
+          if (current && current.status !== 'disabled') {
+            try { setStatus(id, 'degraded', { errorCode: 'MCP_RUNTIME_DRAIN_TIMEOUT' }); } catch { /* preserve drain timeout */ }
+          }
+          throw fail('MCP_RUNTIME_DRAIN_TIMEOUT', 'MCP runtime transport closed, but active tool executions did not drain before the deadline');
+        }
+      }
       const current = getServer(id);
       if (current?.status === 'active') setStatus(id, 'pending');
       return true;
     })().finally(() => {
-      cancelled.delete(id);
+      // Do not release cancellation while a timed-out startup is still running.
+      // Its own finally block clears the flag once late cleanup has completed.
+      if (!starting.has(id)) cancelled.delete(id);
       stopping.delete(id);
     });
     stopping.set(id, operation);
@@ -277,6 +364,7 @@ export function createMcpRuntimeSupervisor({
         connectedServerIds: [...connections.keys()],
         startingServerIds: [...starting.keys()],
         stoppingServerIds: [...stopping.keys()],
+        cleanupBlockedServerIds: [...cleanupBlocked],
         reconciliationLoopRunning: Boolean(reconcileTimer),
         activeExecutions: Object.fromEntries(activeExecutions),
         maxConcurrent,

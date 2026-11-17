@@ -1,0 +1,45 @@
+name: MCP SDK Lockfile Generation
+
+on:
+  push:
+    branches:
+      - feat/mcp-sdk-production-dependency
+    paths:
+      - package.json
+      - .github/workflows/mcp-sdk-lockfile.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mcp-sdk-lockfile-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  generate-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dependency branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Generate npm lockfile from package.json
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Validate clean installation
+        run: npm ci --no-audit --no-fund
+      - name: Commit npm-generated lockfile
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already matches package.json"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "build(mcp): commit npm-generated SDK lockfile"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

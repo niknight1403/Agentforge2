@@ -3,6 +3,14 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 const MAX_INFO_BYTES = 64 * 1024;
+const MIN_MEMORY_BYTES = 16 * 1024 * 1024;
+const MAX_MEMORY_BYTES = 4 * 1024 * 1024 * 1024;
+const MIN_CPU_QUOTA_MICROS = 10_000;
+const MAX_CPU_QUOTA_MICROS = 400_000;
+const MIN_PIDS_LIMIT = 1;
+const MAX_PIDS_LIMIT = 256;
+const MIN_TIMEOUT_MS = 1_000;
+const MAX_TIMEOUT_MS = 5 * 60 * 1_000;
 
 function fail(code, message) {
   const error = new Error(message);
@@ -29,8 +37,12 @@ function validateProfile(profile) {
     || !Number.isSafeInteger(profile.memoryBytes)
     || !Number.isSafeInteger(profile.cpuQuotaMicros)
     || !Number.isSafeInteger(profile.pidsLimit)
-    || !Number.isSafeInteger(profile.timeoutMs)) {
-    throw fail('MCP_PODMAN_PROFILE_INVALID', 'Podman runner requires a validated, immutable, network-disabled profile');
+    || !Number.isSafeInteger(profile.timeoutMs)
+    || profile.memoryBytes < MIN_MEMORY_BYTES || profile.memoryBytes > MAX_MEMORY_BYTES
+    || profile.cpuQuotaMicros < MIN_CPU_QUOTA_MICROS || profile.cpuQuotaMicros > MAX_CPU_QUOTA_MICROS
+    || profile.pidsLimit < MIN_PIDS_LIMIT || profile.pidsLimit > MAX_PIDS_LIMIT
+    || profile.timeoutMs < MIN_TIMEOUT_MS || profile.timeoutMs > MAX_TIMEOUT_MS) {
+    throw fail('MCP_PODMAN_PROFILE_INVALID', 'Podman runner profile violates immutable image, isolation, or resource bounds');
   }
 }
 
@@ -59,8 +71,8 @@ export function buildMcpPodmanRunSpec({
     '--read-only',
     '--cap-drop=ALL',
     '--security-opt=no-new-privileges',
-    '--userns=auto',
-    '--user=65532:65532',
+    '--userns=auto:size=1024',
+    '--user=1000:1000',
     '--pids-limit=' + String(profile.pidsLimit),
     '--memory=' + String(profile.memoryBytes),
     '--cpus=' + (profile.cpuQuotaMicros / 100_000).toFixed(2),
