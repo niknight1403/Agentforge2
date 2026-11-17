@@ -36,8 +36,8 @@ test('Podman launch spec is shell-free, rootless and has no host mounts or netwo
   assert.ok(spec.args.includes('--read-only'));
   assert.ok(spec.args.includes('--cap-drop=ALL'));
   assert.ok(spec.args.includes('--security-opt=no-new-privileges'));
-  assert.ok(spec.args.includes('--userns=auto'));
-  assert.ok(spec.args.includes('--user=65532:65532'));
+  assert.ok(spec.args.includes('--userns=auto:size=1024'));
+  assert.ok(spec.args.includes('--user=1000:1000'));
   assert.ok(spec.args.includes('--pids-limit=64'));
   assert.ok(spec.args.includes('--memory=268435456'));
   assert.ok(spec.args.includes('--cpus=0.50'));
