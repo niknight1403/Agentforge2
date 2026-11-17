@@ -1,0 +1,32 @@
+name: Lead Responder - Inspect
+on:
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: SSH inspect
+        env:
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+          ssh -i ~/.ssh/oracle_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 ubuntu@92.5.177.159 'bash -s' <<'EOS'
+          set -uo pipefail
+          KEY=$(grep -m1 '^ADMIN_API_KEY=' /opt/lead-responder/.env | cut -d= -f2- | tr -d '\r')
+          API=http://127.0.0.1:8080/api/v1
+          echo "== Health =="
+          curl -sS "$API/health" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("status",d["status"],"| uptime_s",d["uptime_s"],"| leads",d["leads"]["total"],"| queue total",d["delivery_queue"]["total"])'
+          echo "== Mandanten =="
+          curl -sS "$API/clients" -H "x-admin-key: $KEY" | python3 -c '
+          import json,sys
+          d=json.load(sys.stdin)
+          items=d.get("clients") or d.get("items") or []
+          print("anzahl:",len(items))
+          for c in items:
+              print(" -",c.get("slug"),"|",c.get("name"),"|",c.get("created_at"))
+          '
+          EOS
