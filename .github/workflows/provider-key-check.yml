@@ -1,0 +1,36 @@
+name: provider-key-check
+on: { workflow_dispatch: {} }
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe provider credentials (no secret values printed)
+        env:
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          VF_GEMINI_KEY: ${{ secrets.VF_GEMINI_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          set -u
+          probe() {
+            name="$1"; url="$2"; key="$3"; body="$4"
+            [ -z "$key" ] && { echo "$name: MISSING"; return; }
+            start=$(date +%s%N)
+            code=$(curl -sS -o /tmp/o.json -w '%{http_code}' --max-time 25 -X POST "$url" \
+              -H "authorization: Bearer $key" -H 'content-type: application/json' -d "$body" || echo 000)
+            end=$(date +%s%N)
+            ms=$(( (end-start)/1000000 ))
+            note=$(python3 -c "
+import json
+try:
+    d=json.load(open('/tmp/o.json'))
+    if 'error' in d: print(str(d['error'].get('message') if isinstance(d['error'],dict) else d['error'])[:80])
+    else: print('ok')
+except Exception: print('unparsed')
+")
+            echo "$name: http=$code ${ms}ms len=${#key} note=$note"
+          }
+          probe Cerebras https://api.cerebras.ai/v1/chat/completions "$CEREBRAS_API_KEY" '{"model":"gpt-oss-120b","max_tokens":64,"messages":[{"role":"user","content":"sag ok"}]}'
+          probe Groq https://api.groq.com/openai/v1/chat/completions "$GROQ_API_KEY" '{"model":"llama-3.3-70b-versatile","max_tokens":64,"messages":[{"role":"user","content":"sag ok"}]}'
+          probe Gemini "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$VF_GEMINI_KEY" "" '{"contents":[{"parts":[{"text":"sag ok"}]}]}'
+          probe OpenRouter https://openrouter.ai/api/v1/chat/completions "$OPENROUTER_API_KEY" '{"model":"google/gemini-2.5-flash","max_tokens":64,"messages":[{"role":"user","content":"sag ok"}]}'
