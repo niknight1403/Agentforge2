@@ -24,6 +24,11 @@ const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[
 const OUT = resolve(ROOT, arg('out', 'artifacts/design-audit'));
 /** Erlaubte Befunde (Default 0 -> jede Abweichung ist rot). */
 const MAX_FINDINGS = Number(arg('max-findings', 0));
+// Avoid Chrome's port=0 DevToolsActivePort handshake, which can be absent on hosted runners.
+const CDP_PORT = Number(arg('cdp-port', 9400 + Math.floor(Math.random() * 40)));
+if (!Number.isInteger(CDP_PORT) || CDP_PORT < 1024 || CDP_PORT > 65535) {
+  throw new TypeError('--cdp-port must be an integer between 1024 and 65535');
+}
 
 /* ---------------------------------------------------------------- */
 /* Laeuft in der Seite. Muss selbststaendig sein (wird serialisiert). */
@@ -192,7 +197,7 @@ async function probe(name) {
     modelMock = await startMockLlm();
     hub = await startHub({ keep: has('--keep'), env: { VF_LOCAL_LLM_URL: modelMock.url, VF_LOCAL_LLM_MODEL: 'villa-test' } });
     console.log(`Hub v${hub.health.version} auf ${hub.base}`);
-    chrome = await launchChrome();
+    chrome = await launchChrome({ port: CDP_PORT });
     const target = await newTarget(chrome.base, 'about:blank');
     page = await Page.attach(target.webSocketDebuggerUrl);
     await page.enableAll();
