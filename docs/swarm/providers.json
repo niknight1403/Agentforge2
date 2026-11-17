@@ -1,13 +1,13 @@
 {
   "ok": true,
-  "checked_at": "2026-11-17T02:19:08Z",
+  "checked_at": "2026-11-17T02:21:05Z",
   "ok_count": 2,
   "providers": [
     {
       "provider": "cerebras",
       "model": "gpt-oss-120b",
       "ok": true,
-      "latency_ms": 1042,
+      "latency_ms": 172,
       "reply_chars": 6
     },
     {
@@ -21,8 +21,14 @@
       "provider": "openrouter",
       "model": "openai/gpt-4o-mini",
       "ok": true,
-      "latency_ms": 771,
+      "latency_ms": 632,
       "reply_chars": 3
     }
-  ]
+  ],
+  "relay": {
+    "url": "https://aboriginal-swarm-sync-flow.base44.app/functions/swarmRelay",
+    "ok": false,
+    "status": 402,
+    "error": "{\"message\":\"You have reached the limit of integrations for this month. Please upgrade your plan\",\"detail\":\"You"
+  }
 }
