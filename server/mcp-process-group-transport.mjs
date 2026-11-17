@@ -128,6 +128,10 @@ export function createMcpProcessGroupTransport({
   stderr = 'ignore',
   maxBufferSize = DEFAULT_MAX_BUFFER_BYTES,
   shutdownTimeoutMs = 1_500,
+  // Podman owns container/conmon cleanup; killing its entire process group can
+  // also kill its persistent rootless pause process. In that mode, stop only
+  // the CLI and let the caller remove the named container explicitly.
+  killProcessGroupOnClose = true,
   spawnProcess = spawn,
   platform = process.platform,
   onProcessExit,
@@ -141,6 +145,7 @@ export function createMcpProcessGroupTransport({
     || !env || typeof env !== 'object' || Array.isArray(env)
     || !Number.isInteger(maxBufferSize) || maxBufferSize < 1024
     || !Number.isInteger(shutdownTimeoutMs) || shutdownTimeoutMs < 100 || shutdownTimeoutMs > 10_000
+    || typeof killProcessGroupOnClose !== 'boolean'
     || typeof spawnProcess !== 'function'
     || !['ignore', 'pipe', 'diagnostic'].includes(stderr)
     || (onProcessExit !== undefined && typeof onProcessExit !== 'function')) {
@@ -234,8 +239,12 @@ export function createMcpProcessGroupTransport({
           } catch { /* diagnostics must never disrupt transport teardown */ }
           transport.onerror?.(exitError);
           transport.onclose?.();
-          // Unexpected parent exit must not leave descendants in its group.
-          void terminateGroup(child.pid, child).catch((error) => transport.onerror?.(error));
+          // For generic commands, reap the complete process group. Podman
+          // opts out because its persistent rootless pause process can share
+          // this group; its caller performs explicit container removal instead.
+          if (killProcessGroupOnClose) {
+            void terminateGroup(child.pid, child).catch((error) => transport.onerror?.(error));
+          }
         }
       });
 
@@ -280,8 +289,24 @@ export function createMcpProcessGroupTransport({
         if (!child) return;
         const processId = child.pid;
         try { child.stdin?.end(); } catch { /* best effort */ }
-        await waitForExit(child, 300);
-        await terminateGroup(processId, child);
+        if (killProcessGroupOnClose) {
+          await waitForExit(child, 300);
+          await terminateGroup(processId, child);
+        } else {
+          // Do not signal Podman's whole process group: rootless Podman may
+          // keep a pause process in it for subsequent containers. Give the
+          // CLI time to finish naturally, then terminate only that CLI; the
+          // Podman transport follows with 'container rm --force'.
+          if (!await waitForExit(child, shutdownTimeoutMs)) {
+            try { child.kill('SIGTERM'); } catch { /* best effort */ }
+            if (!await waitForExit(child, shutdownTimeoutMs)) {
+              try { child.kill('SIGKILL'); } catch { /* best effort */ }
+              if (!await waitForExit(child, shutdownTimeoutMs)) {
+                throw fail('MCP_PROCESS_TERMINATION_UNCONFIRMED', 'MCP child process did not exit after SIGKILL');
+              }
+            }
+          }
+        }
         try { child.stdout?.destroy(); } catch { /* best effort */ }
         try { child.stdin?.destroy(); } catch { /* best effort */ }
         try { child.stderr?.destroy(); } catch { /* best effort */ }
