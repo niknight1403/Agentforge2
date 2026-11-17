@@ -63,3 +63,27 @@ pathlib.Path("docs/swarm/heartbeat.json").write_text(
     }, indent=2) + "\n"
 )
 print(json.dumps({"ok_count": ok_count, "results": [{k: v for k, v in r.items() if k != "error"} for r in results]}))
+
+# Pull the live engine snapshot from the Base44 relay whenever it is reachable.
+RELAY = "https://aboriginal-swarm-sync-flow.base44.app/functions/swarmRelay"
+relay = {"url": RELAY, "ok": False}
+try:
+    req = urllib.request.Request(RELAY, headers={"User-Agent": "swarm-relay/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode())
+    if isinstance(data, dict) and data.get("throughput"):
+        pathlib.Path("docs/swarm/metrics.json").write_text(json.dumps(data, indent=2) + "\n")
+        relay.update({"ok": True, "replaced": True, "processed": data["throughput"].get("processed")})
+    else:
+        relay["error"] = "unexpected payload"
+except urllib.error.HTTPError as e:
+    relay["status"] = e.code
+    relay["error"] = e.read().decode()[:110]
+except Exception as e:
+    relay["error"] = str(e)[:110]
+
+pf = pathlib.Path("docs/swarm/providers.json")
+payload = json.loads(pf.read_text())
+payload["relay"] = relay
+pf.write_text(json.dumps(payload, indent=2) + "\n")
+print(json.dumps({"relay": relay}))
