@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMcpAdminApi } from '../mcp-admin-api.mjs';
+import { createMcpRuntimeSupervisor } from '../mcp-runtime-supervisor.mjs';
 
 function fixture() {
   const servers = new Map([['server_1', {
@@ -149,4 +150,167 @@ test('MCP admin API returns 503 when the runtime refuses startup without per-ser
   });
   assert.equal(result.status, 503);
   assert.equal(result.body.code, 'MCP_PER_SERVER_ISOLATION_REQUIRED');
+});
+
+
+test('MCP admin API maps Podman startup and cleanup failures to 503', async () => {
+  const runtimeCodes = [
+    'MCP_PODMAN_CONNECT_TIMEOUT',
+    'MCP_PODMAN_CONNECT_FAILED',
+    'MCP_PODMAN_CLEANUP_FAILED',
+    'MCP_PODMAN_CONTROL_TIMEOUT',
+    'MCP_SDK_CONSTRUCTORS_REQUIRED',
+  ];
+  for (const code of runtimeCodes) {
+    const api = createMcpAdminApi({
+      registry: {
+        registerMcpServer: () => null,
+        listMcpServers: () => [],
+        getMcpServer: (id) => id === 'server_1'
+          ? { id, transport: 'stdio', status: 'pending' }
+          : null,
+        listMcpTools: () => [],
+        setMcpToolPolicy: () => null,
+        setMcpServerStatus: () => {},
+        removeMcpServer: () => true,
+      },
+      supervisor: {
+        async startServer() {
+          throw Object.assign(new Error('Podman runtime unavailable'), { code });
+        },
+        async stopServer() {},
+        getSnapshot: () => ({ connectedServerIds: [] }),
+      },
+    });
+    const result = await api({
+      method: 'POST',
+      pathname: '/api/admin/mcp/servers/server_1/start',
+      isAdmin: true,
+    });
+    assert.equal(result.status, 503, code);
+    assert.equal(result.body.code, code);
+  }
+});
+
+
+function supervisorFixture({ executeTool = async () => ({ ok: true }), executionDrainTimeoutMs = 100 } = {}) {
+  const server = { id: 'server-1', transport: 'stdio', status: 'pending' };
+  const statusChanges = [];
+  const calls = [];
+  const adapter = {
+    serverId: server.id,
+    async listTools() { return { tools: [] }; },
+    async callTool() { return { ok: true }; },
+    async close() { calls.push('adapter.close'); },
+  };
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: () => server,
+    listServers: () => [server],
+    setStatus: (_id, status, metadata) => {
+      server.status = status;
+      statusChanges.push({ status, metadata });
+    },
+    connect: async () => adapter,
+    discover: async () => {},
+    executeTool,
+    executionDrainTimeoutMs,
+  });
+  return { supervisor, calls, statusChanges };
+}
+
+test('MCP supervisor closes transport and bounds a permanently pending tool execution', async () => {
+  const { supervisor, calls, statusChanges } = supervisorFixture({
+    executeTool: () => new Promise(() => {}),
+  });
+  await supervisor.startServer('server-1');
+  const pendingCall = supervisor.executeApprovedTool({ serverId: 'server-1', toolName: 'hang' });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  await assert.rejects(
+    supervisor.stopServer('server-1'),
+    { code: 'MCP_RUNTIME_DRAIN_TIMEOUT' },
+  );
+  assert.deepEqual(calls, ['adapter.close']);
+  assert.ok(statusChanges.some((entry) => entry.status === 'degraded'
+    && entry.metadata?.errorCode === 'MCP_RUNTIME_DRAIN_TIMEOUT'));
+  void pendingCall;
+});
+
+test('MCP supervisor closes an idle runtime once during concurrent stop requests', async () => {
+  const { supervisor, calls } = supervisorFixture();
+  await supervisor.startServer('server-1');
+  const results = await Promise.all([
+    supervisor.stopServer('server-1'),
+    supervisor.stopServer('server-1'),
+  ]);
+  assert.deepEqual(results, [true, true]);
+  assert.deepEqual(calls, ['adapter.close']);
+});
+
+
+test('MCP supervisor fences restart when failed startup cannot confirm adapter cleanup', async () => {
+  const server = { id: 'server-1', transport: 'stdio', status: 'pending' };
+  const adapter = {
+    serverId: server.id,
+    async listTools() { return { tools: [] }; },
+    async callTool() { return {}; },
+    close() { return new Promise(() => {}); },
+  };
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: () => server,
+    listServers: () => [server],
+    setStatus: (_id, status, metadata) => {
+      server.status = status;
+      server.errorCode = metadata?.errorCode;
+    },
+    connect: async () => adapter,
+    discover: async () => { throw new Error('discovery failed'); },
+    executionDrainTimeoutMs: 100,
+  });
+  await assert.rejects(supervisor.startServer('server-1'), /discovery failed/);
+  assert.equal(server.status, 'degraded');
+  assert.equal(server.errorCode, 'MCP_RUNTIME_CLOSE_TIMEOUT');
+  assert.deepEqual(supervisor.getSnapshot().cleanupBlockedServerIds, ['server-1']);
+  await assert.rejects(
+    supervisor.startServer('server-1'),
+    { code: 'MCP_RUNTIME_CLEANUP_UNCONFIRMED' },
+  );
+});
+
+
+test('MCP supervisor bounds stop during pending startup and cleans a late adapter', async () => {
+  const server = { id: 'server-1', transport: 'stdio', status: 'pending' };
+  let resolveConnect;
+  let closeCount = 0;
+  const supervisor = createMcpRuntimeSupervisor({
+    getServer: () => server,
+    listServers: () => [server],
+    setStatus: (_id, status, metadata) => {
+      server.status = status;
+      server.errorCode = metadata?.errorCode;
+    },
+    connect: () => new Promise((resolve) => { resolveConnect = resolve; }),
+    discover: async () => {},
+    executionDrainTimeoutMs: 100,
+  });
+
+  const starting = supervisor.startServer('server-1');
+  await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(
+    supervisor.stopServer('server-1'),
+    { code: 'MCP_RUNTIME_START_STOP_TIMEOUT' },
+  );
+  assert.equal(server.status, 'degraded');
+  assert.equal(server.errorCode, 'MCP_RUNTIME_START_STOP_TIMEOUT');
+  assert.deepEqual(supervisor.getSnapshot().cleanupBlockedServerIds, ['server-1']);
+
+  resolveConnect({
+    serverId: 'server-1',
+    async listTools() { return { tools: [] }; },
+    async callTool() { return {}; },
+    async close() { closeCount += 1; },
+  });
+  await assert.rejects(starting, { code: 'MCP_RUNTIME_START_CANCELLED' });
+  assert.equal(closeCount, 1);
+  assert.deepEqual(supervisor.getSnapshot().cleanupBlockedServerIds, ['server-1']);
 });

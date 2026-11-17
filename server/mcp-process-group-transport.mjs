@@ -4,6 +4,40 @@ import { StringDecoder } from 'node:string_decoder';
 import process from 'node:process';
 
 const DEFAULT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+const MAX_DIAGNOSTIC_STDERR_BYTES = 16 * 1024;
+
+const SAFE_STDERR_HINTS = new Set([
+  'error', 'unable', 'failed', 'failure', 'start', 'starting', 'create', 'creating',
+  'container', 'process', 'runtime', 'namespace', 'user', 'permission', 'denied',
+  'operation', 'not', 'permitted', 'no', 'space', 'left', 'overlay', 'mount',
+  'storage', 'idmap', 'newuidmap', 'newgidmap', 'crun', 'runc', 'conmon',
+  'exit', 'status', 'code', 'cannot', 'clone', 'network', 'setup', 'pasta',
+  'slirp4netns', 'image', 'found', 'unknown', 'short', 'name', 'resolution',
+  'alias', 'invalid', 'argument', 'busy', 'device', 'resource', 'temporarily',
+  'unavailable', 'exec', 'format', 'file', 'exists', 'already', 'in', 'use',
+  'mounting', 'mountpoint', 'read-only', 'read', 'only', 'cgroup', 'subuid',
+  'subgid', 'mapping', 'uid', 'gid', 'cannot', 'allocate', 'range', 'quota',
+]);
+
+function safeStderrHints(stderr) {
+  const tokens = stderr.toLowerCase().match(/[a-z0-9_.:-]+/g) ?? [];
+  return [...new Set(tokens.filter((token) => SAFE_STDERR_HINTS.has(token)))].slice(0, 24);
+}
+
+function classifyStderr(stderr) {
+  const value = stderr.toLowerCase();
+  // Keep user-namespace failures distinct from generic kernel/seccomp denials:
+  // "operation not permitted" alone is not proof that user namespaces failed.
+  if (/cannot clone|creating (a )?new user namespace|user namespaces? (are )?(not enabled|not supported)|userns.*(not supported|failed)/.test(value)) return 'rootless-userns-unavailable';
+  if (/newuidmap|newgidmap/.test(value)) return 'rootless-idmap-helper-failed';
+  if (/operation not permitted|operation not allowed/.test(value)) return 'kernel-operation-not-permitted';
+  if (/permission denied|permissionerror|access denied/.test(value)) return 'permission-denied';
+  if (/no space left|overlay.*(mount|storage)|storage driver|graphroot/.test(value)) return 'container-storage-error';
+  if (/image.*(not known|not found|no such)|short-name.*(resolution|alias)/.test(value)) return 'image-resolution-error';
+  if (/network.*(setup|namespace|create)|slirp4netns|pasta/.test(value)) return 'network-setup-error';
+  if (/conmon|crun|runc|container create|failed to create/.test(value)) return 'container-runtime-error';
+  return stderr.trim() ? 'unclassified-podman-error' : 'no-stderr';
+}
 
 function fail(code, message) {
   const error = new Error(message);
@@ -94,8 +128,13 @@ export function createMcpProcessGroupTransport({
   stderr = 'ignore',
   maxBufferSize = DEFAULT_MAX_BUFFER_BYTES,
   shutdownTimeoutMs = 1_500,
+  // Podman owns container/conmon cleanup; killing its entire process group can
+  // also kill its persistent rootless pause process. In that mode, stop only
+  // the CLI and let the caller remove the named container explicitly.
+  killProcessGroupOnClose = true,
   spawnProcess = spawn,
   platform = process.platform,
+  onProcessExit,
 } = {}) {
   if (platform === 'win32') {
     throw fail('MCP_PROCESS_GROUP_UNSUPPORTED', 'MCP stdio process-group isolation is not implemented on Windows');
@@ -106,7 +145,10 @@ export function createMcpProcessGroupTransport({
     || !env || typeof env !== 'object' || Array.isArray(env)
     || !Number.isInteger(maxBufferSize) || maxBufferSize < 1024
     || !Number.isInteger(shutdownTimeoutMs) || shutdownTimeoutMs < 100 || shutdownTimeoutMs > 10_000
-    || typeof spawnProcess !== 'function') {
+    || typeof killProcessGroupOnClose !== 'boolean'
+    || typeof spawnProcess !== 'function'
+    || !['ignore', 'pipe', 'diagnostic'].includes(stderr)
+    || (onProcessExit !== undefined && typeof onProcessExit !== 'function')) {
     throw new TypeError('command, args, cwd, env and bounded transport options are required');
   }
 
@@ -115,6 +157,7 @@ export function createMcpProcessGroupTransport({
   let closing = false;
   let closePromise = null;
   let buffer = '';
+  let diagnosticStderr = '';
   const decoder = new StringDecoder('utf8');
 
   const transport = {
@@ -127,29 +170,10 @@ export function createMcpProcessGroupTransport({
       child = spawnProcess(command, args, {
         cwd,
         env,
-        stdio: ['pipe', 'pipe', stderr],
+        stdio: ['pipe', 'pipe', stderr === 'ignore' ? 'ignore' : 'pipe'],
         shell: false,
         windowsHide: true,
         detached: true,
-      });
-
-      await new Promise((resolve, reject) => {
-        let settled = false;
-        const onSpawn = () => {
-          started = true;
-          settled = true;
-          resolve();
-        };
-        const onError = (error) => {
-          if (!settled) {
-            settled = true;
-            reject(error);
-          } else {
-            transport.onerror?.(error);
-          }
-        };
-        child.once('spawn', onSpawn);
-        child.once('error', onError);
       });
 
       child.stdout.on('data', (chunk) => {
@@ -187,15 +211,64 @@ export function createMcpProcessGroupTransport({
         }
       });
       child.stdout.on('error', (error) => transport.onerror?.(error));
+      if (stderr !== 'ignore') {
+        child.stderr?.on('data', (chunk) => {
+          if (stderr !== 'diagnostic') return;
+          const remaining = MAX_DIAGNOSTIC_STDERR_BYTES - Buffer.byteLength(diagnosticStderr, 'utf8');
+          if (remaining > 0) diagnosticStderr += Buffer.from(chunk).subarray(0, remaining).toString('utf8');
+        });
+        child.stderr?.on('error', () => {});
+      }
       child.stdin.on('error', (error) => {
         if (!closing && error?.code !== 'EPIPE') transport.onerror?.(error);
       });
-      child.once('exit', () => {
+      child.once('exit', (code, signal) => {
         if (!closing) {
+          // Preserve safe process-exit metadata before the SDK receives onclose.
+          // This distinguishes a Podman CLI exit from an unexplained stdio loss
+          // without forwarding stderr, which may contain server-provided secrets.
+          const exitError = fail(
+            'MCP_PROCESS_UNEXPECTED_EXIT',
+            `MCP stdio process exited unexpectedly (pid=${child.pid}, code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
+          );
+          exitError.pid = child.pid;
+          exitError.exitCode = code;
+          exitError.signal = signal;
+          try {
+            onProcessExit?.(Object.freeze({ pid: child.pid, exitCode: code, signal, ...(stderr === 'diagnostic' ? { stderrCategory: classifyStderr(diagnosticStderr), stderrHints: safeStderrHints(diagnosticStderr) } : {}) }));
+          } catch { /* diagnostics must never disrupt transport teardown */ }
+          transport.onerror?.(exitError);
           transport.onclose?.();
-          // Unexpected parent exit must not leave descendants in its group.
-          void terminateGroup(child.pid, child).catch((error) => transport.onerror?.(error));
+          // For generic commands, reap the complete process group. Podman
+          // opts out because its persistent rootless pause process can share
+          // this group; its caller performs explicit container removal instead.
+          if (killProcessGroupOnClose) {
+            void terminateGroup(child.pid, child).catch((error) => transport.onerror?.(error));
+          }
         }
+      });
+
+      // Attach every stream and lifecycle listener before waiting for the spawn
+      // event. Short-lived commands (including Podman startup failures) can emit
+      // stderr and exit immediately; registering after the spawn await can lose
+      // the only diagnostic bytes and, in a tight race, the exit notification.
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const onSpawn = () => {
+          started = true;
+          settled = true;
+          resolve();
+        };
+        const onError = (error) => {
+          if (!settled) {
+            settled = true;
+            reject(error);
+          } else {
+            transport.onerror?.(error);
+          }
+        };
+        child.once('spawn', onSpawn);
+        child.once('error', onError);
       });
     },
 
@@ -216,12 +289,29 @@ export function createMcpProcessGroupTransport({
         if (!child) return;
         const processId = child.pid;
         try { child.stdin?.end(); } catch { /* best effort */ }
-        await waitForExit(child, 300);
-        await terminateGroup(processId, child);
+        if (killProcessGroupOnClose) {
+          await waitForExit(child, 300);
+          await terminateGroup(processId, child);
+        } else {
+          // Do not signal Podman's whole process group: rootless Podman may
+          // keep a pause process in it for subsequent containers. Give the
+          // CLI time to finish naturally, then terminate only that CLI; the
+          // Podman transport follows with 'container rm --force'.
+          if (!await waitForExit(child, shutdownTimeoutMs)) {
+            try { child.kill('SIGTERM'); } catch { /* best effort */ }
+            if (!await waitForExit(child, shutdownTimeoutMs)) {
+              try { child.kill('SIGKILL'); } catch { /* best effort */ }
+              if (!await waitForExit(child, shutdownTimeoutMs)) {
+                throw fail('MCP_PROCESS_TERMINATION_UNCONFIRMED', 'MCP child process did not exit after SIGKILL');
+              }
+            }
+          }
+        }
         try { child.stdout?.destroy(); } catch { /* best effort */ }
         try { child.stdin?.destroy(); } catch { /* best effort */ }
         try { child.stderr?.destroy(); } catch { /* best effort */ }
         buffer = '';
+        diagnosticStderr = '';
       })();
       return closePromise;
     },

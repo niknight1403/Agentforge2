@@ -8,12 +8,12 @@ import {
   removeMcpServer,
 } from './mcp-registry.mjs';
 import { createMcpRuntimeSupervisor } from './mcp-runtime-supervisor.mjs';
-import { connectMcpStdioServer } from './mcp-stdio-runtime-adapter.mjs';
-import { createMcpDeploymentPolicyProvider } from './mcp-deployment-policy.mjs';
+import { connectMcpPodmanServer } from './mcp-podman-runtime-adapter.mjs';
+import { createMcpRootlessProfileProvider } from './mcp-rootless-profile-registry.mjs';
 import { createMcpAdminApi } from './mcp-admin-api.mjs';
-import { assertMcpSharedNamespaceOptIn } from './mcp-isolation-policy.mjs';
 
-const policyFor = createMcpDeploymentPolicyProvider();
+
+const profileForServer = createMcpRootlessProfileProvider();
 
 const registry = Object.freeze({
   registerMcpServer,
@@ -27,21 +27,16 @@ const registry = Object.freeze({
 
 export const mcpRuntimeSupervisor = createMcpRuntimeSupervisor({
   connect: ({ serverId }) => {
-    // This runtime still shares the Hub's OS/container boundary. Never infer
-    // per-server isolation from the executable launch allowlist.
-    assertMcpSharedNamespaceOptIn();
+    // No stdio fallback: every runtime must have an explicit deployment-owned
+    // image profile and pass the rootless Podman capability probe.
     const server = getMcpServer(serverId);
     if (!server) {
       const error = new Error('MCP server is not registered');
       error.code = 'MCP_SERVER_NOT_FOUND';
       throw error;
     }
-    const policy = policyFor(server);
-    return connectMcpStdioServer({
-      serverId,
-      policy,
-      ...(policy.credentialEnvKey ? { credentialEnvKey: policy.credentialEnvKey } : {}),
-    });
+    const profile = profileForServer(serverId);
+    return connectMcpPodmanServer({ serverId, profile });
   },
 });
 

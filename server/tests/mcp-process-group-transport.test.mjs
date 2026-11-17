@@ -73,3 +73,33 @@ test('MCP process-group transport rejects Windows until Job Object teardown exis
     command: 'node', args: [], cwd: process.cwd(), env: {}, platform: 'win32',
   }), { code: 'MCP_PROCESS_GROUP_UNSUPPORTED' });
 });
+
+
+test('MCP process-group transport captures stderr from an immediate startup failure', {
+  timeout: 10_000,
+}, async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), 'agentforge-mcp-diagnostic-'));
+  let resolveExit;
+  const exited = new Promise((resolve) => { resolveExit = resolve; });
+  const transport = createMcpProcessGroupTransport({
+    command: process.execPath,
+    args: ['-e', "process.stderr.write('permission denied while creating container\\n'); process.exit(125);"],
+    cwd,
+    env: {},
+    stderr: 'diagnostic',
+    onProcessExit: resolveExit,
+  });
+  try {
+    await transport.start();
+    const event = await Promise.race([
+      exited,
+      delay(5_000).then(() => { throw new Error('Timed out waiting for immediate child exit'); }),
+    ]);
+    assert.equal(event.exitCode, 125);
+    assert.equal(event.stderrCategory, 'permission-denied');
+    assert.equal(Object.hasOwn(event, 'stderr'), false, 'raw stderr must never escape diagnostics');
+  } finally {
+    try { await transport.close(); } catch { /* the child may already have exited */ }
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

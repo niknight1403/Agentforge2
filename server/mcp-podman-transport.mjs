@@ -1,7 +1,23 @@
 import { spawn } from 'node:child_process';
 import process from 'node:process';
+import path from 'node:path';
 import { buildMcpPodmanRunSpec, probeMcpPodmanRootless } from './mcp-podman-rootless-runner.mjs';
 import { createMcpProcessGroupTransport } from './mcp-process-group-transport.mjs';
+
+function buildPodmanHostEnv(podmanPath, source = process.env) {
+  const pathEntries = [path.dirname(podmanPath), '/usr/bin', '/bin'];
+  const safe = {
+    PATH: [...new Set(pathEntries)].join(path.delimiter),
+    HOME: typeof source.HOME === 'string' && source.HOME.startsWith('/') ? source.HOME : '/',
+  };
+  for (const key of ['XDG_RUNTIME_DIR', 'TMPDIR']) {
+    const value = source[key];
+    if (typeof value === 'string' && value.startsWith('/') && !value.includes('\\0')) {
+      safe[key] = value;
+    }
+  }
+  return Object.freeze(safe);
+}
 
 function fail(code, message) {
   const error = new Error(message);
@@ -75,26 +91,64 @@ export function createMcpPodmanTransport({
   probe = probeMcpPodmanRootless,
   controlTimeoutMs = 3_000,
   shutdownTimeoutMs = 1_500,
+  onProcessExit,
 } = {}) {
   const spec = buildMcpPodmanRunSpec({ podmanPath, profile });
   if (typeof probe !== 'function') throw new TypeError('A rootless Podman capability probe is required');
 
+  const hostEnv = buildPodmanHostEnv(podmanPath, env);
+  const options = { spawnProcess, timeoutMs: controlTimeoutMs, env: hostEnv };
   const transport = createMcpProcessGroupTransport({
     command: spec.command,
     args: spec.args,
     cwd,
-    env,
+    env: hostEnv,
     spawnProcess,
     shutdownTimeoutMs,
-    stderr: 'ignore',
+    // Podman must own teardown of its rootless pause process; remove the named
+    // container explicitly after stopping only the Podman CLI.
+    killProcessGroupOnClose: false,
+    // Capture stderr only for an allowlisted category; raw text is never logged or exposed.
+    stderr: 'diagnostic',
+    onProcessExit,
   });
   let started = false;
   let closePromise;
-  const options = { spawnProcess, timeoutMs: controlTimeoutMs, env };
+  let runtimeTimer;
+
+  function clearRuntimeTimer() {
+    if (runtimeTimer) clearTimeout(runtimeTimer);
+    runtimeTimer = undefined;
+  }
+
+  function closeTransport() {
+    if (closePromise) return closePromise;
+    clearRuntimeTimer();
+    closePromise = (async () => {
+      let closeError;
+      try {
+        await transport.close();
+      } catch (error) {
+        closeError = error;
+      }
+      try {
+        await removeContainer(podmanPath, spec.containerName, options);
+      } catch (error) {
+        if (!closeError) closeError = error;
+      }
+      if (closeError) throw closeError;
+    })();
+    return closePromise;
+  }
 
   return Object.freeze({
     get onclose() { return transport.onclose; },
-    set onclose(value) { transport.onclose = value; },
+    set onclose(value) {
+      transport.onclose = (...args) => {
+        clearRuntimeTimer();
+        value?.(...args);
+      };
+    },
     get onerror() { return transport.onerror; },
     set onerror(value) { transport.onerror = value; },
     get onmessage() { return transport.onmessage; },
@@ -108,6 +162,12 @@ export function createMcpPodmanTransport({
       }
       await transport.start();
       started = true;
+      runtimeTimer = setTimeout(() => {
+        const error = fail('MCP_PODMAN_RUNTIME_TIMEOUT',
+          'MCP Podman container exceeded its deployment-owned runtime deadline');
+        transport.onerror?.(error);
+        void closeTransport().catch((closeError) => transport.onerror?.(closeError));
+      }, spec.timeoutMs);
     },
 
     send(message) {
@@ -115,22 +175,7 @@ export function createMcpPodmanTransport({
     },
 
     close() {
-      if (closePromise) return closePromise;
-      closePromise = (async () => {
-        let closeError;
-        try {
-          await transport.close();
-        } catch (error) {
-          closeError = error;
-        }
-        try {
-          await removeContainer(podmanPath, spec.containerName, options);
-        } catch (error) {
-          if (!closeError) closeError = error;
-        }
-        if (closeError) throw closeError;
-      })();
-      return closePromise;
+      return closeTransport();
     },
   });
 }
