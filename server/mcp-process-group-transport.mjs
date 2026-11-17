@@ -4,6 +4,18 @@ import { StringDecoder } from 'node:string_decoder';
 import process from 'node:process';
 
 const DEFAULT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+const MAX_DIAGNOSTIC_STDERR_BYTES = 16 * 1024;
+
+function classifyStderr(stderr) {
+  const value = stderr.toLowerCase();
+  if (/cannot clone|newuidmap|newgidmap|user namespace|userns.*(not supported|failed)|operation not permitted/.test(value)) return 'rootless-userns-unavailable';
+  if (/permission denied|permissionerror|access denied/.test(value)) return 'permission-denied';
+  if (/no space left|overlay.*(mount|storage)|storage driver|graphroot/.test(value)) return 'container-storage-error';
+  if (/image.*(not known|not found|no such)|short-name.*(resolution|alias)/.test(value)) return 'image-resolution-error';
+  if (/network.*(setup|namespace|create)|slirp4netns|pasta/.test(value)) return 'network-setup-error';
+  if (/conmon|crun|runc|container create|failed to create/.test(value)) return 'container-runtime-error';
+  return stderr.trim() ? 'unclassified-podman-error' : 'no-stderr';
+}
 
 function fail(code, message) {
   const error = new Error(message);
@@ -108,7 +120,7 @@ export function createMcpProcessGroupTransport({
     || !Number.isInteger(maxBufferSize) || maxBufferSize < 1024
     || !Number.isInteger(shutdownTimeoutMs) || shutdownTimeoutMs < 100 || shutdownTimeoutMs > 10_000
     || typeof spawnProcess !== 'function'
-    || (onProcessExit !== undefined && typeof onProcessExit !== 'function')) {
+    || !['ignore', 'pipe', 'diagnostic'].includes(stderr)\n    || (onProcessExit !== undefined && typeof onProcessExit !== 'function')) {
     throw new TypeError('command, args, cwd, env and bounded transport options are required');
   }
 
@@ -117,6 +129,7 @@ export function createMcpProcessGroupTransport({
   let closing = false;
   let closePromise = null;
   let buffer = '';
+  let diagnosticStderr = '';
   const decoder = new StringDecoder('utf8');
 
   const transport = {
@@ -129,7 +142,7 @@ export function createMcpProcessGroupTransport({
       child = spawnProcess(command, args, {
         cwd,
         env,
-        stdio: ['pipe', 'pipe', stderr],
+        stdio: ['pipe', 'pipe', stderr === 'ignore' ? 'ignore' : 'pipe'],
         shell: false,
         windowsHide: true,
         detached: true,
@@ -188,7 +201,7 @@ export function createMcpProcessGroupTransport({
           void transport.close().catch(() => {});
         }
       });
-      child.stdout.on('error', (error) => transport.onerror?.(error));
+      child.stdout.on('error', (error) => transport.onerror?.(error));\n      if (stderr !== 'ignore') {\n        child.stderr?.on('data', (chunk) => {\n          if (stderr !== 'diagnostic') return;\n          const remaining = MAX_DIAGNOSTIC_STDERR_BYTES - Buffer.byteLength(diagnosticStderr, 'utf8');\n          if (remaining > 0) diagnosticStderr += chunk.toString('utf8').slice(0, remaining);\n        });\n        child.stderr?.on('error', () => {});\n      }
       child.stdin.on('error', (error) => {
         if (!closing && error?.code !== 'EPIPE') transport.onerror?.(error);
       });
