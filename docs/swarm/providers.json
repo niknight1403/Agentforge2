@@ -1,14 +1,14 @@
 {
   "ok": true,
-  "checked_at": "2026-11-17T02:21:05Z",
-  "ok_count": 2,
+  "checked_at": "2026-11-17T11:40:49Z",
+  "ok_count": 1,
   "providers": [
     {
       "provider": "cerebras",
       "model": "gpt-oss-120b",
-      "ok": true,
-      "latency_ms": 172,
-      "reply_chars": 6
+      "ok": false,
+      "status": 402,
+      "error": "{\"message\":\"Payment required to access this resource. Visit your billing tab.\",\"type\":\"payment_required_error\",\"param\":\"quota\",\"code\":\"payme"
     },
     {
       "provider": "groq",
@@ -21,7 +21,7 @@
       "provider": "openrouter",
       "model": "openai/gpt-4o-mini",
       "ok": true,
-      "latency_ms": 632,
+      "latency_ms": 645,
       "reply_chars": 3
     }
   ],
