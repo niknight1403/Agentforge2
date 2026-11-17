@@ -1,0 +1,81 @@
+name: Swarm Relay Refresh
+
+# Hourly heartbeat for the AGI Swarm Engine relay served from GitHub Pages.
+# Uses the repository secret CEREBRAS_API_KEY (never printed, never committed)
+# to verify the primary model route and to stamp the relay file with fresh
+# provider latency. Base44 backend functions are not called here.
+
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: swarm-relay-refresh
+  cancel-in-progress: true
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Probe Cerebras route
+        env:
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request, pathlib, datetime
+
+          key = os.environ.get("CEREBRAS_API_KEY", "")
+          stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+          result = {"ok": False, "checked_at": stamp, "provider": "cerebras", "model": "gpt-oss-120b"}
+
+          if not key:
+              result["error"] = "secret CEREBRAS_API_KEY missing"
+          else:
+              body = json.dumps({
+                  "model": "gpt-oss-120b",
+                  "messages": [{"role": "user", "content": "Antworte mit genau einem Wort: bereit"}],
+                  "max_tokens": 700,
+                  "temperature": 0.2,
+                  "stream": False,
+              }).encode()
+              req = urllib.request.Request(
+                  "https://api.cerebras.ai/v1/chat/completions",
+                  data=body,
+                  headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+                  method="POST",
+              )
+              started = time.time()
+              try:
+                  with urllib.request.urlopen(req, timeout=45) as resp:
+                      payload = json.loads(resp.read().decode())
+                  ms = int((time.time() - started) * 1000)
+                  text = (payload.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+                  result.update({"ok": bool(text), "latency_ms": ms, "reply_chars": len(text)})
+              except Exception as exc:  # noqa: BLE001
+                  result.update({"latency_ms": int((time.time() - started) * 1000), "error": str(exc)[:200]})
+
+          path = pathlib.Path("docs/swarm/heartbeat.json")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+          print(json.dumps(result))
+          PY
+
+      - name: Commit heartbeat
+        run: |
+          git config user.name "swarm-relay-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/swarm/heartbeat.json
+          if git diff --cached --quiet; then
+            echo "no change"
+          else
+            git commit -m "chore(swarm-relay): heartbeat [skip ci]"
+            git push
+          fi
