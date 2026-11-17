@@ -105,7 +105,7 @@ export function createMcpPodmanTransport({
     env: hostEnv,
     spawnProcess,
     shutdownTimeoutMs,
-    stderr: 'ignore',
+    // Capture stderr only for an allowlisted category; raw text is never logged or exposed.\n    stderr: 'diagnostic',
     onProcessExit,
   });
   let started = false;
