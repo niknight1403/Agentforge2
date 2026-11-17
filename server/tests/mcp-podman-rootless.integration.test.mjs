@@ -73,6 +73,7 @@ test('rootless Podman runtimes are isolated per server and one stop leaves the o
     });
     return connectMcpPodmanServer({
       serverId, profile,
+      onProcessExit: (event) => console.error('MCP_PROCESS_EXIT_DIAGNOSTIC', JSON.stringify(event)),
       getServer: (id) => id === serverId
         ? { id, transport: 'stdio', status: 'pending', authMode: 'none' }
         : null,
@@ -119,6 +120,7 @@ test('rootless Podman container crash is observable and cleanup removes the exit
   });
   const adapter = await connectMcpPodmanServer({
     serverId, profile,
+    onProcessExit: (event) => console.error('MCP_PROCESS_EXIT_DIAGNOSTIC', JSON.stringify(event)),
     getServer: (id) => id === serverId
       ? { id, transport: 'stdio', status: 'pending', authMode: 'none' }
       : null,
