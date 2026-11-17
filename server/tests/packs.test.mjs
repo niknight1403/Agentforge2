@@ -93,3 +93,15 @@ test('GitHub-Publish ist als abschaltbares Plugin-Pack registriert', () => {
   assert.equal(packState().tools.find((item) => item.id === 'github').effective, false);
   setPackEnabled('github', true);
 });
+
+test('MCP agent calls are exposed only through the dedicated, switchable MCP pack', () => {
+  const spec = TOOL_SPECS.find((item) => item.name === 'mcp_call');
+  assert.ok(spec, 'mcp_call must be part of the real agent tool catalogue');
+  assert.equal(spec.pack, 'mcp');
+  assert.equal(canUseTool('mcp_call').allowed, true);
+  setPackEnabled('mcp', false);
+  assert.equal(canUseTool('mcp_call').allowed, false);
+  assert.equal(toolSpecs().find((item) => item.name === 'mcp_call').enabled, false);
+  setPackEnabled('mcp', true);
+  assert.equal(canUseTool('mcp_call').allowed, true);
+});

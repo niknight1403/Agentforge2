@@ -1,0 +1,338 @@
+import { spawn } from 'node:child_process';
+import { readdirSync, readFileSync } from 'node:fs';
+import { StringDecoder } from 'node:string_decoder';
+import process from 'node:process';
+
+const DEFAULT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
+const MAX_DIAGNOSTIC_STDERR_BYTES = 16 * 1024;
+
+const SAFE_STDERR_HINTS = new Set([
+  'error', 'unable', 'failed', 'failure', 'start', 'starting', 'create', 'creating',
+  'container', 'process', 'runtime', 'namespace', 'user', 'permission', 'denied',
+  'operation', 'not', 'permitted', 'no', 'space', 'left', 'overlay', 'mount',
+  'storage', 'idmap', 'newuidmap', 'newgidmap', 'crun', 'runc', 'conmon',
+  'exit', 'status', 'code', 'cannot', 'clone', 'network', 'setup', 'pasta',
+  'slirp4netns', 'image', 'found', 'unknown', 'short', 'name', 'resolution',
+  'alias', 'invalid', 'argument', 'busy', 'device', 'resource', 'temporarily',
+  'unavailable', 'exec', 'format', 'file', 'exists', 'already', 'in', 'use',
+  'mounting', 'mountpoint', 'read-only', 'read', 'only', 'cgroup', 'subuid',
+  'subgid', 'mapping', 'uid', 'gid', 'cannot', 'allocate', 'range', 'quota',
+]);
+
+function safeStderrHints(stderr) {
+  const tokens = stderr.toLowerCase().match(/[a-z0-9_.:-]+/g) ?? [];
+  return [...new Set(tokens.filter((token) => SAFE_STDERR_HINTS.has(token)))].slice(0, 24);
+}
+
+function classifyStderr(stderr) {
+  const value = stderr.toLowerCase();
+  // Keep user-namespace failures distinct from generic kernel/seccomp denials:
+  // "operation not permitted" alone is not proof that user namespaces failed.
+  if (/cannot clone|creating (a )?new user namespace|user namespaces? (are )?(not enabled|not supported)|userns.*(not supported|failed)/.test(value)) return 'rootless-userns-unavailable';
+  if (/newuidmap|newgidmap/.test(value)) return 'rootless-idmap-helper-failed';
+  if (/operation not permitted|operation not allowed/.test(value)) return 'kernel-operation-not-permitted';
+  if (/permission denied|permissionerror|access denied/.test(value)) return 'permission-denied';
+  if (/no space left|overlay.*(mount|storage)|storage driver|graphroot/.test(value)) return 'container-storage-error';
+  if (/image.*(not known|not found|no such)|short-name.*(resolution|alias)/.test(value)) return 'image-resolution-error';
+  if (/network.*(setup|namespace|create)|slirp4netns|pasta/.test(value)) return 'network-setup-error';
+  if (/conmon|crun|runc|container create|failed to create/.test(value)) return 'container-runtime-error';
+  return stderr.trim() ? 'unclassified-podman-error' : 'no-stderr';
+}
+
+function fail(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function waitForExit(child, timeoutMs) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.removeListener('exit', onExit);
+      resolve(value);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    timer.unref?.();
+    child.once('exit', onExit);
+  });
+}
+
+function processGroupExists(pid) {
+  // On Linux, kill(-pgid, 0) also reports zombie-only groups as present.
+  // Zombies cannot execute; inspect /proc so a reaped process tree is not
+  // misreported as a live descendant after SIGKILL.
+  if (process.platform === 'linux') {
+    try {
+      for (const entry of readdirSync('/proc')) {
+        if (!/^\d+$/.test(entry)) continue;
+        try {
+          const stat = readFileSync(`/proc/${entry}/stat`, 'utf8');
+          const fields = stat.slice(stat.lastIndexOf(') ') + 2).trim().split(/\s+/);
+          const state = fields[0];
+          const processGroupId = Number(fields[2]);
+          if (processGroupId === pid && state !== 'Z' && state !== 'X') return true;
+        } catch { /* process exited while /proc was scanned */ }
+      }
+      return false;
+    } catch { /* fall back to kill(0) when /proc is unavailable */ }
+  }
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== 'ESRCH';
+  }
+}
+
+function signalProcessGroup(pid, signal) {
+  try {
+    process.kill(-pid, signal);
+  } catch (error) {
+    if (error?.code !== 'ESRCH') throw error;
+  }
+}
+
+async function waitForGroupGone(pid, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processGroupExists(pid)) return true;
+    await delay(25);
+  }
+  return !processGroupExists(pid);
+}
+
+/**
+ * POSIX stdio transport for the official MCP Client.
+ *
+ * Unlike the SDK's stock StdioClientTransport, this starts the executable as a
+ * detached process-group leader and terminates the complete group on close.
+ * Keep Windows disabled until equivalent Job Object handling is implemented.
+ */
+export function createMcpProcessGroupTransport({
+  command,
+  args = [],
+  cwd,
+  env,
+  // Child stderr may contain credentials or server-provided sensitive data.
+  // Keep it out of Hub logs unless a deployment explicitly opts in.
+  stderr = 'ignore',
+  maxBufferSize = DEFAULT_MAX_BUFFER_BYTES,
+  shutdownTimeoutMs = 1_500,
+  // Podman owns container/conmon cleanup; killing its entire process group can
+  // also kill its persistent rootless pause process. In that mode, stop only
+  // the CLI and let the caller remove the named container explicitly.
+  killProcessGroupOnClose = true,
+  spawnProcess = spawn,
+  platform = process.platform,
+  onProcessExit,
+} = {}) {
+  if (platform === 'win32') {
+    throw fail('MCP_PROCESS_GROUP_UNSUPPORTED', 'MCP stdio process-group isolation is not implemented on Windows');
+  }
+  if (typeof command !== 'string' || !command || !Array.isArray(args)
+    || args.some((arg) => typeof arg !== 'string')
+    || typeof cwd !== 'string' || !cwd
+    || !env || typeof env !== 'object' || Array.isArray(env)
+    || !Number.isInteger(maxBufferSize) || maxBufferSize < 1024
+    || !Number.isInteger(shutdownTimeoutMs) || shutdownTimeoutMs < 100 || shutdownTimeoutMs > 10_000
+    || typeof killProcessGroupOnClose !== 'boolean'
+    || typeof spawnProcess !== 'function'
+    || !['ignore', 'pipe', 'diagnostic'].includes(stderr)
+    || (onProcessExit !== undefined && typeof onProcessExit !== 'function')) {
+    throw new TypeError('command, args, cwd, env and bounded transport options are required');
+  }
+
+  let child = null;
+  let started = false;
+  let closing = false;
+  let closePromise = null;
+  let buffer = '';
+  let diagnosticStderr = '';
+  const decoder = new StringDecoder('utf8');
+
+  const transport = {
+    onclose: undefined,
+    onerror: undefined,
+    onmessage: undefined,
+
+    async start() {
+      if (child) throw new Error('MCP process-group transport already started');
+      child = spawnProcess(command, args, {
+        cwd,
+        env,
+        stdio: ['pipe', 'pipe', stderr === 'ignore' ? 'ignore' : 'pipe'],
+        shell: false,
+        windowsHide: true,
+        detached: true,
+      });
+
+      child.stdout.on('data', (chunk) => {
+        if (closing) return;
+        buffer += decoder.write(chunk);
+        if (Buffer.byteLength(buffer, 'utf8') > maxBufferSize && !buffer.includes('\n')) {
+          transport.onerror?.(fail('MCP_STDIO_BUFFER_LIMIT', 'MCP stdio message exceeded the configured buffer limit'));
+          void transport.close().catch(() => {});
+          return;
+        }
+        let newline;
+        while ((newline = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, newline).replace(/\r$/, '');
+          buffer = buffer.slice(newline + 1);
+          if (!line.trim()) continue;
+          if (Buffer.byteLength(line, 'utf8') > maxBufferSize) {
+            transport.onerror?.(fail('MCP_STDIO_BUFFER_LIMIT', 'MCP stdio message exceeded the configured buffer limit'));
+            void transport.close().catch(() => {});
+            return;
+          }
+          let message;
+          try {
+            message = JSON.parse(line);
+          } catch {
+            transport.onerror?.(fail('MCP_STDIO_INVALID_MESSAGE', 'MCP stdio emitted invalid JSON'));
+            continue;
+          }
+          transport.onmessage?.(message);
+        }
+        // A single chunk may contain complete lines followed by an oversized
+        // unterminated frame. Bound that trailing fragment immediately too.
+        if (Buffer.byteLength(buffer, 'utf8') > maxBufferSize) {
+          transport.onerror?.(fail('MCP_STDIO_BUFFER_LIMIT', 'MCP stdio message exceeded the configured buffer limit'));
+          void transport.close().catch(() => {});
+        }
+      });
+      child.stdout.on('error', (error) => transport.onerror?.(error));
+      if (stderr !== 'ignore') {
+        child.stderr?.on('data', (chunk) => {
+          if (stderr !== 'diagnostic') return;
+          const remaining = MAX_DIAGNOSTIC_STDERR_BYTES - Buffer.byteLength(diagnosticStderr, 'utf8');
+          if (remaining > 0) diagnosticStderr += Buffer.from(chunk).subarray(0, remaining).toString('utf8');
+        });
+        child.stderr?.on('error', () => {});
+      }
+      child.stdin.on('error', (error) => {
+        if (!closing && error?.code !== 'EPIPE') transport.onerror?.(error);
+      });
+      child.once('exit', (code, signal) => {
+        if (!closing) {
+          // Preserve safe process-exit metadata before the SDK receives onclose.
+          // This distinguishes a Podman CLI exit from an unexplained stdio loss
+          // without forwarding stderr, which may contain server-provided secrets.
+          const exitError = fail(
+            'MCP_PROCESS_UNEXPECTED_EXIT',
+            `MCP stdio process exited unexpectedly (pid=${child.pid}, code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
+          );
+          exitError.pid = child.pid;
+          exitError.exitCode = code;
+          exitError.signal = signal;
+          try {
+            onProcessExit?.(Object.freeze({ pid: child.pid, exitCode: code, signal, ...(stderr === 'diagnostic' ? { stderrCategory: classifyStderr(diagnosticStderr), stderrHints: safeStderrHints(diagnosticStderr) } : {}) }));
+          } catch { /* diagnostics must never disrupt transport teardown */ }
+          transport.onerror?.(exitError);
+          transport.onclose?.();
+          // For generic commands, reap the complete process group. Podman
+          // opts out because its persistent rootless pause process can share
+          // this group; its caller performs explicit container removal instead.
+          if (killProcessGroupOnClose) {
+            void terminateGroup(child.pid, child).catch((error) => transport.onerror?.(error));
+          }
+        }
+      });
+
+      // Attach every stream and lifecycle listener before waiting for the spawn
+      // event. Short-lived commands (including Podman startup failures) can emit
+      // stderr and exit immediately; registering after the spawn await can lose
+      // the only diagnostic bytes and, in a tight race, the exit notification.
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const onSpawn = () => {
+          started = true;
+          settled = true;
+          resolve();
+        };
+        const onError = (error) => {
+          if (!settled) {
+            settled = true;
+            reject(error);
+          } else {
+            transport.onerror?.(error);
+          }
+        };
+        child.once('spawn', onSpawn);
+        child.once('error', onError);
+      });
+    },
+
+    async send(message) {
+      if (!started || closing || !child?.stdin || child.stdin.destroyed) {
+        throw fail('MCP_PROCESS_NOT_CONNECTED', 'MCP stdio process is not connected');
+      }
+      const payload = JSON.stringify(message) + '\n';
+      await new Promise((resolve, reject) => {
+        child.stdin.write(payload, 'utf8', (error) => error ? reject(error) : resolve());
+      });
+    },
+
+    close() {
+      if (closePromise) return closePromise;
+      closing = true;
+      closePromise = (async () => {
+        if (!child) return;
+        const processId = child.pid;
+        try { child.stdin?.end(); } catch { /* best effort */ }
+        if (killProcessGroupOnClose) {
+          await waitForExit(child, 300);
+          await terminateGroup(processId, child);
+        } else {
+          // Do not signal Podman's whole process group: rootless Podman may
+          // keep a pause process in it for subsequent containers. Give the
+          // CLI time to finish naturally, then terminate only that CLI; the
+          // Podman transport follows with 'container rm --force'.
+          if (!await waitForExit(child, shutdownTimeoutMs)) {
+            try { child.kill('SIGTERM'); } catch { /* best effort */ }
+            if (!await waitForExit(child, shutdownTimeoutMs)) {
+              try { child.kill('SIGKILL'); } catch { /* best effort */ }
+              if (!await waitForExit(child, shutdownTimeoutMs)) {
+                throw fail('MCP_PROCESS_TERMINATION_UNCONFIRMED', 'MCP child process did not exit after SIGKILL');
+              }
+            }
+          }
+        }
+        try { child.stdout?.destroy(); } catch { /* best effort */ }
+        try { child.stdin?.destroy(); } catch { /* best effort */ }
+        try { child.stderr?.destroy(); } catch { /* best effort */ }
+        buffer = '';
+        diagnosticStderr = '';
+      })();
+      return closePromise;
+    },
+  };
+
+  async function terminateGroup(pid, processHandle) {
+    if (!Number.isInteger(pid) || pid <= 1) return;
+    if (processGroupExists(pid)) {
+      signalProcessGroup(pid, 'SIGTERM');
+      await waitForGroupGone(pid, shutdownTimeoutMs);
+    }
+    if (processGroupExists(pid)) {
+      signalProcessGroup(pid, 'SIGKILL');
+      // The leader may already have exited while a descendant ignores SIGTERM.
+      // Wait for the entire process group after SIGKILL, not merely the leader.
+      await waitForGroupGone(pid, shutdownTimeoutMs);
+    }
+    if (processGroupExists(pid)) {
+      throw fail('MCP_PROCESS_GROUP_TERMINATION_UNCONFIRMED', 'MCP process group still exists after SIGKILL');
+    }
+  }
+
+  return transport;
+}
