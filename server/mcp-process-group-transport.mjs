@@ -6,6 +6,24 @@ import process from 'node:process';
 const DEFAULT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 const MAX_DIAGNOSTIC_STDERR_BYTES = 16 * 1024;
 
+const SAFE_STDERR_HINTS = new Set([
+  'error', 'unable', 'failed', 'failure', 'start', 'starting', 'create', 'creating',
+  'container', 'process', 'runtime', 'namespace', 'user', 'permission', 'denied',
+  'operation', 'not', 'permitted', 'no', 'space', 'left', 'overlay', 'mount',
+  'storage', 'idmap', 'newuidmap', 'newgidmap', 'crun', 'runc', 'conmon',
+  'exit', 'status', 'code', 'cannot', 'clone', 'network', 'setup', 'pasta',
+  'slirp4netns', 'image', 'found', 'unknown', 'short', 'name', 'resolution',
+  'alias', 'invalid', 'argument', 'busy', 'device', 'resource', 'temporarily',
+  'unavailable', 'exec', 'format', 'file', 'exists', 'already', 'in', 'use',
+  'mounting', 'mountpoint', 'read-only', 'read', 'only', 'cgroup', 'subuid',
+  'subgid', 'mapping', 'uid', 'gid', 'cannot', 'allocate', 'range', 'quota',
+]);
+
+function safeStderrHints(stderr) {
+  const tokens = stderr.toLowerCase().match(/[a-z0-9_.:-]+/g) ?? [];
+  return [...new Set(tokens.filter((token) => SAFE_STDERR_HINTS.has(token)))].slice(0, 24);
+}
+
 function classifyStderr(stderr) {
   const value = stderr.toLowerCase();
   // Keep user-namespace failures distinct from generic kernel/seccomp denials:
@@ -212,7 +230,7 @@ export function createMcpProcessGroupTransport({
           exitError.exitCode = code;
           exitError.signal = signal;
           try {
-            onProcessExit?.(Object.freeze({ pid: child.pid, exitCode: code, signal, ...(stderr === 'diagnostic' ? { stderrCategory: classifyStderr(diagnosticStderr) } : {}) }));
+            onProcessExit?.(Object.freeze({ pid: child.pid, exitCode: code, signal, ...(stderr === 'diagnostic' ? { stderrCategory: classifyStderr(diagnosticStderr), stderrHints: safeStderrHints(diagnosticStderr) } : {}) }));
           } catch { /* diagnostics must never disrupt transport teardown */ }
           transport.onerror?.(exitError);
           transport.onclose?.();
