@@ -142,3 +142,44 @@ test('rootless Podman container crash is observable and cleanup removes the exit
   ], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).sort();
   assert.deepEqual(after, before, 'crashed MCP container must not remain in Podman storage');
 });
+
+
+test('runtime deadline force-removes a SIGTERM-resistant rootless container', {
+  skip: !image,
+  timeout: 30_000,
+}, async () => {
+  const listContainers = () => execFileSync('/usr/bin/podman', [
+    'ps', '--all', '--filter', 'name=agentforge-mcp-', '--format', '{{.Names}}',
+  ], { encoding: 'utf8' }).trim().split('\\n').filter(Boolean).sort();
+  const before = listContainers();
+  const serverId = randomUUID();
+  const profile = Object.freeze({
+    backend: 'podman-rootless', image,
+    memoryBytes: 256 * 1024 * 1024, cpuQuotaMicros: 50_000,
+    pidsLimit: 64, timeoutMs: 1_000, network: 'none',
+    rootlessRequired: true, readOnlyRootRequired: true,
+    noNewPrivilegesRequired: true, dropAllCapabilitiesRequired: true,
+    hubDataMountsAllowed: false, runtimeSocketAllowed: false,
+  });
+  const adapter = await connectMcpPodmanServer({
+    serverId, profile,
+    getServer: (id) => id === serverId
+      ? { id, transport: 'stdio', status: 'pending', authMode: 'none' }
+      : null,
+  });
+  try {
+    const result = await Promise.race([
+      adapter.callTool({ name: 'resist', arguments: {} }).then(
+        () => ({ settled: 'resolved' }),
+        (error) => ({ settled: 'rejected', code: error?.code }),
+      ),
+      new Promise((resolve) => setTimeout(() => resolve({ settled: 'deadline-missed' }), 15_000)),
+    ]);
+    assert.equal(result.settled, 'rejected',
+      'the deployment-owned runtime deadline must close a non-cooperative MCP process');
+  } finally {
+    await adapter.close();
+  }
+  assert.deepEqual(listContainers(), before,
+    'the SIGTERM-resistant container must be force-removed after its runtime deadline');
+});
