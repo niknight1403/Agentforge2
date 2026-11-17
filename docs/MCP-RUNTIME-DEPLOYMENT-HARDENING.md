@@ -1,52 +1,52 @@
 # MCP runtime deployment hardening baseline
 
-This runbook is an operator baseline for the stdio runtime described in
-[MCP-STDIO-RUNTIME-ADAPTER.md](./MCP-STDIO-RUNTIME-ADAPTER.md). It is not an
-OS sandbox implementation and does not make the current Hub integration
-production-ready by itself.
+This runbook covers the Agentforge2 MCP Hub's deployment-owned, rootless Podman runtime. It describes the current fail-closed implementation and the remaining rollout gates; it is not proof of a production deployment or an independent security certification.
 
 ## Release prerequisites
 
-Do not enable external MCP server execution until all of these are true:
+Do not enable an MCP server until all applicable conditions are true:
 
-- The exact official SDK version is a production dependency in the root
-  `package.json` and npm-generated `package-lock.json`; a clean `npm ci`
-  and real-SDK stdio integration test pass against that lockfile.
-- The Hub constructs the supervisor with a deployment-owned launch policy.
-  Registry values are untrusted input and must never define their own allowlist.
-- Registry administration and lifecycle actions are authenticated and
-  administrator-authorized. Tool approval is separate from server registration.
-- External calls pass through the registry approval and audit gate. Raw SDK
-  clients, decrypted credentials, and process handles are never returned by
-  HTTP handlers.
-- The Hub exposes sanitized health and closes every managed runtime on graceful
-  shutdown. Startup remains opt-in; pending registry entries are never launched
-  automatically.
-- The deployment has process isolation, bounded resources, restricted
-  filesystem access, and explicit network egress policy.
-- A security review and end-to-end lifecycle tests have no unresolved critical
-  or high findings.
+- The Hub uses the pinned official `@modelcontextprotocol/client@2.4.0` production dependency and npm-generated lockfile. A clean `npm ci` and real-SDK stdio integration test pass against that lockfile.
+- The deployment maps each immutable registered server UUID to exactly one administrator-owned runner profile. Registry fields never choose an image, executable, command, arguments, environment, mounts, or network policy.
+- The image is pinned by immutable `sha256` digest and is reviewed as an MCP stdio server. The Podman backend is rootless and passes its runtime capability probe.
+- The profile requires `network=none`, a read-only root filesystem, dropped capabilities, no-new-privileges, a non-root container user, bounded memory/CPU/PIDs/runtime, no Hub data mounts, and no container-runtime socket.
+- Registry administration is behind the Hub's existing session/API-token authentication and administrator-role check. The HTTP API cannot supply or override deployment policy.
+- Servers remain pending until an administrator explicitly starts them. Tools require separate explicit approval and every approved call passes through the registry-backed audit gate.
+- The Hub closes managed runtimes on graceful shutdown and the deployment has staging evidence for stop, crash, timeout, and cleanup behavior.
+- A security review and end-to-end lifecycle review have no unresolved critical or high findings.
+
+Authenticated MCP servers remain blocked until a scoped credential channel into isolated containers is implemented and tested. Remote HTTP/SSE/WebSocket transports are registry-only and are not executed. There is no fallback to a shared-Hub process namespace when a rootless profile or Podman capability is missing.
 
 ## Dedicated Linux service identity
 
-Run the Hub under a dedicated unprivileged account. Do not run it as root and
-do not share its identity with unrelated workloads. The account should have:
+Run the Hub under a dedicated unprivileged account. Do not run it as root or share its identity with unrelated workloads. The account should have:
 
-- Read/execute access only to the Hub release and approved MCP executables.
+- Read/execute access only to the Hub release and required runtime binaries.
 - Write access only to the Hub's required state, log, and temporary directories.
 - No interactive shell, SSH key, or broad home-directory access.
-- No access to host credentials, container runtime sockets, or unrelated
-  application data.
+- No access to host credentials, unrelated application data, or privileged container-runtime sockets.
 
-Keep approved MCP working directories separate from the Hub source tree. Make
-them writable only when a specific server requires it; prefer read-only mounts.
+Rootless Podman must run as this unprivileged account with correctly provisioned subordinate UID/GID ranges and a private runtime directory. Do not grant the Hub account passwordless root or a privileged Podman socket.
+
+## Rootless Podman profile contract
+
+The profile is selected by the registered server UUID from deployment-owned configuration. It is not accepted from the registry request or administrator API payload. Validate the profile before use and keep the image digest immutable.
+
+The runner must enforce all of the following:
+
+- Rootless Podman only; fail closed when the capability probe fails.
+- No network namespace connectivity (`--network=none`).
+- Read-only container root, no-new-privileges, dropped Linux capabilities, and a non-root container UID.
+- Explicit memory, CPU quota, PID-count, and runtime-deadline bounds.
+- No host data mounts, no Hub source/state mounts, and no runtime socket.
+- A server image whose configured entrypoint speaks the MCP stdio protocol. Registry host commands and arguments are not passed into the container.
+- Authenticated registrations are rejected until a scoped secret-delivery protocol exists. Never place secrets in Podman CLI arguments, container environment, image layers, logs, or shared mounts.
+
+The real Linux CI integration suite exercises a disposable rootless Podman image through initialize, tools/list, tools/call, independent per-server containers, crash cleanup, and forced removal of a SIGTERM-resistant container. It also verifies that a pending MCP request is rejected when the runtime is forcibly retired. This is CI evidence, not a substitute for staging validation on the target host and distribution.
 
 ## systemd hardening template
 
-The following is a **template**, not a drop-in that can be copied unchanged.
-Replace every path and resource limit after measuring the actual Hub workload.
-Confirm that required SQLite/database, build, and temporary paths remain
-writable before rollout.
+The following is a **template**, not a drop-in that can be copied unchanged. Replace every path and resource limit after measuring the actual Hub workload. Confirm that required SQLite/database, build, and temporary paths remain writable before rollout.
 
 ```ini
 [Service]
@@ -70,7 +70,7 @@ UMask=0077
 # Explicit writable paths only; replace with paths verified for this install.
 ReadWritePaths=/srv/villaforge/data /srv/villaforge/logs /srv/villaforge/tmp
 
-# Bound the Hub and all stdio child processes as one service cgroup.
+# Bound the Hub and its control processes as one service cgroup.
 MemoryMax=2G
 CPUQuota=200%
 TasksMax=128
@@ -79,59 +79,33 @@ TimeoutStopSec=30
 SendSIGKILL=yes
 ```
 
-Systemd directives vary by distribution and version. Validate the unit with
-`systemd-analyze verify`, then test restart, graceful shutdown, and forced
-termination in a staging environment. The resource values above are examples,
-not measured recommendations.
+Systemd directives vary by distribution and version. Validate the unit with `systemd-analyze verify`, then test restart, graceful shutdown, and forced termination in a staging environment. The resource values above are examples, not measured recommendations.
 
-## Child-process and network policy
+## Network, filesystem, and image policy
 
-- Keep the executable allowlist administrator-owned and based on resolved
-  realpaths. Do not allow shells, interpreters, package managers, or generic
-  command launchers unless a reviewed server specifically requires them.
-- Use command-specific argument validators. A path allowlist alone is not
-  sufficient when arguments can select arbitrary files, plugins, scripts, or
-  network destinations.
-- Use per-server working directories and minimal environment-key allowlists.
-  Inject credentials from the encrypted vault at launch time; never store
-  secret values in registry JSON or logs.
-- Apply outbound network policy outside Node.js (host firewall, dedicated
-  container/network namespace, or an egress proxy). Default-deny outbound
-  traffic and allow only the destinations required by that MCP server.
-- Do not treat DNS validation as socket pinning. A transport must connect to
-  the validated address set and reject redirects or address changes that escape
-  policy. The current stdio adapter does not implement remote transports.
-- Set per-server CPU, memory, process-count, file-descriptor, and execution-time
-  limits at the OS/container layer. An in-process Promise timeout is not a
-  process-kill guarantee.
+- Keep runner profiles administrator-owned and keyed to immutable server IDs. Do not allow a registry user to select an image or alter resource/isolation settings.
+- Use only reviewed images pinned by digest. Rebuild and review images before updating a digest.
+- Keep Hub credentials, writable state, source code, and container-runtime sockets outside the MCP container.
+- Keep outbound networking disabled by default. If a future transport needs network access, implement a separate reviewed egress policy and address-pinning/redirect controls; do not weaken the rootless profile silently.
+- Do not treat an in-process Promise timeout as proof that an external side effect was cancelled. A process can perform an irreversible external action before it is terminated.
 
 ## Shutdown and timeout semantics
 
-The supervisor drains approved calls before normal transport teardown. A tool
-execution timeout currently bounds the caller's wait and retires the stdio
-runtime, but JavaScript `Promise.race` does not cancel the underlying SDK
-request. Transport close alone is not proof that the child process has exited.
+The rootless Podman transport owns a named container and explicitly removes it during close. When the deployment-owned runtime deadline expires, the transport notifies the SDK that the connection is closed and force-removes the container; in-flight SDK requests are rejected instead of remaining pending. The Linux integration test verifies this with a fixture that ignores SIGTERM and confirms that no MCP container remains.
 
-Before enabling untrusted workloads, add and verify an explicit child-process
-termination strategy (including process-group/cgroup ownership), cancellation
-propagation, bounded shutdown, and an observable confirmation that every child
-has exited. Test a deliberately hung MCP server and a child that spawns
-grandchildren. The test must prove no process survives stop, timeout, Hub
-shutdown, or forced service restart.
+A tool timeout still does not roll back external side effects already performed by a server. Callers must use idempotency where available and treat timeout outcomes as potentially indeterminate for remote systems. If container removal cannot be confirmed, surface a cleanup failure and keep the server unavailable; never fall back to shared-Hub execution.
 
 ## Rollout checklist
 
-1. Validate the unit and filesystem permissions in staging.
-2. Verify the Hub starts with zero external MCP processes.
-3. Register one reviewed server in disabled/pending state.
-4. Approve its tools separately, then explicitly start it.
-5. Verify audit records contain identities and outcomes but no credentials.
-6. Disable and remove the server; verify the child process and descendants exit.
-7. Trigger a hung tool call; verify timeout, degraded health, process termination,
-   and denial of subsequent calls.
-8. Restart the Hub and verify no pending server auto-starts.
-9. Capture test output, service configuration, and security-review findings as
-   release evidence.
+1. Validate rootless Podman, subordinate UID/GID ranges, storage, and service identity on the target Linux host.
+2. Confirm the Hub starts with zero external MCP containers.
+3. Create one reviewed immutable image and one deployment-owned profile keyed to a registered server UUID.
+4. Register the server in pending state; confirm it is not auto-started.
+5. Approve its tools separately, then explicitly start the server as an administrator.
+6. Verify initialize, tools/list, and an approved tools/call; confirm network is disabled and no host mounts or runtime socket are present.
+7. Exercise stop, crash, runtime deadline, and SIGTERM-resistant cleanup; verify the container is removed and pending calls reject.
+8. Disable and remove the server; verify the runtime remains stopped.
+9. Restart the Hub and verify no pending server auto-starts.
+10. Capture test output, image digest, profile mapping, host configuration, and security-review findings as release evidence.
 
-Until the release prerequisites and rollout checklist are evidenced, keep the
-MCP runtime feature disabled and PR #153 in Draft.
+Until the deployment profile, target-host validation, and security review are complete, keep untrusted and authenticated MCP servers blocked. The current implementation is fail-closed and has not been deployed or released by this change.
