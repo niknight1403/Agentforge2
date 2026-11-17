@@ -166,6 +166,9 @@ export function createMcpPodmanTransport({
         const error = fail('MCP_PODMAN_RUNTIME_TIMEOUT',
           'MCP Podman container exceeded its deployment-owned runtime deadline');
         transport.onerror?.(error);
+        // Notify the SDK that the transport is closed so every in-flight
+        // request is rejected instead of remaining pending after container removal.
+        transport.onclose?.();
         void closeTransport().catch((closeError) => transport.onerror?.(closeError));
       }, spec.timeoutMs);
     },
