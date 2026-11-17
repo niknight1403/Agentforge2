@@ -105,6 +105,9 @@ export function createMcpPodmanTransport({
     env: hostEnv,
     spawnProcess,
     shutdownTimeoutMs,
+    // Podman must own teardown of its rootless pause process; remove the named
+    // container explicitly after stopping only the Podman CLI.
+    killProcessGroupOnClose: false,
     // Capture stderr only for an allowlisted category; raw text is never logged or exposed.
     stderr: 'diagnostic',
     onProcessExit,
