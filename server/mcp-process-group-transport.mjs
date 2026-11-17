@@ -96,6 +96,7 @@ export function createMcpProcessGroupTransport({
   shutdownTimeoutMs = 1_500,
   spawnProcess = spawn,
   platform = process.platform,
+  onProcessExit,
 } = {}) {
   if (platform === 'win32') {
     throw fail('MCP_PROCESS_GROUP_UNSUPPORTED', 'MCP stdio process-group isolation is not implemented on Windows');
@@ -106,7 +107,8 @@ export function createMcpProcessGroupTransport({
     || !env || typeof env !== 'object' || Array.isArray(env)
     || !Number.isInteger(maxBufferSize) || maxBufferSize < 1024
     || !Number.isInteger(shutdownTimeoutMs) || shutdownTimeoutMs < 100 || shutdownTimeoutMs > 10_000
-    || typeof spawnProcess !== 'function') {
+    || typeof spawnProcess !== 'function'
+    || (onProcessExit !== undefined && typeof onProcessExit !== 'function')) {
     throw new TypeError('command, args, cwd, env and bounded transport options are required');
   }
 
@@ -202,6 +204,9 @@ export function createMcpProcessGroupTransport({
           exitError.pid = child.pid;
           exitError.exitCode = code;
           exitError.signal = signal;
+          try {
+            onProcessExit?.(Object.freeze({ pid: child.pid, exitCode: code, signal }));
+          } catch { /* diagnostics must never disrupt transport teardown */ }
           transport.onerror?.(exitError);
           transport.onclose?.();
           // Unexpected parent exit must not leave descendants in its group.
