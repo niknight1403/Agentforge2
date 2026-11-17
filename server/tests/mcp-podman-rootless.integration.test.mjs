@@ -173,12 +173,22 @@ test('runtime deadline force-removes a SIGTERM-resistant rootless Podman contain
       () => 'resolved',
       () => 'rejected',
     );
-    const deadline = Date.now() + 20_000;
+    const deadline = Date.now() + 30_000;
+    const isNewContainerPresent = () => listContainers().some((name) => !before.includes(name));
+    let observedContainer = false;
+    while (Date.now() < deadline) {
+      if (isNewContainerPresent()) {
+        observedContainer = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(observedContainer, true,
+      'the fixture container must be observed before testing its deadline cleanup');
+
     let removed = false;
     while (Date.now() < deadline) {
-      const current = listContainers();
-      if (current.length === before.length
-        && before.every((name) => current.includes(name))) {
+      if (!isNewContainerPresent()) {
         removed = true;
         break;
       }
