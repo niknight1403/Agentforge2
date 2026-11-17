@@ -87,6 +87,12 @@ test('rootless Podman runtimes are isolated per server and one stop leaves the o
     const remaining = listContainers();
     assert.equal(remaining.length, before.length + 1,
       'stopping one server must leave exactly the other new container running');
+    const survivor = remaining.find((name) => !before.includes(name));
+    const survivorState = JSON.parse(execFileSync('/usr/bin/podman', [
+      'inspect', survivor, '--format', '{{json .State}}',
+    ], { encoding: 'utf8' }));
+    assert.equal(survivorState.Status, 'running',
+      `the second container must remain running after first.close(); state=${JSON.stringify(survivorState)}`);
     const result = await second.callTool({ name: 'healthcheck', arguments: {} });
     assert.equal(result.content?.[0]?.text, 'rootless-podman-ok');
   } finally {
