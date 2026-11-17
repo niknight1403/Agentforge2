@@ -91,6 +91,7 @@ export function createMcpPodmanTransport({
   probe = probeMcpPodmanRootless,
   controlTimeoutMs = 3_000,
   shutdownTimeoutMs = 1_500,
+  onProcessExit,
 } = {}) {
   const spec = buildMcpPodmanRunSpec({ podmanPath, profile });
   if (typeof probe !== 'function') throw new TypeError('A rootless Podman capability probe is required');
@@ -105,6 +106,7 @@ export function createMcpPodmanTransport({
     spawnProcess,
     shutdownTimeoutMs,
     stderr: 'ignore',
+    onProcessExit,
   });
   let started = false;
   let closePromise;
