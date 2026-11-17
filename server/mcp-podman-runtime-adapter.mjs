@@ -39,6 +39,7 @@ export async function connectMcpPodmanServer({
   connectTimeoutMs = 15_000,
   closeTimeoutMs = 10_000,
   transportFactory = createMcpPodmanTransport,
+  onProcessExit,
 } = {}) {
   const id = String(serverId ?? '');
   const server = getServer(id);
@@ -67,7 +68,7 @@ export async function connectMcpPodmanServer({
   }
   if (typeof Client !== 'function') throw fail('MCP_SDK_CONSTRUCTORS_REQUIRED', 'The official MCP SDK Client constructor is required');
 
-  const transport = transportFactory({ profile });
+  const transport = transportFactory({ profile, onProcessExit });
   const client = new Client(clientInfo);
   let closed = false;
   let closePromise;
