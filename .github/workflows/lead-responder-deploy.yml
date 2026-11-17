@@ -184,9 +184,19 @@ jobs:
           systemctl reload nginx
           KEY=$(grep -m1 '^ADMIN_API_KEY=' "$APP/.env" | cut -d= -f2-)
           API=http://127.0.0.1:8080/api/v1
-          DEMO=$(curl -sS -X POST "$API/clients" -H "x-admin-key: $KEY" -H 'content-type: application/json' -d '{"name":"Demo (Musterbetrieb)","system_prompt":"Handwerksbetrieb in Heinsberg, Meisterbetrieb, Rueckruf Mo-Sa 8-19 Uhr, Einzugsgebiet Heinsberg-Aachen."}')
-          DEMOKEY=$(printf '%s' "$DEMO" | python3 -c 'import json,sys;print(json.load(sys.stdin)["api_key"])')
-          DEMOURL=$(printf '%s' "$DEMO" | python3 -c 'import json,sys;print(json.load(sys.stdin)["demo_url"])')
+          # Idempotent: vorhandenen Demo-Mandanten wiederverwenden statt bei jedem Deploy neu anlegen
+          EXISTING=$(curl -sS "$API/clients" -H "x-admin-key: $KEY")
+          DEMO=$(printf '%s' "$EXISTING" | python3 -c 'import json,sys;d=json.load(sys.stdin);items=d.get("clients") or d.get("items") or [];hit=[c for c in items if c.get("name")=="Demo (Musterbetrieb)"];print(json.dumps(hit[0]) if hit else "")')
+          if [ -n "$DEMO" ]; then
+            echo "demo-mandant: vorhanden, wird wiederverwendet"
+            DEMOKEY=""
+            DEMOURL=$(printf '%s' "$DEMO" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("demo_url") or ("https://hub.cybersarah-ki.com/leads"+d.get("demo_path","")))')
+          else
+            echo "demo-mandant: keiner vorhanden, wird angelegt"
+            DEMO=$(curl -sS -X POST "$API/clients" -H "x-admin-key: $KEY" -H 'content-type: application/json' -d '{"name":"Demo (Musterbetrieb)","system_prompt":"Handwerksbetrieb in Heinsberg, Meisterbetrieb, Rueckruf Mo-Sa 8-19 Uhr, Einzugsgebiet Heinsberg-Aachen."}')
+            DEMOKEY=$(printf '%s' "$DEMO" | python3 -c 'import json,sys;print(json.load(sys.stdin)["api_key"])')
+            DEMOURL=$(printf '%s' "$DEMO" | python3 -c 'import json,sys;print(json.load(sys.stdin)["demo_url"])')
+          fi
           SMOKE=$(curl -sS -X POST "$API/clients" -H "x-admin-key: $KEY" -H 'content-type: application/json' -d '{"name":"CI-Smoke","system_prompt":"Testbetrieb.","webhook_outbound_url":"https://httpbin.org/post"}')
           SMOKEID=$(printf '%s' "$SMOKE" | python3 -c 'import json,sys;print(json.load(sys.stdin)["client"]["id"])')
           SMOKEKEY=$(printf '%s' "$SMOKE" | python3 -c 'import json,sys;print(json.load(sys.stdin)["api_key"])')
