@@ -33,6 +33,6 @@ jobs:
         run: |
           git config user.name "swarm-relay-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add docs/swarm/heartbeat.json docs/swarm/providers.json
+          git add docs/swarm/heartbeat.json docs/swarm/providers.json docs/swarm/metrics.json
           git diff --staged --quiet || git commit -m "chore(swarm-relay): provider heartbeat [skip ci]"
           git push
