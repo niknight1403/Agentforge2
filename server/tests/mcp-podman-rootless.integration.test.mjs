@@ -167,19 +167,20 @@ test('runtime deadline force-removes a SIGTERM-resistant rootless container', {
       ? { id, transport: 'stdio', status: 'pending', authMode: 'none' }
       : null,
   });
+  let pendingCall;
   try {
-    const result = await Promise.race([
-      adapter.callTool({ name: 'resist', arguments: {} }).then(
-        () => ({ settled: 'resolved' }),
-        (error) => ({ settled: 'rejected', code: error?.code }),
-      ),
-      new Promise((resolve) => setTimeout(() => resolve({ settled: 'deadline-missed' }), 15_000)),
-    ]);
-    assert.equal(result.settled, 'rejected',
-      'the deployment-owned runtime deadline must close a non-cooperative MCP process');
+    // The call intentionally never responds. The deployment-owned runtime
+    // deadline must close and remove the container without waiting for this
+    // request to settle; client.close() below then settles the pending call.
+    pendingCall = adapter.callTool({ name: 'resist', arguments: {} }).then(
+      () => null,
+      (error) => error,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 8_000));
+    assert.deepEqual(listContainers(), before,
+      'the SIGTERM-resistant container must be force-removed at its runtime deadline');
   } finally {
     await adapter.close();
   }
-  assert.deepEqual(listContainers(), before,
-    'the SIGTERM-resistant container must be force-removed after its runtime deadline');
+  assert.ok(await pendingCall, 'closing the adapter must reject the abandoned MCP request');
 });
