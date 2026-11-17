@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "checked_at": "2026-11-17T02:18:02Z",
+  "ok_count": 2,
+  "providers": [
+    {
+      "provider": "cerebras",
+      "model": "gpt-oss-120b",
+      "ok": true,
+      "latency_ms": 216,
+      "reply_chars": 6
+    },
+    {
+      "provider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "ok": false,
+      "status": 404,
+      "error": "{\"error\":{\"message\":\"The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.\",\"type\":\"invalid_request_error\",\"co"
+    },
+    {
+      "provider": "openrouter",
+      "model": "openai/gpt-4o-mini",
+      "ok": true,
+      "latency_ms": 654,
+      "reply_chars": 3
+    }
+  ]
+}
