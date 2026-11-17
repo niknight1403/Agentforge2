@@ -150,7 +150,7 @@ test('runtime deadline force-removes a SIGTERM-resistant rootless container', {
 }, async () => {
   const listContainers = () => execFileSync('/usr/bin/podman', [
     'ps', '--all', '--filter', 'name=agentforge-mcp-', '--format', '{{.Names}}',
-  ], { encoding: 'utf8' }).trim().split('\\n').filter(Boolean).sort();
+  ], { encoding: 'utf8', timeout: 5_000 }).trim().split('\\n').filter(Boolean).sort();
   const before = listContainers();
   const serverId = randomUUID();
   const profile = Object.freeze({
