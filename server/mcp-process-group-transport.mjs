@@ -190,8 +190,19 @@ export function createMcpProcessGroupTransport({
       child.stdin.on('error', (error) => {
         if (!closing && error?.code !== 'EPIPE') transport.onerror?.(error);
       });
-      child.once('exit', () => {
+      child.once('exit', (code, signal) => {
         if (!closing) {
+          // Preserve safe process-exit metadata before the SDK receives onclose.
+          // This distinguishes a Podman CLI exit from an unexplained stdio loss
+          // without forwarding stderr, which may contain server-provided secrets.
+          const exitError = fail(
+            'MCP_PROCESS_UNEXPECTED_EXIT',
+            `MCP stdio process exited unexpectedly (pid=${child.pid}, code=${code ?? 'null'}, signal=${signal ?? 'none'})`,
+          );
+          exitError.pid = child.pid;
+          exitError.exitCode = code;
+          exitError.signal = signal;
+          transport.onerror?.(exitError);
           transport.onclose?.();
           // Unexpected parent exit must not leave descendants in its group.
           void terminateGroup(child.pid, child).catch((error) => transport.onerror?.(error));
