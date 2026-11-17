@@ -153,25 +153,6 @@ export function createMcpProcessGroupTransport({
         detached: true,
       });
 
-      await new Promise((resolve, reject) => {
-        let settled = false;
-        const onSpawn = () => {
-          started = true;
-          settled = true;
-          resolve();
-        };
-        const onError = (error) => {
-          if (!settled) {
-            settled = true;
-            reject(error);
-          } else {
-            transport.onerror?.(error);
-          }
-        };
-        child.once('spawn', onSpawn);
-        child.once('error', onError);
-      });
-
       child.stdout.on('data', (chunk) => {
         if (closing) return;
         buffer += decoder.write(chunk);
@@ -238,6 +219,29 @@ export function createMcpProcessGroupTransport({
           // Unexpected parent exit must not leave descendants in its group.
           void terminateGroup(child.pid, child).catch((error) => transport.onerror?.(error));
         }
+      });
+
+      // Attach every stream and lifecycle listener before waiting for the spawn
+      // event. Short-lived commands (including Podman startup failures) can emit
+      // stderr and exit immediately; registering after the spawn await can lose
+      // the only diagnostic bytes and, in a tight race, the exit notification.
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const onSpawn = () => {
+          started = true;
+          settled = true;
+          resolve();
+        };
+        const onError = (error) => {
+          if (!settled) {
+            settled = true;
+            reject(error);
+          } else {
+            transport.onerror?.(error);
+          }
+        };
+        child.once('spawn', onSpawn);
+        child.once('error', onError);
       });
     },
 
