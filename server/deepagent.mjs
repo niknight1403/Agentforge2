@@ -82,9 +82,23 @@ const MAX_FILE_BYTES = 12 * 1024 * 1024; // 12 MB pro Anhang
 
 const deepDevelopmentJobs = new Map();
 const initialPlanJobs = new Map();
+const initialPlanResults = new Map();
+const initialPlanPending = new Set();
 
 export function isDeepProjectDeveloping(projectId) {
   return deepDevelopmentJobs.has(Number(projectId));
+}
+
+export function isInitialPlanPending(projectId) {
+  return initialPlanPending.has(Number(projectId));
+}
+
+/** Wait for the deferred first plan and distinguish an offline result from a completed plan. */
+export async function waitForInitialPlan(projectId) {
+  const id = Number(projectId);
+  const pending = initialPlanJobs.get(id);
+  if (pending) return pending;
+  return initialPlanResults.get(id) || { pending: false, offline: false, reply: '' };
 }
 
 /** Parallele Taps/HTTP-Retries erzeugen höchstens eine Villa pro Deep-Projekt. */
@@ -251,14 +265,28 @@ export async function createDeepProject(idea, { chatFn = realChat, deferInitialP
     const messageId = Number(db.prepare(
       'INSERT INTO deep_messages (project_id, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?)'
     ).run(id, 'assistant', placeholder, null, now()).lastInsertRowid);
+    initialPlanPending.add(id);
     const job = new Promise((resolve) => setImmediate(resolve))
       .then(() => deepChat(id,
         'Neues Projekt gestartet. Erstelle den initialen Bauplan: 1) Verstaendnis der Idee in 2 Saetzen, 2) Empfohlener Tech-Stack mit Begruendung, 3) Meilensteine M1-M3 mit Akzeptanzkriterien, 4) Der allererste konkrete Umsetzungsschritt.',
         [], { chatFn }))
-      .then(() => db.prepare('DELETE FROM deep_messages WHERE id = ? AND project_id = ?').run(messageId, id))
-      .catch((error) => db.prepare('UPDATE deep_messages SET content = ? WHERE id = ? AND project_id = ?')
-        .run('Die initiale Analyse ist fehlgeschlagen: ' + String(error?.message || error).slice(0, 220), messageId, id))
-      .finally(() => initialPlanJobs.delete(id));
+      .then((result) => {
+        db.prepare('DELETE FROM deep_messages WHERE id = ? AND project_id = ?').run(messageId, id);
+        const completed = { ...result, pending: false };
+        initialPlanResults.set(id, completed);
+        return completed;
+      })
+      .catch((error) => {
+        const reply = 'Die initiale Analyse ist fehlgeschlagen: ' + String(error?.message || error).slice(0, 220);
+        db.prepare('UPDATE deep_messages SET content = ? WHERE id = ? AND project_id = ?').run(reply, messageId, id);
+        const failed = { reply, offline: true, pending: false, error: String(error?.message || error).slice(0, 220) };
+        initialPlanResults.set(id, failed);
+        return failed;
+      })
+      .finally(() => {
+        initialPlanPending.delete(id);
+        initialPlanJobs.delete(id);
+      });
     initialPlanJobs.set(id, job);
     return { id, title, status: 'ACTIVE', reply: placeholder, offline: false, initialPending: true };
   }
@@ -316,7 +344,7 @@ export function deleteDeepProject(projectId) {
   const id = Number(projectId);
   if (!Number.isSafeInteger(id) || id <= 0) return false;
   const exists = db.prepare('SELECT id FROM deep_projects WHERE id=?').get(id);
-  if (!exists) return false;
+  if (!exists || initialPlanPending.has(id)) return false;
   db.exec('BEGIN IMMEDIATE');
   try {
     db.prepare('DELETE FROM deep_messages WHERE project_id=?').run(id);
@@ -328,6 +356,7 @@ export function deleteDeepProject(projectId) {
     try { db.exec('ROLLBACK'); } catch { /* keep original failure */ }
     throw error;
   }
+  initialPlanResults.delete(id);
   try { rmSync(projectDir(id), { recursive: true, force: true }); } catch { /* database deletion is authoritative */ }
   return true;
 }
