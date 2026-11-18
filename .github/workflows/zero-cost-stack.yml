@@ -59,9 +59,6 @@ EOF
             printf '%s\n' "Found:" "$site_blocks" >&2
             exit 1
           fi
-            printf 'Found:\\n%s\\n' "$site_blocks" >&2
-            exit 1
-          fi
           echo "Loopback default binds, exact local Caddy host allowlist and unsandboxed Activepieces warning boundary validated."
       - name: Validate Compose configuration
         run: |
