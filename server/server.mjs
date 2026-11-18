@@ -282,6 +282,18 @@ async function api(req, res, url) {
   const openMode = process.env.VF_OPEN_MODE === '1' || !usersExist();
   const needAuth = !openMode && !user;
   const isAdmin = checkIsAdmin(req);
+  const isDeepPreviewRequest = parts[0] === 'api' && parts[1] === 'deep' &&
+    parts[2] === 'projects' && parts[3] && parts[4] === 'preview' && parts.length >= 6;
+  if (m === 'OPTIONS' && isDeepPreviewRequest) {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+      'Access-Control-Max-Age': '600',
+      'Vary': 'Origin'
+    });
+    return res.end();
+  }
   // Sicherheitsalarm: offener Modus ist ein stiller Auth-Ausfall (leere users-Tabelle
   // oder bewusst gesetzter Open-Mode-Schalter). Einmal pro Prozess laut protokollieren.
   if (openMode && !globalThis.__vfOpenModeWarned) {
@@ -983,8 +995,20 @@ async function api(req, res, url) {
     // 'queued' = autonomy an, aber kein Slot (Warteschlange). Sonst zeigen alle
     // aktiven Villen pauschal 'RUNNING' und niemand sieht, wer wirklich arbeitet.
     const rows = db.prepare("SELECT * FROM villas WHERE status != 'ARCHIVED' ORDER BY created_at DESC").all();
+    const hiddenDeepVillaIds = new Set();
+    if (!openMode && !isAdmin) {
+      const privateDeepVillas = db.prepare(
+        'SELECT link.villa_id, project.owner_user_id FROM deep_project_villas link JOIN deep_projects project ON project.id = link.project_id'
+      ).all();
+      for (const linked of privateDeepVillas) {
+        if (Number(linked.owner_user_id || 0) !== Number(user?.id || 0)) {
+          hiddenDeepVillaIds.add(Number(linked.villa_id));
+        }
+      }
+    }
+    const visibleRows = rows.filter((villa) => !hiddenDeepVillaIds.has(Number(villa.id)));
     const scheduler = schedulerStatus();
-    return json(res, 200, rows.map((v) => {
+    return json(res, 200, visibleRows.map((v) => {
       const counts = db.prepare("SELECT COUNT(*) AS tasks_total, SUM(CASE WHEN status='DONE' THEN 1 ELSE 0 END) AS tasks_done, SUM(CASE WHEN status IN ('FAILED','BLOCKED') THEN 1 ELSE 0 END) AS tasks_failed FROM tasks WHERE villa_id=?").get(v.id);
       const agents = db.prepare('SELECT COUNT(*) AS agents_count FROM agents WHERE villa_id=?').get(v.id);
       return {
@@ -1472,7 +1496,12 @@ async function api(req, res, url) {
     res.writeHead(200, {
       'Content-Type': f.mime, 'Cache-Control': 'no-store',
       'Content-Security-Policy': "sandbox allow-scripts; frame-ancestors 'self'; form-action 'none'",
-      'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff'
+      'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+      'Access-Control-Max-Age': '600',
+      'Vary': 'Origin'
     });
     const previewFilePath = parts.slice(5).join('/');
     const previewRootName = previewFilePath.split('/')[0].toLowerCase();
@@ -1491,7 +1520,7 @@ async function api(req, res, url) {
     }
     if (f.mime.startsWith('text/html')) {
       let html;
-      try { html = readFileSync(f.fd, 'utf8').replace(/(src|href)=("|')\//g, '$1=$2'); }
+      try { html = readFileSync(f.fd, 'utf8').replace(/(src|href)=("|')\/(?!\/)/g, '$1=$2'); }
       finally { closeSync(f.fd); }
       return res.end(html);
     }
@@ -1520,7 +1549,7 @@ async function api(req, res, url) {
     if (f.mime.startsWith('text/html')) {
       /* Absolute Asset-Pfade auf den Vorschau-Pfad umlenken, damit Bundles
          (z. B. Vite "/assets/...") in der Live-Ansicht ebenfalls laden. */
-      const html = readFileSync(f.file, 'utf8').replace(/(src|href)=("|')\//g, '$1=$2');
+      const html = readFileSync(f.file, 'utf8').replace(/(src|href)=("|')\/(?!\/)/g, '$1=$2');
       return res.end(html);
     }
     createReadStream(f.file).pipe(res);
