@@ -60,3 +60,7 @@ bash ./scripts/health-check.sh
 ## Current acceptance boundary
 
 This is an infrastructure scaffold, not a claim of a deployed or tested service. Activepieces DB bootstrap, proxy auth, LanguageTool image/health endpoint compatibility, OpenCode runner integration, workflow import, resource limits and end-to-end checks remain explicit acceptance tasks.
+
+## Deployment acceptance
+
+Follow [ACCEPTANCE.md](./ACCEPTANCE.md) before activating the n8n webhook or exposing any service. It documents the host-level smoke tests, Header Auth setup, required negative/positive webhook tests, and the Activepieces unsandboxed-execution restriction. Green GitHub CI is static validation only; it is not evidence of a running deployment.
