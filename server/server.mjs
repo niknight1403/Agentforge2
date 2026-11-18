@@ -651,7 +651,7 @@ async function api(req, res, url) {
   // Ausnahme: der SSE-Eventstrom (/api/events) laesst sich aus dem Browser
   // nicht mit Headern verbinden; er uebertraegt nur Fortschrittsereignisse.
   if (needAuth && p !== '/api/events' && p !== '/api/dlq/dashboard') return json(res, 401, { error: 'Login erforderlich.' });
-  const requestedVillaId = parts[0] === 'api' && parts[1] === 'villas' && /^\\d+$/.test(parts[2] || '')
+  const requestedVillaId = parts[0] === 'api' && parts[1] === 'villas' && /^\d+$/.test(parts[2] || '')
     ? Number(parts[2])
     : 0;
   if (requestedVillaId && !openMode && !isAdmin) {

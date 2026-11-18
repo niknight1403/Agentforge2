@@ -39,6 +39,7 @@ def test_prefixed_and_underscored_secret_names_are_detected():
     assert contains_secret('refresh_token = "credential-value"')
     assert contains_secret('api_token = "credential-value"')
     assert contains_secret('access_token = "credential-value"')
+    assert contains_secret('private_key = "credential-value"')
     assert contains_secret('{"api_key":"credential-value"}')
 
 
