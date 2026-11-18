@@ -48,9 +48,14 @@ jobs:
           grep -Fq 'HTTP_BIND=127.0.0.1' "$env_example"
           grep -Fq 'HTTPS_BIND=127.0.0.1' "$env_example"
           grep -Fq 'AP_EXECUTION_MODE: UNSANDBOXED' "$compose"
-          grep -Fq 'http://n8n.localhost' "$caddy"
-          grep -Fq 'http://automation.localhost' "$caddy"
-          echo "Local-only default binds and unsandboxed Activepieces warning boundary validated."
+          site_blocks="$(grep -E '^[[:space:]]*https?://' "$caddy" | sed -E 's/^[[:space:]]*//; s/[[:space:]]*\{$//')"
+          expected_site_blocks="$(printf '%s\\n' 'http://automation.localhost' 'http://n8n.localhost')"
+          if [[ "$site_blocks" != "$expected_site_blocks" ]]; then
+            echo "Unexpected Caddy site address; only the two local hostnames are allowed." >&2
+            printf 'Found:\\n%s\\n' "$site_blocks" >&2
+            exit 1
+          fi
+          echo "Loopback default binds, exact local Caddy host allowlist and unsandboxed Activepieces warning boundary validated."
       - name: Validate Compose configuration
         run: |
           cd infrastructure/zero-cost-stack
