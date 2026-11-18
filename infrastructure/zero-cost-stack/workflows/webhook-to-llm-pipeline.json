@@ -12,7 +12,10 @@
       "name": "Incoming AI Task",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [240, 300],
+      "position": [
+        240,
+        300
+      ],
       "webhookId": "agentforge-local-ai-task"
     },
     {
@@ -23,7 +26,10 @@
       "name": "Validate Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [
+        460,
+        300
+      ]
     },
     {
       "parameters": {
@@ -40,17 +46,23 @@
       "name": "Local Ollama",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [680, 300]
+      "position": [
+        680,
+        300
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const raw = $json.response ?? '';\nlet result;\ntry { result = JSON.parse(raw); } catch { throw new Error('Ollama did not return valid JSON'); }\nif (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('Invalid structured result');\nreturn [{ json: { status: 'completed', model: 'qwen2.5-coder:7b', ...result } }];"
+        "jsCode": "const raw = $json.response ?? '';\nlet result;\ntry { result = JSON.parse(raw); } catch { throw new Error('Ollama did not return valid JSON'); }\nif (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('Invalid structured result');\nconst required = ['summary', 'findings', 'recommendations'];\nconst missing = required.filter((key) => !(key in result));\nif (missing.length) throw new Error('Ollama response missing required keys: ' + missing.join(', '));\nif (typeof result.summary !== 'string' || result.summary.length > 4000) throw new Error('Invalid summary');\nif (!Array.isArray(result.findings) && typeof result.findings !== 'string') throw new Error('Invalid findings');\nif (!Array.isArray(result.recommendations) && typeof result.recommendations !== 'string') throw new Error('Invalid recommendations');\nreturn [{ json: { status: 'completed', model: 'qwen2.5-coder:7b', summary: result.summary, findings: result.findings, recommendations: result.recommendations } }];"
       },
       "id": "c2d99e4d-7f4e-4c88-9ad8-1d3f8a6e0004",
       "name": "Validate JSON Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [
+        900,
+        300
+      ]
     },
     {
       "parameters": {
@@ -64,21 +76,56 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1120, 300]
+      "position": [
+        1120,
+        300
+      ]
     }
   ],
   "connections": {
     "Incoming AI Task": {
-      "main": [[{"node": "Validate Input", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Validate Input": {
-      "main": [[{"node": "Local Ollama", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Local Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Local Ollama": {
-      "main": [[{"node": "Validate JSON Result", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Validate JSON Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Validate JSON Result": {
-      "main": [[{"node": "Respond", "type": "main", "index": 0}]]
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
