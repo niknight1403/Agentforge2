@@ -54,6 +54,11 @@ db.exec(`
     villa_id INTEGER NOT NULL UNIQUE,
     created_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS deep_villa_owners (
+    villa_id INTEGER PRIMARY KEY,
+    owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL
+  );
 `);
 
 // Additive ownership migration. Existing rows remain unassigned (NULL) and are
@@ -63,6 +68,13 @@ if (!deepProjectColumns.includes('owner_user_id')) {
   db.exec('ALTER TABLE deep_projects ADD COLUMN owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_deep_projects_owner_updated ON deep_projects(owner_user_id, updated_at DESC)');
+for (const linked of db.prepare(
+  'SELECT link.villa_id, project.owner_user_id, link.created_at FROM deep_project_villas link JOIN deep_projects project ON project.id = link.project_id'
+).all()) {
+  db.prepare(
+    'INSERT INTO deep_villa_owners (villa_id, owner_user_id, created_at) VALUES (?,?,?) ON CONFLICT(villa_id) DO UPDATE SET owner_user_id=excluded.owner_user_id'
+  ).run(Number(linked.villa_id), linked.owner_user_id ?? null, Number(linked.created_at));
+}
 
 /** Projektordner fuer Anhaenge (im Hub-Datenbereich). */
 const DEEP_DIR = process.env.DEEP_DIR || '/opt/villaforge/deep';
@@ -280,11 +292,23 @@ export function deepProjectDetail(id) {
 
 /** Verknüpft ein Deep-Projekt idempotent mit seiner ausführbaren Villa. */
 export function linkDeepProjectVilla(projectId, villaId) {
-  const project = db.prepare('SELECT id FROM deep_projects WHERE id=?').get(Number(projectId));
+  const project = db.prepare('SELECT id, owner_user_id FROM deep_projects WHERE id=?').get(Number(projectId));
   if (!project) throw new Error('Projekt nicht gefunden');
-  db.prepare('INSERT INTO deep_project_villas (project_id,villa_id,created_at) VALUES (?,?,?) ON CONFLICT(project_id) DO UPDATE SET villa_id=excluded.villa_id,created_at=excluded.created_at')
-    .run(Number(projectId), Number(villaId), now());
-  return Number(villaId);
+  const id = Number(projectId);
+  const linkedVillaId = Number(villaId);
+  const createdAt = now();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare('INSERT INTO deep_project_villas (project_id,villa_id,created_at) VALUES (?,?,?) ON CONFLICT(project_id) DO UPDATE SET villa_id=excluded.villa_id,created_at=excluded.created_at')
+      .run(id, linkedVillaId, createdAt);
+    db.prepare('INSERT INTO deep_villa_owners (villa_id,owner_user_id,created_at) VALUES (?,?,?) ON CONFLICT(villa_id) DO UPDATE SET owner_user_id=excluded.owner_user_id,created_at=excluded.created_at')
+      .run(linkedVillaId, project.owner_user_id ?? null, createdAt);
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch { /* keep original failure */ }
+    throw error;
+  }
+  return linkedVillaId;
 }
 
 /** Löscht ein einzelnes Deep-Projekt samt Verlauf und hochgeladenen Dateien. */
