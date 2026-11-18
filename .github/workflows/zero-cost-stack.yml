@@ -30,7 +30,7 @@ jobs:
           workflow=infrastructure/zero-cost-stack/workflows/webhook-to-llm-pipeline.json
           jq -e '
             .active == false and
-            ([.nodes[] | select(.name == "Incoming AI Task") | .parameters.authentication // "none"] | length == 1) and
+            ([.nodes[] | select(.name == "Incoming AI Task") | (.parameters.authentication // "none")] == ["none"]) and
             ([.nodes[] | select(.name == "Validate Input") | .parameters.jsCode] | any(contains("task.length > 12000"))) and
             ([.nodes[] | select(.name == "Validate JSON Result") | .parameters.jsCode] | any(contains("required") and contains("recommendations"))) and
             ([.nodes[] | select(.name == "Local Ollama") | .parameters.url] | any(. == "http://ollama:11434/api/generate"))
