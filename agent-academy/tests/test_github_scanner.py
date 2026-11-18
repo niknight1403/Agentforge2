@@ -37,6 +37,7 @@ def test_prefixed_and_underscored_secret_names_are_detected():
     assert contains_secret('PAYMENT_API_KEY = "credential-value"')
     assert contains_secret('GITHUB_TOKEN = "credential-value"')
     assert contains_secret('refresh_token = "credential-value"')
+    assert contains_secret('api_token = "credential-value"')
     assert contains_secret('{"api_key":"credential-value"}')
 
 
