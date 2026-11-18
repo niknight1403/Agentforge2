@@ -21,7 +21,7 @@ SECRET_MARKERS = re.compile(
 SAFE_SECRET_PLACEHOLDERS = {"changeme", "change-me", "replace-me", "your_api_key", "your-token", "placeholder"}
 SECRET_KEY_PARTS = (
     "aws_secret_access_key", "api_key", "client_secret", "secret",
-    "password", "passwd", "access_token", "auth_token", "private_key",
+    "password", "passwd", "access_token", "auth_token", "token", "private_key",
 )
 TYPE_ANNOTATIONS = {"str", "string", "bytes", "int", "bool", "float", "any", "dict", "list"}
 
