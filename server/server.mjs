@@ -10,6 +10,7 @@ import { burnTitle,freeMediaStatus,imagesToVideo,mediaToolInventory,resizeImage,
 import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config.mjs';
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
+import { pipeline } from 'node:stream';
 import { createMasterControl } from './master-control.mjs';
 import { readFileSync, existsSync, statSync, closeSync, createReadStream as createReadStreamFromFd } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
@@ -42,7 +43,7 @@ import { deepMissionBrief } from './deep-mission.mjs';
 import { classifyDeepDevelopmentIntent } from './deep-intent.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
-import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deepPreviewFile, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
+import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deepPreviewFile, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, isInitialPlanPending, waitForInitialPlan, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { projectReadiness } from './deep-completion.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
@@ -282,6 +283,20 @@ async function api(req, res, url) {
   const openMode = process.env.VF_OPEN_MODE === '1' || !usersExist();
   const needAuth = !openMode && !user;
   const isAdmin = checkIsAdmin(req);
+  const getHiddenDeepVillaIds = () => {
+    const hidden = new Set();
+    if (!openMode && !isAdmin) {
+      const privateDeepVillas = db.prepare(
+        'SELECT villa_id, owner_user_id FROM deep_villa_owners'
+      ).all();
+      for (const linked of privateDeepVillas) {
+        if (Number(linked.owner_user_id || 0) !== Number(user?.id || 0)) {
+          hidden.add(Number(linked.villa_id));
+        }
+      }
+    }
+    return hidden;
+  };
   const isDeepPreviewRequest = parts[0] === 'api' && parts[1] === 'deep' &&
     parts[2] === 'projects' && parts[3] && parts[4] === 'preview' && parts.length >= 6;
   if (m === 'OPTIONS' && isDeepPreviewRequest) {
@@ -651,9 +666,14 @@ async function api(req, res, url) {
   // Ausnahme: der SSE-Eventstrom (/api/events) laesst sich aus dem Browser
   // nicht mit Headern verbinden; er uebertraegt nur Fortschrittsereignisse.
   if (needAuth && p !== '/api/events' && p !== '/api/dlq/dashboard') return json(res, 401, { error: 'Login erforderlich.' });
-  const requestedVillaId = parts[0] === 'api' && parts[1] === 'villas' && /^\d+$/.test(parts[2] || '')
-    ? Number(parts[2])
+  const villaIdSegment = parts[0] === 'api' && parts[1] === 'villas' ? parts[2] : undefined;
+  const requestedVillaId = villaIdSegment !== undefined &&
+    /^[1-9]\d*$/.test(villaIdSegment) && Number.isSafeInteger(Number(villaIdSegment))
+    ? Number(villaIdSegment)
     : 0;
+  if (villaIdSegment !== undefined && !requestedVillaId) {
+    return json(res, 404, { error: 'Villa nicht gefunden' });
+  }
   if (requestedVillaId && !openMode && !isAdmin) {
     const linkedOwner = db.prepare(
       'SELECT owner_user_id FROM deep_villa_owners WHERE villa_id = ?'
@@ -667,8 +687,8 @@ async function api(req, res, url) {
   if (p === '/api/billing/portal' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createBillingPortalSession(user.id)); }
   if(parts[0]==='api'&&parts[1]==='villas'&&/^\d+$/.test(parts[2]||'')&&parts[3]==='capabilities'&&parts.length===4){
     if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'});
-    try{if(m==='GET')return json(res,200,capabilityStatus(Number(parts[2])));
-      if(m==='POST')return json(res,201,requestCapability(Number(parts[2]),await readBody(req)));
+    try{if(m==='GET')return json(res,200,capabilityStatus(requestedVillaId));
+      if(m==='POST')return json(res,201,requestCapability(requestedVillaId,await readBody(req)));
     }catch(e){return json(res,e.message==='VILLA_NOT_FOUND'?404:400,{error:e.message});}
     return json(res,405,{error:'Method not allowed.'});
   }
@@ -1006,17 +1026,7 @@ async function api(req, res, url) {
     // 'queued' = autonomy an, aber kein Slot (Warteschlange). Sonst zeigen alle
     // aktiven Villen pauschal 'RUNNING' und niemand sieht, wer wirklich arbeitet.
     const rows = db.prepare("SELECT * FROM villas WHERE status != 'ARCHIVED' ORDER BY created_at DESC").all();
-    const hiddenDeepVillaIds = new Set();
-    if (!openMode && !isAdmin) {
-      const privateDeepVillas = db.prepare(
-        'SELECT villa_id, owner_user_id FROM deep_villa_owners'
-      ).all();
-      for (const linked of privateDeepVillas) {
-        if (Number(linked.owner_user_id || 0) !== Number(user?.id || 0)) {
-          hiddenDeepVillaIds.add(Number(linked.villa_id));
-        }
-      }
-    }
+    const hiddenDeepVillaIds = getHiddenDeepVillaIds();
     const visibleRows = rows.filter((villa) => !hiddenDeepVillaIds.has(Number(villa.id)));
     const scheduler = schedulerStatus();
     return json(res, 200, visibleRows.map((v) => {
@@ -1062,7 +1072,7 @@ async function api(req, res, url) {
     return json(res, 405, { error: 'Methode nicht erlaubt.' });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);
     if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
     villa.executing = isRunning(id) ? 1 : 0;
@@ -1095,7 +1105,7 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'DELETE') {
     if (!openMode && !isAdmin) return json(res, 403, { error: 'Nur Administratoren.' });
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);
     if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
 
@@ -1130,7 +1140,7 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true, deleted: id, counts });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'source' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const b = await readBody(req);
     if (!b.path) return json(res, 400, { error: 'path fehlt' });
     const abs = setSource(id, b.path);
@@ -1138,7 +1148,7 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true, path: abs, exists });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'analyze' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);
     if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
     const root = db.prepare('SELECT * FROM agents WHERE villa_id = ? AND is_root = 1').get(id);
@@ -1146,11 +1156,11 @@ async function api(req, res, url) {
     return json(res, 202, { ok: true, started: true });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'reports' && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     return json(res, 200, db.prepare('SELECT * FROM reports WHERE villa_id = ? ORDER BY id DESC LIMIT 100').all(id));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'orchestrate' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const villa = db.prepare('SELECT status FROM villas WHERE id=?').get(id);
     if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
     if (villa.status === 'ARCHIVED') return json(res, 409, { error: 'Archivierte Villa zuerst wiederherstellen.' });
@@ -1163,7 +1173,7 @@ async function api(req, res, url) {
     return json(res, 202, { ok: true, alreadyRunning, runToCompletion, started: scheduled.active.includes(id) || isRunning(id), queued: scheduled.queue.includes(id), scheduler: scheduled });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'stop' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     if (!db.prepare('SELECT id FROM villas WHERE id=?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
     const cancelled = cancelScheduledVilla(id);
     const stopped = stopVilla(id);
@@ -1171,7 +1181,7 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true, stopped, cancelled, status: stopped ? 'STOPPING' : 'PAUSED' });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'messages' && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const agentId = Number(url.searchParams.get('agentId') || 0);
     const rows = agentId
       ? db.prepare('SELECT * FROM messages WHERE villa_id = ? AND agent_id = ? ORDER BY id ASC LIMIT 400').all(id, agentId)
@@ -1179,7 +1189,7 @@ async function api(req, res, url) {
     return json(res, 200, rows);
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'chat' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const b = await readBody(req);
     const agent = b.agentId
       ? db.prepare('SELECT * FROM agents WHERE id = ?').get(Number(b.agentId))
@@ -1211,14 +1221,17 @@ async function api(req, res, url) {
     const count = (table) => one(`SELECT COUNT(*) c FROM ${table}`).c;
     const rows = db.prepare('SELECT name, ok, fail, cooldown_until, priority FROM routes ORDER BY priority ASC').all();
     const cooling = rows.filter((r) => Number(r.cooldown_until || 0) > Date.now());
+    const hiddenDeepVillaIds = getHiddenDeepVillaIds();
+    const statsVillas = db.prepare('SELECT id, name, status FROM villas').all()
+      .filter((villa) => !hiddenDeepVillaIds.has(Number(villa.id)));
     return json(res, 200, {
       version: VERSION,llm:routingSummary(), ts: now(), uptimeSec: Math.round(process.uptime()),
       packs: packSummary(),
-      villas: one("SELECT COUNT(*) c FROM villas WHERE status != 'ARCHIVED'").c, agents: count('agents'),
+      villas: statsVillas.filter((villa) => villa.status !== 'ARCHIVED').length, agents: count('agents'),
       tasks: { total: count('tasks'), done:one("SELECT COUNT(*) c FROM tasks WHERE status='DONE'").c,failed:one("SELECT COUNT(*) c FROM tasks WHERE status='FAILED'").c, open: one("SELECT COUNT(*) c FROM tasks WHERE status IN ('PENDING','READY','RUNNING','REVIEW')").c },
       memories: count('memories'), councilRounds: count('council'), audit: count('audit'), messages: count('messages'),
-      runningVillas: db.prepare("SELECT id FROM villas WHERE status = 'RUNNING'").all().map((r) => r.id),
-      maturity: db.prepare('SELECT id, name FROM villas').all().map((v) => { const mt = maturity(v.id); return { villaId: v.id, name: v.name, score: mt.score, planScore:mt.planScore,verified:mt.verified,blockers:mt.blockers,stage: mt.stage, phase: mt.currentPhase,currentPhase:mt.currentPhase }; }),
+      runningVillas: statsVillas.filter((villa) => villa.status === 'RUNNING').map((villa) => villa.id),
+      maturity: statsVillas.map((v) => { const mt = maturity(v.id); return { villaId: v.id, name: v.name, score: mt.score, planScore:mt.planScore,verified:mt.verified,blockers:mt.blockers,stage: mt.stage, phase: mt.currentPhase,currentPhase:mt.currentPhase }; }),
       routesHealth: {
         ok: rows.reduce((a, r) => a + Number(r.ok || 0), 0),
         fail: rows.reduce((a, r) => a + Number(r.fail || 0), 0),
@@ -1286,17 +1299,17 @@ async function api(req, res, url) {
     catch (e) { return json(res, 409, { error: String(e.message || e) }); }
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'explain' && m === 'POST') {
-    return json(res, 200, await explainVilla(Number(parts[2])));
+    return json(res, 200, await explainVilla(requestedVillaId));
   }
 
   /* ---- Produkt-Build-Pipeline (v1.24): Status, Start, Download, Vorschau ---- */
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'delivery-evidence' && m === 'GET') {
-    const id=Number(parts[2]);
+    const id=requestedVillaId;
     if(!db.prepare('SELECT id FROM villas WHERE id=?').get(id))return json(res,404,{error:'Villa nicht gefunden'});
     return json(res,200,await deliveryEvidence(id));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'build' && parts[4] === 'download' && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const art = buildArtifact(id);
     if (!art) return json(res, 404, { error: 'Kein Build-Artefakt bereit. Erst bauen lassen.' });
     res.writeHead(200, {
@@ -1309,10 +1322,10 @@ async function api(req, res, url) {
     return;
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'build' && m === 'GET') {
-    return json(res, 200, buildStatus(Number(parts[2])));
+    return json(res, 200, buildStatus(requestedVillaId));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'build' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     try {
       const rec = await startBuild(id);
       return json(res, 202, rec);
@@ -1321,7 +1334,7 @@ async function api(req, res, url) {
     }
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'preview' && !parts[4] && m === 'GET') {
-    return json(res, 200, previewInfo(Number(parts[2])));
+    return json(res, 200, previewInfo(requestedVillaId));
   }
 
   /* ---- Deep Agent: eigene App-Projekte abseits der Villen (v1.37.0) ---- */
@@ -1345,7 +1358,7 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts.length === 4 && m === 'DELETE') {
     const projectId = Number(parts[3]);
     if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
-    if (isDeepProjectDeveloping(projectId)) return json(res, 409, { error: 'Projekt wird gerade an die Entwicklungs-Villa übergeben.' });
+    if (isDeepProjectDeveloping(projectId) || isInitialPlanPending(projectId)) return json(res, 409, { error: 'Projekt wird gerade geplant oder an die Entwicklungs-Villa übergeben.' });
     return deleteDeepProject(projectId)
       ? json(res, 200, { ok: true, deleted: true })
       : json(res, 404, { error: 'Projekt nicht gefunden' });
@@ -1380,15 +1393,27 @@ async function api(req, res, url) {
     if (!detail) return json(res, 404, { error: 'Projekt nicht gefunden' });
     return runDeepProjectDevelopmentOnce(projectId, async () => {
       try {
-        const previousVillaId = Number(deepProjectDetail(projectId)?.project.villa_id || 0);
+        const initialPlan = await waitForInitialPlan(projectId);
+        if (initialPlan.offline) {
+          return json(res, 503, {
+            ok: false,
+            projectId,
+            villaId: 0,
+            code: 'INITIAL_PLAN_UNAVAILABLE',
+            message: 'Der initiale Entwicklungsplan ist noch nicht belastbar verfügbar. Bitte später erneut starten.'
+          });
+        }
+        const currentDetail = deepProjectDetail(projectId);
+        if (!currentDetail) return json(res, 404, { error: 'Projekt nicht gefunden' });
+        const previousVillaId = Number(currentDetail.project.villa_id || 0);
         let villaId = previousVillaId;
         if (!villaId || !db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)) {
-          const context = detail.messages
+          const context = currentDetail.messages
             .filter((message) => message.role === 'user' || message.role === 'assistant')
             .slice(-8)
             .map((message) => `${message.role === 'user' ? 'Nutzer' : 'Projekt-Experte'}: ${String(message.content).slice(0, 900)}`)
             .join('\n');
-          const buildIdea = `${detail.project.idea}\n\n${deepMissionBrief(detail.project.idea)}\n\n${villaLessonsContext()}\n\nProjektanforderungen und DeepAgent-Plan:\n${context}`.slice(0, 9000);
+          const buildIdea = `${currentDetail.project.idea}\n\n${deepMissionBrief(currentDetail.project.idea)}\n\n${villaLessonsContext()}\n\nProjektanforderungen und DeepAgent-Plan:\n${context}`.slice(0, 9000);
           // Produkt-Gate (Nikos Auftrag 2026-11-02): Die Villa entsteht erst,
           // wenn das Projekt ein belegtes Produkt hervorgebracht hat. Fehlt ein
           // Beleg, antwortet der Endpunkt mit den konkreten Blockern.
@@ -1504,7 +1529,7 @@ async function api(req, res, url) {
     if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Keine Deep-Projekt-Vorschau-Datei' });
     const f = deepPreviewFile(Number(parts[3]), parts.slice(5).join('/'));
     if (!f) return json(res, 404, { error: 'Keine Deep-Projekt-Vorschau-Datei' });
-    res.writeHead(200, {
+    const previewHeaders = {
       'Content-Type': f.mime, 'Cache-Control': 'no-store',
       'Content-Security-Policy': "sandbox allow-scripts; frame-ancestors 'self'; form-action 'none'",
       'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
@@ -1513,7 +1538,7 @@ async function api(req, res, url) {
       'Access-Control-Allow-Headers': 'Authorization, Content-Type',
       'Access-Control-Max-Age': '600',
       'Vary': 'Origin'
-    });
+    };
     const previewFilePath = parts.slice(5).join('/');
     const previewRootName = previewFilePath.split('/')[0].toLowerCase();
     const previewRoot = ['dist', 'build', 'out', 'public', 'web-dist'].includes(previewRootName)
@@ -1527,15 +1552,20 @@ async function api(req, res, url) {
       css = css
         .replace(/url\(\s*(["']?)\/(?!\/)([^)"']+)\1\s*\)/g, (_match, quote, assetPath) => 'url(' + quote + previewBase + assetPath + quote + ')')
         .replace(/(@import\s+)(["'])\/(?!\/)([^"']+)\2/g, (_match, prefix, quote, assetPath) => prefix + quote + previewBase + assetPath + quote);
+      res.writeHead(200, previewHeaders);
       return res.end(css);
     }
     if (f.mime.startsWith('text/html')) {
       let html;
       try { html = readFileSync(f.fd, 'utf8').replace(/(src|href)=("|')\/(?!\/)/g, '$1=$2'); }
       finally { closeSync(f.fd); }
+      res.writeHead(200, previewHeaders);
       return res.end(html);
     }
-    createReadStreamFromFd(null, { fd: f.fd, autoClose: true }).pipe(res);
+    res.writeHead(200, previewHeaders);
+    pipeline(createReadStreamFromFd(null, { fd: f.fd, autoClose: true }), res, (error) => {
+      if (error) logError('Deep preview stream failed:', error?.message || error);
+    });
     return;
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'files' && parts[3] && m === 'GET') {
@@ -1554,7 +1584,7 @@ async function api(req, res, url) {
     return json(res, 200, d);
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'preview' && parts[4] && m === 'GET') {
-    const f = previewFile(Number(parts[2]), parts.slice(4).join('/'));
+    const f = previewFile(requestedVillaId, parts.slice(4).join('/'));
     if (!f) return json(res, 404, { error: 'Keine Vorschau-Datei' });
     res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'no-store', 'Content-Security-Policy':"sandbox allow-scripts; frame-ancestors 'self'; form-action 'none'", 'Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff' });
     if (f.mime.startsWith('text/html')) {
@@ -1568,11 +1598,11 @@ async function api(req, res, url) {
   }
 
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'council' && parts.length === 4 && m === 'GET') {
-    return json(res, 200, listCouncil(Number(parts[2]), 10));
+    return json(res, 200, listCouncil(requestedVillaId, 10));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'council' && parts.length === 4 && m === 'POST') {
     try {
-      const out = await runCouncil(Number(parts[2]));
+      const out = await runCouncil(requestedVillaId);
       return json(res, 200, { ok: true, ...out });
     } catch (e) {
       return json(res, 400, { error: e.message });
@@ -1583,21 +1613,21 @@ async function api(req, res, url) {
       const b = await readBody(req);
       const roundId = Number(b?.round) || 0;
       const round = roundId
-        ? db.prepare('SELECT * FROM council WHERE villa_id = ? AND id = ?').get(Number(parts[2]), roundId)
-        : db.prepare('SELECT * FROM council WHERE villa_id = ? ORDER BY id DESC').get(Number(parts[2]));
+        ? db.prepare('SELECT * FROM council WHERE villa_id = ? AND id = ?').get(requestedVillaId, roundId)
+        : db.prepare('SELECT * FROM council WHERE villa_id = ? ORDER BY id DESC').get(requestedVillaId);
       if (!round) return json(res, 404, { error: 'Keine Rat-Runde gefunden.' });
       let proposals = [];
       try { proposals = JSON.parse(round.proposals); } catch { proposals = []; }
-      const added = proposalsToTasks(Number(parts[2]), proposals);
+      const added = proposalsToTasks(requestedVillaId, proposals);
       db.prepare('INSERT INTO reports (villa_id, kind, title, content, data, created_at) VALUES (?,?,?,?,?,?)')
-        .run(Number(parts[2]), 'COUNCIL', `Rat Runde ${round.round} uebernommen`, `Vorschlaege der Runde ${round.round} wurden per Bestaetigung als Aufgaben uebernommen (neu: ${added}).`, JSON.stringify(proposals), now());
+        .run(requestedVillaId, 'COUNCIL', `Rat Runde ${round.round} uebernommen`, `Vorschlaege der Runde ${round.round} wurden per Bestaetigung als Aufgaben uebernommen (neu: ${added}).`, JSON.stringify(proposals), now());
       return json(res, 200, { ok: true, roundId: round.id, round: round.round, proposals: proposals.length, added });
     } catch (e) {
       return json(res, 400, { error: e.message });
     }
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'tasks' && parts.length === 4 && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
     const status = String(url.searchParams.get('status') || '').toUpperCase();
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 200, 1), 500);
@@ -1609,7 +1639,7 @@ async function api(req, res, url) {
     return json(res, 200, rows.map((t) => ({ ...t, result: String(t.result || '').slice(0, 2000) })));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'tasks' && parts[4] && parts[5] === 'retry' && m === 'POST') {
-    const id = Number(parts[2]), taskId = Number(parts[4]);
+    const id = requestedVillaId, taskId = Number(parts[4]);
     const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND villa_id = ?').get(taskId, id);
     if (!task) return json(res, 404, { error: 'Aufgabe nicht gefunden' });
     if (task.status === 'RUNNING') return json(res, 409, { error: 'Aufgabe laeuft gerade.' });
@@ -1617,7 +1647,7 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'audit' && parts.length === 4 && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 100, 1), 500);
     const offset = Math.max(Number(url.searchParams.get('offset')) || 0, 0);
@@ -1630,12 +1660,12 @@ async function api(req, res, url) {
   // Produkt-Pipeline: Marktreife, Phasen und Entwicklungszyklus je Villa.
   if (p === '/api/product/phases' && m === 'GET') return json(res, 200, PHASES.map(({ id, title, goal, weight }) => ({ id, title, goal, weight })));
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'product' && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
     return json(res, 200, maturity(id));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'develop' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
     const out = developCycle(id);
     if (out.added > 0 && !isRunning(id)) scheduleVilla(id, { concurrency: 0, maxRounds: 6 });
@@ -1645,7 +1675,7 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'publish' && m === 'POST') {
     try {
       const b = await readBody(req);
-      const out = createPublishPost(Number(parts[2]), b);
+      const out = createPublishPost(requestedVillaId, b);
       return json(res, 200, out);
     } catch (e) {
       return json(res, e.statusCode || 400, { error: e.message });
@@ -1653,7 +1683,7 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'publish' && m === 'GET') {
     try {
-      const out = listPublishPosts(Number(parts[2]));
+      const out = listPublishPosts(requestedVillaId);
       return json(res, 200, out);
     } catch (e) {
       return json(res, e.statusCode || 400, { error: e.message });
@@ -1661,7 +1691,7 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'revenue' && m === 'GET') {
     try {
-      const out = getVillaRevenue(Number(parts[2]));
+      const out = getVillaRevenue(requestedVillaId);
       return json(res, 200, out);
     } catch (e) {
       return json(res, e.statusCode || 400, { error: e.message });
@@ -1681,7 +1711,9 @@ async function api(req, res, url) {
       // global and events are not yet partitioned by Villa ownership.
       // Revalidate the bearer session and current role for every event; a deleted
       // or demoted administrator must immediately lose access to raw global payloads.
-      const payload = eventForStream(e, { isAdmin: checkIsAdmin(req) });
+      const sessionUser = userForRequest(req);
+      const role = String(sessionUser?.role || '').toUpperCase();
+      const payload = eventForStream(e, { isAdmin: role === 'ADMIN' || role === 'SUPERADMIN' });
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
     bus.on('event', onEvent);
