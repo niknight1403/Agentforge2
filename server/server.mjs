@@ -656,7 +656,7 @@ async function api(req, res, url) {
     : 0;
   if (requestedVillaId && !openMode && !isAdmin) {
     const linkedOwner = db.prepare(
-      'SELECT project.owner_user_id FROM deep_project_villas link JOIN deep_projects project ON project.id = link.project_id WHERE link.villa_id = ?'
+      'SELECT owner_user_id FROM deep_villa_owners WHERE villa_id = ?'
     ).get(requestedVillaId);
     if (linkedOwner && Number(linkedOwner.owner_user_id || 0) !== Number(user?.id || 0)) {
       return json(res, 404, { error: 'Villa nicht gefunden' });
@@ -1009,7 +1009,7 @@ async function api(req, res, url) {
     const hiddenDeepVillaIds = new Set();
     if (!openMode && !isAdmin) {
       const privateDeepVillas = db.prepare(
-        'SELECT link.villa_id, project.owner_user_id FROM deep_project_villas link JOIN deep_projects project ON project.id = link.project_id'
+        'SELECT villa_id, owner_user_id FROM deep_villa_owners'
       ).all();
       for (const linked of privateDeepVillas) {
         if (Number(linked.owner_user_id || 0) !== Number(user?.id || 0)) {
