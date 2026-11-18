@@ -36,6 +36,21 @@ jobs:
             ([.nodes[] | select(.name == "Local Ollama") | .parameters.url] | any(. == "http://ollama:11434/api/generate"))
           ' "$workflow" >/dev/null
           echo "Workflow remains inactive until an authentication credential is configured; input/output contracts validated."
+      - name: Enforce local-only exposure and trusted-flow boundary
+        run: |
+          compose=infrastructure/zero-cost-stack/docker-compose.yml
+          env_example=infrastructure/zero-cost-stack/.env.example
+          caddy=infrastructure/zero-cost-stack/config/Caddyfile
+          grep -Fq '127.0.0.1:11434:11434' "$compose"
+          grep -Fq '127.0.0.1:5678:5678' "$compose"
+          grep -Fq '127.0.0.1:8080:80' "$compose"
+          grep -Fq '127.0.0.1:8010:8010' "$compose"
+          grep -Fq 'HTTP_BIND=127.0.0.1' "$env_example"
+          grep -Fq 'HTTPS_BIND=127.0.0.1' "$env_example"
+          grep -Fq 'AP_EXECUTION_MODE: UNSANDBOXED' "$compose"
+          grep -Fq 'http://n8n.localhost' "$caddy"
+          grep -Fq 'http://automation.localhost' "$caddy"
+          echo "Local-only default binds and unsandboxed Activepieces warning boundary validated."
       - name: Validate Compose configuration
         run: |
           cd infrastructure/zero-cost-stack
