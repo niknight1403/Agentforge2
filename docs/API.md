@@ -225,3 +225,14 @@ Body `{ "enabled": true | false }`. Antwort 200 mit neuem Zustand, 400 bei
 fehlendem oder nicht-booleschem `enabled`, 404 bei unbekanntem Pack. Ist das
 Feature-Pack `council` aus, antwortet `POST /api/villas/:id/council` mit 409;
 ist `superintelligence` aus, laeuft die automatische Rat-Runde nicht.
+
+
+## Neurales Agentennetzwerk (Administrator)
+
+```
+GET  /api/villas/:id/neural-network
+POST /api/villas/:id/neural-network/activate
+POST /api/villas/:id/neural-network/deactivate
+```
+
+Die Statusantwort enthaelt ausschliesslich die tatsaechliche Agenten-Topologie, Rollen, Eltern-/Workflow-Kanten, Task-Status und Workload-Zuordnung. `activate` nutzt den vorhandenen VillaForge-Scheduler und dessen Slot-/Ressourcenlimits; `deactivate` pausiert nur die ausgewaehlte Villa. Alle drei Routen sind Administrator-Endpunkte.
