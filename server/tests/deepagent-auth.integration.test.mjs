@@ -42,7 +42,7 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
     "  }",
     "});",
     "await import('./server/server.mjs');"
-  ].join('\\n');
+  ].join('\n');
   const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
     cwd: process.cwd(),
     env: {
@@ -119,13 +119,13 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
       reject(new Error(`Test Villa insert timed out: ${output}`));
     }, 3000);
     const onData = () => {
-      const linked = /__TEST_VILLA_LINKED__(\\d+)/.exec(output);
+      const linked = /__TEST_VILLA_LINKED__(\d+)/.exec(output);
       const failed = /__TEST_VILLA_ERROR__(.*)/.exec(output);
       if (linked) { clearTimeout(timeout); child.stdout.off('data', onData); resolve(Number(linked[1])); }
       else if (failed) { clearTimeout(timeout); child.stdout.off('data', onData); reject(new Error(failed[1])); }
     };
     child.stdout.on('data', onData);
-    child.stdin.write(JSON.stringify({ type: 'linkVilla', projectId }) + '\\n');
+    child.stdin.write(JSON.stringify({ type: 'linkVilla', projectId }) + '\n');
   });
   const ownerVillas = await fetch(`${base}/api/villas`, { headers: auth(tokenA) }).then((response) => response.json());
   const otherVillas = await fetch(`${base}/api/villas`, { headers: auth(tokenB) }).then((response) => response.json());
