@@ -56,6 +56,18 @@ else
   fail "Ollama model available: $MODEL (pull it with docker compose exec ollama ollama pull $MODEL)"
 fi
 
+# Execute a tiny real inference request; this proves the model can answer,
+# not merely that its tag appears in /api/tags.
+if inference="$(curl --fail --silent --show-error --max-time 180 \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -nc --arg model "$MODEL" '{model:$model,prompt:"Return a JSON object with keys summary, findings, recommendations. Use short values.",stream:false,format:"json"}')" \
+  http://127.0.0.1:11434/api/generate 2>/dev/null)" \
+  && printf '%s' "$inference" | jq -e '.response | fromjson | (.summary and (.findings != null) and (.recommendations != null))' >/dev/null; then
+  pass "Ollama real inference returns structured JSON"
+else
+  fail "Ollama real inference returns structured JSON (check model memory, timeout and Ollama logs)"
+fi
+
 if curl --fail --silent http://127.0.0.1:5678/healthz >/dev/null; then
   pass "n8n health endpoint"
 else
