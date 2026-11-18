@@ -148,7 +148,7 @@ services:
 
 networks:
   backend:
-    internal: true
+    driver: bridge
   proxy:
 
 volumes:
