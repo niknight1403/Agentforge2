@@ -9,8 +9,8 @@ from app.config import settings
 ALLOWED_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".yml", ".yaml", ".toml", ".sql"}
 IGNORED_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "coverage", ".next"}
 IGNORED_NAMES = {".env", ".env.local", ".env.production", "id_rsa", "id_ed25519"}
-SECRET_ASSIGNMENTS = re.compile(
-    r"""(?im)(?<![A-Za-z0-9_-])(?P<key>_*[A-Za-z0-9][A-Za-z0-9_-]*)["']?\s*(?P<separator>[:=])\s*(?:(?P<annotation>[A-Za-z_][A-Za-z0-9_\[\]. |,]*)\s*=\s*)?(?:(?P<quote>["'])(?P<quoted>(?:\\.|(?!(?P=quote))[^\\\r\n])*)(?P=quote)|(?P<bare>[^\s#(),;]+)(?=\s*(?:#.*)?$))"""
+SECRET_KEY_CANDIDATES = re.compile(
+    r"""(?im)(?<![A-Za-z0-9_-])["']?(?P<key>_*[A-Za-z0-9][A-Za-z0-9_-]*)["']?\s*(?P<separator>[:=])"""
 )
 SECRET_MARKERS = re.compile(
     r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
@@ -30,34 +30,77 @@ class RepositoryTargetError(ValueError):
     """A controlled, user-correctable repository validation failure."""
 
 
-def contains_secret(content: str) -> bool:
-    """Return whether content matches known credential assignments or key formats.
+def _assignment_value(content: str, offset: int, separator: str) -> str | None:
+    """Read one scalar assignment value, ignoring type-only declarations and env lookups."""
+    pos = offset
+    while pos < len(content) and content[pos].isspace():
+        pos += 1
 
-    Assignment candidates are scanned once per identifier (rather than restarting
-    a nested prefix expression at every underscore), keeping adversarial input linear.
-    """
+    if separator == ":":
+        annotation = re.match(r"[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]\r\n]*\])?", content[pos:])
+        if annotation:
+            annotation_name = annotation.group(0).split("[", 1)[0].lower()
+            after_annotation = pos + annotation.end()
+            while after_annotation < len(content) and content[after_annotation].isspace():
+                after_annotation += 1
+            if after_annotation < len(content) and content[after_annotation] == "=":
+                pos = after_annotation + 1
+            elif annotation_name in TYPE_ANNOTATIONS:
+                return None
+
+    while pos < len(content) and content[pos].isspace():
+        pos += 1
+    if pos >= len(content):
+        return ""
+
+    if content[pos] in {"'", '"'}:
+        quote = content[pos]
+        pos += 1
+        value = []
+        while pos < len(content) and content[pos] not in "\r\n":
+            char = content[pos]
+            if char == "\\" and pos + 1 < len(content):
+                value.append(content[pos + 1])
+                pos += 2
+                continue
+            if char == quote:
+                break
+            value.append(char)
+            pos += 1
+        return "".join(value)
+
+    if re.match(
+        r"(?:process\.env\.[A-Za-z_][A-Za-z0-9_]*|env\.[A-Za-z_][A-Za-z0-9_]*)\b",
+        content[pos:],
+        re.IGNORECASE,
+    ):
+        return None
+    if re.match(r"[A-Za-z_][A-Za-z0-9_.]*\s*\(", content[pos:]):
+        return None
+    if re.match(r"os\.environ\s*\[", content[pos:], re.IGNORECASE):
+        return None
+
+    value_match = re.match(r"[^\s#(),;]+", content[pos:])
+    return value_match.group(0) if value_match else ""
+
+
+def contains_secret(content: str) -> bool:
+    """Return whether content contains known credential assignments or key formats."""
     if SECRET_MARKERS.search(content):
         return True
-    for match in SECRET_ASSIGNMENTS.finditer(content):
+    for match in SECRET_KEY_CANDIDATES.finditer(content):
         key = match.group("key").lower().replace("-", "_").strip("_")
         if not any(key == part or key.endswith("_" + part) for part in SECRET_KEY_PARTS):
             continue
-        value = (match.group("quoted") if match.group("quote") else match.group("bare") or "").strip()
-        if not value:
+        value = _assignment_value(content, match.end(), match.group("separator"))
+        if value is None or not value.strip():
             continue
-        # A Python annotation without a default is schema metadata, not a secret.
-        if match.group("separator") == ":" and value.lower() in TYPE_ANNOTATIONS:
-            continue
-        if match.group("bare") and re.fullmatch(
-            r"(?:process\.env\.[A-Za-z_][A-Za-z0-9_]*|env\.[A-Za-z_][A-Za-z0-9_]*)",
-            value,
-            re.IGNORECASE,
+        normalized = value.strip().lower()
+        if normalized not in SAFE_SECRET_PLACEHOLDERS and not normalized.startswith(
+            ("your-", "replace-", "example")
         ):
-            continue
-        if value.lower() not in SAFE_SECRET_PLACEHOLDERS and not value.lower().startswith(("your-", "replace-", "example")):
             return True
     return False
-
 
 class GitHubScanner:
     def _validate_target(self, name: str, url: str) -> None:
