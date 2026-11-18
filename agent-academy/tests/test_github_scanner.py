@@ -78,7 +78,32 @@ def test_empty_secret_values_are_not_credentials():
 
 
 def test_type_annotation_without_default_is_not_a_secret():
-    assert not contains_secret("class Config:\n    password: str")
+    assert not contains_secret("class Config:\n    password: str", ".py")
+
+
+def test_yaml_values_are_not_mistaken_for_python_type_annotations_or_sibling_fields():
+    assert contains_secret("password: string-fixture-value", ".yaml")
+    assert not contains_secret("password:\nhost: localhost", ".yaml")
+
+
+def test_triple_quoted_credentials_are_detected():
+    assert contains_secret('password = """fixture-value"""', ".py")
+    assert contains_secret("password = '''fixture-value'''", ".py")
+
+
+def test_os_getenv_literal_defaults_are_detected_but_plain_lookups_are_not():
+    assert contains_secret('password = os.getenv("APP_PASSWORD", "fixture-value")', ".py")
+    assert not contains_secret('password = os.getenv("APP_PASSWORD")', ".py")
+
+
+def test_camel_case_credentials_are_detected():
+    assert contains_secret('{"clientSecret":"fixture-value"}', ".json")
+    assert not contains_secret('{"secretScanningEnabled":true}', ".json")
+
+
+def test_generic_python_token_references_are_not_treated_as_embedded_credentials():
+    assert not contains_secret("token = self.current_token", ".py")
+    assert contains_secret('token = "literal-token-value"', ".py")
 
 
 def test_scan_excludes_typed_and_nested_credentials_but_keeps_schema_and_empty_config(tmp_path):
