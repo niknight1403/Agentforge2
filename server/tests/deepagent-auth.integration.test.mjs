@@ -242,6 +242,17 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   assert.equal(otherDelete.status, 404);
   const ownerDelete = await fetch(`${base}/api/deep/projects/${projectId}`, { method: 'DELETE', headers: auth(tokenA) });
   assert.equal(ownerDelete.status, 200);
+
+  // Deleting the Deep project must not turn its surviving Villa into shared data.
+  const ownerVillaAfterDelete = await fetch(`${base}/api/villas/${villaId}`, { headers: auth(tokenA) });
+  const otherVillaAfterDelete = await fetch(`${base}/api/villas/${villaId}`, { headers: auth(tokenB) });
+  assert.equal(ownerVillaAfterDelete.status, 200, 'the original owner retains access to the surviving Villa');
+  assert.equal(otherVillaAfterDelete.status, 404, 'deleting the project must not expose its Villa to another user');
+
+  const ownerVillasAfterDelete = await fetch(`${base}/api/villas`, { headers: auth(tokenA) }).then((response) => response.json());
+  const otherVillasAfterDelete = await fetch(`${base}/api/villas`, { headers: auth(tokenB) }).then((response) => response.json());
+  assert.ok(ownerVillasAfterDelete.some((villa) => Number(villa.id) === villaId));
+  assert.ok(!otherVillasAfterDelete.some((villa) => Number(villa.id) === villaId));
 });
 
 
