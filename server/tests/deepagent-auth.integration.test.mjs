@@ -153,6 +153,8 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   assert.equal(previewPreflight.status, 204);
   assert.equal(previewPreflight.headers.get('access-control-allow-origin'), '*');
   assert.match(previewPreflight.headers.get('access-control-allow-headers') || '', /authorization/i);
+  const anonymousPreview = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/index.html`);
+  assert.equal(anonymousPreview.status, 404, 'public CORS preflight must not make the actual preview public');
 
   const ownerPreview = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/index.html`, { headers: auth(tokenA) });
   assert.equal(ownerPreview.status, 200);
