@@ -37,7 +37,7 @@ for db_var in N8N_DB_NAME AP_DB_NAME; do
     N8N_DB_NAME) db_name="${db_name:-n8n}" ;;
     AP_DB_NAME) db_name="${db_name:-activepieces}" ;;
   esac
-  if [[ -n "$db_name" ]] && docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT 1 FROM pg_database WHERE datname = '\'''"$db_name"'''\''" | grep -q 1' >/dev/null 2>&1; then
+  if [[ -n "$db_name" ]] && docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -lqt' | awk -F '|' -v db="$db_name" '$1 ~ "^[[:space:]]*" db "[[:space:]]*$" { found=1 } END { exit !found }'; then
     pass "database $db_name exists"
   else
     fail "database $db_name exists (init scripts only run on an empty volume)"
