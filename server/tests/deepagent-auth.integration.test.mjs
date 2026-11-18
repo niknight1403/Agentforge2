@@ -21,6 +21,7 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const base = `http://127.0.0.1:${port}`;
   const script = [
     "import { db } from './server/db.mjs';",
+    "import { linkDeepProjectVilla } from './server/deepagent.mjs';",
     "process.stdin.setEncoding('utf8');",
     "let pending = '';",
     "process.stdin.on('data', (chunk) => {",
@@ -35,7 +36,7 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
     "      if (command.type === 'linkVilla') {",
     "        const ts = Date.now();",
     "        const id = Number(db.prepare('INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?,?)').run('Deep · Private Project A', 'Private project idea belonging to user A', 'PLANNING', 12, 1, ts, ts).lastInsertRowid);",
-    "        db.prepare('INSERT INTO deep_project_villas (project_id, villa_id, created_at) VALUES (?,?,?)').run(Number(command.projectId), id, ts);",
+    "        linkDeepProjectVilla(Number(command.projectId), id);",
     "        process.stdout.write('__TEST_VILLA_LINKED__' + id + '\\n');",
     "      }",
     "    } catch (error) { process.stdout.write('__TEST_VILLA_ERROR__' + String(error.message || error) + '\\n'); }",
@@ -137,6 +138,17 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const otherVillaDetail = await fetch(`${base}/api/villas/${villaId}`, { headers: auth(tokenB) });
   assert.equal(ownerVillaDetail.status, 200, 'project owner can read the linked Villa detail');
   assert.equal(otherVillaDetail.status, 404, 'another user cannot read private Villa detail by guessing its id');
+  const numericAliasDetail = await fetch(`${base}/api/villas/${villaId}e0`, { headers: auth(tokenB) });
+  const numericAliasReport = await fetch(`${base}/api/villas/${villaId}e0/reports`, { headers: auth(tokenB) });
+  assert.equal(numericAliasDetail.status, 404, 'non-canonical numeric aliases cannot bypass Villa ownership checks');
+  assert.equal(numericAliasReport.status, 404, 'report handlers use the same validated Villa id');
+
+  const ownerStats = await fetch(`${base}/api/stats`, { headers: auth(tokenA) }).then((response) => response.json());
+  const otherStats = await fetch(`${base}/api/stats`, { headers: auth(tokenB) }).then((response) => response.json());
+  const adminStats = await fetch(`${base}/api/stats`, { headers: auth(adminToken) }).then((response) => response.json());
+  assert.ok(ownerStats.maturity.some((villa) => Number(villa.villaId) === villaId));
+  assert.ok(!otherStats.maturity.some((villa) => Number(villa.villaId) === villaId), 'stats must not reveal another owner\'s Villa name or id');
+  assert.ok(adminStats.maturity.some((villa) => Number(villa.villaId) === villaId), 'administrators retain full stats visibility');
 
   const previewDir = join(TMP, 'deep-projects', String(projectId), 'dist');
   mkdirSync(previewDir, { recursive: true });
@@ -266,11 +278,13 @@ test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin ev
   const base = `http://127.0.0.1:${port}`;
   const script = `
     import { bus } from './server/events.mjs';
+    import { userStore } from './server/auth.mjs';
     process.stdin.setEncoding('utf8');
-    process.stdin.on('data', () => bus.emit('event', {
-      type: 'tool', ts: Date.now(), villaId: 99, tool: 'project_write',
+    const eventId = 'sse-revocation-probe';
+    process.stdin.on('data', () => userStore.run({ id: 999, role: 'ADMIN' }, () => bus.emit('event', {
+      type: 'tool', ts: Date.now(), villaId: 99, taskId: eventId, tool: 'project_write',
       args: { content: 'private source code' }, prompt: 'private project prompt'
-    }));
+    })));
     await import('./server/server.mjs');
   `;
   const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
@@ -320,12 +334,15 @@ test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin ev
     const decoder = new TextDecoder();
     let buffer = '';
     let pendingFrames = [];
-    return async () => {
+    return async (predicate = () => true) => {
       while (true) {
         if (pendingFrames.length) {
           const frame = pendingFrames.shift();
           const data = frame.split(/\r?\n/).find((line) => line.startsWith('data:'));
-          if (data) return JSON.parse(data.slice(5).trim());
+          if (data) {
+            const payload = JSON.parse(data.slice(5).trim());
+            if (predicate(payload)) return payload;
+          }
           continue;
         }
         const { value, done } = await reader.read();
@@ -339,8 +356,10 @@ test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin ev
   };
   const nextUserPayload = createPayloadReader(userResponse);
   const nextAdminPayload = createPayloadReader(adminResponse);
-  const userPayloadPromise = nextUserPayload();
-  const adminPayloadPromise = nextAdminPayload();
+  const eventId = 'sse-revocation-probe';
+  const isProbeEvent = (payload) => payload.taskId === eventId;
+  const userPayloadPromise = nextUserPayload(isProbeEvent);
+  const adminPayloadPromise = nextAdminPayload(isProbeEvent);
   const eventTimeout = setTimeout(() => { userAbort.abort(); adminAbort.abort(); }, 8000);
   child.stdin.write('emit\n');
   try {
@@ -353,7 +372,7 @@ test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin ev
     assert.equal(adminPayload.prompt, 'private project prompt');
 
     destroyToken(adminToken);
-    const revokedAdminPayloadPromise = nextAdminPayload();
+    const revokedAdminPayloadPromise = nextAdminPayload(isProbeEvent);
     child.stdin.write('emit\n');
     const revokedAdminPayload = await revokedAdminPayloadPromise;
     assert.equal(revokedAdminPayload.args, undefined, 'revoked admin sessions must stop receiving raw tool arguments');
