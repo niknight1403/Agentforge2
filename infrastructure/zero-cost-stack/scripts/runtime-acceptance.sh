@@ -14,7 +14,10 @@ MODEL="${OLLAMA_ACCEPTANCE_MODEL:-qwen2.5-coder:7b}"
 pass() { printf 'PASS  %s\n' "$1"; PASS_COUNT=$((PASS_COUNT + 1)); }
 fail() { printf 'FAIL  %s\n' "$1"; FAIL_COUNT=$((FAIL_COUNT + 1)); FAILED=1; }
 
-command -v docker >/dev/null 2>&1 || { echo "docker CLI is required" >&2; exit 2; }
+for bin in docker curl jq; do
+  command -v "$bin" >/dev/null 2>&1 || { echo "$bin is required" >&2; exit 2; }
+done
+[[ -f .env ]] || { echo ".env is missing; run ./scripts/bootstrap-env.sh first" >&2; exit 2; }
 docker compose config --quiet || { echo "Compose configuration is invalid" >&2; exit 2; }
 
 for service in postgres redis ollama n8n activepieces languagetool; do
@@ -62,7 +65,7 @@ if inference="$(curl --fail --silent --show-error --max-time 180 \
   -H 'Content-Type: application/json' \
   -d "$(jq -nc --arg model "$MODEL" '{model:$model,prompt:"Return a JSON object with keys summary, findings, recommendations. Use short values.",stream:false,format:"json"}')" \
   http://127.0.0.1:11434/api/generate 2>/dev/null)" \
-  && printf '%s' "$inference" | jq -e '.response | fromjson | (.summary and (.findings != null) and (.recommendations != null))' >/dev/null; then
+  && printf '%s' "$inference" | jq -e '.response | fromjson | (has("summary") and has("findings") and has("recommendations"))' >/dev/null; then
   pass "Ollama real inference returns structured JSON"
 else
   fail "Ollama real inference returns structured JSON (check model memory, timeout and Ollama logs)"
