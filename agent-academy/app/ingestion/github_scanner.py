@@ -33,6 +33,7 @@ CALL_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*\s*\(")
 OS_ENVIRON_PATTERN = re.compile(r"os\.environ\s*\[", re.IGNORECASE)
 OS_GETENV_PATTERN = re.compile(r"os\.getenv\s*\(", re.IGNORECASE)
 BARE_VALUE_PATTERN = re.compile(r"[^\s#(),;]+")
+YAML_MAPPING_KEY_PATTERN = re.compile(r"[A-Za-z0-9_-]+:[ \t]+")
 
 
 class RepositoryTargetError(ValueError):
@@ -112,7 +113,37 @@ def _assignment_value(
 
     while pos < len(content) and content[pos] in " \t\f":
         pos += 1
-    if pos >= len(content) or content[pos] in "\r\n":
+    if pos < len(content) and content[pos] in "\r\n":
+        if separator != ":" or python_source:
+            return ""
+        line_start = content.rfind("\n", 0, offset) + 1
+        key_prefix = content[line_start:offset]
+        key_indent = len(key_prefix) - len(key_prefix.lstrip(" \t"))
+        cursor = pos
+        found_value = False
+        while cursor < len(content) and content[cursor] in "\r\n":
+            if content.startswith("\r\n", cursor):
+                cursor += 2
+            else:
+                cursor += 1
+            next_line_start = cursor
+            while cursor < len(content) and content[cursor] in " \t":
+                cursor += 1
+            if cursor >= len(content):
+                return ""
+            if content[cursor] == "#" or content[cursor] in "\r\n":
+                while cursor < len(content) and content[cursor] not in "\r\n":
+                    cursor += 1
+                continue
+            next_indent = cursor - next_line_start
+            if next_indent <= key_indent or YAML_MAPPING_KEY_PATTERN.match(content, cursor):
+                return ""
+            pos = cursor
+            found_value = True
+            break
+        if not found_value:
+            return ""
+    if pos >= len(content):
         return ""
 
     if content[pos] in {"'", '"'}:
