@@ -18,10 +18,10 @@ No paid provider is configured. External free-tier routing is intentionally not 
 
 ```bash
 cd infrastructure/zero-cost-stack
-./scripts/bootstrap-env.sh
+bash ./scripts/bootstrap-env.sh
 ```
 
-Review `.env`, then initialize the PostgreSQL databases/users before first launch. The checked-in Compose file expects the database bootstrap SQL in `config/postgres/init`; do not start the stack until that initialization file exists and has been reviewed.
+Review `.env`. The checked-in PostgreSQL initialization script creates separate n8n and Activepieces roles/databases on the first empty-volume initialization. If the PostgreSQL volume already exists, the init script will not run automatically.
 
 Validate the Compose model:
 
@@ -45,7 +45,7 @@ docker compose exec ollama ollama pull qwen2.5:1.5b
 Run health checks:
 
 ```bash
-./scripts/health-check.sh
+bash ./scripts/health-check.sh
 ```
 
 ## Security notes
