@@ -6,7 +6,6 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TMP } from './_env.mjs';
 import { createUser, createSession, destroyToken } from '../auth.mjs';
-import { db } from '../db.mjs';
 
 test('DeepAgent endpoints require login and isolate projects, chat and files by owner', async (t) => {
   const userA = createUser({ email: 'deepagent-owner-a@example.invalid', password: 'test-only-password-a', role: 'user' });
@@ -20,7 +19,31 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   process.env.DEEP_DIR = join(TMP, 'deep-projects');
   const port = 18000 + (process.pid % 10000);
   const base = `http://127.0.0.1:${port}`;
-  const child = spawn(process.execPath, ['server/server.mjs'], {
+  const script = [
+    "import { db } from './server/db.mjs';",
+    "process.stdin.setEncoding('utf8');",
+    "let pending = '';",
+    "process.stdin.on('data', (chunk) => {",
+    "  pending += chunk;",
+    "  let newline;",
+    "  while ((newline = pending.indexOf('\\n')) >= 0) {",
+    "    const line = pending.slice(0, newline);",
+    "    pending = pending.slice(newline + 1);",
+    "    if (!line) continue;",
+    "    try {",
+    "      const command = JSON.parse(line);",
+    "      if (command.type === 'linkVilla') {",
+    "        const ts = Date.now();",
+    "        const id = Number(db.prepare('INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?,?)').run('Deep · Private Project A', 'Private project idea belonging to user A', 'PLANNING', 12, 1, ts, ts).lastInsertRowid);",
+    "        db.prepare('INSERT INTO deep_project_villas (project_id, villa_id, created_at) VALUES (?,?,?)').run(Number(command.projectId), id, ts);",
+    "        process.stdout.write('__TEST_VILLA_LINKED__' + id + '\\n');",
+    "      }",
+    "    } catch (error) { process.stdout.write('__TEST_VILLA_ERROR__' + String(error.message || error) + '\\n'); }",
+    "  }",
+    "});",
+    "await import('./server/server.mjs');"
+  ].join('\\n');
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
     cwd: process.cwd(),
     env: {
       ...process.env,
@@ -30,7 +53,7 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
       VF_ADMIN_PASSWORD: 'test-only-password-never-reused',
       VF_RESUME: '0'
     },
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['pipe', 'pipe', 'pipe']
   });
   let output = '';
   child.stdout.on('data', (chunk) => { output += chunk.toString(); });
@@ -90,12 +113,20 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   assert.ok(created.id > 0);
   const projectId = created.id;
 
-  const villaNow = Date.now();
-  const villaId = Number(db.prepare(
-    'INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?,?)'
-  ).run('Deep · Private Project A', 'Private project idea belonging to user A', 'PLANNING', 12, 1, villaNow, villaNow).lastInsertRowid);
-  db.prepare('INSERT INTO deep_project_villas (project_id, villa_id, created_at) VALUES (?,?,?)')
-    .run(projectId, villaId, villaNow);
+  const villaId = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      child.stdout.off('data', onData);
+      reject(new Error(`Test Villa insert timed out: ${output}`));
+    }, 3000);
+    const onData = () => {
+      const linked = /__TEST_VILLA_LINKED__(\\d+)/.exec(output);
+      const failed = /__TEST_VILLA_ERROR__(.*)/.exec(output);
+      if (linked) { clearTimeout(timeout); child.stdout.off('data', onData); resolve(Number(linked[1])); }
+      else if (failed) { clearTimeout(timeout); child.stdout.off('data', onData); reject(new Error(failed[1])); }
+    };
+    child.stdout.on('data', onData);
+    child.stdin.write(JSON.stringify({ type: 'linkVilla', projectId }) + '\\n');
+  });
   const ownerVillas = await fetch(`${base}/api/villas`, { headers: auth(tokenA) }).then((response) => response.json());
   const otherVillas = await fetch(`${base}/api/villas`, { headers: auth(tokenB) }).then((response) => response.json());
   const adminVillas = await fetch(`${base}/api/villas`, { headers: auth(adminToken) }).then((response) => response.json());
