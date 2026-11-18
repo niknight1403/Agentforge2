@@ -64,7 +64,7 @@ export async function activateNeuralNetwork(villaId, { scheduleVilla, isRunning 
   db.prepare('UPDATE villas SET autonomy=1,updated_at=? WHERE id=?').run(now(),villa.id);
   let scheduled;
   try {
-    scheduled=scheduleVilla(villa.id,{concurrency:0,maxRounds:6,runToCompletion:true,force:true});
+    scheduled=scheduleVilla(villa.id,{concurrency:0,maxRounds:6,force:true});
     if(scheduled?.refused) throw Object.assign(new Error(scheduled.refusedMessage||'Scheduler hat den Start abgelehnt.'),{code:scheduled.refusedCode||'NETWORK_START_REFUSED'});
   } catch(error) {
     db.prepare('UPDATE villas SET autonomy=?,updated_at=? WHERE id=?').run(previous,now(),villa.id);
