@@ -26,7 +26,7 @@ test('topology is derived from actual agents, task assignments and parent links'
 
 test('activation enables autonomy and dispatches exactly through the existing scheduler',async()=>{
  const f=fixture();let calls=0;
- const s=await activateNeuralNetwork(f.id,{scheduleVilla:(id,opts)=>{calls++;assert.equal(id,f.id);assert.equal(opts.runToCompletion,true);return {active:[id],queue:[]};}});
+ const s=await activateNeuralNetwork(f.id,{scheduleVilla:(id,opts)=>{calls++;assert.equal(id,f.id);assert.equal(opts.maxRounds,6);return {active:[id],queue:[]};}});
  assert.equal(calls,1);assert.equal(s.accepted,true);assert.equal(s.villa.autonomy,true);
  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(f.id).autonomy,1);
 });
@@ -45,5 +45,5 @@ test('deactivation affects only selected Villa and pauses it',()=>{
 
 test('archived villas cannot be activated',async()=>{
  const f=fixture('ARCHIVED',0);
- await assert.rejects(()=>activateNeuralNetwork(f.id,{scheduleVilla:()=>({})}),/Archivierte Villa/);
+ await assert.rejects(()=>activateNeuralNetwork(f.id,{scheduleVilla:()=>({})}),/VILLA_ARCHIVED/);
 });
