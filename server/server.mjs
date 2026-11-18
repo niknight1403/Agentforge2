@@ -651,6 +651,17 @@ async function api(req, res, url) {
   // Ausnahme: der SSE-Eventstrom (/api/events) laesst sich aus dem Browser
   // nicht mit Headern verbinden; er uebertraegt nur Fortschrittsereignisse.
   if (needAuth && p !== '/api/events' && p !== '/api/dlq/dashboard') return json(res, 401, { error: 'Login erforderlich.' });
+  const requestedVillaId = parts[0] === 'api' && parts[1] === 'villas' && /^\\d+$/.test(parts[2] || '')
+    ? Number(parts[2])
+    : 0;
+  if (requestedVillaId && !openMode && !isAdmin) {
+    const linkedOwner = db.prepare(
+      'SELECT project.owner_user_id FROM deep_project_villas link JOIN deep_projects project ON project.id = link.project_id WHERE link.villa_id = ?'
+    ).get(requestedVillaId);
+    if (linkedOwner && Number(linkedOwner.owner_user_id || 0) !== Number(user?.id || 0)) {
+      return json(res, 404, { error: 'Villa nicht gefunden' });
+    }
+  }
   if (p === '/api/billing/summary' && m === 'GET') return user ? json(res,200,billingSummary(user.id)) : json(res,401,{error:'Login erforderlich.'});
   if (p === '/api/billing/checkout' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createCheckoutSession(user)); }
   if (p === '/api/billing/portal' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createBillingPortalSession(user.id)); }

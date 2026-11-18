@@ -133,6 +133,10 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   assert.ok(ownerVillas.some((villa) => Number(villa.id) === villaId), 'project owner can see the linked Villa');
   assert.ok(!otherVillas.some((villa) => Number(villa.id) === villaId), 'another user cannot discover the private Villa or idea');
   assert.ok(adminVillas.some((villa) => Number(villa.id) === villaId), 'administrators retain access to linked Villen');
+  const ownerVillaDetail = await fetch(`${base}/api/villas/${villaId}`, { headers: auth(tokenA) });
+  const otherVillaDetail = await fetch(`${base}/api/villas/${villaId}`, { headers: auth(tokenB) });
+  assert.equal(ownerVillaDetail.status, 200, 'project owner can read the linked Villa detail');
+  assert.equal(otherVillaDetail.status, 404, 'another user cannot read private Villa detail by guessing its id');
 
   const previewDir = join(TMP, 'deep-projects', String(projectId), 'dist');
   mkdirSync(previewDir, { recursive: true });
