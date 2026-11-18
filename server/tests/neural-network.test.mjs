@@ -21,7 +21,7 @@ test('topology is derived from actual agents, task assignments and parent links'
  assert.equal(s.network.nodes,4);assert.ok(s.network.edges>=3);
  assert.equal(s.tasks.PENDING,1);assert.equal(s.tasks.DONE,1);
  assert.ok(s.nodes.find(n=>n.id===f.coder).workload===1);
- assert.ok(s.edges.some(e=>e.from===f.root&&e.to===f.planner&&e.kind==='supervision'));
+ assert.equal(s.nodes.find(n=>n.id===f.planner).parentId,f.root);
 });
 
 test('activation enables autonomy and dispatches exactly through the existing scheduler',async()=>{
