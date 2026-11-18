@@ -83,7 +83,9 @@ def test_type_annotation_without_default_is_not_a_secret():
 
 def test_yaml_values_are_not_mistaken_for_python_type_annotations_or_sibling_fields():
     assert contains_secret("password: string-fixture-value", ".yaml")
+    assert contains_secret("password:\n  indented-secret-value", ".yaml")
     assert not contains_secret("password:\nhost: localhost", ".yaml")
+    assert not contains_secret("password:\n  host: localhost", ".yaml")
 
 
 def test_triple_quoted_credentials_are_detected():
