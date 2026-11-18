@@ -3,18 +3,10 @@
   auto_https off
 }
 
-:80 {
-  @n8n path /n8n/*
-  handle @n8n {
-    uri strip_prefix /n8n
-    reverse_proxy n8n:5678
-  }
+http://n8n.localhost {
+  reverse_proxy n8n:5678
+}
 
-  @activepieces path /automation/*
-  handle @activepieces {
-    uri strip_prefix /automation
-    reverse_proxy activepieces:80
-  }
-
-  respond "Agentforge Zero-Cost Stack proxy is running" 200
+http://automation.localhost {
+  reverse_proxy activepieces:80
 }
