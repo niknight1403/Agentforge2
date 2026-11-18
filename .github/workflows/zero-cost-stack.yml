@@ -25,6 +25,17 @@ jobs:
       - name: Validate JSON
         run: |
           find infrastructure/zero-cost-stack -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty
+      - name: Validate local AI workflow safety and output contract
+        run: |
+          workflow=infrastructure/zero-cost-stack/workflows/webhook-to-llm-pipeline.json
+          jq -e '
+            .active == false and
+            ([.nodes[] | select(.name == "Incoming AI Task") | .parameters.authentication // "none"] | length == 1) and
+            ([.nodes[] | select(.name == "Validate Input") | .parameters.jsCode] | any(contains("task.length > 12000"))) and
+            ([.nodes[] | select(.name == "Validate JSON Result") | .parameters.jsCode] | any(contains("required") and contains("recommendations"))) and
+            ([.nodes[] | select(.name == "Local Ollama") | .parameters.url] | any(. == "http://ollama:11434/api/generate"))
+          ' "$workflow" >/dev/null
+          echo "Workflow remains inactive until an authentication credential is configured; input/output contracts validated."
       - name: Validate Compose configuration
         run: |
           cd infrastructure/zero-cost-stack
