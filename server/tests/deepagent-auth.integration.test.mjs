@@ -5,7 +5,8 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TMP } from './_env.mjs';
-import { createUser, createSession } from '../auth.mjs';
+import { createUser, createSession, destroyToken } from '../auth.mjs';
+import { db } from '../db.mjs';
 
 test('DeepAgent endpoints require login and isolate projects, chat and files by owner', async (t) => {
   const userA = createUser({ email: 'deepagent-owner-a@example.invalid', password: 'test-only-password-a', role: 'user' });
@@ -89,16 +90,46 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   assert.ok(created.id > 0);
   const projectId = created.id;
 
+  const villaNow = Date.now();
+  const villaId = Number(db.prepare(
+    'INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?,?)'
+  ).run('Deep · Private Project A', 'Private project idea belonging to user A', 'PLANNING', 12, 1, villaNow, villaNow).lastInsertRowid);
+  db.prepare('INSERT INTO deep_project_villas (project_id, villa_id, created_at) VALUES (?,?,?)')
+    .run(projectId, villaId, villaNow);
+  const ownerVillas = await fetch(`${base}/api/villas`, { headers: auth(tokenA) }).then((response) => response.json());
+  const otherVillas = await fetch(`${base}/api/villas`, { headers: auth(tokenB) }).then((response) => response.json());
+  const adminVillas = await fetch(`${base}/api/villas`, { headers: auth(adminToken) }).then((response) => response.json());
+  assert.ok(ownerVillas.some((villa) => Number(villa.id) === villaId), 'project owner can see the linked Villa');
+  assert.ok(!otherVillas.some((villa) => Number(villa.id) === villaId), 'another user cannot discover the private Villa or idea');
+  assert.ok(adminVillas.some((villa) => Number(villa.id) === villaId), 'administrators retain access to linked Villen');
+
   const previewDir = join(TMP, 'deep-projects', String(projectId), 'dist');
   mkdirSync(previewDir, { recursive: true });
-  writeFileSync(join(previewDir, 'index.html'), '<!doctype html><html><head><link rel="stylesheet" href="/assets/app.css"></head><body><script src="/assets/app.js"></script></body></html>');
+  writeFileSync(join(previewDir, 'index.html'), '<!doctype html><html><head><link rel="stylesheet" href="/assets/app.css"></head><body><script src="/assets/app.js"></script><script type="module" src="//cdn.example.test/app.js"></script></body></html>');
   mkdirSync(join(previewDir, 'assets'), { recursive: true });
   writeFileSync(join(previewDir, 'assets', 'app.css'), "body{color:#123456}.hero{background-image:url('/assets/hero.png')}@import '/assets/theme.css';");
   writeFileSync(join(previewDir, 'assets', 'app.js'), 'window.__deepPreviewSmoke = true;');
 
+  const previewPath = `${base}/api/deep/projects/${projectId}/preview/dist/assets/app.js`;
+  const previewPreflight = await fetch(previewPath, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'null',
+      'Access-Control-Request-Method': 'GET',
+      'Access-Control-Request-Headers': 'authorization'
+    }
+  });
+  assert.equal(previewPreflight.status, 204);
+  assert.equal(previewPreflight.headers.get('access-control-allow-origin'), '*');
+  assert.match(previewPreflight.headers.get('access-control-allow-headers') || '', /authorization/i);
+
   const ownerPreview = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/index.html`, { headers: auth(tokenA) });
   assert.equal(ownerPreview.status, 200);
-  assert.match(await ownerPreview.text(), /assets\/app\.css/);
+  assert.equal(ownerPreview.headers.get('access-control-allow-origin'), '*');
+  const ownerHtml = await ownerPreview.text();
+  assert.match(ownerHtml, /assets\/app\.css/);
+  assert.match(ownerHtml, /src="assets\/app\.js"/);
+  assert.match(ownerHtml, /src="\/\/cdn\.example\.test\/app\.js"/, 'protocol-relative CDN URLs must remain unchanged');
   const ownerCss = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/assets/app.css`, { headers: auth(tokenA) });
   assert.equal(ownerCss.status, 200);
   assert.match(ownerCss.headers.get('content-type') || '', /text\/css/);
@@ -124,6 +155,7 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const ownerJs = await fetch(`${base}/api/deep/projects/${projectId}/preview/dist/assets/app.js`, { headers: auth(tokenA) });
   assert.equal(ownerJs.status, 200);
   assert.match(ownerJs.headers.get('content-type') || '', /javascript/);
+  assert.equal(ownerJs.headers.get('access-control-allow-origin'), '*');
   assert.equal(await ownerJs.text(), 'window.__deepPreviewSmoke = true;');
 
   const ownerList = await fetch(`${base}/api/deep/projects`, { headers: auth(tokenA) });
@@ -233,24 +265,32 @@ test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin ev
   assert.match(userResponse.headers.get('content-type') || '', /text\/event-stream/);
   assert.match(adminResponse.headers.get('content-type') || '', /text\/event-stream/);
 
-  const nextPayload = async (response) => {
+  const createPayloadReader = (response) => {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) throw new Error('SSE stream closed before test event arrived');
-      buffer += decoder.decode(value, { stream: true });
-      const frames = buffer.split(/\r?\n\r?\n/);
-      buffer = frames.pop() || '';
-      for (const frame of frames) {
-        const data = frame.split(/\r?\n/).find((line) => line.startsWith('data:'));
-        if (data) return JSON.parse(data.slice(5).trim());
+    let pendingFrames = [];
+    return async () => {
+      while (true) {
+        if (pendingFrames.length) {
+          const frame = pendingFrames.shift();
+          const data = frame.split(/\r?\n/).find((line) => line.startsWith('data:'));
+          if (data) return JSON.parse(data.slice(5).trim());
+          continue;
+        }
+        const { value, done } = await reader.read();
+        if (done) throw new Error('SSE stream closed before test event arrived');
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split(/\r?\n\r?\n/);
+        buffer = frames.pop() || '';
+        pendingFrames.push(...frames);
       }
-    }
+    };
   };
-  const userPayloadPromise = nextPayload(userResponse);
-  const adminPayloadPromise = nextPayload(adminResponse);
+  const nextUserPayload = createPayloadReader(userResponse);
+  const nextAdminPayload = createPayloadReader(adminResponse);
+  const userPayloadPromise = nextUserPayload();
+  const adminPayloadPromise = nextAdminPayload();
   const eventTimeout = setTimeout(() => { userAbort.abort(); adminAbort.abort(); }, 8000);
   child.stdin.write('emit\n');
   try {
@@ -261,6 +301,13 @@ test('HTTP SSE endpoint sanitizes authenticated users and preserves raw admin ev
     assert.equal(userPayload.prompt, undefined, 'authenticated non-admin must not receive prompts');
     assert.deepEqual(adminPayload.args, { content: 'private source code' });
     assert.equal(adminPayload.prompt, 'private project prompt');
+
+    destroyToken(adminToken);
+    const revokedAdminPayloadPromise = nextAdminPayload();
+    child.stdin.write('emit\n');
+    const revokedAdminPayload = await revokedAdminPayloadPromise;
+    assert.equal(revokedAdminPayload.args, undefined, 'revoked admin sessions must stop receiving raw tool arguments');
+    assert.equal(revokedAdminPayload.prompt, undefined, 'revoked admin sessions must stop receiving raw prompts');
   } finally {
     clearTimeout(eventTimeout);
     userAbort.abort();
