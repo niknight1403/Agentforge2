@@ -1668,7 +1668,9 @@ async function api(req, res, url) {
       // Only administrators receive the full event payload. Ordinary authenticated
       // users must get the same metadata-only view as anonymous clients: the bus is
       // global and events are not yet partitioned by Villa ownership.
-      const payload = eventForStream(e, { isAdmin });
+      // Revalidate the bearer session and current role for every event; a deleted
+      // or demoted administrator must immediately lose access to raw global payloads.
+      const payload = eventForStream(e, { isAdmin: checkIsAdmin(req) });
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
     bus.on('event', onEvent);
