@@ -1,5 +1,6 @@
 import { createPublishPost, listPublishPosts, getVillaRevenue } from './publishing.mjs';
 import {capabilityStatus,requestCapability} from './capability-autopilot.mjs';
+import { neuralNetworkStatus, activateNeuralNetwork, deactivateNeuralNetwork } from './neural-network.mjs';
 import {runtimeCapabilityInventory} from './runtime-capabilities.mjs';
 import {villaDiagnostics} from './villa-diagnostics.mjs';
 import { VERSION } from './version.mjs';
@@ -653,6 +654,20 @@ async function api(req, res, url) {
     try{if(m==='GET')return json(res,200,capabilityStatus(Number(parts[2])));
       if(m==='POST')return json(res,201,requestCapability(Number(parts[2]),await readBody(req)));
     }catch(e){return json(res,e.message==='VILLA_NOT_FOUND'?404:400,{error:e.message});}
+    return json(res,405,{error:'Method not allowed.'});
+  }
+  if (parts[0]==='api'&&parts[1]==='villas'&&/^\\d+$/.test(parts[2]||'')&&parts[3]==='neural-network') {
+    if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'});
+    const id=Number(parts[2]);
+    try {
+      if(parts.length===4&&m==='GET')return json(res,200,neuralNetworkStatus(id,{isRunning}));
+      if(parts[4]==='activate'&&m==='POST')return json(res,202,await activateNeuralNetwork(id,{scheduleVilla,isRunning}));
+      if(parts[4]==='deactivate'&&m==='POST')return json(res,200,deactivateNeuralNetwork(id,{cancelScheduledVilla,stopVilla,isRunning}));
+    } catch(error) {
+      const code=error.code||error.message;
+      const status=code==='VILLA_NOT_FOUND'?404:code==='VILLA_ARCHIVED'||code==='SLOT_LIMIT'?409:400;
+      return json(res,status,{error:String(error.message||error),code:String(code)});
+    }
     return json(res,405,{error:'Method not allowed.'});
   }
   if (p === '/api/admin/villa-diagnostics' && m === 'GET') {
