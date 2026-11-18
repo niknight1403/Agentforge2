@@ -7,7 +7,7 @@ import { createUser } from '../auth.mjs';
 import { TMP } from './_env.mjs';
 
 process.env.DEEP_DIR = join(TMP, 'deep-files');
-const { createDeepProject, deepChat, addDeepFile, deepPreviewFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping } = await import('../deepagent.mjs');
+const { createDeepProject, deepChat, addDeepFile, deepPreviewFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping, waitForInitialPlan, isInitialPlanPending } = await import('../deepagent.mjs');
 const reply = async () => ({ content: 'Bauplan: MVP, Tests und Startanleitung.' });
 
 test('DeepAgent öffnet den Projektchat sofort und erzeugt den initialen Plan im Hintergrund', async () => {
@@ -18,13 +18,30 @@ test('DeepAgent öffnet den Projektchat sofort und erzeugt den initialen Plan im
     chatFn: async () => { await gate; return reply(); }
   });
   assert.equal(project.initialPending, true);
+  assert.equal(isInitialPlanPending(project.id), true);
   assert.match(deepProjectDetail(project.id).messages[0].content, /analysiere deine Idee/i);
+  const completedPlan = waitForInitialPlan(project.id);
   release();
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  const planResult = await completedPlan;
+  assert.equal(planResult.offline, false);
+  assert.equal(isInitialPlanPending(project.id), false);
   const messages = deepProjectDetail(project.id).messages;
   assert.ok(messages.some((message) => /Bauplan: MVP/.test(message.content)));
   assert.ok(!messages.some((message) => /analysiere deine Idee/i.test(message.content)));
 });
+
+test('DeepAgent meldet einen Offline-Initialplan getrennt von einem fertigen Plan', async () => {
+  const unavailable = Object.assign(new Error('Keine Route erreichbar'), { code: 'LLM_UNAVAILABLE' });
+  const project = await createDeepProject('Eine App mit einem offline nicht verfügbaren Sprachmodell', {
+    deferInitialPlan: true,
+    chatFn: async () => { throw unavailable; }
+  });
+  const result = await waitForInitialPlan(project.id);
+  assert.equal(result.offline, true);
+  assert.match(result.reply, /kein Sprachmodell erreichbar/i);
+  assert.equal(isInitialPlanPending(project.id), false);
+});
+
 
 test('Deep Agent übergibt lesbare Textanhänge mit klarer Datenabgrenzung', async () => {
   const project = await createDeepProject('Eine App für professionelle Projektplanung', { chatFn: reply });
