@@ -656,7 +656,7 @@ async function api(req, res, url) {
     }catch(e){return json(res,e.message==='VILLA_NOT_FOUND'?404:400,{error:e.message});}
     return json(res,405,{error:'Method not allowed.'});
   }
-  if (parts[0]==='api'&&parts[1]==='villas'&&/^\\d+$/.test(parts[2]||'')&&parts[3]==='neural-network') {
+  if (parts[0]==='api'&&parts[1]==='villas'&&/^\d+$/.test(parts[2]||'')&&parts[3]==='neural-network') {
     if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'});
     const id=Number(parts[2]);
     try {
