@@ -1,0 +1,32 @@
+name: Zero-Cost Stack Validation
+
+on:
+  pull_request:
+    paths:
+      - "infrastructure/zero-cost-stack/**"
+      - ".github/workflows/zero-cost-stack.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/zero-cost-stack/**"
+      - ".github/workflows/zero-cost-stack.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell scripts
+        run: |
+          find infrastructure/zero-cost-stack/scripts infrastructure/zero-cost-stack/config/postgres/init -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+      - name: Validate JSON
+        run: |
+          find infrastructure/zero-cost-stack -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty
+      - name: Validate Compose configuration
+        run: |
+          cd infrastructure/zero-cost-stack
+          cp .env.example .env
+          docker compose config --quiet
