@@ -51,6 +51,14 @@ def test_long_identifier_and_underscore_runs_are_bounded():
 
 def test_typed_secret_assignment_is_detected():
     assert contains_secret('api_key: str = "liveCredential123"')
+    assert contains_secret('password: str = "str"')
+
+
+def test_nested_object_credentials_are_detected_without_losing_outer_context():
+    assert contains_secret('settings = {"api_key":"credential-value"}')
+    assert contains_secret('x = { "api_key": "credential-value" }')
+    assert contains_secret('{"password":"***REDACTED_SECRET_ASSIGNMENT***"}')
+    assert not contains_secret('settings = {"secret_scanning_enabled": true}')
 
 
 def test_secret_configuration_flags_are_not_credentials():
@@ -68,12 +76,19 @@ def test_type_annotation_without_default_is_not_a_secret():
     assert not contains_secret("class Config:\n    password: str")
 
 
-def test_scan_excludes_typed_credentials_but_keeps_schema_and_empty_config(tmp_path):
-    (tmp_path / "credentials.py").write_text('api_key: str = "liveCredential123"\n', encoding="utf-8")
+def test_scan_excludes_typed_and_nested_credentials_but_keeps_schema_and_empty_config(tmp_path):
+    (tmp_path / "credentials.py").write_text(
+        'api_key: str = "liveCredential123"\npassword: str = "str"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "nested.py").write_text(
+        'settings = {"api_key":"credential-value"}\n',
+        encoding="utf-8",
+    )
     (tmp_path / "schema.py").write_text("class Config:\n    password: str\n", encoding="utf-8")
     (tmp_path / "settings.json").write_text('{"api_key": ""}\n', encoding="utf-8")
 
     chunks = asyncio.run(GitHubScanner().scan(tmp_path))
     paths = {item["path"] for item in chunks}
-    assert "credentials.py" not in paths
+    assert {"credentials.py", "nested.py"}.isdisjoint(paths)
     assert {"schema.py", "settings.json"} <= paths
