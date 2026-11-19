@@ -43,7 +43,7 @@ import { deepMissionBrief } from './deep-mission.mjs';
 import { classifyDeepDevelopmentIntent } from './deep-intent.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
-import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deepPreviewFile, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, isInitialPlanPending, waitForInitialPlan, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
+import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deepPreviewFile, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, isInitialPlanPending, waitForInitialPlan, prepareDeepProjectHandover, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { projectReadiness } from './deep-completion.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
@@ -1478,13 +1478,19 @@ async function api(req, res, url) {
   // without the separate "Autonom umsetzen" button. Existing projects are reused.
   const autoStartDeepProject = async (projectId) => runDeepProjectDevelopmentOnce(projectId,async()=>{
     try {
-      const detail=deepProjectDetail(projectId);
+      let detail=deepProjectDetail(projectId);
       if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
       let villaId=Number(detail.project.villa_id||0);
       if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
-        const brief=[detail.project.idea,deepMissionBrief(detail.project.idea),villaLessonsContext()].join('\n\n').slice(0,9000);
-        const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:brief,agentCount:12,mode:'BUILD'});
-        villaId=linkDeepProjectVilla(projectId,built.villaId);
+        const handover=await prepareDeepProjectHandover(projectId);
+        if(!handover.ok)return {...handover,villaId:0,started:false,queued:false};
+        detail=deepProjectDetail(projectId);
+        if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
+        villaId=Number(detail.project.villa_id||0);
+        if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
+          const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:handover.idea,agentCount:12,mode:'BUILD'});
+          villaId=linkDeepProjectVilla(projectId,built.villaId);
+        }
       }
       const scheduled=isRunning(villaId)?{active:[villaId],queue:[]}:scheduleVilla(villaId,{concurrency:2,maxRounds:12});
       const blocked=Number(scheduled.blockedVillaId||0)===villaId;
