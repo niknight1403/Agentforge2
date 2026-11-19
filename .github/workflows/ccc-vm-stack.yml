@@ -112,43 +112,102 @@ jobs:
           npm run build
           echo "Server gebaut (dist/)."
 
-          echo "== [5/7] Drizzle-Migrationen =="
-          # Ohne CI=true ueberschreibt der Spinner die Fehlermeldung und man sieht
-          # nur "applying migrations..." ohne Grund. Ausgabe mitschreiben, bei
-          # Fehlschlag die letzten Zeilen zeigen (enthaelt keine Zugangsdaten).
+          echo "== [5/7] Objekteigentum + Drizzle-Migrationen =="
+          # Ursache des Deploy-Blocks (belegt in Run 43297496258): die Tabellen
+          # wurden urspruenglich als Rolle postgres angelegt. ccc darf sie lesen
+          # und schreiben, aber CREATE INDEX / ALTER TABLE / ALTER TYPE verlangen
+          # Eigentum -> "must be owner of table revenue_jobs" (42501). Drizzle
+          # verschluckt die Meldung hinter dem Spinner und bricht mit exit 1 ab.
+          # Eigentum idempotent auf die App-Rolle uebertragen.
+          echo "-- Eigentum vorher (Auszug) --"
+          sudo -u postgres psql -d cybersarah -Atc \
+            "SELECT tableowner||' x'||count(*) FROM pg_tables WHERE schemaname='public' GROUP BY 1;" | tr '\n' ' '; echo
+          sudo -u postgres psql -d cybersarah -v ON_ERROR_STOP=1 <<'OWNERSQL'
+          DO $$
+          DECLARE r record;
+          BEGIN
+            FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                     WHERE n.nspname='public' AND c.relkind IN ('r','p') LOOP
+              EXECUTE format('ALTER TABLE public.%I OWNER TO ccc', r.relname);
+            END LOOP;
+            FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                     WHERE n.nspname='public' AND c.relkind='S' LOOP
+              EXECUTE format('ALTER SEQUENCE public.%I OWNER TO ccc', r.relname);
+            END LOOP;
+            FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                     WHERE n.nspname='public' AND c.relkind IN ('v','m') LOOP
+              EXECUTE format('ALTER VIEW public.%I OWNER TO ccc', r.relname);
+            END LOOP;
+            FOR r IN SELECT t.typname FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
+                     WHERE n.nspname='public' AND t.typtype='e' LOOP
+              EXECUTE format('ALTER TYPE public.%I OWNER TO ccc', r.typname);
+            END LOOP;
+            FOR r IN SELECT nspname FROM pg_namespace WHERE nspname IN ('drizzle') LOOP
+              EXECUTE format('ALTER SCHEMA %I OWNER TO ccc', r.nspname);
+            END LOOP;
+            FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                     WHERE n.nspname='drizzle' AND c.relkind IN ('r','p') LOOP
+              EXECUTE format('ALTER TABLE drizzle.%I OWNER TO ccc', r.relname);
+            END LOOP;
+            FOR r IN SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                     WHERE n.nspname='drizzle' AND c.relkind='S' LOOP
+              EXECUTE format('ALTER SEQUENCE drizzle.%I OWNER TO ccc', r.relname);
+            END LOOP;
+          END $$;
+          OWNERSQL
+          echo "-- Eigentum nachher --"
+          sudo -u postgres psql -d cybersarah -Atc \
+            "SELECT tableowner||' x'||count(*) FROM pg_tables WHERE schemaname='public' GROUP BY 1;" | tr '\n' ' '; echo
+
+          # Migration ueber den repo-eigenen, getesteten Runner statt drizzle-kit:
+          # derselbe drizzle-Migrator, aber echte Fehlermeldungen statt stummem
+          # exit 1 hinter dem Spinner. MIGRATION_PREFLIGHT_VERIFIED erlaubt den
+          # kontrollierten Fallback auf ein public-Journal.
           set +e
-          CI=true DATABASE_URL="postgresql://ccc:${DBPASS}@127.0.0.1:5432/cybersarah" \
-            npx drizzle-kit migrate > /tmp/migrate.log 2>&1
-          MIGRC=$?
+          ( cd "$CCC_DIR/repo" && MIGRATION_PREFLIGHT_VERIFIED=1 \
+              DATABASE_URL="postgresql://ccc:${DBPASS}@127.0.0.1:5432/cybersarah" \
+              node scripts/run-drizzle-migrations.mjs ) 2>&1 \
+            | sed "s#postgresql://[^ ]*#postgresql://***#g"
+          MIGRC=${PIPESTATUS[0]}
           set -e
-          if [ $MIGRC -ne 0 ]; then
+          if [ "$MIGRC" -ne 0 ]; then
             echo "MIGRATION FEHLGESCHLAGEN (exit $MIGRC)"
-            echo "== Fehlerausgabe (ANSI/Spinner entfernt, Zugangsdaten maskiert) =="
-            sed -e "s/\x1b\[[0-9;]*[a-zA-Z]//g" -e "s/\r/\n/g" /tmp/migrate.log \
-              | sed "s#postgresql://[^ ]*#postgresql://***#g" \
-              | grep -vE "^\s*$" | grep -vE "^\[[^]]*\] applying migrations" \
-              | tail -n 120 || true
-            echo "== Rohe Logzeilen gesamt =="
-            wc -l /tmp/migrate.log || true
-            echo "== Stand der Migrationstabelle (id, hash, created_at) =="
-            sudo -u postgres psql -d cybersarah -Atc \
-              "SELECT id, created_at FROM drizzle.__drizzle_migrations ORDER BY id;" 2>&1 | tail -25
-            echo "== Angewandte Anzahl =="
-            sudo -u postgres psql -d cybersarah -Atc \
-              "SELECT count(*) FROM drizzle.__drizzle_migrations;" 2>&1 | head -3
-            echo "== Vorhandene public-Tabellen =="
-            sudo -u postgres psql -d cybersarah -Atc \
-              "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY 1;" 2>&1 | tr '\n' ' ' | head -c 2000
-            echo "== Journal-Reihenfolge im Repo (erste 3 / letzte 3) =="
-            node -e "const j=require('./drizzle/meta/_journal.json').entries;const s=[...j.slice(0,3),...j.slice(-3)];console.log(s.map(e=>e.idx+':'+e.tag).join(' '))" 2>&1 | head -3
-            echo "== Naechste noch nicht angewandte Migrationen =="
-            sudo -u postgres psql -d cybersarah -Atc \
-              "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" 2>&1 | head -3
-            echo "== drizzle-kit Version =="
-            npx drizzle-kit --version 2>&1 | tail -2
+            echo "== Journal-Stand =="
+            sudo -u postgres psql -d cybersarah -Atc "SELECT count(*) FROM drizzle.__drizzle_migrations;" 2>&1 | head -3
+            echo "== Fehlende MCP-Tabellen (ab 0029) =="
+            sudo -u postgres psql -d cybersarah -Atc "SELECT to_regclass('public.mcp_servers');" 2>&1 | head -3
             exit 1
           fi
           echo "Schema aktuell."
+
+          echo "== [5b/7] Schema-Verifikation (Zero-Stub: Objekt muss existieren) =="
+          sudo -u postgres psql -d cybersarah -v ON_ERROR_STOP=1 <<'VERIFYSQL'
+          DO $$
+          DECLARE
+            j int; expected int; missing text;
+          BEGIN
+            SELECT count(*) INTO j FROM drizzle.__drizzle_migrations;
+            SELECT count(*) INTO expected FROM information_schema.tables
+              WHERE table_schema='public' AND table_name IN (
+                'revenue_jobs','revenue_offers','revenue_experiments','revenue_attribution_events',
+                'revenue_cost_events','b2b_network_nodes','b2b_network_edges','influencer_learning_states',
+                'product_release_events','stripe_webhook_events','mcp_servers','mcp_governance_policies',
+                'mcp_credentials','mcp_circuits','mcp_agents','mcp_team_plans','mcp_team_runs',
+                'mcp_execution_audit','mcp_approval_requests','credit_ledger_entries');
+            SELECT string_agg(t, ', ') INTO missing FROM unnest(ARRAY[
+                'revenue_jobs','revenue_offers','revenue_experiments','revenue_attribution_events',
+                'revenue_cost_events','b2b_network_nodes','b2b_network_edges','influencer_learning_states',
+                'product_release_events','stripe_webhook_events','mcp_servers','mcp_governance_policies',
+                'mcp_credentials','mcp_circuits','mcp_agents','mcp_team_plans','mcp_team_runs',
+                'mcp_execution_audit','mcp_approval_requests','credit_ledger_entries']) AS t
+              WHERE to_regclass('public.'||quote_ident(t)) IS NULL;
+            IF missing IS NOT NULL THEN
+              RAISE EXCEPTION 'Schema unvollstaendig, fehlende Tabellen: %', missing;
+            END IF;
+            RAISE NOTICE 'Journal-Eintraege: %, Pflicht-Tabellen vorhanden: %/20', j, expected;
+          END $$;
+          VERIFYSQL
+          echo "Schema verifiziert: alle Pflicht-Tabellen vorhanden."
 
           echo "== [6/7] systemd-Unit =="
           if [ ! -f "$CCC_DIR/.jwt" ]; then
