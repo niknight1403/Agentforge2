@@ -101,6 +101,33 @@ export async function waitForInitialPlan(projectId) {
   return initialPlanResults.get(id) || { pending: false, offline: false, reply: '' };
 }
 
+/** Wait for a usable initial plan and build the exact context handed to a new Villa. */
+export async function prepareDeepProjectHandover(projectId) {
+  const id = Number(projectId);
+  const initialPlan = await waitForInitialPlan(id);
+  if (initialPlan.offline) {
+    return {
+      ok: false,
+      code: 'INITIAL_PLAN_UNAVAILABLE',
+      message: 'Der initiale Entwicklungsplan ist noch nicht belastbar verfügbar. Bitte später erneut starten.'
+    };
+  }
+  const detail = deepProjectDetail(id);
+  if (!detail) return { ok: false, code: 'PROJECT_NOT_FOUND', message: 'Projekt nicht gefunden.' };
+  const context = detail.messages
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .slice(-8)
+    .map((message) => `${message.role === 'user' ? 'Nutzer' : 'Projekt-Experte'}: ${String(message.content).slice(0, 900)}`)
+    .join('\\n');
+  const idea = [
+    detail.project.idea,
+    deepMissionBrief(detail.project.idea),
+    villaLessonsContext(),
+    'Projektanforderungen und DeepAgent-Plan:\\n' + context
+  ].join('\\n\\n').slice(0, 9000);
+  return { ok: true, project: detail.project, idea };
+}
+
 /** Parallele Taps/HTTP-Retries erzeugen höchstens eine Villa pro Deep-Projekt. */
 export function runDeepProjectDevelopmentOnce(projectId, start) {
   const id = Number(projectId);
