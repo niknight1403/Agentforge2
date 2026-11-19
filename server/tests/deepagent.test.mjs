@@ -7,7 +7,7 @@ import { createUser } from '../auth.mjs';
 import { TMP } from './_env.mjs';
 
 process.env.DEEP_DIR = join(TMP, 'deep-files');
-const { createDeepProject, deepChat, addDeepFile, deepPreviewFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping, waitForInitialPlan, isInitialPlanPending } = await import('../deepagent.mjs');
+const { createDeepProject, deepChat, addDeepFile, deepPreviewFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping, waitForInitialPlan, prepareDeepProjectHandover, isInitialPlanPending } = await import('../deepagent.mjs');
 const reply = async () => ({ content: 'Bauplan: MVP, Tests und Startanleitung.' });
 
 test('DeepAgent öffnet den Projektchat sofort und erzeugt den initialen Plan im Hintergrund', async () => {
@@ -20,9 +20,19 @@ test('DeepAgent öffnet den Projektchat sofort und erzeugt den initialen Plan im
   assert.equal(project.initialPending, true);
   assert.equal(isInitialPlanPending(project.id), true);
   assert.match(deepProjectDetail(project.id).messages[0].content, /analysiere deine Idee/i);
-  const completedPlan = waitForInitialPlan(project.id);
+  let handoverSettled = false;
+  const handoverPromise = prepareDeepProjectHandover(project.id).then((result) => {
+    handoverSettled = true;
+    return result;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(handoverSettled, false, 'Villa handoff must wait while the initial plan is still running');
   release();
-  const planResult = await completedPlan;
+  const handover = await handoverPromise;
+  assert.equal(handover.ok, true);
+  assert.match(handover.idea, /Bauplan: MVP/);
+  assert.doesNotMatch(handover.idea, /analysiere deine Idee/i);
+  const planResult = await waitForInitialPlan(project.id);
   assert.equal(planResult.offline, false);
   assert.equal(isInitialPlanPending(project.id), false);
   const messages = deepProjectDetail(project.id).messages;
@@ -39,6 +49,9 @@ test('DeepAgent meldet einen Offline-Initialplan getrennt von einem fertigen Pla
   const result = await waitForInitialPlan(project.id);
   assert.equal(result.offline, true);
   assert.match(result.reply, /kein Sprachmodell erreichbar/i);
+  const handover = await prepareDeepProjectHandover(project.id);
+  assert.equal(handover.ok, false);
+  assert.equal(handover.code, 'INITIAL_PLAN_UNAVAILABLE');
   assert.equal(isInitialPlanPending(project.id), false);
 });
 
