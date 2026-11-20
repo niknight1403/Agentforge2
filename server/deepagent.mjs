@@ -355,12 +355,12 @@ export function linkDeepProjectVilla(projectId, villaId) {
   const createdAt = now();
   db.exec('BEGIN IMMEDIATE');
   try {
-    db.prepare('INSERT INTO deep_project_villas (project_id,villa_id,created_at) VALUES (?,?,?) ON CONFLICT(project_id) DO UPDATE SET villa_id=excluded.villa_id,created_at=excluded.created_at')
-      .run(id, linkedVillaId, createdAt);
     const existingOwner = db.prepare('SELECT owner_user_id FROM deep_villa_owners WHERE villa_id=?').get(linkedVillaId);
     if (existingOwner && Number(existingOwner.owner_user_id ?? 0) !== Number(project.owner_user_id ?? 0)) {
       throw Object.assign(new Error('Villa ist bereits einem anderen Projektbesitzer zugeordnet.'), {code: 'VILLA_OWNER_CONFLICT'});
     }
+    db.prepare('INSERT INTO deep_project_villas (project_id,villa_id,created_at) VALUES (?,?,?) ON CONFLICT(project_id) DO UPDATE SET villa_id=excluded.villa_id,created_at=excluded.created_at')
+      .run(id, linkedVillaId, createdAt);
     db.prepare('INSERT INTO deep_villa_owners (villa_id,owner_user_id,created_at) VALUES (?,?,?) ON CONFLICT(villa_id) DO NOTHING')
       .run(linkedVillaId, project.owner_user_id ?? null, createdAt);
     db.exec('COMMIT');
