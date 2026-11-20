@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {artifactContract} from './artifact-contract.mjs';
-import {classifyDeliverable, deliverableExtensions} from './delivery-quality.mjs';
+import {classifyDeliverable, deliverableExtensions, deliveryReadiness} from './delivery-quality.mjs';
 import {isMediaExtension,isPlayableArtifact} from './media-artifact.mjs';
 import {isValidDeliverableArtifact} from '../scripts/lib/product-release-gate.mjs';
 import {renderVillaVideo, renderManifestPath} from './video-render.mjs';
@@ -298,33 +298,41 @@ function perfManifest(dir, record, L) {
 // scheiterte jede Produktabnahme, obwohl die Villa fertig war.
 const APP_ENTRY = /^(?:index\.html|package\.json|AndroidManifest\.xml)$/;
 const SCAFFOLD_SKIP = new Set(['node_modules', '.git', '.gradle', 'backups', '__pycache__', 'app-shell']);
+const PACKAGE_METADATA_FILES = new Set(['package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'composer.json']);
 
 /** Find the newest content-validated project artifact, including non-media deliverables. */
 export function findDeliverableArtifact(dir, extensions, {maxBytes = 512 * 1024 * 1024} = {}) {
   const wanted = new Set((extensions || []).map((extension) => String(extension).toLowerCase()));
-  const found = [];
+  let best = null;
   const walk = (current, depth = 0) => {
     if (depth > 8) return;
     let entries;
     try { entries = readdirSync(current, {withFileTypes: true}); } catch { return; }
     for (const entry of entries) {
       if (entry.name.startsWith('.') || SCAFFOLD_SKIP.has(entry.name)) continue;
+      if (PACKAGE_METADATA_FILES.has(entry.name.toLowerCase())) continue;
       const full = join(current, entry.name);
       if (entry.isDirectory()) { walk(full, depth + 1); continue; }
       if (!entry.isFile()) continue;
       const extension = extname(entry.name).toLowerCase();
       if (!wanted.has(extension)) continue;
-      let stats, bytes;
-      try { stats = statSync(full); if (stats.size < 16 || stats.size > maxBytes) continue; bytes = readFileSync(full); }
-      catch { continue; }
+      let stats, content;
+      try {
+        stats = statSync(full);
+        if (stats.size < 16 || stats.size > maxBytes) continue;
+        content = readFileSync(full);
+        if (content.length < 16 || content.length > maxBytes) continue;
+      } catch { continue; }
       const valid = isMediaExtension(extension)
-        ? isPlayableArtifact(bytes, extension)
-        : isValidDeliverableArtifact(bytes, extension);
-      if (valid) found.push({path: full, extension, bytes: stats.size, modified: stats.mtimeMs});
+        ? isPlayableArtifact(content, extension)
+        : isValidDeliverableArtifact(content, extension);
+      if (valid && (!best || stats.mtimeMs > best.modified)) {
+        best = {path: full, extension, bytes: content.length, modified: stats.mtimeMs, content};
+      }
     }
   };
   walk(resolve(dir));
-  return found.sort((a, b) => b.modified - a.modified)[0] || null;
+  return best;
 }
 
 function walkProject(dir, visit, level = 0, maxLevel = 8) {
@@ -505,14 +513,15 @@ export async function startBuild(villaId, { auto = false } = {}) {
           L(`Video-Rendering fehlgeschlagen: ${error.message}`);
         }
       }
+      let outputArtifact = null;
       if (artifactExtensions.length) {
-        const outputArtifact = findDeliverableArtifact(dir, artifactExtensions);
+        outputArtifact = findDeliverableArtifact(dir, artifactExtensions);
         if (!outputArtifact) {
           const code = ['image', 'video', 'audio'].includes(deliverable) ? 'MEDIA_DELIVERABLE_MISSING' : 'DELIVERABLE_MISSING';
           throw new Error(`${code}: kein ${deliverable}-Artefakt (${artifactExtensions.join(', ')}) im Projekt gefunden.`);
         }
         const output = join(OUT, `villa-${villaId}${outputArtifact.extension}`);
-        copyFileSync(outputArtifact.path, output);
+        writeFileSync(output, outputArtifact.content);
         const mediaType=mediaTypeForExtension(outputArtifact.extension);
         record.artifactType = artifactTypeForExtension(outputArtifact.extension);
         record.artifact = `villa-${villaId}${outputArtifact.extension}`;
@@ -522,15 +531,28 @@ export async function startBuild(villaId, { auto = false } = {}) {
       }
       if (!mode) throw new Error('Villa-Workspace ist leer - erst Entwicklungsaufgaben ausfuehren lassen.');
       if (mode) perfManifest(dir, record, L); // Phase 3: vermessen statt nur bauen
-      let verification=await verifyProjectRuntime(Number(villaId));
-      // Direkt nach Install/Render kann ein Lauf ohne jede Ausgabe scheitern
-      // (Umgebungsglitch, kein echter Befund). Einmal sauber wiederholen,
-      // statt die Villa auf einen Geisterfehler hin zu blockieren.
-      const silent=!verification.ok&&['build','tests','smoke'].every((k)=>{const c=verification.checks?.[k];return c&&c.status!=='passed'&&!String(c.output||'').trim();});
-      if(silent){L('Abnahme ohne Ausgabe fehlgeschlagen - Wiederholungslauf.');verification=await verifyProjectRuntime(Number(villaId));}
-      record.verification=verification;
-      if(!verification.ok)for(const kind of ['build','tests','smoke']){const c=verification.checks?.[kind];if(c&&c.status!=='passed')L(`Pruefung ${kind}: ${c.status} ${String(c.output||c.reason||'').replace(/\s+/g,' ').slice(-900)}`);}
-      record.outputContract=artifactContract({idea:villa.idea,kind,artifactName:record.artifact,artifactType:record.artifactType,deliverable:record.media?.deliverable||classifyDeliverable(villa.idea)});
+      let verification;
+      if (deliverable === 'software') {
+        verification = await verifyProjectRuntime(Number(villaId));
+        // A silent runtime failure is retried once; non-software deliverables use their own review gate.
+        const silent = !verification.ok && ['build', 'tests', 'smoke'].every((kind) => {
+          const check = verification.checks?.[kind];
+          return check && check.status !== 'passed' && !String(check.output || '').trim();
+        });
+        if (silent) {
+          L('Abnahme ohne Ausgabe fehlgeschlagen - Wiederholungslauf.');
+          verification = await verifyProjectRuntime(Number(villaId));
+        }
+      } else {
+        const readiness = deliveryReadiness(Number(villaId), deliverable, outputArtifact);
+        verification = {...readiness, ok: readiness.verified};
+      }
+      record.verification = verification;
+      if (!verification.ok && deliverable === 'software') for (const kind of ['build', 'tests', 'smoke']) {
+        const check = verification.checks?.[kind];
+        if (check && check.status !== 'passed') L(`Pruefung ${kind}: ${check.status} ${String(check.output || check.reason || '').replace(/\\s+/g, ' ').slice(-900)}`);
+      }
+      record.outputContract = artifactContract({idea: villa.idea, kind, artifactName: record.artifact, artifactType: record.artifactType, deliverable});
       const ready=verification.ok&&record.outputContract.ok;
       record.delivery=ready?'verified-product':'source-package';
       record.status=ready?'ready':'unverified';
