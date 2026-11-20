@@ -19,6 +19,9 @@ function fixture(status='PAUSED',autonomy=0){
 test('topology is derived from actual agents, task assignments and parent links',()=>{
  const f=fixture();const s=neuralNetworkStatus(f.id);
  assert.equal(s.network.nodes,4);assert.ok(s.network.edges>=3);
+ assert.equal(s.network.topology.communicationEdges,0);
+ assert.ok(s.edges.filter(e=>e.kind==='planned_workflow').every(e=>e.label.includes('→')));
+ assert.ok(s.edges.filter(e=>e.kind==='supervision').every(e=>e.label==='supervises'));
  assert.equal(s.tasks.PENDING,1);assert.equal(s.tasks.DONE,1);
  assert.ok(s.nodes.find(n=>n.id===f.coder).workload===1);
  assert.equal(s.nodes.find(n=>n.id===f.planner).parentId,f.root);
