@@ -4,12 +4,13 @@ import { redisTryAck, redisTryClaimStale, redisTryCreateConsumerGroup, redisTryR
 
 export const AGENT_EVENT_STREAM = process.env.VF_AGENT_EVENT_STREAM || 'vf:agent-events';
 const runtimeCheckpointQueues = new Map();
-const SAFE_FIELDS = ['villaId','taskId','agentId','status','tool','blocked','code','durationMs','latencyMs','tokensUsed','costUsd','provider','model','route','checkpointId','step','processed','open','verification'];
+const SAFE_FIELDS = ['villaId','taskId','agentId','toAgentId','communicationId','status','tool','blocked','code','durationMs','latencyMs','tokensUsed','costUsd','provider','model','route','checkpointId','step','processed','open','verification'];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /** Build metadata-only events; prompts, tool arguments, responses and thoughts are never persisted. */
 export function buildMeshEvent(type, payload = {}, { now = Date.now, id = randomUUID } = {}) {
-  const mapped = type === 'agent' && payload.status === 'THINKING' ? 'agent.started'
+  const mapped = type === 'agent.message' ? 'agent.message.sent'
+    : type === 'agent' && payload.status === 'THINKING' ? 'agent.started'
     : type === 'agent' && payload.status === 'IDLE' ? 'agent.idle'
     : type === 'agent' && payload.status === 'FAILED' ? 'agent.failed'
     : type === 'task' && payload.status === 'PENDING' ? 'task.created'
@@ -19,7 +20,7 @@ export function buildMeshEvent(type, payload = {}, { now = Date.now, id = random
     : type === 'tool' ? 'tool.executed'
     : type === 'llm' ? 'llm.completed'
     : type === 'checkpoint' ? 'checkpoint.saved'
-    : ['agent.started','agent.idle','agent.failed','agent.step.started','checkpoint.saved','task.created','tool.executed','llm.failed'].includes(type) ? type : null;
+    : ['agent.message.sent','agent.started','agent.idle','agent.failed','agent.step.started','checkpoint.saved','task.created','tool.executed','llm.failed'].includes(type) ? type : null;
   if (!mapped) return null;
   const metadata = {};
   for (const key of SAFE_FIELDS) {
