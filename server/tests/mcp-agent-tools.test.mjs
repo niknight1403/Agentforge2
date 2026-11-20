@@ -59,7 +59,7 @@ test('revoked dynamic connector aliases redact arguments on the missing-tool aud
     const row=db.prepare("SELECT args,result FROM audit WHERE tool=? ORDER BY id DESC LIMIT 1").get('connector:private_api:read');
     assert.ok(row);
     assert.equal(row.args.includes('do-not-log-this-secret'),false);
-    assert.equal(row.args.includes('private'),false);
+    assert.equal(row.args.includes('customer'),false);
     assert.match(row.args,/private_api/);
     assert.doesNotMatch(row.result,/do-not-log-this-secret|private/);
   }finally{
