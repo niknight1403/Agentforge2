@@ -208,8 +208,8 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   assert.ok(otherPendingAfterCrowd.some((proposal) => proposal.villaId === villaBId), 'the second owner sees their own newest proposals');
   assert.ok(!otherPendingAfterCrowd.some((proposal) => proposal.villaId === villaId), 'the second owner cannot see the first owner proposal');
   const adminPendingAfterCrowd = await fetch(base + '/api/evolution/pending', {headers: auth(adminToken)}).then((response) => response.json());
-  assert.ok(adminPendingAfterCrowd.some((proposal) => proposal.villaId === villaId), 'admins retain the global pending list');
-  assert.ok(adminPendingAfterCrowd.some((proposal) => proposal.villaId === villaBId), 'admins retain proposals from every owner');
+  assert.equal(adminPendingAfterCrowd.length, 50, 'admins retain the global 50-item list');
+  assert.ok(adminPendingAfterCrowd.some((proposal) => proposal.villaId === villaBId), 'admins retain the newest proposals from every owner');
   const numericAliasDetail = await fetch(`${base}/api/villas/${villaId}e0`, { headers: auth(tokenB) });
   const numericAliasReport = await fetch(`${base}/api/villas/${villaId}e0/reports`, { headers: auth(tokenB) });
   assert.equal(numericAliasDetail.status, 404, 'non-canonical numeric aliases cannot bypass Villa ownership checks');
