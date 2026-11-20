@@ -775,36 +775,41 @@ async function executeTool(ctx, name, args) {
   const dynamicConnector = String(name || '').startsWith('connector:');
   const tool = TOOLS[name] || (dynamicMcp ? resolveMcpTool(name) : dynamicConnector ? resolveConnectorTool(name) : null);
   if (!tool) { observeMissingTool(ctx.villaId,name); audit(ctx.villaId, ctx.agentId, name, args, 'unbekanntes Werkzeug', 0); return `Unbekanntes Werkzeug: ${name}`; }
-  // Packs sind echte Schalter: ist das Werkzeug-Pack aus, blockiert der Hub
-  // das Werkzeug im Lauf und protokolliert den Versuch im Audit.
+  // External integration arguments/results may contain customer data or credentials.
+  // Audit and event streams keep identifiers only; the live result still reaches the caller.
+  const mcpMatch=dynamicMcp?/^mcp:([A-Za-z0-9_-]{1,128}):(.{1,160})$/.exec(String(name)):null;
+  const connectorMatch=dynamicConnector?/^connector:([a-z0-9_-]{2,48}):read$/.exec(String(name)):null;
+  const auditArgs=dynamicMcp
+    ?{serverId:mcpMatch?.[1]||'unknown',toolName:mcpMatch?.[2]||'unknown',argumentKeys:Object.keys(args||{}).slice(0,40)}
+    :dynamicConnector?{connectorId:connectorMatch?.[1]||'unknown'}:args;
+  const redactExternal=dynamicMcp||dynamicConnector;
+  // Packs are real gates, including for dynamic aliases.
   const gate = canUseTool(dynamicMcp ? 'mcp_call' : dynamicConnector ? 'connector_read' : name);
   if (!gate.allowed) {
-    audit(ctx.villaId, ctx.agentId, name, args, `blockiert: ${gate.reason}`, 0);
+    audit(ctx.villaId, ctx.agentId, name, auditArgs, `blockiert: ${gate.reason}`, 0);
     emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, blocked: true, reason: gate.reason });
     return `Werkzeug blockiert: ${gate.reason} Aktiviere das Pack in den Einstellungen.`;
   }
-  // Waehrend einer Abnahme ist der Quellstand gesperrt: ein Schreibzugriff
-  // wuerde den Prueffingerprint mitten im Lauf aendern und den Nachweis
-  // entwerten. Der Agent bekommt eine klare Auskunft statt eines Fehlers.
+  // During acceptance, source-writing tools stay locked.
   if (SOURCE_WRITE_TOOLS.has(name)) {
     const lock = villaLock(ctx.villaId);
     if (lock) {
       const seconds = Math.max(1, Math.round((Date.now() - lock.since) / 1000));
       const reason = `Quellstand gesperrt: Abnahme laeuft (${lock.by}, seit ${seconds}s)`;
-      audit(ctx.villaId, ctx.agentId, name, args, `blockiert: ${reason}`, 0);
+      audit(ctx.villaId, ctx.agentId, name, auditArgs, `blockiert: ${reason}`, 0);
       emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, blocked: true, reason: 'verification-lock' });
       return `${reason}. Schreibe jetzt keine Projektdateien - warte kurz und versuche es erneut.`;
     }
   }
-  emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, args });
+  emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, args:auditArgs });
   try {
     const out = await tool.run(ctx, args || {});
-    audit(ctx.villaId, ctx.agentId, name, args, out, 1);
+    audit(ctx.villaId, ctx.agentId, name, auditArgs, redactExternal?'[external integration output omitted from audit]':out, 1);
     return out;
   } catch (err) {
     const msg = String(err.message || err);
-    audit(ctx.villaId, ctx.agentId, name, args, msg, 0);
-    return `Fehler in ${name}: ${msg}`;
+    audit(ctx.villaId, ctx.agentId, name, auditArgs, redactExternal?'external integration failed':msg, 0);
+    return `Fehler in ${name}: ${redactExternal?'Externe Integration fehlgeschlagen.':msg}`;
   }
 }
 
