@@ -11,7 +11,7 @@ process.env.VF_LLM_FREE_ONLY='1';
 const { FREE_ROUTE_CATALOG } = await import('../routes.mjs');
 const { db } = await import('../db.mjs');
 const { cascadeDefaults, syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, routeProvider } = await import('../llm-config.mjs');
-const { resolveKey } = await import('../llm.mjs');
+const { resolveKey, routeRpm } = await import('../llm.mjs');
 
 test('startup sync registers every configured OpenAI-compatible provider catalog route',()=>{
   const defaults=cascadeDefaults();
@@ -56,6 +56,16 @@ test('catalog sync is idempotent and never re-enables an administrator-disabled 
   syncFreeRouteFlags();
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM routes').get().count,before);
   assert.equal(Number(db.prepare('SELECT enabled FROM routes WHERE id=?').get(route.id).enabled),0);
+});
+
+test('Gemini OpenAI-compatible routes honor the documented VF_RPM_GEMINI override',()=>{
+  const previous=process.env.VF_RPM_GEMINI;
+  try{
+    process.env.VF_RPM_GEMINI='3';
+    assert.equal(routeRpm({provider:'gemini-openai',base_url:'https://generativelanguage.googleapis.com/v1beta/openai',model:'gemini-3.1-flash-lite'}),3);
+  }finally{
+    if(previous===undefined)delete process.env.VF_RPM_GEMINI;else process.env.VF_RPM_GEMINI=previous;
+  }
 });
 
 test('provider host inference covers the integrated API families',()=>{
