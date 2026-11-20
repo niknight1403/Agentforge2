@@ -1276,7 +1276,8 @@ async function api(req, res, url) {
   }
   /* ---- Villa-Evolution (v1.30): jede Villa schlaegt selbst naechste Phasen/Perfektion/Marketplace vor ---- */
   if (p === '/api/evolution/pending' && m === 'GET') {
-    return json(res, 200, listAllPending());
+    const pending = listAllPending();
+    return json(res, 200, pending.filter((proposal) => canAccessLinkedVilla(proposal.villaId)));
   }
   if (parts[0] === 'api' && parts[1] === 'evolution' && parts[2] === 'villas' && parts[3] && !parts[4] && m === 'GET') {
     const id = Number(parts[3]);
