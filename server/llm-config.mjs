@@ -81,7 +81,9 @@ export function isLocalRoute(r) {
 }
 export function isTrustedSelfHostedRoute(r) {
  if(!['ollama','lmstudio'].includes(String(r?.provider||'').toLowerCase())) return false;
- let host='';try{host=new URL(r?.base_url||'').hostname.toLowerCase();}catch{return false;}
+ let url;try{url=new URL(r?.base_url||'');}catch{return false;}
+ if(url.protocol!=='https:'||url.username||url.password||url.search||url.hash) return false;
+ const host=url.hostname.toLowerCase();
  if(!host) return false;
  const trusted=String(process.env.VF_LLM_TRUSTED_SELF_HOSTED_HOSTS||'').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean);
  return trusted.includes(host);
