@@ -45,7 +45,7 @@ Supported credential aliases:
 - `GEMINI_API_KEY` ↔ `GOOGLE_API_KEY`
 - `HF_TOKEN` ↔ `HUGGINGFACE_API_KEY`
 
-Optional per-provider request limits use `VF_RPM_<PROVIDER>`, for example `VF_RPM_GROQ` or `VF_RPM_POLLINATIONS`. The fallback RPM is bounded and provider-specific. Do not put credentials in endpoint URLs.
+Optional per-provider request limits use `VF_RPM_<PROVIDER>`, for example `VF_RPM_GROQ` or `VF_RPM_POLLINATIONS`. The fallback RPM is bounded and provider-specific. Do not put credentials in endpoint URLs. Remote Ollama/LM Studio endpoints are not assumed free: add their exact hostnames to `VF_LLM_TRUSTED_SELF_HOSTED_HOSTS` only when you control the host and have verified its operating cost. Loopback endpoints are trusted automatically.
 
 ## API and tool integration
 
