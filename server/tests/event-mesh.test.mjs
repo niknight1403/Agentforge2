@@ -46,3 +46,9 @@ test('agent lifecycle emits safe, distinct status metadata',()=>{
  assert.equal(idle.type,'agent.idle');
  assert.equal(buildMeshEvent('agent',{status:'FAILED',agentId:3}).type,'agent.failed');
 });
+
+
+test('agent communication events expose sender and recipient metadata but never message content',()=>{
+ const event=buildMeshEvent('agent.message',{villaId:2,agentId:3,toAgentId:4,communicationId:9,taskId:17,status:'SENT',content:'private message'},{id:()=> 'message-1',now:()=>126});
+ assert.deepEqual(event,{id:'message-1',type:'agent.message.sent',at:126,villaId:2,taskId:17,agentId:3,toAgentId:4,communicationId:9,status:'SENT'});
+});
