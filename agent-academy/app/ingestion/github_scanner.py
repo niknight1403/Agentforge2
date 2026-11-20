@@ -254,14 +254,20 @@ class GitHubScanner:
         """Collect supported, bounded, non-symlink source files without recognized secrets."""
         def operation() -> list[dict[str, str]]:
             chunks: list[dict[str, str]] = []
+            total_bytes = 0
             for path in repo_path.rglob("*"):
+                if len(chunks) >= settings.max_scan_files or total_bytes >= settings.max_scan_bytes:
+                    break
                 relative = path.relative_to(repo_path)
                 if not path.is_file() or any(part in IGNORED_DIRS for part in relative.parts[:-1]):
                     continue
                 if path.name in IGNORED_NAMES or path.suffix.lower() not in ALLOWED_SUFFIXES:
                     continue
                 try:
-                    if path.is_symlink() or path.stat().st_size > settings.max_file_bytes:
+                    if path.is_symlink():
+                        continue
+                    file_size = path.stat().st_size
+                    if file_size > settings.max_file_bytes or total_bytes + file_size > settings.max_scan_bytes:
                         continue
                     content = path.read_text(encoding="utf-8")
                 except (OSError, UnicodeError):
@@ -274,6 +280,7 @@ class GitHubScanner:
                     "language": path.suffix.lstrip(".").lower(),
                     "content": content,
                 })
+                total_bytes += file_size
             return chunks
 
         return await asyncio.to_thread(operation)
