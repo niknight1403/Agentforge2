@@ -182,6 +182,20 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
     });
     assert.equal(response.status, 404, `another user cannot access private persona ${method} ${suffix}`);
   }
+  for (const [method, suffix, body] of [
+    ['GET', '/card', undefined],
+    ['GET', '/packs', undefined],
+    ['GET', '/look', undefined],
+    ['PATCH', '', { name: 'Owner-updated private persona' }],
+    ['POST', '/packs', { name: 'Owner private pack', items: [{ slot: 'top', description: 'owner-only outfit' }] }]
+  ]) {
+    const response = await fetch(base + '/api/personas/' + privatePersonaId + suffix, {
+      method,
+      headers: { ...auth(tokenA), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    assert.equal(response.status, 200, `the Villa owner can access private persona ${method} ${suffix}`);
+  }
   const otherEvolution = await fetch(base + '/api/evolution/villas/' + villaId, {headers: auth(tokenB)});
   assert.equal(otherEvolution.status, 404, 'private Villa evolution state is owner-scoped');
   const otherTelemetry = await fetch(base + '/api/metrics/telemetry?villaId=' + villaId, {headers: auth(tokenB)});
