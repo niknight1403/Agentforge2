@@ -1530,9 +1530,18 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
             const response=await fetch(`${runtimeUrl}/tasks`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${runtimeToken}`,'idempotency-key':requestKey},body:JSON.stringify({title:task.title,input:{hubTaskId:Number(task.id),villaId:Number(villaId)}}),signal:AbortSignal.any([job.controller.signal,AbortSignal.timeout(5000)])});
             if(!response.ok)throw new Error(`Runtime HTTP ${response.status}`);
             return {task,remote:true};
-          }catch(error){console.warn('[villaforge] Redis task mesh fallback',Number(task.id),String(error?.message||error).slice(0,160));return {task,remote:false};}
+          }catch(error){
+            if(job.controller.signal.aborted)return {task,remote:false,cancelled:true};
+            console.warn('[villaforge] Redis task mesh fallback',Number(task.id),String(error?.message||error).slice(0,160));
+            return {task,remote:false};
+          }
         }));
-        await Promise.all(dispatched.filter(x=>!x.remote).map(x=>executeLocally(x.task)));
+        const cancelledDispatches=dispatched.filter(x=>x.cancelled);
+        for(const {task} of cancelledDispatches){
+          db.prepare("UPDATE tasks SET status='PENDING',updated_at=? WHERE id=? AND status='RUNNING'").run(now(),task.id);
+          emit('task',{villaId,taskId:task.id,status:'PENDING',code:'CANCELLED'});
+        }
+        await Promise.all(dispatched.filter(x=>!x.remote&&!x.cancelled).map(x=>executeLocally(x.task)));
         const remote=dispatched.filter(x=>x.remote);
         const waitLimit=Math.max(5000,Math.min(Number(process.env.VF_AGENT_RUNTIME_WAIT_MS)||60000,300000));
         const waitStarted=Date.now();
