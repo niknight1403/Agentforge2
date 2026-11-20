@@ -8,7 +8,8 @@ import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStud
 import { castOverview,createPersona,createWardrobePack,listPersonas,listWardrobePacks,personaCard,personaDetail,resolveLook,updatePersona } from './persona-packs.mjs';
 import { activeDirections,consumeDirections,directorHistory,directorStatus,postInstruction } from './director-chat.mjs';
 import { burnTitle,freeMediaStatus,imagesToVideo,mediaToolInventory,resizeImage,videoThumbnail } from './free-media-tools.mjs';
-import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config.mjs';
+import { mediaCapabilities } from './media.mjs';
+import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, freeOnlyEnabled } from './llm-config.mjs';
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { createMasterControl } from './master-control.mjs';
@@ -994,6 +995,22 @@ async function api(req, res, url) {
     return json(res, 200, { ...schedulerStatus(), ranking: villaRanking(), cmd: cmdGateStatus() });
   }
   if (p === '/api/tools' && m === 'GET') return json(res, 200, toolSpecs());
+  // Unified, read-only integration inventory for the admin console. Secret
+  // values are never returned; only configuration presence and safe metadata.
+  if (p === '/api/integrations' && m === 'GET') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Integrationsstatus ist Admins vorbehalten.' });
+    const routes=db.prepare('SELECT id,name,provider,base_url,model,key_env,is_free,enabled,status,ok,fail,lat_ms,cooldown_until FROM routes ORDER BY priority,id').all()
+      .map(route=>({...route,configured:!route.key_env||!!resolveKey(route.key_env),free:isFreeRoute(route)}));
+    const connectors=controlCatalog().connectors.map(({id,title,endpoint,enabled,last_status})=>({id,title,endpoint,enabled:!!enabled,status:last_status}));
+    const tools=toolSpecs();
+    return json(res,200,{
+      llm:{freeOnly:freeOnlyEnabled(),routes,providerCatalog:FREE_ROUTE_CATALOG.map(({name,provider,baseUrl,model,keyEnv,priority})=>({name,provider,baseUrl,model,keyEnv,priority,configured:!keyEnv||!!resolveKey(keyEnv)})),summary:routingSummary()},
+      api:{connectors,endpoints:['/api/routes','/api/llm/status','/api/connectors','/api/admin/mcp/servers','/api/admin/mcp/tools']},
+      tools,
+      mcpTools:tools.filter(tool=>tool.name.startsWith('mcp:')),
+      media:mediaCapabilities()
+    });
+  }
   // ---- Rollen-Katalog: alle verfuegbaren Agenten-Rollen inkl. AGI-Quintett ----
   if (p === '/api/roles' && m === 'GET') return json(res, 200, { roles: ROLES, promptVersion: PROMPT_VERSION });
   // ---- Packs: eine Wahrheit fuer Hub, Web-UI und Android-App ----
