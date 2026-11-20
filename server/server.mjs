@@ -688,6 +688,15 @@ async function api(req, res, url) {
     const persona = db.prepare('SELECT villa_id FROM personas WHERE id = ?').get(id);
     return Boolean(persona && canAccessLinkedVilla(persona.villa_id));
   };
+  const canManagePersona = (personaId) => {
+    const id = Number(personaId);
+    if (!Number.isSafeInteger(id) || id <= 0) return false;
+    const persona = db.prepare('SELECT villa_id FROM personas WHERE id = ?').get(id);
+    if (!persona) return false;
+    if (openMode || isAdmin) return true;
+    const linkedOwner = db.prepare('SELECT owner_user_id FROM deep_villa_owners WHERE villa_id = ?').get(Number(persona.villa_id));
+    return Boolean(linkedOwner && Number(linkedOwner.owner_user_id || 0) === Number(user?.id || 0));
+  };
   // Owners may manage personas inside their own private DeepAgent Villa.
   // Unlinked/public Villen remain administrator-managed unless open mode is enabled.
   const canManagePersona = (personaId) => {
