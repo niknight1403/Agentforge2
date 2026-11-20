@@ -10,8 +10,20 @@ process.env.VF_LLM_FREE_ONLY='1';
 
 const { FREE_ROUTE_CATALOG } = await import('../routes.mjs');
 const { db } = await import('../db.mjs');
-const { cascadeDefaults, syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, routeProvider } = await import('../llm-config.mjs');
+const { cascadeDefaults, syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, routeProvider, seedRouteCatalog } = await import('../llm-config.mjs');
 const { resolveKey, routeRpm } = await import('../llm.mjs');
+
+test('fresh route seed enables only verified free/local routes',()=>{
+  const seeded=seedRouteCatalog();
+  assert.equal(seeded.seeded,FREE_ROUTE_CATALOG.length);
+  const rows=db.prepare('SELECT provider,base_url,model,is_free,enabled FROM routes').all();
+  assert.equal(rows.length,FREE_ROUTE_CATALOG.length);
+  for(const row of rows){
+    assert.equal(Number(row.enabled),Number(isFreeRoute(row)),`unsafe default enablement: ${row.provider}/${row.model}`);
+    assert.equal(Number(row.is_free),Number(isFreeRoute(row)));
+  }
+  assert.equal(seedRouteCatalog().seeded,0,'seed must not overwrite existing administrator state');
+});
 
 test('startup sync registers every configured OpenAI-compatible provider catalog route',()=>{
   const defaults=cascadeDefaults();
