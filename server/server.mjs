@@ -1481,16 +1481,6 @@ async function api(req, res, url) {
     deepAutoStartResults.delete(projectId);
     return runDeepProjectDevelopmentOnce(projectId, async () => {
       try {
-        const initialPlan = await waitForInitialPlan(projectId);
-        if (initialPlan.offline) {
-          return json(res, 503, {
-            ok: false,
-            projectId,
-            villaId: 0,
-            code: 'INITIAL_PLAN_UNAVAILABLE',
-            message: 'Der initiale Entwicklungsplan ist noch nicht belastbar verfügbar. Bitte später erneut starten.'
-          });
-        }
         const currentDetail = deepProjectDetail(projectId);
         if (!currentDetail) return json(res, 404, { error: 'Projekt nicht gefunden' });
         const previousVillaId = Number(currentDetail.project.villa_id || 0);
@@ -1535,6 +1525,18 @@ async function api(req, res, url) {
               message:
                 'Uebergabe-Artefakte fehlen: Ohne belegtes TASTE-Praeferenzprofil und SPION-Wettbewerbsbeobachtung entsteht keine Villa. ' +
                 'Fehlend: ' + handover.blockers.map((b) => `${b.label} (${b.detail})`).join('; ') + '.'
+            });
+          }
+          // Apply product and handover gates before waiting on an LLM. A missing
+          // provider must never mask a deterministic 409 gate response.
+          const initialPlan = await waitForInitialPlan(projectId);
+          if (initialPlan.offline) {
+            return json(res, 503, {
+              ok: false,
+              projectId,
+              villaId: 0,
+              code: 'LLM_UNAVAILABLE',
+              message: 'Kein Sprachmodell erreichbar. Das Projekt bleibt gespeichert; bitte nach Wiederherstellung einer LLM-Route erneut starten.'
             });
           }
           const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD', force: true, ownerUserId: deepProjectOwnerUserId(projectId) });
@@ -1597,7 +1599,7 @@ async function api(req, res, url) {
       deepAutoStartResults.set(id, result);
       // Project detail polling exposes this failure result.
     });
-    return {pending: true, started: false, queued: false};
+    return {ok: true, pending: true, started: false, queued: false};
   };
   if (p === '/api/deep/projects' && m === 'POST') {
     try {
