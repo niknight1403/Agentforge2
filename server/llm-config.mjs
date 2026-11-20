@@ -107,6 +107,7 @@ export function routeTier(r) {
  if(/groq/.test(p)) return 3;
  if(/mistral/.test(p)) return 4;
  if(/openrouter/.test(p)) return 4;
- if(/huggingface|router\.huggingface/.test(p)) return 5;
+ if(/huggingface|router\.huggingface/.test(p)) if(/sambanova|nvidia|zhipu|chutes|hyperbolic|together|modal|xai|pollinations|fal/.test(p)) return 5;
+ return 5;
  return 5;
 }
