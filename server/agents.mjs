@@ -1845,6 +1845,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
 
   db.prepare('UPDATE agents SET status = ?, last_active_at = ? WHERE id = ?').run('THINKING', now(), agent.id);
   db.prepare('UPDATE tasks SET agent_id = ?, updated_at = ? WHERE id = ?').run(agent.id, now(), task.id);
+  emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: 'THINKING' });
   emit('task', { villaId, taskId: task.id, agentId: agent.id, status: 'RUNNING', title: task.title });
 
   const idea = db.prepare('SELECT idea FROM villas WHERE id = ?').get(villaId)?.idea;
@@ -1888,6 +1889,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
   catch(error){
     saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:'interrupted',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,errorCode:String(error.code||'AGENT_ERROR').slice(0,80)}});
     db.prepare("UPDATE agents SET status='IDLE',last_active_at=? WHERE id=?").run(now(),agent.id);
+    emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: 'IDLE', code: String(error.code||'AGENT_ERROR').slice(0,80) });
     db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run(error.code==='LLM_UNAVAILABLE'?'LLM_UNAVAILABLE: Warte auf Modell; Aufgabe bleibt in der Warteschlange.':'Agentenlauf unterbrochen.',now(),task.id);
     if(error.code==='LLM_UNAVAILABLE'&&noteLlmOutage()>=llmPauseAfter())db.prepare("UPDATE villas SET status='WAITING_FOR_MODEL',updated_at=? WHERE id=?").run(now(),villaId);
     throw error;
@@ -1896,6 +1898,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
   if(res.code==='LLM_UNAVAILABLE'||res.offline){
     saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:'waiting_for_model',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,errorCode:'LLM_UNAVAILABLE'}});
     db.prepare("UPDATE agents SET status='IDLE',last_active_at=? WHERE id=?").run(now(),agent.id);
+    emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: 'IDLE', code: 'LLM_UNAVAILABLE' });
     db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run('LLM_UNAVAILABLE: Warte auf echte Modellverbindung.',now(),task.id);
     throw Object.assign(new Error('Kein echtes Modell erreichbar; Aufgabe bleibt offen.'),{code:'LLM_UNAVAILABLE',statusCode:503,retryAfter:res.retryAfter});
   }
@@ -1911,6 +1914,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
       db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?')
         .run('FAILED', `Qualitaetstor blockiert (Umgebung): Tests nicht ausfuehrbar, auch nach Installation der Abhaengigkeiten.\n${String(gate.output||'').slice(0, 1200)}\n\n${answer}`.slice(0, 4000), now(), task.id);
       db.prepare("UPDATE agents SET status='IDLE', last_active_at=? WHERE id=?").run(now(), agent.id);
+      emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: 'IDLE', code: 'QUALITY_GATE_ENVIRONMENT' });
       recordLesson(villaId, agent.id, `Blockade: ${task.title}`, `Tests waren nicht ausfuehrbar (Testwerkzeug fehlt nach npm install --include=dev). Erst Umgebung reparieren, dann Aufgabe neu bewerten.`);
       emit('task', { villaId, taskId: task.id, agentId: agent.id, status: 'GATE_BLOCKED', title: task.title, reason: 'environment' });
       return;
@@ -1921,6 +1925,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
         .run(Number(task.retry_count||0)>=2?'FAILED':'PENDING', `Qualitaetstor nicht bestanden, Retry angefordert:\n${gate.output.slice(0, 1200)}\n\n${answer}`.slice(0, 4000), now(), task.id);
       db.prepare("UPDATE tasks SET title = title || ' [Q-GATE]' WHERE id = ? AND title NOT LIKE '%[Q-GATE]%'").run(task.id);
       db.prepare('UPDATE agents SET status = ?, last_active_at = ? WHERE id = ?').run('IDLE', now(), agent.id);
+      emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: 'IDLE', code: 'QUALITY_GATE' });
       // Selbst-Lern-Loop: Der Tor-Riss wird als Lehre verewigt, damit kein
       // Team-Mitglied denselben Fehler zweimal macht.
       recordLesson(villaId, agent.id, `Lehre: ${task.title}`, `npm test scheiterte nach der Umsetzung — erst Build/Test-Tor gruen, dann abschliessen. Auszug:\n${String(gate.output).slice(0, 600)}`);
@@ -1952,6 +1957,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
   db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
     .run(villaId, agent.id, 'villa', 'ARTIFACT', `Ergebnis: ${task.title}`, answer.slice(0, 2000), 6, now());
   db.prepare('UPDATE agents SET status = ?, last_active_at = ? WHERE id = ?').run('IDLE', now(), agent.id);
+  emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: res.error ? 'FAILED' : 'IDLE', ...(res.error ? { code: 'AGENT_ERROR' } : {}) });
 
   emit('task', { villaId, taskId: task.id, agentId: agent.id, status: res.error ? 'FAILED' : 'DONE', title: task.title, answer: answer.slice(0, 500) });
 }
