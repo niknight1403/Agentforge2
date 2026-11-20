@@ -187,7 +187,7 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
     ['GET', '/packs', undefined],
     ['GET', '/look', undefined],
     ['PATCH', '', { name: 'Owner-updated private persona' }],
-    ['POST', '/packs', { name: 'Owner private pack', items: [{ slot: 'top', description: 'owner-only outfit' }] }]
+    ['POST', '/packs', { name: 'Owner private pack', items: [{ slot: 'top', description: 'owner-only outfit' }, { slot: 'shoes', description: 'owner-only shoes' }] }]
   ]) {
     const response = await fetch(base + '/api/personas/' + privatePersonaId + suffix, {
       method,
