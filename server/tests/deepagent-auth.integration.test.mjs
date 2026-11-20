@@ -168,6 +168,20 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   assert.equal(otherCast.status, 404, 'private cast overview is owner-scoped');
   const otherPersona = await fetch(base + '/api/personas/' + privatePersonaId, {headers: auth(tokenB)});
   assert.equal(otherPersona.status, 404, 'private persona details are owner-scoped');
+  for (const [method, suffix, body] of [
+    ['GET', '/card', undefined],
+    ['GET', '/packs', undefined],
+    ['GET', '/look', undefined],
+    ['PATCH', '', { name: 'unauthorized update' }],
+    ['POST', '/packs', { name: 'unauthorized pack', items: [{ slot: 'top', description: 'blocked' }] }]
+  ]) {
+    const response = await fetch(base + '/api/personas/' + privatePersonaId + suffix, {
+      method,
+      headers: { ...auth(tokenB), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    assert.equal(response.status, 404, `another user cannot access private persona ${method} ${suffix}`);
+  }
   const otherEvolution = await fetch(base + '/api/evolution/villas/' + villaId, {headers: auth(tokenB)});
   assert.equal(otherEvolution.status, 404, 'private Villa evolution state is owner-scoped');
   const otherTelemetry = await fetch(base + '/api/metrics/telemetry?villaId=' + villaId, {headers: auth(tokenB)});
