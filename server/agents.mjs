@@ -1543,7 +1543,8 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
       });
       const runtimeUrl=String(process.env.VF_AGENT_RUNTIME_URL||'').trim().replace(/\/+$/);
       const runtimeToken=String(process.env.VF_AGENT_RUNTIME_TOKEN||'').trim();
-      if(runtimeUrl&&runtimeToken){\n        const dispatched=await dispatchRemoteBatch({batch,villaId,job,runtimeUrl,runtimeToken,runStart,executeLocally,onCancelled:async task=>{
+      if(runtimeUrl&&runtimeToken){
+        const dispatched=await dispatchRemoteBatch({batch,villaId,job,runtimeUrl,runtimeToken,runStart,executeLocally,onCancelled:async task=>{
         db.prepare("UPDATE tasks SET status='PENDING',updated_at=? WHERE id=? AND status='RUNNING'").run(now(),task.id);
         emit('task',{villaId,taskId:task.id,status:'PENDING',code:'CANCELLED'});
       }});
