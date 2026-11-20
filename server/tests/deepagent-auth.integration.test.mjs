@@ -41,6 +41,7 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
     "        linkDeepProjectVilla(Number(command.projectId), id);",
     "        const agentId = insertAgent(id, 'Private Agent A', 'WORKER');",
     "        const personaId = createPersona(id, {name: 'Private Persona A'}).id;",
+    "        db.prepare('INSERT INTO villa_proposals (villa_id, kind, title, summary, items, status, round, created_at, extra) VALUES (?,?,?,?,?,?,?,?,?)').run(id, 'REPAIR', 'Private Villa Proposal', 'private summary', '[]', 'pending', 1, ts, '');",
     "        process.stdout.write('__TEST_VILLA_LINKED__' + id + ':' + agentId + ':' + personaId + '\\n');",
     "      }",
     "    } catch (error) { process.stdout.write('__TEST_VILLA_ERROR__' + String(error.message || error) + '\\n'); }",
@@ -171,6 +172,12 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   assert.equal(otherEvolution.status, 404, 'private Villa evolution state is owner-scoped');
   const otherTelemetry = await fetch(base + '/api/metrics/telemetry?villaId=' + villaId, {headers: auth(tokenB)});
   assert.equal(otherTelemetry.status, 404, 'private Villa telemetry is owner-scoped');
+  const otherPending = await fetch(base + '/api/evolution/pending', {headers: auth(tokenB)});
+  const otherPendingItems = await otherPending.json();
+  assert.ok(!otherPendingItems.some((proposal) => proposal.villaId === villaId), 'private Villa proposals are omitted from the global pending list');
+  const ownerPending = await fetch(base + '/api/evolution/pending', {headers: auth(tokenA)});
+  const ownerPendingItems = await ownerPending.json();
+  assert.ok(ownerPendingItems.some((proposal) => proposal.villaId === villaId), 'the Villa owner can still see private proposals');
   const numericAliasDetail = await fetch(`${base}/api/villas/${villaId}e0`, { headers: auth(tokenB) });
   const numericAliasReport = await fetch(`${base}/api/villas/${villaId}e0/reports`, { headers: auth(tokenB) });
   assert.equal(numericAliasDetail.status, 404, 'non-canonical numeric aliases cannot bypass Villa ownership checks');
