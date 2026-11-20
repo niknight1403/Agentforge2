@@ -1524,7 +1524,7 @@ async function api(req, res, url) {
     }).catch((error) => {
       const result = {ok: false, code: 'AUTO_START_FAILED', error: String(error?.message || error).slice(0, 250)};
       deepAutoStartResults.set(id, result);
-      emit('deep:development', {projectId: id, ...result});
+      // Project detail polling exposes this failure result.
     });
     return {pending: true, started: false, queued: false};
   };
