@@ -32,11 +32,15 @@ def contains_secret(content: str) -> bool:
     return False
 
 
+class RepositoryValidationError(ValueError):
+    """Expected, safe-to-report validation failure for a repository target."""
+
+
 class GitHubScanner:
     def _validate_target(self, name: str, url: str) -> None:
         """Validate repository names, canonical GitHub HTTPS URLs and owner allowlist."""
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", name):
-            raise ValueError("Invalid repository name")
+            raise RepositoryValidationError("Invalid repository name")
         match = re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?", url)
         if not match:
             raise ValueError("Repository URL must be a canonical GitHub HTTPS URL")
