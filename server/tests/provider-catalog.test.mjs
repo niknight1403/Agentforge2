@@ -10,7 +10,7 @@ process.env.VF_LLM_FREE_ONLY='1';
 
 const { FREE_ROUTE_CATALOG } = await import('../routes.mjs');
 const { db } = await import('../db.mjs');
-const { cascadeDefaults, syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, routeProvider, seedRouteCatalog } = await import('../llm-config.mjs');
+const { cascadeDefaults, syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, routeProvider, seedRouteCatalog, isLocalRoute, isTrustedSelfHostedRoute } = await import('../llm-config.mjs');
 const { resolveKey, routeRpm } = await import('../llm.mjs');
 
 test('fresh route seed enables only verified free/local routes',()=>{
@@ -77,6 +77,23 @@ test('Gemini OpenAI-compatible routes honor the documented VF_RPM_GEMINI overrid
     assert.equal(routeRpm({provider:'gemini-openai',base_url:'https://generativelanguage.googleapis.com/v1beta/openai',model:'gemini-3.1-flash-lite'}),3);
   }finally{
     if(previous===undefined)delete process.env.VF_RPM_GEMINI;else process.env.VF_RPM_GEMINI=previous;
+  }
+});
+
+test('remote self-hosted Ollama endpoints require an explicit trusted-host allowlist',()=>{
+  const previous=process.env.VF_LLM_TRUSTED_SELF_HOSTED_HOSTS;
+  const remote={provider:'ollama',base_url:'https://ollama.example.test/v1',model:'llama3.2:3b'};
+  try{
+    delete process.env.VF_LLM_TRUSTED_SELF_HOSTED_HOSTS;
+    assert.equal(isLocalRoute(remote),false);
+    assert.equal(isTrustedSelfHostedRoute(remote),false);
+    assert.equal(isFreeRoute(remote),false,'remote Ollama must not be assumed free');
+    process.env.VF_LLM_TRUSTED_SELF_HOSTED_HOSTS='other.example.test, ollama.example.test';
+    assert.equal(isTrustedSelfHostedRoute(remote),true);
+    assert.equal(isFreeRoute(remote),true);
+    assert.equal(isLocalRoute({provider:'ollama',base_url:'http://127.0.0.1:11434/v1'}),true);
+  }finally{
+    if(previous===undefined)delete process.env.VF_LLM_TRUSTED_SELF_HOSTED_HOSTS;else process.env.VF_LLM_TRUSTED_SELF_HOSTED_HOSTS=previous;
   }
 });
 
