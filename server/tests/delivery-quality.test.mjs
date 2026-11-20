@@ -76,6 +76,16 @@ test('Kreativprojekt bleibt gesperrt, bis finales Artefakt und Review durch unab
  review(id);assert.equal(deliveryReadiness(id).verified,true);
 });
 
+test('Nicht-Software-Builds verwenden die validierten Artefaktbytes und die deklarierte Lieferklasse',()=>{
+ const id=villa('Build a generic software tool');
+ review(id);
+ const ready=deliveryReadiness(id,'research',{path:'/tmp/validated-report.pdf',extension:'.pdf',bytes:256});
+ assert.equal(ready.verified,true);
+ assert.ok(ready.artifacts.some(a=>a.validated===true&&a.name==='validated-report.pdf'));
+ const wrong=deliveryReadiness(id,'research',{path:'/tmp/wrong-video.mp4',extension:'.mp4',bytes:256});
+ assert.equal(wrong.verified,false);
+});
+
 test('Datenprojekt braucht ein passendes Tabellenartefakt und ein unabhängiges Review',()=>{
  const id=villa('Analysiere den Datensatz und liefere eine Excel-Tabelle');
  deliverable(id,'analysis.xlsx');
