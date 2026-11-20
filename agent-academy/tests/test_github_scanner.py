@@ -77,6 +77,17 @@ def test_empty_secret_values_are_not_credentials():
     assert not contains_secret("password = ''")
 
 
+def test_parenthesized_python_string_credentials_are_detected_without_evaluating_expressions():
+    assert contains_secret('password = ("liveCredential123")', ".py")
+    assert not contains_secret('password = (os.getenv("APP_PASSWORD"))', ".py")
+    assert not contains_secret('password = ("placeholder" + suffix)', ".py")
+
+
+def test_json_null_is_not_a_credential_but_quoted_null_is():
+    assert not contains_secret('{"api_key": null, "enabled": true}', ".json")
+    assert contains_secret('{"api_key": "null"}', ".json")
+
+
 def test_type_annotation_without_default_is_not_a_secret():
     assert not contains_secret("class Config:\n    password: str", ".py")
 
@@ -119,8 +130,9 @@ def test_scan_excludes_typed_and_nested_credentials_but_keeps_schema_and_empty_c
     )
     (tmp_path / "schema.py").write_text("class Config:\n    password: str\n", encoding="utf-8")
     (tmp_path / "settings.json").write_text('{"api_key": ""}\n', encoding="utf-8")
+    (tmp_path / "settings-null.json").write_text('{"api_key": null, "enabled": true}\n', encoding="utf-8")
 
     chunks = asyncio.run(GitHubScanner().scan(tmp_path))
     paths = {item["path"] for item in chunks}
     assert {"credentials.py", "nested.py"}.isdisjoint(paths)
-    assert {"schema.py", "settings.json"} <= paths
+    assert {"schema.py", "settings.json", "settings-null.json"} <= paths
