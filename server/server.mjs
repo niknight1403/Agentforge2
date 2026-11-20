@@ -661,8 +661,8 @@ async function api(req, res, url) {
     const id=Number(parts[2]);
     try {
       if(parts.length===4&&m==='GET')return json(res,200,neuralNetworkStatus(id,{isRunning}));
-      if(parts[4]==='activate'&&m==='POST')return json(res,202,await activateNeuralNetwork(id,{scheduleVilla,isRunning}));
-      if(parts[4]==='deactivate'&&m==='POST')return json(res,200,deactivateNeuralNetwork(id,{cancelScheduledVilla,stopVilla,isRunning}));
+      if(parts.length===5&&parts[4]==='activate'&&m==='POST')return json(res,202,await activateNeuralNetwork(id,{scheduleVilla,isRunning}));
+      if(parts.length===5&&parts[4]==='deactivate'&&m==='POST')return json(res,200,deactivateNeuralNetwork(id,{cancelScheduledVilla,stopVilla,isRunning}));
     } catch(error) {
       const code=error.code||error.message;
       const status=code==='VILLA_NOT_FOUND'?404:code==='VILLA_ARCHIVED'||code==='SLOT_LIMIT'?409:400;
