@@ -306,3 +306,19 @@ test('Abschlusslauf parkt nach dem Retry-Budget statt endlos neu zu starten', as
   assert.deepEqual(schedulerStatus().retrying,[]);
  } finally { delete process.env.VF_RETRY_MIN_MS; delete process.env.VF_PRODUCT_RETRY_MAX; _resetScheduler(); }
 });
+
+
+test('neural network activation dispatches one run through the configured production scheduler', async () => {
+  _resetScheduler();
+  const id = villa('Neural dispatch', 0, 1);
+  let received;
+  configureScheduler({ start: async (villaId, options) => { received = { villaId, options }; return { status: 'COMPLETED' }; } });
+  const result = scheduleVilla(id, { concurrency: 0, maxRounds: 6, force: true });
+  assert.equal(result.active.includes(id), true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(received.villaId, id);
+  assert.equal(received.options.runToCompletion, true);
+  assert.equal(received.options.maxRounds, 6);
+  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(id).autonomy, 1);
+  _resetScheduler();
+});
