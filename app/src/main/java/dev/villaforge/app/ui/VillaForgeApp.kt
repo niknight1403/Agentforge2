@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -60,6 +61,7 @@ import dev.villaforge.app.ui.screens.DashboardScreen
 import dev.villaforge.app.ui.screens.DiagnosticsScreen
 import dev.villaforge.app.ui.screens.DetailScreen
 import dev.villaforge.app.ui.screens.LiveDot
+import dev.villaforge.app.ui.screens.FileManagerScreen
 import dev.villaforge.app.ui.screens.LoginScreen
 import dev.villaforge.app.ui.screens.MasterScreen
 import dev.villaforge.app.ui.screens.SettingsScreen
@@ -77,9 +79,9 @@ import dev.villaforge.app.ui.theme.TextMuted
  * leben in ui/screens/, Bausteine in ui/components/, der Parser in core/.
  * Hier bleibt nur die Navigation mit sanften uebergangen zurueck.
  */
-private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, MASTER, DEV, DEEP, DEEP_CHAT, SETTINGS, DIAGNOSTICS, CAPABILITIES }
+private enum class Screen { LIST, CREATE, DASHBOARD, DETAIL, CHAT, MASTER, DEV, DEEP, DEEP_CHAT, SETTINGS, DIAGNOSTICS, CAPABILITIES, FILES }
 
-private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.MASTER, Screen.DIAGNOSTICS, Screen.SETTINGS, Screen.CAPABILITIES)
+private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.MASTER, Screen.DIAGNOSTICS, Screen.SETTINGS, Screen.CAPABILITIES, Screen.FILES)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -144,6 +146,9 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     NavigationBarItem(selected = screen == Screen.CAPABILITIES, onClick = { viewModel.closeDetail(); screen = Screen.CAPABILITIES },
                         icon = { Icon(Icons.Filled.Build, contentDescription = "Werkzeuge", tint = if (screen == Screen.CAPABILITIES) NeonCyan else TextMuted) },
                         label = { Text("Werkzeuge") })
+                    NavigationBarItem(selected = screen == Screen.FILES, onClick = { viewModel.closeDetail(); screen = Screen.FILES },
+                        icon = { Icon(Icons.Filled.Folder, contentDescription = "Dateien", tint = if (screen == Screen.FILES) NeonCyan else TextMuted) },
+                        label = { Text("Dateien") })
                 }
             }
         },
@@ -203,6 +208,7 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     Screen.SETTINGS -> SettingsScreen(state, viewModel) { screen = Screen.CAPABILITIES }
                     Screen.CAPABILITIES -> CapabilitiesScreen(state, viewModel) { prompt -> masterPrompt = prompt; screen = Screen.MASTER }
                     Screen.DIAGNOSTICS -> DiagnosticsScreen(state, viewModel)
+                    Screen.FILES -> FileManagerScreen()
                 }
             }
 
