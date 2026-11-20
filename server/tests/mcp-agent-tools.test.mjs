@@ -10,6 +10,8 @@ process.env.VF_WORKSPACE=join(tmpdir(),'vf-mcp-agent-workspace');
 process.env.VF_LLM_FREE_ONLY='1';
 
 const { registerMcpServer, replaceMcpServerTools, listMcpTools, setMcpToolPolicy, setMcpServerStatus, removeMcpServer } = await import('../mcp-registry.mjs');
+const { saveConnector, deleteConnector } = await import('../control-store.mjs');
+const { setPackEnabled } = await import('../packs.mjs');
 const { toolSpecs, availableToolPrompt } = await import('../agents.mjs');
 
 test('agent tool registry exposes only approved tools on active MCP servers',()=>{
@@ -31,5 +33,19 @@ test('agent tool registry exposes only approved tools on active MCP servers',()=
     assert.ok(!toolSpecs().some(tool=>tool.name===alias));
   }finally{
     removeMcpServer(server.id);
+  }
+});
+
+test('enabled HTTPS API connectors are exposed as first-class GET-only agent tools',()=>{
+  setPackEnabled('extern',true);
+  saveConnector({id:'catalog_api',title:'Catalog API',endpoint:'https://api.example.test/v1/status',enabled:true});
+  try{
+    const alias='connector:catalog_api:read';
+    assert.ok(toolSpecs().some(tool=>tool.name===alias&&tool.enabled===true&&tool.executionTool==='connector_read'));
+    assert.ok(availableToolPrompt().includes(alias));
+    saveConnector({id:'catalog_api',title:'Catalog API',endpoint:'https://api.example.test/v1/status',enabled:false});
+    assert.ok(!toolSpecs().some(tool=>tool.name===alias));
+  }finally{
+    deleteConnector('catalog_api');
   }
 });
