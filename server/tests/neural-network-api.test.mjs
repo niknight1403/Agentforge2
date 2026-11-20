@@ -73,6 +73,22 @@ test('administrator can inspect network status without starting a run', async ()
   assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(villaId).autonomy, 0);
 });
 
+test('administrator activation dispatches through the real scheduler and deactivation disables the Villa', async () => {
+  const activate = await request(`/api/villas/${villaId}/neural-network/activate`, 'POST', adminToken);
+  assert.equal(activate.status, 202);
+  const activation = await activate.json();
+  assert.equal(activation.accepted, true);
+  assert.equal(activation.villa.id, villaId);
+  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(villaId).autonomy, 1);
+
+  const deactivate = await request(`/api/villas/${villaId}/neural-network/deactivate`, 'POST', adminToken);
+  assert.equal(deactivate.status, 200);
+  const deactivation = await deactivate.json();
+  assert.equal(deactivation.accepted, true);
+  assert.equal(deactivation.villa.autonomy, false);
+  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(villaId).autonomy, 0);
+});
+
 test('administrator route rejects unexpected activation path segments', async () => {
   const response = await request(`/api/villas/${villaId}/neural-network/activate/extra`, 'POST', adminToken);
   assert.equal(response.status, 405);
