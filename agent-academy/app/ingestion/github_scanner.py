@@ -93,6 +93,7 @@ def _assignment_value(
     *,
     python_source: bool = False,
     literal_only: bool = False,
+    json_source: bool = False,
 ) -> str | None:
     """Read one scalar value without crossing a YAML field boundary or copying the file tail."""
     pos = offset
@@ -146,6 +147,19 @@ def _assignment_value(
     if pos >= len(content):
         return ""
 
+    if python_source and content[pos] == "(":
+        literal_pos = pos + 1
+        while literal_pos < len(content) and content[literal_pos] in " \t\r\n":
+            literal_pos += 1
+        if literal_pos < len(content) and content[literal_pos] in {"'", '"'}:
+            parenthesized = _read_quoted_value(content, literal_pos)
+            if parenthesized is not None:
+                closing = parenthesized[1]
+                while closing < len(content) and content[closing] in " \t":
+                    closing += 1
+                if closing < len(content) and content[closing] == ")":
+                    return parenthesized[0]
+
     if content[pos] in {"'", '"'}:
         quoted = _read_quoted_value(content, pos)
         return quoted[0] if quoted is not None else None
@@ -163,7 +177,10 @@ def _assignment_value(
         return None
 
     value_match = BARE_VALUE_PATTERN.match(content, pos)
-    return value_match.group(0) if value_match else ""
+    value = value_match.group(0) if value_match else ""
+    if json_source and value.lower() == "null":
+        return None
+    return value
 
 
 def contains_secret(content: str, source_suffix: str | None = None) -> bool:
@@ -183,6 +200,7 @@ def contains_secret(content: str, source_suffix: str | None = None) -> bool:
             match.group("separator"),
             python_source=python_source,
             literal_only=python_source and key == "token",
+            json_source=source_suffix == ".json",
         )
         if value is None or not value.strip():
             continue
