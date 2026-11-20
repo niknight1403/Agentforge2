@@ -178,7 +178,10 @@ export function deliverableExtensions(id) {
 
 export function deliveryProfile(villaId, ideaOverride) {
   const villa=db.prepare('SELECT idea,name FROM villas WHERE id=?').get(Number(villaId));
-  const id=classifyDeliverable(typeof ideaOverride==='string'&&ideaOverride.trim()?ideaOverride:(villa?.idea || villa?.name || ''));
+  const override=typeof ideaOverride==='string'?ideaOverride.trim():'';
+  const id=Object.prototype.hasOwnProperty.call(PROFILES,override)
+    ? override
+    : classifyDeliverable(override || villa?.idea || villa?.name || '');
   return { id, ...PROFILES[id] };
 }
 function outputs(villaId, profile) {
