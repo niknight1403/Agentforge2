@@ -91,6 +91,8 @@ test('remote self-hosted Ollama endpoints require an explicit trusted-host allow
     process.env.VF_LLM_TRUSTED_SELF_HOSTED_HOSTS='other.example.test, ollama.example.test';
     assert.equal(isTrustedSelfHostedRoute(remote),true);
     assert.equal(isFreeRoute(remote),true);
+    assert.equal(isTrustedSelfHostedRoute({...remote,base_url:'http://ollama.example.test/v1'}),false,'remote HTTP must not be trusted');
+    assert.equal(isTrustedSelfHostedRoute({...remote,base_url:'https://ollama.example.test/v1?token=secret'}),false,'query credentials must not be trusted');
     assert.equal(isLocalRoute({provider:'ollama',base_url:'http://127.0.0.1:11434/v1'}),true);
   }finally{
     if(previous===undefined)delete process.env.VF_LLM_TRUSTED_SELF_HOSTED_HOSTS;else process.env.VF_LLM_TRUSTED_SELF_HOSTED_HOSTS=previous;
