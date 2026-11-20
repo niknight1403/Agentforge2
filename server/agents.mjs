@@ -783,16 +783,20 @@ const SOURCE_WRITE_TOOLS = new Set(['project_write', 'project_patch', 'code_writ
 async function executeTool(ctx, name, args) {
   const dynamicMcp = String(name || '').startsWith('mcp:');
   const dynamicConnector = String(name || '').startsWith('connector:');
-  const tool = TOOLS[name] || (dynamicMcp ? resolveMcpTool(name) : dynamicConnector ? resolveConnectorTool(name) : null);
-  if (!tool) { observeMissingTool(ctx.villaId,name); audit(ctx.villaId, ctx.agentId, name, args, 'unbekanntes Werkzeug', 0); return `Unbekanntes Werkzeug: ${name}`; }
-  // External integration arguments/results may contain customer data or credentials.
-  // Audit and event streams keep identifiers only; the live result still reaches the caller.
+  // Compute redacted metadata before resolving the alias so revoked or stale
+  // integrations cannot leak their arguments through the unknown-tool path.
   const mcpMatch=dynamicMcp?/^mcp:([A-Za-z0-9_-]{1,128}):(.{1,160})$/.exec(String(name)):null;
   const connectorMatch=dynamicConnector?/^connector:([a-z0-9_-]{2,48}):read$/.exec(String(name)):null;
   const auditArgs=dynamicMcp
     ?{serverId:mcpMatch?.[1]||'unknown',toolName:mcpMatch?.[2]||'unknown',argumentKeys:Object.keys(args||{}).slice(0,40)}
     :dynamicConnector?{connectorId:connectorMatch?.[1]||'unknown'}:args;
   const redactExternal=dynamicMcp||dynamicConnector;
+  const tool = TOOLS[name] || (dynamicMcp ? resolveMcpTool(name) : dynamicConnector ? resolveConnectorTool(name) : null);
+  if (!tool) {
+    observeMissingTool(ctx.villaId,name);
+    audit(ctx.villaId, ctx.agentId, name, auditArgs, redactExternal?'external integration unavailable':'unbekanntes Werkzeug', 0);
+    return redactExternal?'Externe Integration nicht verfuegbar.':`Unbekanntes Werkzeug: ${name}`;
+  }
   // Packs are real gates, including for dynamic aliases.
   const gate = canUseTool(dynamicMcp ? 'mcp_call' : dynamicConnector ? 'connector_read' : name);
   if (!gate.allowed) {
