@@ -346,6 +346,18 @@ export function deepProjectDetail(id) {
   return { project, messages };
 }
 
+/** Combine a start result with current project state without trusting stale link fields. */
+export function deepProjectDevelopmentStatus(projectId, pending, result = null) {
+  const detail = deepProjectDetail(projectId);
+  const currentResult = pending ? {} : (result || {});
+  const { villaId: _storedVillaId, pending: _storedPending, ...safeResult } = currentResult;
+  return {
+    ...safeResult,
+    pending: Boolean(pending),
+    villaId: Number(detail?.project.villa_id || 0)
+  };
+}
+
 /** Verknüpft ein Deep-Projekt idempotent mit seiner ausführbaren Villa. */
 export function linkDeepProjectVilla(projectId, villaId) {
   const project = db.prepare('SELECT id, owner_user_id FROM deep_projects WHERE id=?').get(Number(projectId));
