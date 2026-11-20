@@ -113,6 +113,7 @@ export function routeProvider(r) {
 export function isFreeRoute(r) {
  if(isLocalRoute(r)) return true;
  const provider=routeProvider(r);
+ if(provider==='ollama'||provider==='lmstudio') return isTrustedSelfHostedRoute(r);
  const model=String(r.model||'').toLowerCase();
  if(provider==='gemini'||provider==='gemini-openai') return model==='gemini-3.1-flash-lite';
  if(provider==='openrouter') return model==='openrouter/free'||model.endsWith(':free');
