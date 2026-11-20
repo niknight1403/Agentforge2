@@ -37,3 +37,12 @@ test('telemetry consumer stays disabled until endpoint and token are configured'
   if(oldToken===undefined)delete process.env.CYBERSARAH_TELEMETRY_TOKEN;else process.env.CYBERSARAH_TELEMETRY_TOKEN=oldToken;
  }
 });
+
+
+test('agent lifecycle emits safe, distinct status metadata',()=>{
+ const started=buildMeshEvent('agent',{status:'THINKING',villaId:2,taskId:17,agentId:3,systemPrompt:'private prompt',content:'private output'},{id:()=> 'agent-start',now:()=>124});
+ assert.deepEqual(started,{id:'agent-start',type:'agent.started',at:124,villaId:2,taskId:17,agentId:3,status:'THINKING'});
+ const idle=buildMeshEvent('agent',{status:'IDLE',villaId:2,taskId:17,agentId:3,code:'QUALITY_GATE'},{id:()=> 'agent-idle',now:()=>125});
+ assert.equal(idle.type,'agent.idle');
+ assert.equal(buildMeshEvent('agent',{status:'FAILED',agentId:3}).type,'agent.failed');
+});
