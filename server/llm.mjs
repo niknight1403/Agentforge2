@@ -143,7 +143,7 @@ function routeRpm(route) {
   const configured=Number(process.env[envName]);
   return Number.isFinite(configured)&&configured>0
     ?Math.min(600,Math.floor(configured))
-    :Number(process.env.VF_RPM_DEFAULT)||defaults[provider]||30;
+    :defaults[provider]||Number(process.env.VF_RPM_DEFAULT)||30;
 }
 
 const providerCircuits=createCircuitBreaker({
