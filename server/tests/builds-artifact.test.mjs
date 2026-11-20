@@ -19,6 +19,21 @@ test('build artifact search finds content-valid non-media deliverables and ignor
  } finally { rmSync(root, {recursive: true, force: true}); }
 });
 
+test('newer package metadata cannot replace a validated data deliverable and the checked bytes are returned', () => {
+ const root = mkdtempSync(join(tmpdir(), 'vf-data-artifact-'));
+ try {
+  const deliverables = join(root, 'deliverables');
+  mkdirSync(deliverables, {recursive: true});
+  const expected = 'id,value\\n1,42\\n';
+  writeFileSync(join(deliverables, 'result.csv'), expected);
+  writeFileSync(join(root, 'package-lock.json'), JSON.stringify({name: 'workspace', lockfileVersion: 3, packages: {}}));
+  const found = findDeliverableArtifact(root, ['.json', '.csv']);
+  assert.equal(found?.extension, '.csv');
+  assert.equal(found?.content.toString('utf8'), expected);
+  assert.equal(found?.bytes, Buffer.byteLength(expected));
+ } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
 test('AAC and TIFF artifacts are classified and served as media', () => {
  assert.equal(artifactTypeForExtension('.aac'), 'media');
  assert.equal(artifactTypeForExtension('.tif'), 'media');
