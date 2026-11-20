@@ -72,7 +72,7 @@ for (const linked of db.prepare(
   'SELECT link.villa_id, project.owner_user_id, link.created_at FROM deep_project_villas link JOIN deep_projects project ON project.id = link.project_id'
 ).all()) {
   db.prepare(
-    'INSERT INTO deep_villa_owners (villa_id, owner_user_id, created_at) VALUES (?,?,?) ON CONFLICT(villa_id) DO UPDATE SET owner_user_id=excluded.owner_user_id'
+    'INSERT INTO deep_villa_owners (villa_id, owner_user_id, created_at) VALUES (?,?,?) ON CONFLICT(villa_id) DO NOTHING'
   ).run(Number(linked.villa_id), linked.owner_user_id ?? null, Number(linked.created_at));
 }
 
@@ -275,6 +275,7 @@ export async function deepChat(projectId, userMessage, attachments = [], { chatF
   db.prepare('INSERT INTO deep_messages (project_id, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?)')
     .run(project.id, 'assistant', reply, null, now());
   db.prepare('UPDATE deep_projects SET updated_at = ? WHERE id = ?').run(now(), project.id);
+  if (!offline && initialPlanResults.get(project.id)?.offline) initialPlanResults.delete(project.id);
   return { reply, offline };
 }
 
@@ -356,7 +357,11 @@ export function linkDeepProjectVilla(projectId, villaId) {
   try {
     db.prepare('INSERT INTO deep_project_villas (project_id,villa_id,created_at) VALUES (?,?,?) ON CONFLICT(project_id) DO UPDATE SET villa_id=excluded.villa_id,created_at=excluded.created_at')
       .run(id, linkedVillaId, createdAt);
-    db.prepare('INSERT INTO deep_villa_owners (villa_id,owner_user_id,created_at) VALUES (?,?,?) ON CONFLICT(villa_id) DO UPDATE SET owner_user_id=excluded.owner_user_id,created_at=excluded.created_at')
+    const existingOwner = db.prepare('SELECT owner_user_id FROM deep_villa_owners WHERE villa_id=?').get(linkedVillaId);
+    if (existingOwner && Number(existingOwner.owner_user_id ?? 0) !== Number(project.owner_user_id ?? 0)) {
+      throw Object.assign(new Error('Villa ist bereits einem anderen Projektbesitzer zugeordnet.'), {code: 'VILLA_OWNER_CONFLICT'});
+    }
+    db.prepare('INSERT INTO deep_villa_owners (villa_id,owner_user_id,created_at) VALUES (?,?,?) ON CONFLICT(villa_id) DO NOTHING')
       .run(linkedVillaId, project.owner_user_id ?? null, createdAt);
     db.exec('COMMIT');
   } catch (error) {
@@ -432,7 +437,7 @@ export function deepPreviewFile(projectId, rest) {
   // rejects parent-directory swaps that redirected the open outside the root.
   let fd;
   try {
-    fd = openSync(target, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+    fd = openSync(target, fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK || 0) | (fsConstants.O_NOFOLLOW || 0));
     const opened = fstatSync(fd);
     const canonicalAfterOpen = realpathSync(target);
     const current = statSync(target);
