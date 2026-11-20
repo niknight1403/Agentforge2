@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "generate": "prisma generate",
     "build": "npm run generate && tsc -p tsconfig.json",
@@ -28,6 +30,7 @@
   "overrides": {
     "@prisma/config": {
       "deepmerge-ts": "8.0.2"
-    }
+    },
+    "effect": "3.22.2"
   }
 }
