@@ -52,3 +52,9 @@ test('agent communication events expose sender and recipient metadata but never 
  const event=buildMeshEvent('agent.message',{villaId:2,agentId:3,toAgentId:4,communicationId:9,taskId:17,status:'SENT',content:'private message'},{id:()=> 'message-1',now:()=>126});
  assert.deepEqual(event,{id:'message-1',type:'agent.message.sent',at:126,villaId:2,taskId:17,agentId:3,toAgentId:4,communicationId:9,status:'SENT'});
 });
+
+
+test('scheduler dispatch event contains only bounded operational metadata',()=>{
+ const event=buildMeshEvent('task.dispatch',{villaId:8,taskId:12,status:'DISPATCHED',attempt:2,transport:'local_scheduler',prompt:'must not leak'},{id:()=> 'dispatch-1',now:()=>127});
+ assert.deepEqual(event,{id:'dispatch-1',type:'agent.task.dispatched',at:127,villaId:8,taskId:12,status:'DISPATCHED',attempt:2,transport:'local_scheduler'});
+});
