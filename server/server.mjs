@@ -688,6 +688,17 @@ async function api(req, res, url) {
     const persona = db.prepare('SELECT villa_id FROM personas WHERE id = ?').get(id);
     return Boolean(persona && canAccessLinkedVilla(persona.villa_id));
   };
+  // Owners may manage personas inside their own private DeepAgent Villa.
+  // Unlinked/public Villen remain administrator-managed unless open mode is enabled.
+  const canManagePersona = (personaId) => {
+    const id = Number(personaId);
+    if (!Number.isSafeInteger(id) || id <= 0) return false;
+    const persona = db.prepare('SELECT villa_id FROM personas WHERE id = ?').get(id);
+    if (!persona || !canAccessLinkedVilla(persona.villa_id)) return false;
+    if (openMode || isAdmin) return true;
+    const linkedOwner = db.prepare('SELECT owner_user_id FROM deep_villa_owners WHERE villa_id = ?').get(persona.villa_id);
+    return Boolean(linkedOwner && Number(linkedOwner.owner_user_id || 0) === Number(user?.id || 0));
+  };
   if (villaIdSegment !== undefined && !requestedVillaId) return json(res, 404, {error: 'Villa nicht gefunden'});
   if (requestedVillaId && !canAccessLinkedVilla(requestedVillaId)) return json(res, 404, {error: 'Villa nicht gefunden'});
   if (p === '/api/billing/summary' && m === 'GET') return user ? json(res,200,billingSummary(user.id)) : json(res,401,{error:'Login erforderlich.'});
@@ -869,7 +880,7 @@ async function api(req, res, url) {
   if (/^\/api\/personas\/\d+$/.test(p) && m === 'PATCH') {
     const personaId = Number(p.split('/')[3]);
     if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Figuren aendern ist Admins vorbehalten.' });
+    if (!canManagePersona(personaId)) return json(res, 403, { error: 'Nur der Villa-Eigentuemer oder ein Administrator darf diese Figur aendern.' });
     const b = await readBody(req);
     try { return json(res, 200, { ok: true, persona: updatePersona(personaId, b) }); }
     catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
@@ -887,7 +898,7 @@ async function api(req, res, url) {
   if (/^\/api\/personas\/\d+\/packs$/.test(p) && m === 'POST') {
     const personaId = Number(p.split('/')[3]);
     if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Kleidungs-Packs anlegen ist Admins vorbehalten.' });
+    if (!canManagePersona(personaId)) return json(res, 403, { error: 'Nur der Villa-Eigentuemer oder ein Administrator darf Packs anlegen.' });
     const b = await readBody(req);
     try { return json(res, 200, { ok: true, pack: createWardrobePack(personaId, b) }); }
     catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
