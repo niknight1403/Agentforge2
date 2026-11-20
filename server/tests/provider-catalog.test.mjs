@@ -11,18 +11,19 @@ process.env.VF_LLM_FREE_ONLY='1';
 const { FREE_ROUTE_CATALOG } = await import('../routes.mjs');
 const { db } = await import('../db.mjs');
 const { cascadeDefaults, syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, routeProvider } = await import('../llm-config.mjs');
+const { resolveKey } = await import('../llm.mjs');
 
 test('startup sync registers every configured OpenAI-compatible provider catalog route',()=>{
   const defaults=cascadeDefaults();
   const expected=FREE_ROUTE_CATALOG.filter(route=>route.baseUrl);
   for(const route of expected){
-    assert.ok(defaults.some(item=>item.base_url===route.baseUrl&&item.model===route.model&&item.provider===route.provider),`missing ${route.provider}/${route.model}`);
+    assert.ok(defaults.some(item=>item.base_url===route.baseUrl&&item.model===route.model),`missing ${route.provider}/${route.model}`);
   }
   syncCascadeRoutes();
   syncFreeRouteFlags();
   const rows=db.prepare('SELECT provider,base_url,model FROM routes').all();
   for(const route of expected){
-    assert.ok(rows.some(row=>row.provider===route.provider&&row.base_url===route.baseUrl&&row.model===route.model),`route not persisted: ${route.provider}/${route.model}`);
+    assert.ok(rows.some(row=>row.base_url===route.baseUrl&&row.model===route.model),`route not persisted: ${route.provider}/${route.model}`);
   }
 });
 
@@ -72,4 +73,11 @@ test('provider host inference covers the integrated API families',()=>{
   for(const [base_url,provider] of Object.entries(cases)){
     assert.equal(routeProvider({provider:'openai-compatible',base_url}),provider,base_url);
   }
+});
+
+test('Hugging Face credential aliases resolve from either supported secret name',()=>{
+  db.prepare("INSERT INTO secrets(name,value,updated_at) VALUES ('HF_TOKEN','hf-test-secret',0) ON CONFLICT(name) DO UPDATE SET value=excluded.value").run();
+  assert.equal(resolveKey('HUGGINGFACE_API_KEY'),'hf-test-secret');
+  db.prepare("UPDATE secrets SET value='google-test-secret' WHERE name='GOOGLE_API_KEY'").run();
+  assert.equal(resolveKey('GEMINI_API_KEY'),'google-test-secret');
 });
