@@ -43,9 +43,9 @@ class GitHubScanner:
             raise RepositoryValidationError("Invalid repository name")
         match = re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?", url)
         if not match:
-            raise ValueError("Repository URL must be a canonical GitHub HTTPS URL")
+            raise RepositoryValidationError("Repository URL must be a canonical GitHub HTTPS URL")
         if match.group(1).lower() not in settings.allowed_orgs:
-            raise ValueError("Repository owner is not in ACADEMY_GITHUB_ALLOWED_ORGS")
+            raise RepositoryValidationError("Repository owner is not in ACADEMY_GITHUB_ALLOWED_ORGS")
 
     async def clone_or_update(self, name: str, url: str) -> Path:
         """Clone or fast-forward an allowlisted repository into the confined data root."""
@@ -53,15 +53,15 @@ class GitHubScanner:
         destination = (settings.data_dir / "repos" / name).resolve()
         root = (settings.data_dir / "repos").resolve()
         if root not in destination.parents:
-            raise ValueError("Repository path escapes the data directory")
+            raise RepositoryValidationError("Repository path escapes the data directory")
 
         def operation() -> Path:
             if destination.exists():
                 repo = Repo(destination)
                 if repo.bare or "origin" not in repo.remotes:
-                    raise ValueError("Existing checkout is not a valid managed repository")
+                    raise RepositoryValidationError("Existing checkout is not a valid managed repository")
                 if repo.remotes.origin.url != url:
-                    raise ValueError("Repository URL does not match the existing checkout")
+                    raise RepositoryValidationError("Repository URL does not match the existing checkout")
                 repo.remotes.origin.pull()
             else:
                 destination.parent.mkdir(parents=True, exist_ok=True)
