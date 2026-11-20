@@ -1541,7 +1541,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
           .run('Interner Fehler: ' + msg, now(), task.id);
         emit('task', { villaId, taskId: task.id, agentId: task.agent_id || null, status: 'FAILED', error: msg });
       });
-      const dispatched=await dispatchRemoteBatch({batch,villaId,job,runtimeUrl,runtimeToken,runStart,executeLocally,onCancelled:async task=>{
+      const runtimeUrl=String(process.env.VF_AGENT_RUNTIME_URL||'').trim().replace(/\/+$/);\n      const runtimeToken=String(process.env.VF_AGENT_RUNTIME_TOKEN||'').trim();\n      if(runtimeUrl&&runtimeToken){\n        const dispatched=await dispatchRemoteBatch({batch,villaId,job,runtimeUrl,runtimeToken,runStart,executeLocally,onCancelled:async task=>{
         db.prepare("UPDATE tasks SET status='PENDING',updated_at=? WHERE id=? AND status='RUNNING'").run(now(),task.id);
         emit('task',{villaId,taskId:task.id,status:'PENDING',code:'CANCELLED'});
       }});
