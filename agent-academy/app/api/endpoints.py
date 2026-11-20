@@ -6,7 +6,7 @@ from app.agents.auditor import AuditorAgent
 from app.agents.professor import ProfessorAgent
 from app.agents.optimizer import OptimizerAgent
 from app.config import settings
-from app.ingestion.github_scanner import GitHubScanner
+from app.ingestion.github_scanner import GitHubScanner, RepositoryValidationError
 from app.ingestion.knowledge_store import KnowledgeStore
 from app.schemas import AnalyzeRequest, OptimizeRequest, SyncRequest
 
@@ -37,7 +37,7 @@ async def sync_repositories(payload: SyncRequest):
             chunks = await scanner.scan(path)
             store.replace_repository(target.name, chunks)
             results[target.name] = {"status": "indexed", "files": len(chunks)}
-        except ValueError as exc:
+        except RepositoryValidationError as exc:
             results[target.name] = {"status": "failed", "error": str(exc)}
         except Exception:
             logger.exception("Sync failed for repository %s", target.name)
