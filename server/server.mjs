@@ -669,7 +669,7 @@ async function api(req, res, url) {
   if (needAuth && p !== '/api/events' && p !== '/api/dlq/dashboard') return json(res, 401, { error: 'Login erforderlich.' });
   const villaIdSegment = parts[0] === 'api' && parts[1] === 'villas' ? parts[2] : undefined;
   const requestedVillaId = villaIdSegment !== undefined &&
-    /^[1-9]\\d*$/.test(villaIdSegment) && Number.isSafeInteger(Number(villaIdSegment))
+    /^[1-9]\d*$/.test(villaIdSegment) && Number.isSafeInteger(Number(villaIdSegment))
     ? Number(villaIdSegment)
     : 0;
   const canAccessLinkedVilla = (villaId) => {
@@ -730,7 +730,7 @@ async function api(req, res, url) {
   if (await masterControl.handle(req, res, url, readBody, json, openMode || isAdmin)) return;
 
   // ---- Routen ----
-  const personaPath = /^\\/api\\/personas\\/(\\d+)(?:\\/|$)/.exec(p);
+  const personaPath = /^\/api\/personas\/(\d+)(?:\/|$)/.exec(p);
   if (personaPath) {
     const persona = db.prepare('SELECT villa_id FROM personas WHERE id=?').get(Number(personaPath[1]));
     if (!persona || !canAccessLinkedVilla(persona.villa_id)) return json(res, 404, {error: 'Figur nicht gefunden'});
@@ -1313,7 +1313,7 @@ async function api(req, res, url) {
     const proposalTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='villa_proposals'").get();
     const proposal = proposalTable ? db.prepare('SELECT villa_id FROM villa_proposals WHERE id=?').get(Number(parts[3])) : null;
     if (proposal && !canAccessLinkedVilla(proposal.villa_id)) return json(res, 404, {error: 'Vorschlag nicht gefunden'});
-    try { return json(res, 200, rejectVillaProposal(Number(parts[3])); }
+    try { return json(res, 200, rejectVillaProposal(Number(parts[3]))); }
     catch (e) { return json(res, 409, { error: String(e.message || e) }); }
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'explain' && m === 'POST') {
