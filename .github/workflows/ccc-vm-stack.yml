@@ -121,7 +121,7 @@ jobs:
           # Eigentum idempotent auf die App-Rolle uebertragen.
           echo "-- Eigentum vorher (Auszug) --"
           sudo -u postgres psql -d cybersarah -Atc \
-            "SELECT tableowner||' x'||count(*) FROM pg_tables WHERE schemaname='public' GROUP BY 1;" | tr '\n' ' '; echo
+            "SELECT tableowner||' x'||count(*) FROM (SELECT tableowner, count(*) FROM pg_tables WHERE schemaname='public' GROUP BY tableowner) t;" | tr '\n' ' '; echo
           sudo -u postgres psql -d cybersarah -v ON_ERROR_STOP=1 <<'OWNERSQL'
           DO $$
           DECLARE r record;
@@ -157,7 +157,7 @@ jobs:
           OWNERSQL
           echo "-- Eigentum nachher --"
           sudo -u postgres psql -d cybersarah -Atc \
-            "SELECT tableowner||' x'||count(*) FROM pg_tables WHERE schemaname='public' GROUP BY 1;" | tr '\n' ' '; echo
+            "SELECT tableowner||' x'||count(*) FROM (SELECT tableowner, count(*) FROM pg_tables WHERE schemaname='public' GROUP BY tableowner) t;" | tr '\n' ' '; echo
 
           # Migration ueber den repo-eigenen, getesteten Runner statt drizzle-kit:
           # derselbe drizzle-Migrator, aber echte Fehlermeldungen statt stummem
