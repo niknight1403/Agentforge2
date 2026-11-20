@@ -11,6 +11,19 @@ for(const path of (process.env.VF_TEST==='1'?[]:[resolve('.env'),resolve('server
 }
 export const KEY_ALIASES={GEMINI_API_KEY:['GOOGLE_API_KEY'],GOOGLE_API_KEY:['GEMINI_API_KEY'],HF_TOKEN:['HUGGINGFACE_API_KEY'],HUGGINGFACE_API_KEY:['HF_TOKEN']};
 const configuredGroqModel=process.env.VF_GROQ_MODEL==='llama-3.3-70b-versatile'?'openai/gpt-oss-120b':(process.env.VF_GROQ_MODEL||'openai/gpt-oss-120b');
+/** Seed a fresh route table with free/local routes enabled only. Existing rows are untouched. */
+export function seedRouteCatalog() {
+ if(db.prepare('SELECT COUNT(*) AS count FROM routes').get().count!==0) return {seeded:0};
+ const insert=db.prepare('INSERT INTO routes (name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
+ let seeded=0;
+ for(const route of FREE_ROUTE_CATALOG) {
+  const free=Number(isFreeRoute({provider:route.provider,base_url:route.baseUrl,model:route.model}));
+  insert.run(route.name,route.provider,route.baseUrl,route.model,route.keyEnv,free,free,route.priority,1,'NEW',0,0,0);
+  seeded++;
+ }
+ return {seeded};
+}
+
 export function cascadeDefaults() {
  const primary=[
   ['Gemini','gemini','https://generativelanguage.googleapis.com/v1beta/openai',process.env.VF_GEMINI_MODEL||'gemini-3.1-flash-lite','GEMINI_API_KEY',10],
