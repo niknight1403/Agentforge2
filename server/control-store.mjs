@@ -102,7 +102,7 @@ export function publicAddress(ip) {
   const first = Number.parseInt(firstPart || '0', 16);
   const second = Number.parseInt(secondPart || '0', 16);
   return first >= 0x2000 && first <= 0x3fff
-    && !(first === 0x2001 && second <= 0x01ff)
+    && !(first === 0x2001 && (second <= 0x01ff || second === 0x0db8))
     && first !== 0x2002
     && !(first === 0x3fff && second <= 0x0fff);
 }
