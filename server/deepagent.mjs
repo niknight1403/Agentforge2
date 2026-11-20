@@ -431,10 +431,9 @@ export function deepPreviewFile(projectId, rest) {
   try { target = realpathSync(resolve(join(dir, ...clean))); } catch { return null; }
   let root;
   try { root = realpathSync(dir); } catch { return null; }
-  // Root-level index.html is intentionally not served here. A root entry may
-  // still reference conventional public asset directories (for example
-  // /assets/app.js); expose only those directories, never arbitrary project
-  // files such as uploaded attachments, source files or environment files.
+  // Serve the explicit root-level index.html entry point for compatibility.
+  // Its root-level dependencies are limited to conventional public asset
+  // directories; arbitrary project files (attachments, source, env) stay private.
   const allowedBuildRoot = ['dist', 'build', 'out', 'public', 'web-dist'].some((folder) =>
     target.startsWith(join(root, folder) + '/')
   );
