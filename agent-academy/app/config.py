@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path("./data")
     github_allowed_orgs: str = "niknight1403"
     max_file_bytes: int = Field(default=50_000, ge=1_024, le=1_000_000)
+    max_scan_files: int = Field(default=2_000, ge=1, le=20_000)
+    max_scan_bytes: int = Field(default=25_000_000, ge=1_000_000, le=250_000_000)
     default_model: str = "ollama/qwen2.5-coder:7b"
     ollama_base_url: str = "http://127.0.0.1:11434"
     llm_enabled: bool = False
