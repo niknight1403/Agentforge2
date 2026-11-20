@@ -178,6 +178,38 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const ownerPending = await fetch(base + '/api/evolution/pending', {headers: auth(tokenA)});
   const ownerPendingItems = await ownerPending.json();
   assert.ok(ownerPendingItems.some((proposal) => proposal.villaId === villaId), 'the Villa owner can still see private proposals');
+
+  // More than 50 newer proposals from another tenant must not crowd this owner's
+  // older proposal out before the owner filter is applied.
+  const {db, now} = await import('../db.mjs');
+  const {linkDeepProjectVilla} = await import('../deepagent.mjs');
+  const {insertVillaRecord} = await import('../agents.mjs');
+  const ts = now();
+  const projectBId = Number(db.prepare(
+    'INSERT INTO deep_projects (title, idea, status, created_at, updated_at, owner_user_id) VALUES (?,?,?,?,?,?)'
+  ).run('Private Project B', 'Private idea belonging to user B', 'ACTIVE', ts, ts, userB.id).lastInsertRowid);
+  const villaBId = insertVillaRecord({
+    name: 'Deep · Private Project B',
+    idea: 'Private idea belonging to user B',
+    createdAt: ts,
+    ownerUserId: userB.id
+  });
+  linkDeepProjectVilla(projectBId, villaBId);
+  const insertPending = db.prepare(
+    'INSERT INTO villa_proposals (villa_id, kind, title, summary, items, status, round, created_at, extra) VALUES (?,?,?,?,?,?,?,?,?)'
+  );
+  for (let index = 0; index < 60; index += 1) {
+    insertPending.run(villaBId, 'REPAIR', `Private B proposal ${index}`, 'private summary for user B', '[]', 'pending', 1, ts + index, '');
+  }
+  const ownerPendingAfterCrowd = await fetch(base + '/api/evolution/pending', {headers: auth(tokenA)}).then((response) => response.json());
+  assert.ok(ownerPendingAfterCrowd.some((proposal) => proposal.villaId === villaId), 'owner filtering must happen before the 50-item limit');
+  assert.ok(!ownerPendingAfterCrowd.some((proposal) => proposal.villaId === villaBId), 'other tenants remain excluded after pagination');
+  const otherPendingAfterCrowd = await fetch(base + '/api/evolution/pending', {headers: auth(tokenB)}).then((response) => response.json());
+  assert.ok(otherPendingAfterCrowd.some((proposal) => proposal.villaId === villaBId), 'the second owner sees their own newest proposals');
+  assert.ok(!otherPendingAfterCrowd.some((proposal) => proposal.villaId === villaId), 'the second owner cannot see the first owner proposal');
+  const adminPendingAfterCrowd = await fetch(base + '/api/evolution/pending', {headers: auth(adminToken)}).then((response) => response.json());
+  assert.ok(adminPendingAfterCrowd.some((proposal) => proposal.villaId === villaId), 'admins retain the global pending list');
+  assert.ok(adminPendingAfterCrowd.some((proposal) => proposal.villaId === villaBId), 'admins retain proposals from every owner');
   const numericAliasDetail = await fetch(`${base}/api/villas/${villaId}e0`, { headers: auth(tokenB) });
   const numericAliasReport = await fetch(`${base}/api/villas/${villaId}e0/reports`, { headers: auth(tokenB) });
   assert.equal(numericAliasDetail.status, 404, 'non-canonical numeric aliases cannot bypass Villa ownership checks');
