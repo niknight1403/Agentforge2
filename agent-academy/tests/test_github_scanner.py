@@ -136,3 +136,30 @@ def test_scan_excludes_typed_and_nested_credentials_but_keeps_schema_and_empty_c
     paths = {item["path"] for item in chunks}
     assert {"credentials.py", "nested.py"}.isdisjoint(paths)
     assert {"schema.py", "settings.json", "settings-null.json"} <= paths
+
+
+
+def test_scan_respects_maximum_indexed_file_count(tmp_path, monkeypatch):
+    from app.ingestion import github_scanner
+
+    (tmp_path / "a.py").write_text("print('a')", encoding="utf-8")
+    (tmp_path / "b.py").write_text("print('b')", encoding="utf-8")
+    monkeypatch.setattr(github_scanner.settings, "max_scan_files", 1)
+
+    chunks = asyncio.run(GitHubScanner().scan(tmp_path))
+
+    assert len(chunks) == 1
+
+
+def test_scan_respects_aggregate_byte_budget(tmp_path, monkeypatch):
+    from app.ingestion import github_scanner
+
+    (tmp_path / "a.py").write_text("1234", encoding="utf-8")
+    (tmp_path / "b.py").write_text("5678", encoding="utf-8")
+    (tmp_path / "c.py").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(github_scanner.settings, "max_scan_bytes", 5)
+
+    chunks = asyncio.run(GitHubScanner().scan(tmp_path))
+
+    assert sum(len(item["content"].encode("utf-8")) for item in chunks) <= 5
+    assert len(chunks) == 2
