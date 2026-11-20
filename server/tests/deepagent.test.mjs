@@ -231,8 +231,8 @@ test('DeepAgent Villa ownership cannot be reassigned to another project owner', 
 });
 
 test('DeepAgent development status ignores stale results while pending and uses the current Villa link', async () => {
-  const project = await createDeepProject('Eine App mit einer aktuellen Projekt-Villa', {chatFn: reply});
   const owner = createUser({email: `deepagent-status-${process.pid}@example.invalid`, password: 'test-only-password', role: 'user'});
+  const project = await createDeepProject('Eine App mit einer aktuellen Projekt-Villa', {chatFn: reply, ownerUserId: owner.id});
   const villaId = insertVillaRecord({name: 'Deep status Villa', idea: 'private project', ownerUserId: owner.id});
   assert.equal(linkDeepProjectVilla(project.id, villaId), villaId);
   const pending = deepProjectDevelopmentStatus(project.id, true, {ok: true, villaId: villaId + 1000, pending: false});
