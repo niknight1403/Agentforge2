@@ -9,7 +9,7 @@ import { castOverview,createPersona,createWardrobePack,listPersonas,listWardrobe
 import { activeDirections,consumeDirections,directorHistory,directorStatus,postInstruction } from './director-chat.mjs';
 import { burnTitle,freeMediaStatus,imagesToVideo,mediaToolInventory,resizeImage,videoThumbnail } from './free-media-tools.mjs';
 import { mediaCapabilities } from './media.mjs';
-import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, freeOnlyEnabled } from './llm-config.mjs';
+import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, freeOnlyEnabled, seedRouteCatalog } from './llm-config.mjs';
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { createMasterControl } from './master-control.mjs';
@@ -111,15 +111,8 @@ const log = (...a) => console.log(new Date().toISOString(), '[villaforge]', ...a
 const logError = (...a) => console.error(new Date().toISOString(), '[villaforge]', ...a);
 
 /* --------------------------- Seed --------------------------- */
-if (db.prepare('SELECT COUNT(*) c FROM routes').get().c === 0) {
-  const ins = db.prepare(
-    'INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  );
-  for (const r of FREE_ROUTE_CATALOG) {
-    ins.run(r.name, r.provider, r.baseUrl, r.model, r.keyEnv, Number(isFreeRoute({provider:r.provider,base_url:r.baseUrl,model:r.model})), 1, r.priority, 1, 'NEW', 0, 0, 0);
-  }
-  console.log('[villaforge] Routen-Katalog initialisiert:', FREE_ROUTE_CATALOG.length);
-}
+const routeSeed = seedRouteCatalog();
+if (routeSeed.seeded) log('Routen-Katalog initialisiert:', routeSeed.seeded);
 
 /* --------------------------- Admin-Autoanlage --------------------------- */
 // Optional: VF_ADMIN_EMAIL + VF_ADMIN_PASSWORD in der Umgebung des Hubs
