@@ -1373,6 +1373,26 @@ export function extendVillaRunToCompletion(villaId) {
   return true;
 }
 
+// Keep remote dispatch cancellation and local fallback policy in one testable boundary.
+export async function dispatchRemoteBatch({batch,villaId,job,runtimeUrl,runtimeToken,runStart,executeLocally,onCancelled,fetchImpl=fetch,timeoutMs=5000}){
+ const dispatched=await Promise.all(batch.map(async task=>{
+  const requestKey=`hub:${villaId}:${task.id}:${task.retry_count||0}:${runStart}`;
+  try{
+   const response=await fetchImpl(`${runtimeUrl}/tasks`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${runtimeToken}`,'idempotency-key':requestKey},body:JSON.stringify({title:task.title,input:{hubTaskId:Number(task.id),villaId:Number(villaId)}}),signal:AbortSignal.any([job.controller.signal,AbortSignal.timeout(timeoutMs)])});
+   if(!response.ok)throw new Error(`Runtime HTTP ${response.status}`);
+   return {task,remote:true};
+  }catch(error){
+   if(job.controller.signal.aborted)return {task,remote:false,cancelled:true};
+   console.warn('[villaforge] Redis task mesh fallback',Number(task.id),String(error?.message||error).slice(0,160));
+   return {task,remote:false};
+  }
+ }));
+ const cancelledDispatches=dispatched.filter(x=>x.cancelled||(!x.remote&&job.controller.signal.aborted));
+ for(const {task} of cancelledDispatches)await onCancelled(task);
+ await Promise.all(dispatched.filter(x=>!x.remote&&!x.cancelled).map(x=>executeLocally(x.task)));
+ return dispatched;
+}
+
 export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, adaptive = true, maxRounds = 6, runToCompletion = false } = {}) {
   if (db.prepare('SELECT status FROM villas WHERE id=?').get(villaId)?.status === 'ARCHIVED') return;
   if (running.get(villaId)) return;
@@ -1521,42 +1541,25 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
           .run('Interner Fehler: ' + msg, now(), task.id);
         emit('task', { villaId, taskId: task.id, agentId: task.agent_id || null, status: 'FAILED', error: msg });
       });
-      const runtimeUrl=String(process.env.VF_AGENT_RUNTIME_URL||'').trim().replace(/\/+$/,'');
-      const runtimeToken=String(process.env.VF_AGENT_RUNTIME_TOKEN||'').trim();
-      if(runtimeUrl&&runtimeToken){
-        const dispatched=await Promise.all(batch.map(async task=>{
-          const requestKey=`hub:${villaId}:${task.id}:${task.retry_count||0}:${runStart}`;
-          try{
-            const response=await fetch(`${runtimeUrl}/tasks`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${runtimeToken}`,'idempotency-key':requestKey},body:JSON.stringify({title:task.title,input:{hubTaskId:Number(task.id),villaId:Number(villaId)}}),signal:AbortSignal.any([job.controller.signal,AbortSignal.timeout(5000)])});
-            if(!response.ok)throw new Error(`Runtime HTTP ${response.status}`);
-            return {task,remote:true};
-          }catch(error){
-            if(job.controller.signal.aborted)return {task,remote:false,cancelled:true};
-            console.warn('[villaforge] Redis task mesh fallback',Number(task.id),String(error?.message||error).slice(0,160));
-            return {task,remote:false};
-          }
-        }));
-        const cancelledDispatches=dispatched.filter(x=>x.cancelled||(!x.remote&&job.controller.signal.aborted));
-        for(const {task} of cancelledDispatches){
-          db.prepare("UPDATE tasks SET status='PENDING',updated_at=? WHERE id=? AND status='RUNNING'").run(now(),task.id);
-          emit('task',{villaId,taskId:task.id,status:'PENDING',code:'CANCELLED'});
+      const dispatched=await dispatchRemoteBatch({batch,villaId,job,runtimeUrl,runtimeToken,runStart,executeLocally,onCancelled:async task=>{
+        db.prepare("UPDATE tasks SET status='PENDING',updated_at=? WHERE id=? AND status='RUNNING'").run(now(),task.id);
+        emit('task',{villaId,taskId:task.id,status:'PENDING',code:'CANCELLED'});
+      }});
+      const remote=dispatched.filter(x=>x.remote);
+      const waitLimit=Math.max(5000,Math.min(Number(process.env.VF_AGENT_RUNTIME_WAIT_MS)||60000,300000));
+      const waitStarted=Date.now();
+      while(remote.length&&!job.stop){
+        const activeTasks=remote.filter(({task})=>db.prepare("SELECT status FROM tasks WHERE id=?").get(task.id)?.status==='RUNNING');
+        if(!activeTasks.length)break;
+        if(Date.now()-waitStarted>=waitLimit){
+          // If the remote worker is unavailable after accepting dispatch,
+          // local execution uses the same in-process task lock. A late Redis
+          // delivery will observe DONE or join the already-running promise.
+          await Promise.all(activeTasks.map(({task})=>executeLocally(task)));
+          break;
         }
-        await Promise.all(dispatched.filter(x=>!x.remote&&!x.cancelled).map(x=>executeLocally(x.task)));
-        const remote=dispatched.filter(x=>x.remote);
-        const waitLimit=Math.max(5000,Math.min(Number(process.env.VF_AGENT_RUNTIME_WAIT_MS)||60000,300000));
-        const waitStarted=Date.now();
-        while(remote.length&&!job.stop){
-          const activeTasks=remote.filter(({task})=>db.prepare("SELECT status FROM tasks WHERE id=?").get(task.id)?.status==='RUNNING');
-          if(!activeTasks.length)break;
-          if(Date.now()-waitStarted>=waitLimit){
-            // If the remote worker is unavailable after accepting dispatch,
-            // local execution uses the same in-process task lock. A late Redis
-            // delivery will observe DONE or join the already-running promise.
-            await Promise.all(activeTasks.map(({task})=>executeLocally(task)));
-            break;
-          }
-          await new Promise(resolve=>setTimeout(resolve,250));
-        }
+        await new Promise(resolve=>setTimeout(resolve,250));
+      }
       } else await Promise.all(batch.map(executeLocally));
       if(job.stop)break;
       job.processed += batch.length;
