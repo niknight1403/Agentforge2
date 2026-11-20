@@ -1184,7 +1184,15 @@ export function insertVillaRecord({ name, idea, createdAt = now(), ownerUserId =
     owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at INTEGER NOT NULL
   )`);
-  return db.transaction(insert)();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const villaId = insert();
+    db.exec('COMMIT');
+    return villaId;
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch { /* keep original failure */ }
+    throw error;
+  }
 }
 
 export async function createVilla({ name, idea, agentCount: wanted = 12, sourcePath = '', mode = 'BUILD', force = false, ownerUserId = undefined }) {
