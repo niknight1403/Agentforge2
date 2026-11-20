@@ -222,3 +222,19 @@ ensureColumn('build_events', 'finished_at', 'INTEGER');
 // Migration fuer bestehende Datenbanken (Tabelle existiert an dieser Stelle).
 ensureColumn('council', 'scores', "TEXT NOT NULL DEFAULT '[]'");
 ensureColumn('council', 'dissent', "TEXT NOT NULL DEFAULT '[]'");
+
+// Explicit, Villa-scoped agent-to-agent messages; content is only exposed to the addressed agent.
+db.exec(`
+CREATE TABLE IF NOT EXISTS agent_communications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  villa_id INTEGER NOT NULL,
+  from_agent_id INTEGER NOT NULL,
+  to_agent_id INTEGER NOT NULL,
+  task_id INTEGER,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  read_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_agent_communications_inbox ON agent_communications(villa_id,to_agent_id,read_at,id);
+CREATE INDEX IF NOT EXISTS idx_agent_communications_pair ON agent_communications(villa_id,from_agent_id,to_agent_id,id);
+`);
