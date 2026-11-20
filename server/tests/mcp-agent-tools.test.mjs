@@ -12,7 +12,8 @@ process.env.VF_LLM_FREE_ONLY='1';
 const { registerMcpServer, replaceMcpServerTools, listMcpTools, setMcpToolPolicy, setMcpServerStatus, removeMcpServer } = await import('../mcp-registry.mjs');
 const { saveConnector, deleteConnector } = await import('../control-store.mjs');
 const { setPackEnabled } = await import('../packs.mjs');
-const { toolSpecs, availableToolPrompt } = await import('../agents.mjs');
+const { toolSpecs, availableToolPrompt, runTool } = await import('../agents.mjs');
+const { db } = await import('../db.mjs');
 
 test('agent tool registry exposes only approved tools on active MCP servers',()=>{
   const server=registerMcpServer({name:'agent tool registry test',transport:'http',url:'https://mcp.example.test'});
@@ -47,5 +48,21 @@ test('enabled HTTPS API connectors are exposed as first-class GET-only agent too
     assert.ok(!toolSpecs().some(tool=>tool.name===alias));
   }finally{
     deleteConnector('catalog_api');
+  }
+});
+
+test('revoked dynamic connector aliases redact arguments on the missing-tool audit path',async()=>{
+  setPackEnabled('extern',true);
+  saveConnector({id:'private_api',title:'Private API',endpoint:'https://api.example.test/private',enabled:false});
+  try{
+    await runTool({villaId:0,agentId:0},'connector:private_api:read',{token:'do-not-log-this-secret',customer:'private'});
+    const row=db.prepare("SELECT args,result FROM audit WHERE tool=? ORDER BY id DESC LIMIT 1").get('connector:private_api:read');
+    assert.ok(row);
+    assert.equal(row.args.includes('do-not-log-this-secret'),false);
+    assert.equal(row.args.includes('private'),false);
+    assert.match(row.args,/private_api/);
+    assert.doesNotMatch(row.result,/do-not-log-this-secret|private/);
+  }finally{
+    deleteConnector('private_api');
   }
 });
