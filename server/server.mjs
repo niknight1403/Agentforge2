@@ -72,6 +72,7 @@ import { initObservabilityStore, tokenBudgetStatus, httpMetrics, recordHttpReque
 
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
+const deepAutoStartResults = new Map();
 const PUBLIC_DIR = resolve(process.cwd(), 'server/public');
 const portIssue = !Number.isInteger(PORT) || PORT < 1 || PORT > 65535;
 if (portIssue) {
@@ -668,20 +669,18 @@ async function api(req, res, url) {
   if (needAuth && p !== '/api/events' && p !== '/api/dlq/dashboard') return json(res, 401, { error: 'Login erforderlich.' });
   const villaIdSegment = parts[0] === 'api' && parts[1] === 'villas' ? parts[2] : undefined;
   const requestedVillaId = villaIdSegment !== undefined &&
-    /^[1-9]\d*$/.test(villaIdSegment) && Number.isSafeInteger(Number(villaIdSegment))
+    /^[1-9]\\d*$/.test(villaIdSegment) && Number.isSafeInteger(Number(villaIdSegment))
     ? Number(villaIdSegment)
     : 0;
-  if (villaIdSegment !== undefined && !requestedVillaId) {
-    return json(res, 404, { error: 'Villa nicht gefunden' });
-  }
-  if (requestedVillaId && !openMode && !isAdmin) {
-    const linkedOwner = db.prepare(
-      'SELECT owner_user_id FROM deep_villa_owners WHERE villa_id = ?'
-    ).get(requestedVillaId);
-    if (linkedOwner && Number(linkedOwner.owner_user_id || 0) !== Number(user?.id || 0)) {
-      return json(res, 404, { error: 'Villa nicht gefunden' });
-    }
-  }
+  const canAccessLinkedVilla = (villaId) => {
+    const id = Number(villaId);
+    if (!Number.isSafeInteger(id) || id <= 0) return false;
+    if (openMode || isAdmin) return true;
+    const linkedOwner = db.prepare('SELECT owner_user_id FROM deep_villa_owners WHERE villa_id = ?').get(id);
+    return !linkedOwner || Number(linkedOwner.owner_user_id || 0) === Number(user?.id || 0);
+  };
+  if (villaIdSegment !== undefined && !requestedVillaId) return json(res, 404, {error: 'Villa nicht gefunden'});
+  if (requestedVillaId && !canAccessLinkedVilla(requestedVillaId)) return json(res, 404, {error: 'Villa nicht gefunden'});
   if (p === '/api/billing/summary' && m === 'GET') return user ? json(res,200,billingSummary(user.id)) : json(res,401,{error:'Login erforderlich.'});
   if (p === '/api/billing/checkout' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createCheckoutSession(user)); }
   if (p === '/api/billing/portal' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createBillingPortalSession(user.id)); }
@@ -731,8 +730,14 @@ async function api(req, res, url) {
   if (await masterControl.handle(req, res, url, readBody, json, openMode || isAdmin)) return;
 
   // ---- Routen ----
+  const personaPath = /^\\/api\\/personas\\/(\\d+)(?:\\/|$)/.exec(p);
+  if (personaPath) {
+    const persona = db.prepare('SELECT villa_id FROM personas WHERE id=?').get(Number(personaPath[1]));
+    if (!persona || !canAccessLinkedVilla(persona.villa_id)) return json(res, 404, {error: 'Figur nicht gefunden'});
+  }
   if(parts[0]==='api'&&parts[1]==='studio'&&parts[2]==='villas'&&/^\d+$/.test(parts[3]||'')) {
     const id=Number(parts[3]);
+    if (!canAccessLinkedVilla(id)) return json(res, 404, {error: 'Villa nicht gefunden'});
     if(parts.length===4&&m==='GET')return json(res,200,studioStatus(id));
     if(parts[4]==='designs'&&m==='POST')return json(res,200,await proposeDesigns(id));
     if(parts[4]==='design-selection'&&m==='POST'){const body=await readBody(req);return json(res,200,selectDesign(id,Number(body.designId),Number(body.index)));}
@@ -830,7 +835,11 @@ async function api(req, res, url) {
   if (p === '/api/resources' && m === 'GET') return json(res, 200, resourceStatus());
   if (p === '/api/resources/history' && m === 'GET') return json(res, 200, resourceHistory(url.searchParams.get('limit')));
   /* ---- Darstellerinnen: Persoenlichkeiten, Kleidungs-Packs, Regie-Chat ---- */
-  if (p === '/api/cast' && m === 'GET') return json(res, 200, castOverview(url.searchParams.get('villaId') || 0));
+  if (p === '/api/cast' && m === 'GET') {
+    const villaId = Number(url.searchParams.get('villaId') || 0);
+    if (villaId && !canAccessLinkedVilla(villaId)) return json(res, 404, {error: 'Villa nicht gefunden'});
+    return json(res, 200, castOverview(villaId));
+  }
   if (/^\/api\/villas\/\d+\/cast$/.test(p) && m === 'GET') {
     const villaId = Number(p.split('/')[3]);
     return json(res, 200, castOverview(villaId));
@@ -1206,7 +1215,7 @@ async function api(req, res, url) {
   // ---- Direktchat mit einem Agenten (ohne Villa) ----
   if (parts[0] === 'api' && parts[1] === 'agents' && parts[2] && parts[3] === 'chat' && m === 'POST') {
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(Number(parts[2]));
-    if (!agent) return json(res, 404, { error: 'Agent nicht gefunden' });
+    if (!agent || !canAccessLinkedVilla(agent.villa_id)) return json(res, 404, { error: 'Agent nicht gefunden' });
     const b = await readBody(req);
     const r = await runAgent(agent, String(b.message || ''), { maxSteps: 6, villaId: agent.villa_id, priority: 'interactive' });
     if(r.code==='LLM_UNAVAILABLE')return json(res,503,{error:r.error,code:r.code,retryAfter:15});
@@ -1243,6 +1252,7 @@ async function api(req, res, url) {
   /* ---- Produkt-Telemetrie (2026-11-02): drei belegte Kennzahlen ---- */
   if (p === '/api/metrics/telemetry' && m === 'GET') {
     const villaParam = Number(new URL(req.url, 'http://localhost').searchParams.get('villaId') || 0);
+    if (villaParam > 0 && !canAccessLinkedVilla(villaParam)) return json(res, 404, {error: 'Villa nicht gefunden'});
     return json(res, 200, telemetrySummary({ villaId: villaParam > 0 ? villaParam : null }));
   }
   if (p === '/api/proposals' && m === 'GET') {
@@ -1270,6 +1280,7 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'evolution' && parts[2] === 'villas' && parts[3] && !parts[4] && m === 'GET') {
     const id = Number(parts[3]);
+    if (!canAccessLinkedVilla(id)) return json(res, 404, {error: 'Villa nicht gefunden'});
     const st = evolutionState(id);
     if (!st) return json(res, 404, { error: 'Villa nicht gefunden' });
     return json(res, 200, {
@@ -1279,6 +1290,7 @@ async function api(req, res, url) {
     });
   }
   if (parts[0] === 'api' && parts[1] === 'evolution' && parts[2] === 'villas' && parts[3] && parts[4] === 'propose' && m === 'POST') {
+    if (!canAccessLinkedVilla(Number(parts[3]))) return json(res, 404, {error: 'Villa nicht gefunden'});
     const kind = String((await readBody(req))?.kind || '').toUpperCase();
     if (!EVOLVE_KINDS.includes(kind)) return json(res, 400, { error: 'kind muss NEXT_PHASES, PERFECT oder MARKETPLACE sein.' });
     try { return json(res, 200, await proposeForVilla(Number(parts[3]), kind)); }
@@ -1288,6 +1300,9 @@ async function api(req, res, url) {
     return json(res, 200, { made: await evolveAll({ maxPerTick: 3 }) });
   }
   if (parts[0] === 'api' && parts[1] === 'evolution' && parts[2] === 'proposals' && parts[3] && parts[4] === 'approve' && m === 'POST') {
+    const proposalTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='villa_proposals'").get();
+    const proposal = proposalTable ? db.prepare('SELECT villa_id FROM villa_proposals WHERE id=?').get(Number(parts[3])) : null;
+    if (proposal && !canAccessLinkedVilla(proposal.villa_id)) return json(res, 404, {error: 'Vorschlag nicht gefunden'});
     try {
       const r = approveVillaProposal(Number(parts[3]));
       if (r.added > 0 && !isRunning(r.villaId)) scheduleVilla(r.villaId, { concurrency: 0, maxRounds: 6 });
@@ -1295,7 +1310,10 @@ async function api(req, res, url) {
     } catch (e) { return json(res, 409, { error: String(e.message || e) }); }
   }
   if (parts[0] === 'api' && parts[1] === 'evolution' && parts[2] === 'proposals' && parts[3] && parts[4] === 'reject' && m === 'POST') {
-    try { return json(res, 200, rejectVillaProposal(Number(parts[3]))); }
+    const proposalTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='villa_proposals'").get();
+    const proposal = proposalTable ? db.prepare('SELECT villa_id FROM villa_proposals WHERE id=?').get(Number(parts[3])) : null;
+    if (proposal && !canAccessLinkedVilla(proposal.villa_id)) return json(res, 404, {error: 'Vorschlag nicht gefunden'});
+    try { return json(res, 200, rejectVillaProposal(Number(parts[3])); }
     catch (e) { return json(res, 409, { error: String(e.message || e) }); }
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'explain' && m === 'POST') {
@@ -1449,7 +1467,7 @@ async function api(req, res, url) {
                 'Fehlend: ' + handover.blockers.map((b) => `${b.label} (${b.detail})`).join('; ') + '.'
             });
           }
-          const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD' });
+          const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD', force: true });
           villaId = linkDeepProjectVilla(projectId, built.villaId);
         }
         const scheduled = isRunning(villaId)
@@ -1488,7 +1506,7 @@ async function api(req, res, url) {
         if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
         villaId=Number(detail.project.villa_id||0);
         if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
-          const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:handover.idea,agentCount:12,mode:'BUILD'});
+          const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:handover.idea,agentCount:12,mode:'BUILD',force:true});
           villaId=linkDeepProjectVilla(projectId,built.villaId);
         }
       }
@@ -1497,13 +1515,26 @@ async function api(req, res, url) {
       return {ok:!blocked,villaId,started:!blocked&&(scheduled.active||[]).includes(villaId),queued:!blocked&&(scheduled.queue||[]).includes(villaId),blocked,reason:scheduled.reason||null};
     }catch(error){return {ok:false,code:error.code||'AUTO_START_FAILED',error:String(error.message||error).slice(0,250)};}
   });
+  const scheduleAutoStartDeepProject = (projectId) => {
+    const id = Number(projectId);
+    void autoStartDeepProject(id).then((result) => {
+      deepAutoStartResults.set(id, result);
+      if (deepAutoStartResults.size > 100) deepAutoStartResults.delete(deepAutoStartResults.keys().next().value);
+      emit('deep:development', {projectId: id, ...result});
+    }).catch((error) => {
+      const result = {ok: false, code: 'AUTO_START_FAILED', error: String(error?.message || error).slice(0, 250)};
+      deepAutoStartResults.set(id, result);
+      emit('deep:development', {projectId: id, ...result});
+    });
+    return {pending: true, started: false, queued: false};
+  };
   if (p === '/api/deep/projects' && m === 'POST') {
     try {
       const b = await readBody(req);
       if (!user && !openMode) return json(res, 401, { error: 'Login erforderlich.' });
       const created=await createDeepProject(b?.idea, { deferInitialPlan: true, ownerUserId: user?.id ?? null });
       const intent=classifyDeepDevelopmentIntent(b?.idea,{projectCreation:true});
-      const development=intent.action==='AUTO_BUILD'?await autoStartDeepProject(created.id):null;
+      const development=intent.action==='AUTO_BUILD'?scheduleAutoStartDeepProject(created.id):null;
       return json(res,200,{...created,intent:intent.action,development});
     } catch (e) {
       return json(res, 400, { error: String(e.message || e).slice(0, 300) });
@@ -1516,7 +1547,7 @@ async function api(req, res, url) {
       const b = await readBody(req);
       const r = await deepChat(projectId, b?.message || '', Array.isArray(b?.attachments) ? b.attachments : []);
       const intent=classifyDeepDevelopmentIntent(b?.message);
-      const development=intent.action==='AUTO_BUILD'?await autoStartDeepProject(Number(parts[3])):null;
+      const development=intent.action==='AUTO_BUILD'?scheduleAutoStartDeepProject(Number(parts[3])):null;
       return json(res,200,{...r,intent:intent.action,development});
     } catch (e) {
       return json(res, 400, { error: String(e.message || e).slice(0, 300) });
@@ -1585,9 +1616,15 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && !parts[4] && m === 'GET') {
     if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Projekt nicht gefunden' });
-    const d = deepProjectDetail(Number(parts[3]));
+    const projectId = Number(parts[3]);
+    const d = deepProjectDetail(projectId);
     if (!d) return json(res, 404, { error: 'Projekt nicht gefunden' });
-    return json(res, 200, d);
+    const development = {
+      pending: isDeepProjectDeveloping(projectId),
+      villaId: Number(d.project.villa_id || 0),
+      ...(deepAutoStartResults.get(projectId) || {})
+    };
+    return json(res, 200, {...d, development});
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'preview' && parts[4] && m === 'GET') {
     const f = previewFile(requestedVillaId, parts.slice(4).join('/'));
@@ -1717,9 +1754,15 @@ async function api(req, res, url) {
       // global and events are not yet partitioned by Villa ownership.
       // Revalidate the bearer session and current role for every event; a deleted
       // or demoted administrator must immediately lose access to raw global payloads.
-      const sessionUser = userForRequest(req);
-      const role = String(sessionUser?.role || '').toUpperCase();
-      const payload = eventForStream(e, { isAdmin: role === 'ADMIN' || role === 'SUPERADMIN' });
+      let isCurrentAdmin = false;
+      try {
+        const sessionUser = userForRequest(req);
+        const role = String(sessionUser?.role || '').toUpperCase();
+        isCurrentAdmin = role === 'ADMIN' || role === 'SUPERADMIN';
+      } catch {
+        // Session lookup failures fail closed: publish metadata only.
+      }
+      const payload = eventForStream(e, { isAdmin: isCurrentAdmin });
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
     bus.on('event', onEvent);
