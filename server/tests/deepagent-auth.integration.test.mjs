@@ -110,13 +110,19 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const createdResponse = await fetch(`${base}/api/deep/projects`, {
     method: 'POST',
     headers: { ...auth(tokenA), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ idea: 'Eine private Projekt-App mit getrennten Benutzerbereichen' })
+    body: JSON.stringify({ idea: 'Eine private Projekt-App mit getrennten Benutzerbereichen' }),
+    signal: AbortSignal.timeout(5000)
   });
   const createdText = await createdResponse.text();
   assert.equal(createdResponse.status, 200, createdText);
   const created = JSON.parse(createdText);
   assert.ok(created.id > 0);
+  assert.equal(created.intent, 'AUTO_BUILD');
+  assert.equal(created.development?.pending, true, 'project creation returns while automatic handoff continues in the background');
   const projectId = created.id;
+  const initialDetail = await fetch(`${base}/api/deep/projects/${projectId}`, {headers: auth(tokenA)});
+  assert.equal(initialDetail.status, 200);
+  assert.equal(typeof (await initialDetail.json()).development?.pending, 'boolean');
 
   let privateAgentId = 0;
   let privatePersonaId = 0;
