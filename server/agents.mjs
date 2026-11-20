@@ -1166,10 +1166,31 @@ function normalizeVillaName(raw) {
   return String(raw || 'Villa').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-export async function createVilla({ name, idea, agentCount: wanted = 12, sourcePath = '', mode = 'BUILD', force = false }) {
+/** Insert a Villa and, when supplied, its private owner mapping in one transaction. */
+export function insertVillaRecord({ name, idea, createdAt = now(), ownerUserId = undefined } = {}) {
+  const insert = () => {
+    const villaId = Number(db.prepare(
+      'INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?,?)'
+    ).run(name || 'Villa', idea || '', 'PLANNING', 1000, 1, createdAt, createdAt).lastInsertRowid);
+    if (ownerUserId !== undefined) {
+      db.prepare('INSERT INTO deep_villa_owners (villa_id, owner_user_id, created_at) VALUES (?,?,?)')
+        .run(villaId, ownerUserId ?? null, createdAt);
+    }
+    return villaId;
+  };
+  if (ownerUserId === undefined) return insert();
+  db.exec(`CREATE TABLE IF NOT EXISTS deep_villa_owners (
+    villa_id INTEGER PRIMARY KEY,
+    owner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL
+  )`);
+  return db.transaction(insert)();
+}
+
+export async function createVilla({ name, idea, agentCount: wanted = 12, sourcePath = '', mode = 'BUILD', force = false, ownerUserId = undefined }) {
   // Sprint 7 (Duplikat-Praevention): exakt gleicher Name (getrimmt, Whitespace
   // zusammengefasst, case-insensitiv) wird wiederverwendet statt neu angelegt.
-  if (!force) {
+  if (!force && ownerUserId === undefined) {
     const normNew = normalizeVillaName(name);
     const existing = db.prepare('SELECT id, name FROM villas').all()
       .find((v) => normalizeVillaName(v.name) === normNew);
@@ -1188,9 +1209,7 @@ export async function createVilla({ name, idea, agentCount: wanted = 12, sourceP
   }
   let plan = sourcePath ? null : await requestPlan(idea,wanted);
   const t = now();
-  const villaId = db.prepare(
-    'INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?,?)'
-  ).run(name || 'Villa', idea || '', 'PLANNING', 1000, 1, t, t).lastInsertRowid;
+  const villaId = insertVillaRecord({name: name || 'Villa', idea: idea || '', createdAt: t, ownerUserId});
 
   const rootId = insertAgent(villaId, 'DeepAgent', 'ROOT', null, 1);
   emit('villa', { villaId, status: 'PLANNING' });
