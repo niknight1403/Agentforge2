@@ -24,7 +24,7 @@ export function cascadeDefaults() {
   ['Local reserve','lmstudio',process.env.VF_LOCAL_LLM_SECONDARY_URL||'http://127.0.0.1:1234/v1',process.env.VF_LOCAL_LLM_SECONDARY_MODEL||'auto','',41]
  ].map(([name,provider,base_url,model,key_env,priority])=>({name:`Cascade: ${name}`,provider,base_url,model,key_env,priority}));
  const identities=new Set(primary.map(r=>`${r.base_url}| ${r.model}`.replace('| ','|')));
- const catalog=FREE_ROUTE_CATALOG.filter(r=>{
+ const catalog=FREE_ROUTE_CATALOG.map(r=>r.provider==='modal'?{...r,baseUrl:process.env.MODAL_BASE_URL||r.baseUrl,model:process.env.MODAL_MODEL||r.model}:r).filter(r=>{
   if(!r.baseUrl)return false; // Modal/remote endpoints appear only after explicit URL configuration.
   try {const u=new URL(r.baseUrl);if(u.protocol!=='https:'&&!['localhost','127.0.0.1','[::1]'].includes(u.hostname))return false;}catch{return false;}
   const identity=`${r.baseUrl}|${r.model}`;
