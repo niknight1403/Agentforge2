@@ -248,6 +248,24 @@ test('Villa owner mapping is committed atomically with the Villa row', () => {
   assert.equal(row?.owner_user_id, owner.id);
 });
 
+test('Villa insert rolls back when the private owner mapping cannot be written', () => {
+  const trigger = `fail_owner_insert_${process.pid}`;
+  const name = `Atomic rollback Villa ${process.pid}`;
+  db.exec(`CREATE TRIGGER ${trigger} BEFORE INSERT ON deep_villa_owners
+    WHEN NEW.owner_user_id = -${process.pid}
+    BEGIN SELECT RAISE(ABORT, 'forced owner mapping failure'); END`);
+  try {
+    assert.throws(() => insertVillaRecord({
+      name,
+      idea: 'private project',
+      ownerUserId: -process.pid
+    }), /forced owner mapping failure/);
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM villas WHERE name=?').get(name).count, 0);
+  } finally {
+    db.exec(`DROP TRIGGER IF EXISTS ${trigger}`);
+  }
+});
+
 test('DeepAgent memory never mixes project titles across owners', async () => {
   const suffix = process.pid;
   const ownerAUser = createUser({ email: `deepagent-memory-a-${suffix}@example.invalid`, password: 'test-only-password-a', role: 'user' });
