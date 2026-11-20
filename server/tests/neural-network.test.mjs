@@ -2,7 +2,7 @@ import './_env.mjs';
 import test,{beforeEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {db} from '../db.mjs';
-import {activateNeuralNetwork,deactivateNeuralNetwork,neuralNetworkStatus} from '../neural-network.mjs';
+import {activateNeuralNetwork,deactivateNeuralNetwork,neuralNetworkStatus,sendAgentMessage,readAgentInbox} from '../neural-network.mjs';
 
 beforeEach(()=>{for(const table of ['tasks','agents','villas'])db.prepare(`DELETE FROM ${table}`).run();});
 function fixture(status='PAUSED',autonomy=0){
@@ -49,4 +49,23 @@ test('deactivation affects only selected Villa and pauses it',()=>{
 test('archived villas cannot be activated',async()=>{
  const f=fixture('ARCHIVED',0);
  await assert.rejects(()=>activateNeuralNetwork(f.id,{scheduleVilla:()=>({})}),/VILLA_ARCHIVED/);
+});
+
+
+
+
+
+test('real agent messages are villa-scoped, addressed, durable and visible in topology',()=>{
+ const f=fixture();
+ const sent=sendAgentMessage(f.id,f.planner,f.coder,'Please implement the agreed interface.');
+ assert.equal(sent.fromAgentId,f.planner);assert.equal(sent.toAgentId,f.coder);
+ const inbox=readAgentInbox(f.id,f.coder);
+ assert.equal(inbox.length,1);assert.equal(inbox[0].content,'Please implement the agreed interface.');
+ assert.equal(readAgentInbox(f.id,f.planner).length,0);
+ const topology=neuralNetworkStatus(f.id);
+ assert.equal(topology.network.topology.communicationEdges,1);
+ assert.ok(topology.edges.some(edge=>edge.kind==='communication'&&edge.from===f.planner&&edge.to===f.coder));
+ const other=fixture();
+ assert.throws(()=>sendAgentMessage(f.id,f.planner,other.coder,'cross-villa'),/PARTICIPANT_NOT_IN_VILLA/);
+ assert.throws(()=>sendAgentMessage(f.id,f.planner,f.planner,'self'),/INVALID_PARTICIPANTS/);
 });
