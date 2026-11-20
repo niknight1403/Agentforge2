@@ -6,6 +6,7 @@ import './_env.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { db } from '../db.mjs';
+import { isFreeRoute, syncFreeRouteFlags } from '../llm-config.mjs';
 import {
   discoverLocalAndKeyless,
   integrate,
@@ -148,4 +149,17 @@ test('integrate ueberspringt unvollstaendige Kandidaten ohne die Runde abzubrech
   assert.equal(res.skipped.every((s) => s.reason === 'unvollstaendig'), true);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM routes').get().n, before + 1);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM routes WHERE name = '' OR model = ''").get().n, 0, 'keine kaputten Zeilen');
+});
+
+test('Pollinations keyless route bleibt nach Free-Flag-Sync kostenlos und nutzbar', () => {
+  const candidate = KEYLESS_CANDIDATES[0];
+  const route = { provider: candidate.provider, base_url: candidate.baseUrl, model: candidate.model };
+  assert.equal(isFreeRoute(route), true);
+  assert.equal(isFreeRoute({ ...route, base_url: 'https://attacker.invalid/openai' }), false);
+  integrate([candidate]);
+  const stored = db.prepare('SELECT id, provider, base_url, model, is_free FROM routes WHERE provider = ? AND base_url = ? AND model = ?').get(candidate.provider, candidate.baseUrl, candidate.model);
+  assert.ok(stored, 'Hunter route wurde angelegt');
+  syncFreeRouteFlags();
+  const refreshed = db.prepare('SELECT is_free FROM routes WHERE id = ?').get(stored.id);
+  assert.equal(refreshed.is_free, 1, 'Free-Flag darf beim Sync nicht auf 0 fallen');
 });
