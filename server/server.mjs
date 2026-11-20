@@ -1004,8 +1004,8 @@ async function api(req, res, url) {
     const connectors=controlCatalog().connectors.map(({id,title,endpoint,enabled,last_status})=>({id,title,endpoint,enabled:!!enabled,status:last_status}));
     const tools=toolSpecs();
     return json(res,200,{
-      llm:{freeOnly:freeOnlyEnabled(),routes,providerCatalog:FREE_ROUTE_CATALOG.map(({name,provider,baseUrl,model,keyEnv,priority})=>({name,provider,baseUrl,model,keyEnv,priority,configured:!keyEnv||!!resolveKey(keyEnv)})),summary:routingSummary()},
-      api:{connectors,endpoints:['/api/routes','/api/llm/status','/api/connectors','/api/admin/mcp/servers','/api/admin/mcp/tools']},
+      llm:{freeOnly:freeOnlyEnabled(),routes,providerCatalog:FREE_ROUTE_CATALOG.map(({name,provider,baseUrl,model,keyEnv,priority})=>({name,provider,baseUrl,model,keyEnv,priority,endpointConfigured:!!baseUrl,configured:!!baseUrl&&(!keyEnv||!!resolveKey(keyEnv))})),summary:routingSummary()},
+      api:{connectors,endpoints:['/api/routes','/api/llm/status','/api/connectors','/api/admin/mcp/servers','/api/admin/mcp/servers/:serverId/tools','/api/admin/mcp/tools/:toolId/policy']},
       tools,
       mcpTools:tools.filter(tool=>tool.name.startsWith('mcp:')),
       media:mediaCapabilities()
