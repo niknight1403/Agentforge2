@@ -81,3 +81,17 @@ test('Hugging Face credential aliases resolve from either supported secret name'
   db.prepare("INSERT INTO secrets(name,value,updated_at) VALUES ('GOOGLE_API_KEY','google-test-secret',0) ON CONFLICT(name) DO UPDATE SET value=excluded.value").run();
   assert.equal(resolveKey('GEMINI_API_KEY'),'google-test-secret');
 });
+
+test('Modal custom route is included only for credential-free HTTPS modal.run endpoints',()=>{
+  const previous=process.env.MODAL_BASE_URL;
+  try{
+    process.env.MODAL_BASE_URL='https://agentforge--inference.modal.run/v1';
+    assert.ok(cascadeDefaults().some(route=>route.provider==='modal'&&route.base_url===process.env.MODAL_BASE_URL));
+    process.env.MODAL_BASE_URL='https://127.0.0.1/v1';
+    assert.ok(!cascadeDefaults().some(route=>route.provider==='modal'));
+    process.env.MODAL_BASE_URL='https://agentforge--inference.modal.run/v1?token=do-not-allow';
+    assert.ok(!cascadeDefaults().some(route=>route.provider==='modal'));
+  }finally{
+    if(previous===undefined)delete process.env.MODAL_BASE_URL;else process.env.MODAL_BASE_URL=previous;
+  }
+});
