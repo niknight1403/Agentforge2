@@ -73,3 +73,25 @@ async def test_unexpected_value_error_during_sync_is_not_returned_to_client(monk
 
     assert result["repositories"]["sample"]["status"] == "failed"
     assert result["repositories"]["sample"]["error"] == "Internal error during sync"
+
+@pytest.mark.asyncio
+async def test_sync_returns_safe_repository_validation_message(monkeypatch):
+    from app.api import endpoints
+    from app.ingestion.github_scanner import RepositoryValidationError
+    from app.schemas import SyncRequest
+
+    async def reject_target(*_args, **_kwargs):
+        raise RepositoryValidationError("Repository owner is not allowlisted")
+
+    monkeypatch.setattr(endpoints.scanner, "clone_or_update", reject_target)
+    payload = SyncRequest(repositories=[{
+        "name": "sample",
+        "url": "https://github.com/niknight1403/sample",
+    }])
+
+    result = await endpoints.sync_repositories(payload)
+
+    assert result["repositories"]["sample"] == {
+        "status": "failed",
+        "error": "Repository owner is not allowlisted",
+    }
