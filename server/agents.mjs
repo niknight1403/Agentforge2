@@ -1527,7 +1527,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
         const dispatched=await Promise.all(batch.map(async task=>{
           const requestKey=`hub:${villaId}:${task.id}:${task.retry_count||0}:${runStart}`;
           try{
-            const response=await fetch(`${runtimeUrl}/tasks`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${runtimeToken}`,'idempotency-key':requestKey},body:JSON.stringify({title:task.title,input:{hubTaskId:Number(task.id),villaId:Number(villaId)}}),signal:AbortSignal.timeout(5000)});
+            const response=await fetch(`${runtimeUrl}/tasks`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${runtimeToken}`,'idempotency-key':requestKey},body:JSON.stringify({title:task.title,input:{hubTaskId:Number(task.id),villaId:Number(villaId)}}),signal:AbortSignal.any([job.controller.signal,AbortSignal.timeout(5000)])});
             if(!response.ok)throw new Error(`Runtime HTTP ${response.status}`);
             return {task,remote:true};
           }catch(error){console.warn('[villaforge] Redis task mesh fallback',Number(task.id),String(error?.message||error).slice(0,160));return {task,remote:false};}
