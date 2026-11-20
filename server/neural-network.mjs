@@ -37,6 +37,8 @@ export function neuralNetworkStatus(villaId, { isRunning = () => false } = {}) {
       if(!edges.some(e=>e.from===agent.parent_id&&e.to===agent.id)) edges.push({from:agent.parent_id,to:agent.id,kind:'supervision',label:'supervises'});
     }
   }
+  const communicationRows=db.prepare('SELECT from_agent_id,to_agent_id,MAX(id) AS lastMessageId,COUNT(*) AS messages FROM agent_communications WHERE villa_id=? GROUP BY from_agent_id,to_agent_id ORDER BY lastMessageId').all(villa.id);
+  for(const row of communicationRows) edges.push({from:row.from_agent_id,to:row.to_agent_id,kind:'communication',label:'message',lastMessageId:row.lastMessageId,messages:row.messages});
   const counts=Object.fromEntries(['PENDING','READY','RUNNING','REVIEW','DONE','FAILED','BLOCKED'].map(s=>[s,0]));
   for(const task of tasks) counts[task.status]=(counts[task.status]||0)+1;
   const assigned=new Map();
@@ -49,7 +51,7 @@ export function neuralNetworkStatus(villaId, { isRunning = () => false } = {}) {
   return {
     villa:{id:villa.id,name:villa.name,status:villa.status,autonomy:!!villa.autonomy},
     network:{mode:villa.autonomy?'AUTONOMOUS':'STANDBY',running:!!isRunning(villa.id),nodes:nodes.length,edges:edges.length,roles:[...roles].sort(),
-      topology:{supervisionEdges:edges.filter(e=>e.kind==='supervision').length,plannedWorkflowEdges:edges.filter(e=>e.kind==='planned_workflow').length,communicationEdges:0}},
+      topology:{supervisionEdges:edges.filter(e=>e.kind==='supervision').length,plannedWorkflowEdges:edges.filter(e=>e.kind==='planned_workflow').length,communicationEdges:edges.filter(e=>e.kind==='communication').length}},
     nodes,edges,tasks:counts,
     coordination:{scheduler:'VillaForge scheduler',eventBus:'Redis Streams + SSE metadata mesh',memory:'Villa-scoped SQLite memory',recovery:'checkpoint + retry + dead-letter queue'},
     limits:{maxAgents:Number(villa.max_agents)||1000,parallelism:'bounded by scheduler and resource agent',externalEffects:'require existing permission gates'}
@@ -84,4 +86,28 @@ export function deactivateNeuralNetwork(villaId, { cancelScheduledVilla = () => 
     .run(isRunning(villa.id)?'STOPPING':'PAUSED',now(),villa.id);
   emit('neural.network.deactivated',{villaId:villa.id,stopped,cancelled});
   return {...neuralNetworkStatus(villa.id,{isRunning}),accepted:true,stopped,cancelled};
+}
+
+/** Send a real, durable message between two agents belonging to the same Villa. */
+export function sendAgentMessage(villaId, fromAgentId, toAgentId, content, taskId = null) {
+  const villa=getVilla(villaId), from=Number(fromAgentId), to=Number(toAgentId), body=String(content??'').trim();
+  if(!Number.isSafeInteger(from)||!Number.isSafeInteger(to)||from===to) throw new Error('AGENT_MESSAGE_INVALID_PARTICIPANTS');
+  if(!body||body.length>4000) throw new Error('AGENT_MESSAGE_INVALID_CONTENT');
+  const sender=db.prepare('SELECT id FROM agents WHERE id=? AND villa_id=?').get(from,villa.id);
+  const recipient=db.prepare('SELECT id FROM agents WHERE id=? AND villa_id=?').get(to,villa.id);
+  if(!sender||!recipient) throw new Error('AGENT_MESSAGE_PARTICIPANT_NOT_IN_VILLA');
+  let linkedTask=null;
+  if(taskId!=null){linkedTask=Number(taskId);if(!Number.isSafeInteger(linkedTask)||!db.prepare('SELECT id FROM tasks WHERE id=? AND villa_id=?').get(linkedTask,villa.id))throw new Error('AGENT_MESSAGE_TASK_NOT_IN_VILLA');}
+  const id=Number(db.prepare('INSERT INTO agent_communications(villa_id,from_agent_id,to_agent_id,task_id,content,created_at) VALUES (?,?,?,?,?,?)').run(villa.id,from,to,linkedTask,body,now()).lastInsertRowid);
+  emit('agent.message',{villaId:villa.id,agentId:from,toAgentId:to,taskId:linkedTask,communicationId:id,status:'SENT'});
+  return {id,villaId:villa.id,fromAgentId:from,toAgentId:to,taskId:linkedTask,createdAt:now()};
+}
+
+/** Read and acknowledge only messages addressed to the calling agent. */
+export function readAgentInbox(villaId, agentId, limit = 20) {
+  const villa=getVilla(villaId), id=Number(agentId), count=Math.max(1,Math.min(50,Number(limit)||20));
+  if(!db.prepare('SELECT id FROM agents WHERE id=? AND villa_id=?').get(id,villa.id)) throw new Error('AGENT_MESSAGE_PARTICIPANT_NOT_IN_VILLA');
+  const rows=db.prepare('SELECT id,from_agent_id,to_agent_id,task_id,content,created_at FROM agent_communications WHERE villa_id=? AND to_agent_id=? ORDER BY id DESC LIMIT ?').all(villa.id,id,count).reverse();
+  if(rows.length) db.prepare(`UPDATE agent_communications SET read_at=? WHERE villa_id=? AND to_agent_id=? AND id IN (${rows.map(()=>'?').join(',')}) AND read_at IS NULL`).run(now(),villa.id,id,...rows.map(r=>r.id));
+  return rows;
 }
