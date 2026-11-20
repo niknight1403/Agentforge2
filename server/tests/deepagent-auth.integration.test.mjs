@@ -22,6 +22,8 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const script = [
     "import { db } from './server/db.mjs';",
     "import { linkDeepProjectVilla } from './server/deepagent.mjs';",
+    "import { insertAgent } from './server/agents.mjs';",
+    "import { createPersona } from './server/persona-packs.mjs';",
     "process.stdin.setEncoding('utf8');",
     "let pending = '';",
     "process.stdin.on('data', (chunk) => {",
@@ -37,7 +39,9 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
     "        const ts = Date.now();",
     "        const id = Number(db.prepare('INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?,?)').run('Deep · Private Project A', 'Private project idea belonging to user A', 'PLANNING', 12, 1, ts, ts).lastInsertRowid);",
     "        linkDeepProjectVilla(Number(command.projectId), id);",
-    "        process.stdout.write('__TEST_VILLA_LINKED__' + id + '\\n');",
+    "        const agentId = insertAgent(id, 'Private Agent A', 'WORKER');",
+    "        const personaId = createPersona(id, {name: 'Private Persona A'}).id;",
+    "        process.stdout.write('__TEST_VILLA_LINKED__' + id + ':' + agentId + ':' + personaId + '\\n');",
     "      }",
     "    } catch (error) { process.stdout.write('__TEST_VILLA_ERROR__' + String(error.message || error) + '\\n'); }",
     "  }",
@@ -114,16 +118,23 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   assert.ok(created.id > 0);
   const projectId = created.id;
 
+  let privateAgentId = 0;
+  let privatePersonaId = 0;
   const villaId = await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       child.stdout.off('data', onData);
       reject(new Error(`Test Villa insert timed out: ${output}`));
     }, 3000);
     const onData = () => {
-      const linked = /__TEST_VILLA_LINKED__(\d+)/.exec(output);
+      const linked = /__TEST_VILLA_LINKED__([0-9]+):([0-9]+):([0-9]+)/.exec(output);
       const failed = /__TEST_VILLA_ERROR__(.*)/.exec(output);
-      if (linked) { clearTimeout(timeout); child.stdout.off('data', onData); resolve(Number(linked[1])); }
-      else if (failed) { clearTimeout(timeout); child.stdout.off('data', onData); reject(new Error(failed[1])); }
+      if (linked) {
+        privateAgentId = Number(linked[2]);
+        privatePersonaId = Number(linked[3]);
+        clearTimeout(timeout);
+        child.stdout.off('data', onData);
+        resolve(Number(linked[1]));
+      } else if (failed) { clearTimeout(timeout); child.stdout.off('data', onData); reject(new Error(failed[1])); }
     };
     child.stdout.on('data', onData);
     child.stdin.write(JSON.stringify({ type: 'linkVilla', projectId }) + '\n');
@@ -138,6 +149,22 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const otherVillaDetail = await fetch(`${base}/api/villas/${villaId}`, { headers: auth(tokenB) });
   assert.equal(ownerVillaDetail.status, 200, 'project owner can read the linked Villa detail');
   assert.equal(otherVillaDetail.status, 404, 'another user cannot read private Villa detail by guessing its id');
+  const otherStudio = await fetch(base + '/api/studio/villas/' + villaId, {headers: auth(tokenB)});
+  assert.equal(otherStudio.status, 404, 'private Villa studio data is owner-scoped');
+  const otherAgentChat = await fetch(base + '/api/agents/' + privateAgentId + '/chat', {
+    method: 'POST',
+    headers: {...auth(tokenB), 'Content-Type': 'application/json'},
+    body: JSON.stringify({message: 'read private Villa agent'})
+  });
+  assert.equal(otherAgentChat.status, 404, 'another user cannot chat with an agent in a private Villa');
+  const otherCast = await fetch(base + '/api/cast?villaId=' + villaId, {headers: auth(tokenB)});
+  assert.equal(otherCast.status, 404, 'private cast overview is owner-scoped');
+  const otherPersona = await fetch(base + '/api/personas/' + privatePersonaId, {headers: auth(tokenB)});
+  assert.equal(otherPersona.status, 404, 'private persona details are owner-scoped');
+  const otherEvolution = await fetch(base + '/api/evolution/villas/' + villaId, {headers: auth(tokenB)});
+  assert.equal(otherEvolution.status, 404, 'private Villa evolution state is owner-scoped');
+  const otherTelemetry = await fetch(base + '/api/metrics/telemetry?villaId=' + villaId, {headers: auth(tokenB)});
+  assert.equal(otherTelemetry.status, 404, 'private Villa telemetry is owner-scoped');
   const numericAliasDetail = await fetch(`${base}/api/villas/${villaId}e0`, { headers: auth(tokenB) });
   const numericAliasReport = await fetch(`${base}/api/villas/${villaId}e0/reports`, { headers: auth(tokenB) });
   assert.equal(numericAliasDetail.status, 404, 'non-canonical numeric aliases cannot bypass Villa ownership checks');
