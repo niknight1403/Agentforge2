@@ -84,6 +84,16 @@ export const FREE_ROUTE_CATALOG = [
     priority: 4
   },
   {
+    // Keyfreie OpenAI-kompatible Route: direkt beim Hub-Start verfuegbar,
+    // nicht erst nach dem ersten 30-Minuten-Hunter-Takt.
+    name: 'Pollinations Text (keyless)',
+    provider: 'pollinations',
+    baseUrl: 'https://text.pollinations.ai/openai',
+    model: 'openai',
+    keyEnv: '',
+    priority: 2
+  },
+  {
     name: 'Hugging Face Inference (Credits erforderlich)',
     provider: 'huggingface',
     baseUrl: 'https://router.huggingface.co/v1',
