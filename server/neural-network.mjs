@@ -29,7 +29,7 @@ export function neuralNetworkStatus(villaId, { isRunning = () => false } = {}) {
     const targets=agents.filter(a=>String(a.role||'').toUpperCase()===to);
     if(!sources.length||!targets.length) continue;
     for(const source of sources.slice(0,8)) for(const target of targets.slice(0,8)) {
-      if(source.id!==target.id) edges.push({from:source.id,to:target.id,kind:'workflow',label:from+' → '+to});
+      if(source.id!==target.id) edges.push({from:source.id,to:target.id,kind:'planned_workflow',label:from+' → '+to});
     }
   }
   for(const agent of agents) {
@@ -48,7 +48,8 @@ export function neuralNetworkStatus(villaId, { isRunning = () => false } = {}) {
   }));
   return {
     villa:{id:villa.id,name:villa.name,status:villa.status,autonomy:!!villa.autonomy},
-    network:{mode:villa.autonomy?'AUTONOMOUS':'STANDBY',running:!!isRunning(villa.id),nodes:nodes.length,edges:edges.length,roles:[...roles].sort()},
+    network:{mode:villa.autonomy?'AUTONOMOUS':'STANDBY',running:!!isRunning(villa.id),nodes:nodes.length,edges:edges.length,roles:[...roles].sort(),
+      topology:{supervisionEdges:edges.filter(e=>e.kind==='supervision').length,plannedWorkflowEdges:edges.filter(e=>e.kind==='planned_workflow').length,communicationEdges:0}},
     nodes,edges,tasks:counts,
     coordination:{scheduler:'VillaForge scheduler',eventBus:'Redis Streams + SSE metadata mesh',memory:'Villa-scoped SQLite memory',recovery:'checkpoint + retry + dead-letter queue'},
     limits:{maxAgents:Number(villa.max_agents)||1000,parallelism:'bounded by scheduler and resource agent',externalEffects:'require existing permission gates'}
