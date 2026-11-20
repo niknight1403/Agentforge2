@@ -4,7 +4,7 @@ import { redisTryAck, redisTryClaimStale, redisTryCreateConsumerGroup, redisTryR
 
 export const AGENT_EVENT_STREAM = process.env.VF_AGENT_EVENT_STREAM || 'vf:agent-events';
 const runtimeCheckpointQueues = new Map();
-const SAFE_FIELDS = ['villaId','taskId','agentId','toAgentId','communicationId','status','tool','blocked','code','durationMs','latencyMs','tokensUsed','costUsd','provider','model','route','checkpointId','step','processed','open','verification'];
+const SAFE_FIELDS = ['villaId','taskId','agentId','attempt','transport','toAgentId','communicationId','status','tool','blocked','code','durationMs','latencyMs','tokensUsed','costUsd','provider','model','route','checkpointId','step','processed','open','verification'];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /** Build metadata-only events; prompts, tool arguments, responses and thoughts are never persisted. */
