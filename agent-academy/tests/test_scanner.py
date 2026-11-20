@@ -68,3 +68,62 @@ async def test_scan_ignores_only_repository_relative_directories(tmp_path):
     chunks = await GitHubScanner().scan(repo)
 
     assert [item["path"] for item in chunks] == ["src/worker.py"]
+
+
+def test_short_yaml_and_aws_credentials_are_rejected():
+    from app.ingestion.github_scanner import contains_secret
+
+    assert contains_secret('password: correct.horse.battery.staple')
+    assert contains_secret('password = "admin"')
+    assert contains_secret('AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"')
+    assert contains_secret('_api_key = "x"')
+    assert contains_secret('DB__PASSWORD = "x"')
+
+
+def test_secret_scanner_handles_long_underscore_runs_without_false_positive():
+    from app.ingestion.github_scanner import contains_secret
+
+    assert not contains_secret("ordinary_" * 4000)
+
+
+@pytest.mark.asyncio
+async def test_scan_does_not_index_unquoted_yaml_credentials(tmp_path):
+    from app.ingestion.github_scanner import GitHubScanner
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "config.yml").write_text("password: correct.horse.battery.staple\\n", encoding="utf-8")
+    (repo / "aws.py").write_text('AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"\\n', encoding="utf-8")
+    (repo / "short.py").write_text('password = "admin"\\n', encoding="utf-8")
+    (repo / "README.md").write_text("# Public documentation\\n", encoding="utf-8")
+
+    chunks = await GitHubScanner().scan(repo)
+
+    assert [item["path"] for item in chunks] == ["README.md"]
+
+
+def test_environment_lookup_is_not_mistaken_for_an_embedded_secret():
+    from app.ingestion.github_scanner import contains_secret
+
+    assert not contains_secret('api_key = os.getenv("ACADEMY_API_TOKEN")')
+    assert not contains_secret('PAYMENT_API_KEY = process.env.PAYMENT_API_KEY')
+
+
+def test_quoted_secret_values_keep_punctuation_and_prefixed_json_keys():
+    from app.ingestion.github_scanner import contains_secret
+
+    assert contains_secret('password = "ab#LongCredentialValue123"')
+    assert contains_secret('password = "comma,value;with#punctuation123"')
+    assert contains_secret('{"PAYMENT_API_KEY": "payment-secret-value-123"}')
+
+
+@pytest.mark.asyncio
+async def test_scan_keeps_file_that_reads_secret_from_environment(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    source = repo / "settings.py"
+    source.write_text('api_key = os.getenv("ACADEMY_API_TOKEN")\\n', encoding="utf-8")
+
+    chunks = await GitHubScanner().scan(repo)
+
+    assert [item["path"] for item in chunks] == ["settings.py"]

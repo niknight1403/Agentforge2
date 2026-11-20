@@ -3,8 +3,8 @@ import {deepMissionProfile} from './deep-mission.mjs';
 
 const mediaOutput=Object.freeze({
  'playable-video': ['.mp4','.webm'],
- 'playable-audio': ['.mp3','.wav','.ogg','.m4a','.flac'],
- 'image-file': ['.png','.jpg','.jpeg','.webp','.svg']
+ 'playable-audio': ['.mp3','.wav','.ogg','.m4a','.flac','.aac'],
+ 'image-file': ['.png','.jpg','.jpeg','.webp','.svg','.tif','.tiff']
 });
 export function artifactContract({idea='',kind='',artifactName='',artifactType='',deliverable=''}={}){
  const profile=deepMissionProfile(idea);

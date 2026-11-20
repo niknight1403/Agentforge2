@@ -20,3 +20,9 @@ def test_long_random_token_is_accepted():
     token = "x" * 48
     settings = Settings(_env_file=None, api_token=token)
     assert settings.api_token == token
+
+
+def test_long_token_is_normalized_before_authentication():
+    token = "x" * 48
+    settings = Settings(_env_file=None, api_token=f"  {token}  ")
+    assert settings.api_token == token

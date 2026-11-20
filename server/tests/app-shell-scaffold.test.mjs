@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const { hasAppEntryPoint, scaffoldAppShell } = await import('../builds.mjs');
+const { hasAppEntryPoint, scaffoldAppShell, shouldScaffoldAppShell } = await import('../builds.mjs');
 
 function bruchstueckProjekt() {
   // Nachbau von Villa 10: Wissensdatenbank und ein Test, kein Einstiegspunkt.
@@ -54,4 +54,13 @@ test('Projekt mit eigenem Einstiegspunkt bekommt kein Geruest', () => {
   const dir = mkdtempSync(join(tmpdir(), 'villa-echt-'));
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'echte-app', version: '1.0.0' }));
   assert.equal(hasAppEntryPoint(dir), true);
+});
+
+
+test('App shell is generated only for Android project kinds', () => {
+  assert.equal(shouldScaffoldAppShell('android'), true);
+  assert.equal(shouldScaffoldAppShell('android-cloud'), true);
+  for (const kind of ['empty', 'generic', 'node', 'expo']) {
+    assert.equal(shouldScaffoldAppShell(kind), false, kind);
+  }
 });

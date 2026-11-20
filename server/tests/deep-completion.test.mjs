@@ -5,6 +5,9 @@
 import './_env.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createDeepProject, deepProjectDir } from '../deepagent.mjs';
 import { liveViewState, summarizeReadiness } from '../deep-completion.mjs';
 
 const readyGate = { ready: true, checks: {}, blockers: [] };
@@ -84,5 +87,29 @@ test('liveViewState meldet ohne Projektordner ehrlich fehlende Auslieferbarkeit'
   const state = liveViewState(987654);
   assert.equal(state.available, false);
   assert.equal(state.entry, null);
-  assert.match(state.detail, /Kein Einstiegspunkt/);
+  assert.match(state.detail, /Kein .*Einstiegspunkt/);
+});
+
+
+test('liveViewState only advertises entries from confined build roots', async () => {
+  const project = await createDeepProject('Ein Projekt mit sicherer Web-Vorschau und Build-Root', {
+    chatFn: async () => ({ content: 'Plan erstellt.' })
+  });
+  const root = deepProjectDir(project.id);
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, 'index.html'), '<!doctype html><title>Root</title>');
+  const rootPreview = liveViewState(project.id);
+  assert.equal(rootPreview.available, true);
+  assert.equal(rootPreview.entry, 'index.html');
+
+  mkdirSync(join(root, 'dist'), { recursive: true });
+  writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html><title>Dist</title>');
+  const firstDistPreview = liveViewState(project.id);
+  assert.equal(firstDistPreview.available, true);
+  assert.equal(firstDistPreview.entry, 'dist/index.html');
+  assert.ok(firstDistPreview.revision, 'the preview exposes a stable build-entry revision');
+  writeFileSync(join(root, 'dist', 'index.html'), '<!doctype html><title>Dist v2</title><main>updated build</main>');
+  const updatedDistPreview = liveViewState(project.id);
+  assert.notEqual(updatedDistPreview.revision, firstDistPreview.revision,
+    'a rebuilt entry point changes the revision used by the Android WebView');
 });

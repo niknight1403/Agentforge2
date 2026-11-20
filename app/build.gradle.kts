@@ -18,6 +18,8 @@ android {
 
     buildTypes {
         release {
+            // Production builds must use TLS; cleartext is limited to local debug setups.
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
             // Optimierter Release-Build: R8 verkleinert+verschleiert, Ressourcen werden
             // gestrippt. Debug-Signatur haelt die APK direkt installierbar.
             isMinifyEnabled = true
@@ -29,6 +31,7 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
         debug {
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
             isMinifyEnabled = false
         }
     }
@@ -70,4 +73,5 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

@@ -53,8 +53,13 @@ data class VillaEvent(
             }
             "task" -> {
                 val title = o.optString("title")
+                val taskId = if (o.has("taskId") && !o.isNull("taskId")) o.optString("taskId") else ""
                 val status = o.optString("status")
-                if (title.isNotBlank()) "Aufgabe „$title“ → $status" else "Aufgabe → $status"
+                when {
+                    title.isNotBlank() -> "Aufgabe „$title“ → $status"
+                    taskId.isNotBlank() -> "Aufgabe #$taskId → $status"
+                    else -> "Aufgabe → $status"
+                }
             }
             "progress" -> {
                 buildString {

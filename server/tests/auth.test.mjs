@@ -3,9 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { db, now } from '../db.mjs';
 import {
-  ensureSuperadmin,
-  SUPERADMIN_EMAIL,
-  SUPERADMIN_PWHASH
+  ensureSuperadmin
 } from '../seed.mjs';
 import {
   verifyPassword,
@@ -24,21 +22,41 @@ import {
 } from '../auth.mjs';
 import { chat } from '../llm.mjs';
 
-test('1. Seed idempotent: ensureSuperadmin legt SUPERADMIN an und ist wiederholbar', () => {
-  const first = ensureSuperadmin();
-  assert.equal(first.email, SUPERADMIN_EMAIL);
-  assert.equal(first.role, 'SUPERADMIN');
-  assert.equal(Number(first.is_unlimited), 1);
-  assert.equal(first.token_budget, 'UNLIMITED');
-  assert.equal(first.pwhash, SUPERADMIN_PWHASH);
+test('1. Superadmin-Bootstrap requires deployment secrets and preserves password changes', () => {
+  const previousEmail = process.env.VF_ADMIN_EMAIL;
+  const previousPassword = process.env.VF_ADMIN_PASSWORD;
+  try {
+    delete process.env.VF_ADMIN_EMAIL;
+    delete process.env.VF_ADMIN_PASSWORD;
+    assert.equal(ensureSuperadmin(), null, 'Ohne Secrets wird kein Standard-Superadmin erzeugt');
 
-  const second = ensureSuperadmin();
-  assert.equal(second.id, first.id);
-  assert.equal(second.email, SUPERADMIN_EMAIL);
-  assert.equal(second.role, 'SUPERADMIN');
+    const email = 'bootstrap-admin@example.test';
+    const password = 'initial-bootstrap-password-123';
+    process.env.VF_ADMIN_EMAIL = email;
+    process.env.VF_ADMIN_PASSWORD = password;
+    const first = ensureSuperadmin();
+    assert.equal(first.email, email);
+    assert.equal(first.role, 'SUPERADMIN');
+    assert.equal(Number(first.is_unlimited), 1);
+    assert.equal(first.token_budget, 'UNLIMITED');
+    assert.ok(first.pwhash.startsWith('scrypt$16384$'));
+    assert.notEqual(first.pwhash, password);
 
-  const count = db.prepare('SELECT COUNT(*) c FROM users WHERE email=?').get(SUPERADMIN_EMAIL).c;
-  assert.equal(count, 1, 'Superadmin existiert genau einmal');
+    const stableHash = first.pwhash;
+    const second = ensureSuperadmin();
+    assert.equal(second.id, first.id);
+    assert.equal(second.pwhash, stableHash, 'Neustart-Bootstrap darf das Passwort nicht zuruecksetzen');
+
+    const changed = upsertUser({ email, password: 'rotated-password-456789', role: 'superadmin', plan: 'elite', isUnlimited: true });
+    assert.notEqual(changed.pwhash, stableHash);
+    const afterRotation = ensureSuperadmin();
+    assert.equal(afterRotation.pwhash, changed.pwhash, 'Explizite Passwortrotation bleibt nach Bootstrap erhalten');
+    assert.equal(verifyPassword('rotated-password-456789', afterRotation.pwhash), true);
+    assert.equal(db.prepare('SELECT COUNT(*) c FROM users WHERE email=?').get(email).c, 1);
+  } finally {
+    if (previousEmail === undefined) delete process.env.VF_ADMIN_EMAIL; else process.env.VF_ADMIN_EMAIL = previousEmail;
+    if (previousPassword === undefined) delete process.env.VF_ADMIN_PASSWORD; else process.env.VF_ADMIN_PASSWORD = previousPassword;
+  }
 });
 
 test('2. Login gut / schlecht & Rate-Limiting', () => {
@@ -48,7 +66,6 @@ test('2. Login gut / schlecht & Rate-Limiting', () => {
 
   // Schlecht
   assert.equal(verifyPassword('wrongPassword', user.pwhash || user.password_hash), false);
-  assert.equal(verifyPassword('wrongPassword', SUPERADMIN_PWHASH), false);
 
   // Gut
   assert.equal(verifyPassword(testPw, user.pwhash || user.password_hash), true);
@@ -86,6 +103,8 @@ test('3. Session-Gueltigkeit: Signierter Session-Token mit 24h Ablauf', () => {
 });
 
 test('4. Superadmin-Bypass: Quotas und Rate-Limits werden fuer SUPERADMIN umgangen', async () => {
+  process.env.VF_ADMIN_EMAIL = 'quota-superadmin@example.test';
+  process.env.VF_ADMIN_PASSWORD = 'quota-superadmin-password-123';
   const sa = ensureSuperadmin();
 
   // Quota

@@ -1,32 +1,45 @@
+import { randomBytes, scryptSync } from 'node:crypto';
 import { db, now } from './db.mjs';
 
-export const SUPERADMIN_EMAIL = 'niko.oeben@gmail.com';
-export const SUPERADMIN_PWHASH = 'scrypt$16384$c4ab54cb134db176ed6013675830ba9b$a9b4846a1387aa9b3fc8d34a30b6d5e34100ef707a5ec178c0c62ebc732db1f94be0a110f0d62c42634133599bf7772a5bd0c9eecd6c039b86c2e0800adb993c';
-
+/**
+ * Erstellt den initialen Superadmin ausschliesslich mit explizit gesetzten
+ * Deployment-Secrets. Bestehende Passwoerter werden bei Neustarts nie ersetzt.
+ */
 export function ensureSuperadmin() {
+  const email = String(process.env.VF_ADMIN_EMAIL || '').trim().toLowerCase();
+  const password = String(process.env.VF_ADMIN_PASSWORD || '');
+  if (!email || !password) {
+    const hasUsers = db.prepare('SELECT COUNT(*) AS count FROM users').get().count > 0;
+    if (process.env.NODE_ENV === 'production' && !hasUsers) {
+      throw new Error('Production-Start ohne Nutzer blockiert: VF_ADMIN_EMAIL und VF_ADMIN_PASSWORD muessen fuer den Erststart gesetzt sein.');
+    }
+    return null;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12) {
+    throw new Error('VF_ADMIN_EMAIL muss gueltig sein und VF_ADMIN_PASSWORD mindestens 12 Zeichen haben.');
+  }
+
   const t = now();
-  const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(SUPERADMIN_EMAIL);
+  const existing = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
   if (existing) {
     db.prepare(`
-      UPDATE users 
-      SET role = 'SUPERADMIN',
-          is_unlimited = 1,
-          token_budget = 'UNLIMITED',
-          pwhash = ?,
-          password_hash = ?,
-          updated_at = ?
-      WHERE email = ?
-    `).run(SUPERADMIN_PWHASH, SUPERADMIN_PWHASH, t, SUPERADMIN_EMAIL);
+      UPDATE users
+      SET role = 'SUPERADMIN', is_unlimited = 1, token_budget = 'UNLIMITED', updated_at = ?
+      WHERE id = ?
+    `).run(t, existing.id);
   } else {
+    const salt = randomBytes(16).toString('hex');
+    const hash = scryptSync(password, salt, 64, { N: 16384 }).toString('hex');
+    const pwhash = `scrypt$16384$${salt}$${hash}`;
     db.prepare(`
-      INSERT INTO users (email, role, is_unlimited, token_budget, pwhash, password_hash, created_at, updated_at)
-      VALUES (?, 'SUPERADMIN', 1, 'UNLIMITED', ?, ?, ?, ?)
-    `).run(SUPERADMIN_EMAIL, SUPERADMIN_PWHASH, SUPERADMIN_PWHASH, t, t);
+      INSERT INTO users (email, role, plan, is_unlimited, token_budget, pwhash, password_hash, tokens_used, tokens_reset_at, created_at, updated_at)
+      VALUES (?, 'SUPERADMIN', 'elite', 1, 'UNLIMITED', ?, ?, 0, ?, ?, ?)
+    `).run(email, pwhash, pwhash, t, t, t);
   }
-  return db.prepare('SELECT * FROM users WHERE email = ?').get(SUPERADMIN_EMAIL);
+  return db.prepare('SELECT * FROM users WHERE email = ?').get(email);
 }
 
 if (process.argv[1]?.endsWith('seed.mjs')) {
-  ensureSuperadmin();
-  console.log('[seed] SUPERADMIN verankert:', SUPERADMIN_EMAIL);
+  const admin = ensureSuperadmin();
+  console.log(admin ? '[seed] Superadmin aus Deployment-Secrets initialisiert.' : '[seed] Kein Admin angelegt: VF_ADMIN_EMAIL/VF_ADMIN_PASSWORD fehlen.');
 }

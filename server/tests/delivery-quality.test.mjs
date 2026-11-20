@@ -76,6 +76,29 @@ test('Kreativprojekt bleibt gesperrt, bis finales Artefakt und Review durch unab
  review(id);assert.equal(deliveryReadiness(id).verified,true);
 });
 
+test('Explizite Lieferprofil-IDs bleiben erhalten und werden nicht als Freitext neu klassifiziert',()=>{
+ const id=villa('Build a generic software tool');
+ review(id);
+ const profiles=[['image','.png'],['document','.md'],['education','.md'],['general','.md']];
+ for(const [profile,extension] of profiles){
+  assert.equal(deliveryProfile(id,profile).id,profile,profile);
+  const ready=deliveryReadiness(id,profile,{path:`/tmp/explicit-${profile}${extension}`,extension,bytes:256});
+  assert.equal(ready.domain,profile,profile);
+  assert.equal(ready.verified,true,profile);
+ }
+ assert.equal(deliveryProfile(id,'Erstelle ein Bild').id,'image','free-text overrides keep their classification');
+});
+
+test('Nicht-Software-Builds verwenden die validierten Artefaktbytes und die deklarierte Lieferklasse',()=>{
+ const id=villa('Build a generic software tool');
+ review(id);
+ const ready=deliveryReadiness(id,'research',{path:'/tmp/validated-report.pdf',extension:'.pdf',bytes:256});
+ assert.equal(ready.verified,true);
+ assert.ok(ready.artifacts.some(a=>a.validated===true&&a.name==='validated-report.pdf'));
+ const wrong=deliveryReadiness(id,'research',{path:'/tmp/wrong-video.mp4',extension:'.mp4',bytes:256});
+ assert.equal(wrong.verified,false);
+});
+
 test('Datenprojekt braucht ein passendes Tabellenartefakt und ein unabhängiges Review',()=>{
  const id=villa('Analysiere den Datensatz und liefere eine Excel-Tabelle');
  deliverable(id,'analysis.xlsx');
@@ -169,4 +192,10 @@ test('haengender Lauf gilt nach 20 Minuten als abgebrochen', async () => {
   assert.equal(isStaleBuild({status: 'running', startedAt: jetzt - 25 * 60_000}, jetzt), true);
   assert.equal(isStaleBuild({status: 'ready', startedAt: jetzt - 60 * 60_000}, jetzt), false);
   assert.equal(isStaleBuild({status: 'running', startedAt: new Date(jetzt - 25 * 60_000).toISOString()}, jetzt), true);
+});
+
+
+test('blank delivery override falls back to the stored Villa name', () => {
+ const id = Number(db.prepare("INSERT INTO villas(name,idea,status,created_at,updated_at) VALUES ('Business plan','','PAUSED',?,?)").run(now(),now()).lastInsertRowid);
+ assert.equal(deliveryProfile(id, '   ').id, 'business');
 });

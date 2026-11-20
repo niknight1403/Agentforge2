@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     @field_validator("api_token")
     @classmethod
     def reject_weak_token(cls, value: str) -> str:
-        """Reject public placeholders and configured tokens shorter than 32 characters."""
+        """Normalize the configured token before validating its strength."""
+        value = value.strip()
         if value and (len(value) < 32 or value.lower().startswith(("replace-", "changeme", "your-"))):
             raise ValueError("ACADEMY_API_TOKEN must be a non-placeholder value of at least 32 characters")
         return value

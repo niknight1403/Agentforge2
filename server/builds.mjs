@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto';
 import {artifactContract} from './artifact-contract.mjs';
-import {classifyDeliverable, deliverableExtensions} from './delivery-quality.mjs';
-import {findMediaArtifact} from './media-artifact.mjs';
+import {classifyDeliverable, deliverableExtensions, deliveryReadiness} from './delivery-quality.mjs';
+import {isMediaExtension,isPlayableArtifact} from './media-artifact.mjs';
+import {isValidDeliverableArtifact} from '../scripts/lib/product-release-gate.mjs';
 import {renderVillaVideo, renderManifestPath} from './video-render.mjs';
 import { recordBuildResult } from './telemetry.mjs';
 import { projectDirectory,verifyProjectRuntime } from './project-verification.mjs';
@@ -123,13 +124,14 @@ const FILE_MIME_TYPES = {
   '.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml',
   '.mp4':'video/mp4','.m4v':'video/mp4','.mov':'video/quicktime','.webm':'video/webm',
   '.mp3':'audio/mpeg','.wav':'audio/wav','.ogg':'audio/ogg','.m4a':'audio/mp4','.flac':'audio/flac',
-  '.ics':'text/calendar; charset=utf-8','.stl':'model/stl','.step':'model/step','.stp':'model/step',
+  '.ics':'text/calendar; charset=utf-8','.aac':'audio/aac','.tif':'image/tiff','.tiff':'image/tiff','.stl':'model/stl','.step':'model/step','.stp':'model/step',
   '.obj':'model/obj','.gltf':'model/gltf+json','.glb':'model/gltf-binary','.zip':'application/zip'
 };
 const MEDIA_TYPE_BY_EXTENSION = {
   '.png':'image','.jpg':'image','.jpeg':'image','.webp':'image','.svg':'image',
   '.mp4':'video','.m4v':'video','.mov':'video','.webm':'video',
-  '.mp3':'audio','.wav':'audio','.ogg':'audio','.m4a':'audio','.flac':'audio'
+  '.mp3':'audio','.wav':'audio','.ogg':'audio','.m4a':'audio','.aac':'audio','.flac':'audio',
+  '.tif':'image','.tiff':'image'
 };
 function mediaTypeForExtension(extension) {
   return MEDIA_TYPE_BY_EXTENSION[String(extension||'').toLowerCase()]||null;
@@ -295,7 +297,43 @@ function perfManifest(dir, record, L) {
 // verlangt index.html, package.json oder AndroidManifest.xml - ohne Geruest
 // scheiterte jede Produktabnahme, obwohl die Villa fertig war.
 const APP_ENTRY = /^(?:index\.html|package\.json|AndroidManifest\.xml)$/;
-const SCAFFOLD_SKIP = new Set(['node_modules', '.git', '.gradle', 'backups', '__pycache__']);
+const SCAFFOLD_SKIP = new Set(['node_modules', '.git', '.gradle', 'backups', '__pycache__', 'app-shell']);
+const PACKAGE_METADATA_FILES = new Set(['package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'composer.json']);
+
+/** Find the newest content-validated project artifact, including non-media deliverables. */
+export function findDeliverableArtifact(dir, extensions, {maxBytes = 512 * 1024 * 1024} = {}) {
+  const wanted = new Set((extensions || []).map((extension) => String(extension).toLowerCase()));
+  let best = null;
+  const walk = (current, depth = 0) => {
+    if (depth > 8) return;
+    let entries;
+    try { entries = readdirSync(current, {withFileTypes: true}); } catch { return; }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || SCAFFOLD_SKIP.has(entry.name)) continue;
+      if (PACKAGE_METADATA_FILES.has(entry.name.toLowerCase())) continue;
+      const full = join(current, entry.name);
+      if (entry.isDirectory()) { walk(full, depth + 1); continue; }
+      if (!entry.isFile()) continue;
+      const extension = extname(entry.name).toLowerCase();
+      if (!wanted.has(extension)) continue;
+      let stats, content;
+      try {
+        stats = statSync(full);
+        if (stats.size < 16 || stats.size > maxBytes) continue;
+        content = readFileSync(full);
+        if (content.length < 16 || content.length > maxBytes) continue;
+      } catch { continue; }
+      const valid = isMediaExtension(extension)
+        ? isPlayableArtifact(content, extension)
+        : isValidDeliverableArtifact(content, extension);
+      if (valid && (!best || stats.mtimeMs > best.modified)) {
+        best = {path: full, extension, bytes: content.length, modified: stats.mtimeMs, content};
+      }
+    }
+  };
+  walk(resolve(dir));
+  return best;
+}
 
 function walkProject(dir, visit, level = 0, maxLevel = 8) {
   let entries;
@@ -351,6 +389,8 @@ li span{color:#7F92A0;font-size:13px;white-space:nowrap}
  * Legt das App-Geruest aus villa-apk-template/ ins Projekt, wenn keins da ist.
  * Die Startseite zeigt den Inhalt der Villa statt eines Platzhalters.
  */
+export function shouldScaffoldAppShell(kind) { return ['android', 'android-cloud'].includes(String(kind)); }
+
 export function scaffoldAppShell(villa, dir, L = () => {}) {
   const source = join(process.cwd(), 'villa-apk-template');
   if (!existsSync(source)) { L('App-Vorlage villa-apk-template/ fehlt - kein Geruest ergaenzt.'); return false; }
@@ -390,7 +430,7 @@ export async function startBuild(villaId, { auto = false } = {}) {
     const L = (s) => { record.log.push(String(s).slice(0, 400)); if (record.log.length > 60) record.log.shift(); save(); };
     try {
       // Ohne Einstiegspunkt ist das Paket kein Produkt: Geruest aus der Vorlage.
-      if (kind !== 'empty' && !hasAppEntryPoint(dir)) {
+      if (shouldScaffoldAppShell(kind) && !hasAppEntryPoint(dir)) {
         record.scaffold = scaffoldAppShell(villa, dir, L);
       }
       // Build-Modus entscheiden: Cloud-APK braucht ein Git-Remote im
@@ -458,7 +498,7 @@ export async function startBuild(villaId, { auto = false } = {}) {
       // Fehlt sie, wird das ehrlich als Blocker gemeldet - und fuer Video aus
       // einem deklarierten Manifest (villaforge.render.json) lokal gerendert.
       let deliverable = classifyDeliverable(villa.idea);
-      let mediaExtensions = deliverable === 'software' ? [] : deliverableExtensions(deliverable).filter((e) => e !== '.zip');
+      let artifactExtensions = deliverable === 'software' ? [] : deliverableExtensions(deliverable);
       // Ein deklariertes Video-Manifest ist die verbindliche Produktaussage der
       // Villa: es schlaegt eine Textklassifikation, die z. B. nur "Audio" erkennt.
       const manifest = renderManifestPath(dir);
@@ -468,18 +508,20 @@ export async function startBuild(villaId, { auto = false } = {}) {
           const rendered = await renderVillaVideo(dir, JSON.parse(readFileSync(manifest, 'utf8')), {log: (line) => L(line)});
           L(`Video gerendert: ${rendered.seconds}s, ${rendered.bytes} B, ${rendered.codec}`);
           deliverable = 'video';
-          mediaExtensions = ['.mp4', '.webm'];
+          artifactExtensions = ['.mp4', '.webm'];
         } catch (error) {
           L(`Video-Rendering fehlgeschlagen: ${error.message}`);
         }
       }
-      if (mediaExtensions.length) {
-        const outputArtifact = findMediaArtifact(dir, mediaExtensions);
+      let outputArtifact = null;
+      if (artifactExtensions.length) {
+        outputArtifact = findDeliverableArtifact(dir, artifactExtensions);
         if (!outputArtifact) {
-          throw new Error(`MEDIA_DELIVERABLE_MISSING: kein ${deliverable}-Artefakt (${mediaExtensions.join(', ')}) im Projekt gefunden.`);
+          const code = ['image', 'video', 'audio'].includes(deliverable) ? 'MEDIA_DELIVERABLE_MISSING' : 'DELIVERABLE_MISSING';
+          throw new Error(`${code}: kein ${deliverable}-Artefakt (${artifactExtensions.join(', ')}) im Projekt gefunden.`);
         }
         const output = join(OUT, `villa-${villaId}${outputArtifact.extension}`);
-        copyFileSync(outputArtifact.path, output);
+        writeFileSync(output, outputArtifact.content);
         const mediaType=mediaTypeForExtension(outputArtifact.extension);
         record.artifactType = artifactTypeForExtension(outputArtifact.extension);
         record.artifact = `villa-${villaId}${outputArtifact.extension}`;
@@ -489,15 +531,28 @@ export async function startBuild(villaId, { auto = false } = {}) {
       }
       if (!mode) throw new Error('Villa-Workspace ist leer - erst Entwicklungsaufgaben ausfuehren lassen.');
       if (mode) perfManifest(dir, record, L); // Phase 3: vermessen statt nur bauen
-      let verification=await verifyProjectRuntime(Number(villaId));
-      // Direkt nach Install/Render kann ein Lauf ohne jede Ausgabe scheitern
-      // (Umgebungsglitch, kein echter Befund). Einmal sauber wiederholen,
-      // statt die Villa auf einen Geisterfehler hin zu blockieren.
-      const silent=!verification.ok&&['build','tests','smoke'].every((k)=>{const c=verification.checks?.[k];return c&&c.status!=='passed'&&!String(c.output||'').trim();});
-      if(silent){L('Abnahme ohne Ausgabe fehlgeschlagen - Wiederholungslauf.');verification=await verifyProjectRuntime(Number(villaId));}
-      record.verification=verification;
-      if(!verification.ok)for(const kind of ['build','tests','smoke']){const c=verification.checks?.[kind];if(c&&c.status!=='passed')L(`Pruefung ${kind}: ${c.status} ${String(c.output||c.reason||'').replace(/\s+/g,' ').slice(-900)}`);}
-      record.outputContract=artifactContract({idea:villa.idea,kind,artifactName:record.artifact,artifactType:record.artifactType,deliverable:record.media?.deliverable||classifyDeliverable(villa.idea)});
+      let verification;
+      if (deliverable === 'software') {
+        verification = await verifyProjectRuntime(Number(villaId));
+        // A silent runtime failure is retried once; non-software deliverables use their own review gate.
+        const silent = !verification.ok && ['build', 'tests', 'smoke'].every((kind) => {
+          const check = verification.checks?.[kind];
+          return check && check.status !== 'passed' && !String(check.output || '').trim();
+        });
+        if (silent) {
+          L('Abnahme ohne Ausgabe fehlgeschlagen - Wiederholungslauf.');
+          verification = await verifyProjectRuntime(Number(villaId));
+        }
+      } else {
+        const readiness = deliveryReadiness(Number(villaId), deliverable, outputArtifact);
+        verification = {...readiness, ok: readiness.verified};
+      }
+      record.verification = verification;
+      if (!verification.ok && deliverable === 'software') for (const kind of ['build', 'tests', 'smoke']) {
+        const check = verification.checks?.[kind];
+        if (check && check.status !== 'passed') L(`Pruefung ${kind}: ${check.status} ${String(check.output || check.reason || '').replace(/\\s+/g, ' ').slice(-900)}`);
+      }
+      record.outputContract = artifactContract({idea: villa.idea, kind, artifactName: record.artifact, artifactType: record.artifactType, deliverable});
       const ready=verification.ok&&record.outputContract.ok;
       record.delivery=ready?'verified-product':'source-package';
       record.status=ready?'ready':'unverified';
