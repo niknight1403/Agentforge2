@@ -349,6 +349,10 @@ function walkProject(dir, visit, level = 0, maxLevel = 8) {
 /** Traegt das Projekt irgendwo einen App-Einstiegspunkt? */
 export function hasAppEntryPoint(dir) {
   if (!existsSync(dir)) return false;
+  // The generated Android shell is intentionally excluded from generic project walks,
+  // but its manifest is a real app entry point and must satisfy the product gate.
+  const scaffoldManifest = join(dir, 'app-shell', 'app', 'src', 'main', 'AndroidManifest.xml');
+  if (existsSync(scaffoldManifest)) return true;
   return walkProject(dir, (_full, name) => APP_ENTRY.test(name));
 }
 
