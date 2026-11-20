@@ -1004,8 +1004,11 @@ async function api(req, res, url) {
       .map(({base_url,...route})=>({...route,endpointOrigin:endpointOrigin(base_url),configured:!route.key_env||!!resolveKey(route.key_env),free:isFreeRoute({...route,base_url})}));
     const connectors=controlCatalog().connectors.map(({id,title,endpoint,enabled,last_status})=>({id,title,endpointOrigin:endpointOrigin(endpoint),enabled:!!enabled,status:last_status}));
     const tools=toolSpecs();
+    const providerCatalog=FREE_ROUTE_CATALOG.map(route=>route.provider==='modal'
+      ?{...route,baseUrl:process.env.MODAL_BASE_URL||route.baseUrl,model:process.env.MODAL_MODEL||route.model}
+      :route.provider==='xai'?{...route,model:process.env.VF_XAI_MODEL||route.model}:route);
     return json(res,200,{
-      llm:{freeOnly:freeOnlyEnabled(),routes,providerCatalog:FREE_ROUTE_CATALOG.map(({name,provider,baseUrl,model,keyEnv,priority})=>({name,provider,endpointOrigin:endpointOrigin(baseUrl),model,keyEnv,priority,endpointConfigured:!!baseUrl,configured:!!baseUrl&&(!keyEnv||!!resolveKey(keyEnv))})),summary:routingSummary()},
+      llm:{freeOnly:freeOnlyEnabled(),routes,providerCatalog:providerCatalog.map(({name,provider,baseUrl,model,keyEnv,priority})=>({name,provider,endpointOrigin:endpointOrigin(baseUrl),model,keyEnv,priority,endpointConfigured:!!baseUrl,configured:!!baseUrl&&(!keyEnv||!!resolveKey(keyEnv))})),summary:routingSummary()},
       api:{connectors,endpoints:['/api/routes','/api/llm/status','/api/connectors','/api/admin/mcp/servers','/api/admin/mcp/servers/:serverId/tools','/api/admin/mcp/tools/:toolId/policy']},
       tools,
       mcpTools:tools.filter(tool=>tool.name.startsWith('mcp:')),
