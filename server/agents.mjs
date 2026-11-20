@@ -1112,7 +1112,11 @@ export async function runAgent(agent, userPrompt, { maxSteps = 5, maxTokens = 15
     const raw = String(out.content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
     try { parsed = JSON.parse(raw); } catch { /* Freitext */ }
 
-    if (parsed && parsed.tool && TOOLS[parsed.tool]) {
+    const dynamicToolAlias = typeof parsed?.tool === 'string' && (
+      /^mcp:[A-Za-z0-9_-]{1,128}:.{1,160}$/.test(parsed.tool)
+      || /^connector:[a-z0-9_-]{2,48}:read$/.test(parsed.tool)
+    );
+    if (parsed && parsed.tool && (TOOLS[parsed.tool] || dynamicToolAlias)) {
       const result = await runTool(ctx, parsed.tool, parsed.args);
       trace.push({ step, tool: parsed.tool, args: parsed.args, result });
       const fingerprint=JSON.stringify([parsed.tool,parsed.args||{}]);
