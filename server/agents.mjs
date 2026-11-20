@@ -29,6 +29,7 @@ import { publishIntegration, integrationBranchName } from './integration-publish
 import { villaRepo } from './repo-target.mjs';
 import { deliveryProfile, deliveryPhases } from './delivery-quality.mjs';
 import { mcpRuntimeSupervisor } from './mcp-hub-runtime.mjs';
+import { sendAgentMessage, readAgentInbox } from './neural-network.mjs';
 export { normalizeSwarmBlueprint } from './swarm.mjs';
 
 
@@ -49,6 +50,8 @@ export { ROLES } from './agent-roles.mjs';
 const TOOLS = {
   capability_status:{description:'Fehlende Faehigkeiten, Werkzeuge, Feature-Auftraege und deren begrenzte Integration fuer diese Villa. Validierung ist getrennt von Produktabnahme.',schema:{},run:ctx=>JSON.stringify(capabilityStatus(ctx.villaId))},
   capability_request:{description:'Meldet eine belegte fehlende Projektfaehigkeit mit Ziel und Abnahme. Feature/Tool-Auftraege werden im bestehenden Entwicklungszyklus begrenzt umgesetzt. Integrationen mit fehlenden externen Ressourcen bleiben needs_configuration; keine Kosten oder Rechte werden freigeschaltet.',schema:{id:'string (3-64 Zeichen, a-z, 0-9, _ oder -)',kind:'feature|tool|integration',title:'string',goal:'string (konkretes Ergebnis)',acceptance:'string (ausfuehrbares Abnahmekriterium)'},run:(ctx,a)=>JSON.stringify(requestCapability(ctx.villaId,a))},
+  agent_message_send:{description:'Sendet eine dauerhafte, Villa-interne Nachricht an einen anderen Agenten. Empfaenger-ID muss aus dem aktuellen Netzwerkstatus stammen; Nachrichteninhalt wird nur dem Empfaenger im Posteingang angezeigt.',schema:{recipientAgentId:'integer',message:'string (1-4000 Zeichen)',taskId:'optional integer'},run:(ctx,args)=>JSON.stringify(sendAgentMessage(ctx.villaId,ctx.agentId,args.recipientAgentId,args.message,args.taskId??null))},
+  agent_message_inbox:{description:'Liest die letzten Nachrichten, die an diesen Agenten in derselben Villa adressiert wurden, und bestaetigt sie als gelesen.',schema:{limit:'optional integer (1-50)'},run:(ctx,args)=>JSON.stringify(readAgentInbox(ctx.villaId,ctx.agentId,args.limit??20))},
   capability_verify:{description:'Validiert eine projektlokale Erweiterung erst nach unabhaengigem Review, aktuellen Build/Test/Smoke-Nachweisen und existierenden Test-/Produktdateien. Registriert niemals dynamisch Hub-Code.',schema:{id:'string',testPath:'string (relativer Akzeptanztest)',artifactPath:'string (relative Implementierungsdatei)'},run:(ctx,a)=>JSON.stringify(verifyCapability(ctx.villaId,a.id,a,ctx.agentId))},
 
   resource_status: { description:'Liefert gemessene CPU-, GPU- und RAM-Auslastung samt einer sicheren Parallelitaetsempfehlung.', schema:{}, run:() => JSON.stringify(resourceStatus()) },
@@ -1370,6 +1373,26 @@ export function extendVillaRunToCompletion(villaId) {
   return true;
 }
 
+// Keep remote dispatch cancellation and local fallback policy in one testable boundary.
+export async function dispatchRemoteBatch({batch,villaId,job,runtimeUrl,runtimeToken,runStart,executeLocally,onCancelled,fetchImpl=fetch,timeoutMs=5000}){
+ const dispatched=await Promise.all(batch.map(async task=>{
+  const requestKey=`hub:${villaId}:${task.id}:${task.retry_count||0}:${runStart}`;
+  try{
+   const response=await fetchImpl(`${runtimeUrl}/tasks`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${runtimeToken}`,'idempotency-key':requestKey},body:JSON.stringify({title:task.title,input:{hubTaskId:Number(task.id),villaId:Number(villaId)}}),signal:AbortSignal.any([job.controller.signal,AbortSignal.timeout(timeoutMs)])});
+   if(!response.ok)throw new Error(`Runtime HTTP ${response.status}`);
+   return {task,remote:true};
+  }catch(error){
+   if(job.controller.signal.aborted)return {task,remote:false,cancelled:true};
+   console.warn('[villaforge] Redis task mesh fallback',Number(task.id),String(error?.message||error).slice(0,160));
+   return {task,remote:false};
+  }
+ }));
+ const cancelledDispatches=dispatched.filter(x=>x.cancelled||(!x.remote&&job.controller.signal.aborted));
+ for(const {task} of cancelledDispatches)await onCancelled(task);
+ await Promise.all(dispatched.filter(x=>!x.remote&&!x.cancelled).map(x=>executeLocally(x.task)));
+ return dispatched;
+}
+
 export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, adaptive = true, maxRounds = 6, runToCompletion = false } = {}) {
   if (db.prepare('SELECT status FROM villas WHERE id=?').get(villaId)?.status === 'ARCHIVED') return;
   if (running.get(villaId)) return;
@@ -1482,6 +1505,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
         /* assignments zaehlt jede Zuweisung. Ein Haenger, der endlos neu
            zugewiesen wird, faellt so auf, auch wenn started_at immer frisch ist. */
         db.prepare("UPDATE tasks SET status = 'RUNNING', started_at = ?, duration_ms = 0, assignments = COALESCE(assignments,0)+1, updated_at = ? WHERE id = ?").run(startedAt, startedAt, task.id);
+        emit('task.dispatch', { villaId, taskId: task.id, status: 'DISPATCHED', attempt: Number(task.assignments||0)+1, transport: process.env.VF_AGENT_RUNTIME_URL && process.env.VF_AGENT_RUNTIME_TOKEN ? 'remote_or_local_fallback' : 'local_scheduler' });
       }
 
       const executeLocally = (task) => executeTaskOnce(villaId, task).catch(async (e) => {
@@ -1517,33 +1541,28 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
           .run('Interner Fehler: ' + msg, now(), task.id);
         emit('task', { villaId, taskId: task.id, agentId: task.agent_id || null, status: 'FAILED', error: msg });
       });
-      const runtimeUrl=String(process.env.VF_AGENT_RUNTIME_URL||'').trim().replace(/\/+$/,'');
+      const runtimeUrl=String(process.env.VF_AGENT_RUNTIME_URL||'').trim().replace(/\/+$/);
       const runtimeToken=String(process.env.VF_AGENT_RUNTIME_TOKEN||'').trim();
       if(runtimeUrl&&runtimeToken){
-        const dispatched=await Promise.all(batch.map(async task=>{
-          const requestKey=`hub:${villaId}:${task.id}:${task.retry_count||0}:${runStart}`;
-          try{
-            const response=await fetch(`${runtimeUrl}/tasks`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${runtimeToken}`,'idempotency-key':requestKey},body:JSON.stringify({title:task.title,input:{hubTaskId:Number(task.id),villaId:Number(villaId)}}),signal:AbortSignal.timeout(5000)});
-            if(!response.ok)throw new Error(`Runtime HTTP ${response.status}`);
-            return {task,remote:true};
-          }catch(error){console.warn('[villaforge] Redis task mesh fallback',Number(task.id),String(error?.message||error).slice(0,160));return {task,remote:false};}
-        }));
-        await Promise.all(dispatched.filter(x=>!x.remote).map(x=>executeLocally(x.task)));
-        const remote=dispatched.filter(x=>x.remote);
-        const waitLimit=Math.max(5000,Math.min(Number(process.env.VF_AGENT_RUNTIME_WAIT_MS)||60000,300000));
-        const waitStarted=Date.now();
-        while(remote.length&&!job.stop){
-          const activeTasks=remote.filter(({task})=>db.prepare("SELECT status FROM tasks WHERE id=?").get(task.id)?.status==='RUNNING');
-          if(!activeTasks.length)break;
-          if(Date.now()-waitStarted>=waitLimit){
-            // If the remote worker is unavailable after accepting dispatch,
-            // local execution uses the same in-process task lock. A late Redis
-            // delivery will observe DONE or join the already-running promise.
-            await Promise.all(activeTasks.map(({task})=>executeLocally(task)));
-            break;
-          }
-          await new Promise(resolve=>setTimeout(resolve,250));
+        const dispatched=await dispatchRemoteBatch({batch,villaId,job,runtimeUrl,runtimeToken,runStart,executeLocally,onCancelled:async task=>{
+        db.prepare("UPDATE tasks SET status='PENDING',updated_at=? WHERE id=? AND status='RUNNING'").run(now(),task.id);
+        emit('task',{villaId,taskId:task.id,status:'PENDING',code:'CANCELLED'});
+      }});
+      const remote=dispatched.filter(x=>x.remote);
+      const waitLimit=Math.max(5000,Math.min(Number(process.env.VF_AGENT_RUNTIME_WAIT_MS)||60000,300000));
+      const waitStarted=Date.now();
+      while(remote.length&&!job.stop){
+        const activeTasks=remote.filter(({task})=>db.prepare("SELECT status FROM tasks WHERE id=?").get(task.id)?.status==='RUNNING');
+        if(!activeTasks.length)break;
+        if(Date.now()-waitStarted>=waitLimit){
+          // If the remote worker is unavailable after accepting dispatch,
+          // local execution uses the same in-process task lock. A late Redis
+          // delivery will observe DONE or join the already-running promise.
+          await Promise.all(activeTasks.map(({task})=>executeLocally(task)));
+          break;
         }
+        await new Promise(resolve=>setTimeout(resolve,250));
+      }
       } else await Promise.all(batch.map(executeLocally));
       if(job.stop)break;
       job.processed += batch.length;
@@ -1845,6 +1864,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
 
   db.prepare('UPDATE agents SET status = ?, last_active_at = ? WHERE id = ?').run('THINKING', now(), agent.id);
   db.prepare('UPDATE tasks SET agent_id = ?, updated_at = ? WHERE id = ?').run(agent.id, now(), task.id);
+  emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: 'THINKING' });
   emit('task', { villaId, taskId: task.id, agentId: agent.id, status: 'RUNNING', title: task.title });
 
   const idea = db.prepare('SELECT idea FROM villas WHERE id = ?').get(villaId)?.idea;
@@ -1888,6 +1908,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
   catch(error){
     saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:'interrupted',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,errorCode:String(error.code||'AGENT_ERROR').slice(0,80)}});
     db.prepare("UPDATE agents SET status='IDLE',last_active_at=? WHERE id=?").run(now(),agent.id);
+    emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: 'IDLE', code: String(error.code||'AGENT_ERROR').slice(0,80) });
     db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run(error.code==='LLM_UNAVAILABLE'?'LLM_UNAVAILABLE: Warte auf Modell; Aufgabe bleibt in der Warteschlange.':'Agentenlauf unterbrochen.',now(),task.id);
     if(error.code==='LLM_UNAVAILABLE'&&noteLlmOutage()>=llmPauseAfter())db.prepare("UPDATE villas SET status='WAITING_FOR_MODEL',updated_at=? WHERE id=?").run(now(),villaId);
     throw error;
@@ -1896,6 +1917,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
   if(res.code==='LLM_UNAVAILABLE'||res.offline){
     saveCheckpoint({taskId:task.id,agentId:agent.id,state:{status:'waiting_for_model',step:recoverCheckpoint(task.id,agent.id)?.state?.step||0,errorCode:'LLM_UNAVAILABLE'}});
     db.prepare("UPDATE agents SET status='IDLE',last_active_at=? WHERE id=?").run(now(),agent.id);
+    emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: 'IDLE', code: 'LLM_UNAVAILABLE' });
     db.prepare("UPDATE tasks SET status='PENDING',result=?,updated_at=? WHERE id=?").run('LLM_UNAVAILABLE: Warte auf echte Modellverbindung.',now(),task.id);
     throw Object.assign(new Error('Kein echtes Modell erreichbar; Aufgabe bleibt offen.'),{code:'LLM_UNAVAILABLE',statusCode:503,retryAfter:res.retryAfter});
   }
@@ -1911,6 +1933,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
       db.prepare('UPDATE tasks SET status = ?, result = ?, updated_at = ? WHERE id = ?')
         .run('FAILED', `Qualitaetstor blockiert (Umgebung): Tests nicht ausfuehrbar, auch nach Installation der Abhaengigkeiten.\n${String(gate.output||'').slice(0, 1200)}\n\n${answer}`.slice(0, 4000), now(), task.id);
       db.prepare("UPDATE agents SET status='IDLE', last_active_at=? WHERE id=?").run(now(), agent.id);
+      emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: 'IDLE', code: 'QUALITY_GATE_ENVIRONMENT' });
       recordLesson(villaId, agent.id, `Blockade: ${task.title}`, `Tests waren nicht ausfuehrbar (Testwerkzeug fehlt nach npm install --include=dev). Erst Umgebung reparieren, dann Aufgabe neu bewerten.`);
       emit('task', { villaId, taskId: task.id, agentId: agent.id, status: 'GATE_BLOCKED', title: task.title, reason: 'environment' });
       return;
@@ -1921,6 +1944,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
         .run(Number(task.retry_count||0)>=2?'FAILED':'PENDING', `Qualitaetstor nicht bestanden, Retry angefordert:\n${gate.output.slice(0, 1200)}\n\n${answer}`.slice(0, 4000), now(), task.id);
       db.prepare("UPDATE tasks SET title = title || ' [Q-GATE]' WHERE id = ? AND title NOT LIKE '%[Q-GATE]%'").run(task.id);
       db.prepare('UPDATE agents SET status = ?, last_active_at = ? WHERE id = ?').run('IDLE', now(), agent.id);
+      emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: 'IDLE', code: 'QUALITY_GATE' });
       // Selbst-Lern-Loop: Der Tor-Riss wird als Lehre verewigt, damit kein
       // Team-Mitglied denselben Fehler zweimal macht.
       recordLesson(villaId, agent.id, `Lehre: ${task.title}`, `npm test scheiterte nach der Umsetzung — erst Build/Test-Tor gruen, dann abschliessen. Auszug:\n${String(gate.output).slice(0, 600)}`);
@@ -1952,6 +1976,7 @@ export async function executeTask(villaId, task, executionOptions = {}) {
   db.prepare('INSERT INTO memories (villa_id, agent_id, scope, kind, title, content, importance, created_at) VALUES (?,?,?,?,?,?,?,?)')
     .run(villaId, agent.id, 'villa', 'ARTIFACT', `Ergebnis: ${task.title}`, answer.slice(0, 2000), 6, now());
   db.prepare('UPDATE agents SET status = ?, last_active_at = ? WHERE id = ?').run('IDLE', now(), agent.id);
+  emit('agent', { villaId, taskId: task.id, agentId: agent.id, status: res.error ? 'FAILED' : 'IDLE', ...(res.error ? { code: 'AGENT_ERROR' } : {}) });
 
   emit('task', { villaId, taskId: task.id, agentId: agent.id, status: res.error ? 'FAILED' : 'DONE', title: task.title, answer: answer.slice(0, 500) });
 }

@@ -24,8 +24,9 @@ const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[
 const OUT = resolve(ROOT, arg('out', 'artifacts/design-audit'));
 /** Erlaubte Befunde (Default 0 -> jede Abweichung ist rot). */
 const MAX_FINDINGS = Number(arg('max-findings', 0));
-// Avoid Chrome's port=0 DevToolsActivePort handshake, which can be absent on hosted runners.
-const CDP_PORT = Number(arg('cdp-port', 9400 + Math.floor(Math.random() * 40)));
+// Use an unprivileged high port to avoid collisions with common runner services.
+// Keep port=0 disabled because some hosted Chrome builds omit DevToolsActivePort.
+const CDP_PORT = Number(arg('cdp-port', 49152 + Math.floor(Math.random() * 16384)));
 if (!Number.isInteger(CDP_PORT) || CDP_PORT < 1024 || CDP_PORT > 65535) {
   throw new TypeError('--cdp-port must be an integer between 1024 and 65535');
 }

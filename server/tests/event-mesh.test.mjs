@@ -37,3 +37,24 @@ test('telemetry consumer stays disabled until endpoint and token are configured'
   if(oldToken===undefined)delete process.env.CYBERSARAH_TELEMETRY_TOKEN;else process.env.CYBERSARAH_TELEMETRY_TOKEN=oldToken;
  }
 });
+
+
+test('agent lifecycle emits safe, distinct status metadata',()=>{
+ const started=buildMeshEvent('agent',{status:'THINKING',villaId:2,taskId:17,agentId:3,systemPrompt:'private prompt',content:'private output'},{id:()=> 'agent-start',now:()=>124});
+ assert.deepEqual(started,{id:'agent-start',type:'agent.started',at:124,villaId:2,taskId:17,agentId:3,status:'THINKING'});
+ const idle=buildMeshEvent('agent',{status:'IDLE',villaId:2,taskId:17,agentId:3,code:'QUALITY_GATE'},{id:()=> 'agent-idle',now:()=>125});
+ assert.equal(idle.type,'agent.idle');
+ assert.equal(buildMeshEvent('agent',{status:'FAILED',agentId:3}).type,'agent.failed');
+});
+
+
+test('agent communication events expose sender and recipient metadata but never message content',()=>{
+ const event=buildMeshEvent('agent.message',{villaId:2,agentId:3,toAgentId:4,communicationId:9,taskId:17,status:'SENT',content:'private message'},{id:()=> 'message-1',now:()=>126});
+ assert.deepEqual(event,{id:'message-1',type:'agent.message.sent',at:126,villaId:2,taskId:17,agentId:3,toAgentId:4,communicationId:9,status:'SENT'});
+});
+
+
+test('scheduler dispatch event contains only bounded operational metadata',()=>{
+ const event=buildMeshEvent('task.dispatch',{villaId:8,taskId:12,status:'DISPATCHED',attempt:2,transport:'local_scheduler',prompt:'must not leak'},{id:()=> 'dispatch-1',now:()=>127});
+ assert.deepEqual(event,{id:'dispatch-1',type:'agent.task.dispatched',at:127,villaId:8,taskId:12,status:'DISPATCHED',attempt:2,transport:'local_scheduler'});
+});

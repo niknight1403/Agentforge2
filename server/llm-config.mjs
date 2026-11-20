@@ -70,6 +70,8 @@ export function isFreeRoute(r) {
  if(provider==='gemini'||provider==='gemini-openai') return model==='gemini-3.1-flash-lite';
  if(provider==='openrouter') return model==='openrouter/free'||model.endsWith(':free');
  if(provider==='groq') return ['openai/gpt-oss-120b','openai/gpt-oss-20b','qwen/qwen3.8-27b'].includes(model);
+ // Pollinations is explicitly keyless; trust only its canonical inference host.
+ if(provider==='pollinations') { try { return new URL(r.base_url||'').hostname==='text.pollinations.ai'; } catch { return false; } }
  // Cerebras currently provides expiring trial credits, not a renewable free tier.
  // Hugging Face free accounts have no included inference-provider credits.
  return false;

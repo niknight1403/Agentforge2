@@ -750,3 +750,14 @@ Ab Version 1.53.0 enthaelt VillaForge einen Quality-Gate-Autopiloten ueber der b
 - Status: `Autopilot Status #<Villa-ID>`; Fortsetzung: `Autopilot weiter #<Villa-ID>`; Stop: `Deaktiviere Autopilot #<Villa-ID>`.
 
 API fuer Administratoren: `GET /api/master/ultra/status?villaId=<id>`, `POST /api/master/ultra/enable` und `POST /api/master/ultra/tick`.
+
+## Neurales Agentennetzwerk
+
+Das Netzwerk-Control-Plane verbindet den vorhandenen DeepAgent-Agentenpool mit dem VillaForge-Scheduler, der persistenten Aufgaben-/Gedächtnis-Datenbank und dem Metadaten-Event-Mesh. Die Topologie wird aus den tatsaechlich gespeicherten Agenten, Rollen, Elternbeziehungen und Aufgaben-Zuweisungen berechnet; es werden keine Phantom-Agenten oder simulierten Erfolge angezeigt.
+
+Admin-API je Villa:
+- `GET /api/villas/:id/neural-network` — Live-Topologie, Rollen, Kanten, Agenten-Workload und Aufgabenstatus.
+- `POST /api/villas/:id/neural-network/activate` — aktiviert die Autonomie und uebergibt den Lauf an den bestehenden Scheduler (mit Ressourcen-/Parallelitaetsgrenzen).
+- `POST /api/villas/:id/neural-network/deactivate` — stoppt bzw. entfernt nur diese Villa aus der Warteschlange.
+
+Der Netzwerk-Layer erzeugt keinen zweiten Worker-Pool. Bestehende Rechtepruefungen, LLM-Free-Only-Routing, Checkpoints, Retry-/DLQ-Mechanismen und Produkt-Quality-Gates bleiben verbindlich. Eine Aktivierung wird zurueckgerollt, wenn der Scheduler sie ablehnt. Laufzeitbetrieb muss auf dem Zielhost separat nachgewiesen werden.
