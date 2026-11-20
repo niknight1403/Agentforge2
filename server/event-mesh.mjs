@@ -9,14 +9,17 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /** Build metadata-only events; prompts, tool arguments, responses and thoughts are never persisted. */
 export function buildMeshEvent(type, payload = {}, { now = Date.now, id = randomUUID } = {}) {
-  const mapped = type === 'task' && payload.status === 'PENDING' ? 'task.created'
+  const mapped = type === 'agent' && payload.status === 'THINKING' ? 'agent.started'
+    : type === 'agent' && payload.status === 'IDLE' ? 'agent.idle'
+    : type === 'agent' && payload.status === 'FAILED' ? 'agent.failed'
+    : type === 'task' && payload.status === 'PENDING' ? 'task.created'
     : type === 'task' && payload.status === 'RUNNING' ? 'agent.step.started'
     : type === 'task' && payload.status === 'FAILED' ? 'agent.failed'
     : type === 'task' ? 'task.updated'
     : type === 'tool' ? 'tool.executed'
     : type === 'llm' ? 'llm.completed'
     : type === 'checkpoint' ? 'checkpoint.saved'
-    : ['agent.step.started','agent.failed','checkpoint.saved','task.created','tool.executed','llm.failed'].includes(type) ? type : null;
+    : ['agent.started','agent.idle','agent.failed','agent.step.started','checkpoint.saved','task.created','tool.executed','llm.failed'].includes(type) ? type : null;
   if (!mapped) return null;
   const metadata = {};
   for (const key of SAFE_FIELDS) {
