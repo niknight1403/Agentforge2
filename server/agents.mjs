@@ -1536,7 +1536,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
             return {task,remote:false};
           }
         }));
-        const cancelledDispatches=dispatched.filter(x=>x.cancelled);
+        const cancelledDispatches=dispatched.filter(x=>x.cancelled||(!x.remote&&job.controller.signal.aborted));
         for(const {task} of cancelledDispatches){
           db.prepare("UPDATE tasks SET status='PENDING',updated_at=? WHERE id=? AND status='RUNNING'").run(now(),task.id);
           emit('task',{villaId,taskId:task.id,status:'PENDING',code:'CANCELLED'});
