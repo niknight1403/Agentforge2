@@ -1,6 +1,6 @@
 import { forgeLog } from './keyforge.mjs';
 import { db, now } from './db.mjs';
-import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute } from './llm-config.mjs';
+import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute,routeProvider } from './llm-config.mjs';
 import { createCascade, orderCascadeRoutes } from './llm-cascade.mjs';
 import { createRequestLimiter } from './request-limiter.mjs';
 import { routeAdmission, isLocalEndpoint } from './route-selection.mjs';
@@ -133,13 +133,17 @@ export function ollamaQueueStats() {
  */
 const requestLimiter=createRequestLimiter();
 function routeRpm(route) {
-  const n = String(route.name || '').toLowerCase();
-  if (n.includes('gemini')) return Number(process.env.VF_RPM_GEMINI) || 8;   // Free-Tier ~10 RPM
-  if (n.includes('groq')) return Number(process.env.VF_RPM_GROQ) || 20;
-  if (n.includes('cerebras')) return Number(process.env.VF_RPM_CEREBRAS) || 10;
-  if (n.includes('mistral')) return Number(process.env.VF_RPM_MISTRAL) || 5;
-  if (n.includes('openrouter')) return Number(process.env.VF_RPM_OPENROUTER) || 12;
-  return Number(process.env.VF_RPM_DEFAULT) || 30;
+  const provider=routeProvider(route);
+  const envName=`VF_RPM_${provider.toUpperCase().replace(/[^A-Z0-9]/g,'_')}`;
+  const defaults={
+    gemini:8,'gemini-openai':8,groq:20,cerebras:10,mistral:5,openrouter:12,
+    fal:8,huggingface:8,xai:10,sambanova:10,nvidia:10,zhipu:10,chutes:10,
+    hyperbolic:10,together:10,modal:8,pollinations:6
+  };
+  const configured=Number(process.env[envName]);
+  return Number.isFinite(configured)&&configured>0
+    ?Math.min(600,Math.floor(configured))
+    :Number(process.env.VF_RPM_DEFAULT)||defaults[provider]||30;
 }
 
 const providerCircuits=createCircuitBreaker({
