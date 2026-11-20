@@ -1,0 +1,23 @@
+name: Zero-Cost Runtime Acceptance Script
+
+on:
+  pull_request:
+    paths:
+      - "infrastructure/zero-cost-stack/scripts/runtime-acceptance.sh"
+      - ".github/workflows/zero-cost-runtime-acceptance.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/zero-cost-stack/scripts/runtime-acceptance.sh"
+      - ".github/workflows/zero-cost-runtime-acceptance.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate runtime acceptance shell script
+        run: bash -n infrastructure/zero-cost-stack/scripts/runtime-acceptance.sh
