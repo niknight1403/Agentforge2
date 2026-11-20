@@ -78,6 +78,6 @@ test('provider host inference covers the integrated API families',()=>{
 test('Hugging Face credential aliases resolve from either supported secret name',()=>{
   db.prepare("INSERT INTO secrets(name,value,updated_at) VALUES ('HF_TOKEN','hf-test-secret',0) ON CONFLICT(name) DO UPDATE SET value=excluded.value").run();
   assert.equal(resolveKey('HUGGINGFACE_API_KEY'),'hf-test-secret');
-  db.prepare("UPDATE secrets SET value='google-test-secret' WHERE name='GOOGLE_API_KEY'").run();
+  db.prepare("INSERT INTO secrets(name,value,updated_at) VALUES ('GOOGLE_API_KEY','google-test-secret',0) ON CONFLICT(name) DO UPDATE SET value=excluded.value").run();
   assert.equal(resolveKey('GEMINI_API_KEY'),'google-test-secret');
 });
