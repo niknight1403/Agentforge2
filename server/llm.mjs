@@ -132,8 +132,11 @@ export function ollamaQueueStats() {
  * VOR dem API-Limit, damit die Kette stabil erreichbar bleibt.
  */
 const requestLimiter=createRequestLimiter();
-function routeRpm(route) {
-  const provider=routeProvider(route);
+export function routeRpm(route) {
+  const inferredProvider=routeProvider(route);
+  // The public operator setting is VF_RPM_GEMINI; keep host-inferred
+  // Gemini OpenAI-compatible routes on the same account-level budget.
+  const provider=inferredProvider==='gemini-openai'?'gemini':inferredProvider;
   const envName=`VF_RPM_${provider.toUpperCase().replace(/[^A-Z0-9]/g,'_')}`;
   const defaults={
     gemini:8,'gemini-openai':8,groq:20,cerebras:10,mistral:5,openrouter:12,
