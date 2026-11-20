@@ -26,7 +26,7 @@ export function cascadeDefaults() {
  const identities=new Set(primary.map(r=>`${r.base_url}|${r.model}`));
  const catalog=FREE_ROUTE_CATALOG.map(r=>r.provider==='modal'?{...r,baseUrl:process.env.MODAL_BASE_URL||r.baseUrl,model:process.env.MODAL_MODEL||r.model}:r.provider==='xai'?{...r,model:process.env.VF_XAI_MODEL||r.model}:r).filter(r=>{
   if(!r.baseUrl)return false; // Modal/remote endpoints appear only after explicit URL configuration.
-  try {const u=new URL(r.baseUrl);if(u.protocol!=='https:'&&!['localhost','127.0.0.1','[::1]'].includes(u.hostname))return false;}catch{return false;}
+  try {const u=new URL(r.baseUrl);if(u.username||u.password||u.search||u.hash)return false;if(u.protocol!=='https:'&&!['localhost','127.0.0.1','[::1]'].includes(u.hostname))return false;if(r.provider==='modal'&&(u.protocol!=='https:'||!u.hostname.endsWith('.modal.run')))return false;}catch{return false;}
   const identity=`${r.baseUrl}|${r.model}`;
   if(identities.has(identity))return false;
   identities.add(identity);return true;
