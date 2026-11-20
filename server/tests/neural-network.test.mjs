@@ -2,7 +2,7 @@ import './_env.mjs';
 import test,{beforeEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {db} from '../db.mjs';
-import {runTool} from '../agents.mjs';
+import {runTool,dispatchRemoteBatch} from '../agents.mjs';
 import {bus} from '../events.mjs';
 import {activateNeuralNetwork,deactivateNeuralNetwork,neuralNetworkStatus,sendAgentMessage,readAgentInbox} from '../neural-network.mjs';
 
@@ -95,4 +95,31 @@ test('registered agent tools exchange messages through the real tool executor an
  } finally {
   bus.off('event',onEvent);
  }
+});
+
+
+test('remote dispatch abort after server acceptance never starts a local fallback',async()=>{
+ const controller=new AbortController();
+ const task={id:901,title:'remote task',retry_count:0};
+ let remoteAccepted=false,localRuns=0;
+ const cancelled=[];
+ const pending=dispatchRemoteBatch({
+  batch:[task],villaId:77,job:{controller},runtimeUrl:'https://runtime.invalid',runtimeToken:'test-token',runStart:123,
+  executeLocally:async()=>{localRuns++;},onCancelled:async value=>cancelled.push(value.id),timeoutMs:10000,
+  fetchImpl:async(_url,options)=>{
+   remoteAccepted=true;
+   await new Promise((resolve,reject)=>{
+    if(options.signal.aborted)return reject(options.signal.reason);
+    options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true});
+   });
+   return {ok:true};
+  }
+ });
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(remoteAccepted,true,'remote endpoint accepted the dispatch before response was delayed');
+ controller.abort(new Error('Villa stopped'));
+ const result=await pending;
+ assert.equal(result[0].cancelled,true);
+ assert.deepEqual(cancelled,[task.id]);
+ assert.equal(localRuns,0,'aborted remote work must not be executed a second time locally');
 });
