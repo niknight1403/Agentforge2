@@ -1520,7 +1520,7 @@ async function api(req, res, url) {
     void autoStartDeepProject(id).then((result) => {
       deepAutoStartResults.set(id, result);
       if (deepAutoStartResults.size > 100) deepAutoStartResults.delete(deepAutoStartResults.keys().next().value);
-      emit('deep:development', {projectId: id, ...result});
+      // Project detail polling exposes the stored handoff result without inventing an event type.
     }).catch((error) => {
       const result = {ok: false, code: 'AUTO_START_FAILED', error: String(error?.message || error).slice(0, 250)};
       deepAutoStartResults.set(id, result);
