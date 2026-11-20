@@ -73,7 +73,12 @@ export function syncFreeRouteFlags() {
  }
  return {updated};
 }
-export function isLocalRoute(r) {return /^https?:\\/\\/(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::|\\/|$)/i.test(r.base_url||'');}
+export function isLocalRoute(r) {
+ try {
+  const url=new URL(r?.base_url||'');
+  return ['http:','https:'].includes(url.protocol)&&['localhost','127.0.0.1','[::1]','::1'].includes(url.hostname.toLowerCase());
+ } catch { return false; }
+}
 export function isTrustedSelfHostedRoute(r) {
  if(!['ollama','lmstudio'].includes(String(r?.provider||'').toLowerCase())) return false;
  let host='';try{host=new URL(r?.base_url||'').hostname.toLowerCase();}catch{return false;}
