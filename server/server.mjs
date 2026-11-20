@@ -679,6 +679,15 @@ async function api(req, res, url) {
     const linkedOwner = db.prepare('SELECT owner_user_id FROM deep_villa_owners WHERE villa_id = ?').get(id);
     return !linkedOwner || Number(linkedOwner.owner_user_id || 0) === Number(user?.id || 0);
   };
+  // Persona IDs are independently addressable API resources. Resolve their
+  // parent Villa before returning details or mutating packs/looks so a guessed
+  // persona ID cannot bypass the linked-Villa owner check.
+  const canAccessPersona = (personaId) => {
+    const id = Number(personaId);
+    if (!Number.isSafeInteger(id) || id <= 0) return false;
+    const persona = db.prepare('SELECT villa_id FROM personas WHERE id = ?').get(id);
+    return Boolean(persona && canAccessLinkedVilla(persona.villa_id));
+  };
   if (villaIdSegment !== undefined && !requestedVillaId) return json(res, 404, {error: 'Villa nicht gefunden'});
   if (requestedVillaId && !canAccessLinkedVilla(requestedVillaId)) return json(res, 404, {error: 'Villa nicht gefunden'});
   if (p === '/api/billing/summary' && m === 'GET') return user ? json(res,200,billingSummary(user.id)) : json(res,401,{error:'Login erforderlich.'});
@@ -851,24 +860,43 @@ async function api(req, res, url) {
     try { return json(res, 200, { ok: true, persona: createPersona(villaId, b) }); }
     catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
   }
-  if (/^\/api\/personas\/\d+$/.test(p) && m === 'GET') return json(res, 200, personaDetail(Number(p.split('/')[3])));
+  if (/^\/api\/personas\/\d+$/.test(p) && m === 'GET') {
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
+    const persona = personaDetail(personaId);
+    return persona ? json(res, 200, persona) : json(res, 404, { error: 'Figur nicht gefunden.' });
+  }
   if (/^\/api\/personas\/\d+$/.test(p) && m === 'PATCH') {
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
     if (!openMode && !isAdmin) return json(res, 403, { error: 'Figuren aendern ist Admins vorbehalten.' });
     const b = await readBody(req);
-    try { return json(res, 200, { ok: true, persona: updatePersona(Number(p.split('/')[3]), b) }); }
+    try { return json(res, 200, { ok: true, persona: updatePersona(personaId, b) }); }
     catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
   }
-  if (/^\/api\/personas\/\d+\/card$/.test(p) && m === 'GET') return json(res, 200, personaCard(Number(p.split('/')[3])));
-  if (/^\/api\/personas\/\d+\/packs$/.test(p) && m === 'GET') return json(res, 200, { ok: true, packs: listWardrobePacks(Number(p.split('/')[3])) });
+  if (/^\/api\/personas\/\d+\/card$/.test(p) && m === 'GET') {
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
+    return json(res, 200, personaCard(personaId));
+  }
+  if (/^\/api\/personas\/\d+\/packs$/.test(p) && m === 'GET') {
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
+    return json(res, 200, { ok: true, packs: listWardrobePacks(personaId) });
+  }
   if (/^\/api\/personas\/\d+\/packs$/.test(p) && m === 'POST') {
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
     if (!openMode && !isAdmin) return json(res, 403, { error: 'Kleidungs-Packs anlegen ist Admins vorbehalten.' });
     const b = await readBody(req);
-    try { return json(res, 200, { ok: true, pack: createWardrobePack(Number(p.split('/')[3]), b) }); }
+    try { return json(res, 200, { ok: true, pack: createWardrobePack(personaId, b) }); }
     catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
   }
   if (/^\/api\/personas\/\d+\/look$/.test(p) && m === 'GET') {
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
     try {
-      return json(res, 200, resolveLook(Number(p.split('/')[3]), { occasion: url.searchParams.get('occasion') || 'alltag', day: url.searchParams.get('day') || null }));
+      return json(res, 200, resolveLook(personaId, { occasion: url.searchParams.get('occasion') || 'alltag', day: url.searchParams.get('day') || null }));
     } catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
   }
   if (/^\/api\/villas\/\d+\/director$/.test(p) && m === 'GET') {
