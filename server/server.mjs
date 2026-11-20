@@ -43,7 +43,7 @@ import { deepMissionBrief } from './deep-mission.mjs';
 import { classifyDeepDevelopmentIntent } from './deep-intent.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
-import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deepPreviewFile, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, isInitialPlanPending, waitForInitialPlan, prepareDeepProjectHandover, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
+import { createDeepProject, listDeepProjects, deepProjectDetail, deepProjectDevelopmentStatus, deepChat, addDeepFile, deepFileById, deepPreviewFile, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, isInitialPlanPending, waitForInitialPlan, prepareDeepProjectHandover, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { projectReadiness } from './deep-completion.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
@@ -1276,7 +1276,8 @@ async function api(req, res, url) {
   }
   /* ---- Villa-Evolution (v1.30): jede Villa schlaegt selbst naechste Phasen/Perfektion/Marketplace vor ---- */
   if (p === '/api/evolution/pending' && m === 'GET') {
-    const pending = listAllPending();
+    const ownerUserId = !openMode && user && !isAdmin ? Number(user.id) : undefined;
+    const pending = listAllPending({ ownerUserId });
     return json(res, 200, pending.filter((proposal) => canAccessLinkedVilla(proposal.villaId)));
   }
   if (parts[0] === 'api' && parts[1] === 'evolution' && parts[2] === 'villas' && parts[3] && !parts[4] && m === 'GET') {
@@ -1371,6 +1372,10 @@ async function api(req, res, url) {
     if (isAdmin) return true;
     return Boolean(user && row.owner_user_id !== null && Number(row.owner_user_id) === Number(user.id));
   };
+  const deepProjectOwnerUserId = (projectId) => {
+    const row = db.prepare('SELECT owner_user_id FROM deep_projects WHERE id = ?').get(Number(projectId));
+    return row ? (row.owner_user_id ?? null) : null;
+  };
   if (p === '/api/deep/projects' && m === 'GET') {
     return json(res, 200, isAdmin || (!user && openMode) ? listDeepProjects() : listDeepProjects({ ownerUserId: user.id }));
   }
@@ -1410,6 +1415,7 @@ async function api(req, res, url) {
     if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
     const detail = deepProjectDetail(projectId);
     if (!detail) return json(res, 404, { error: 'Projekt nicht gefunden' });
+    deepAutoStartResults.delete(projectId);
     return runDeepProjectDevelopmentOnce(projectId, async () => {
       try {
         const initialPlan = await waitForInitialPlan(projectId);
@@ -1468,7 +1474,7 @@ async function api(req, res, url) {
                 'Fehlend: ' + handover.blockers.map((b) => `${b.label} (${b.detail})`).join('; ') + '.'
             });
           }
-          const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD', force: true });
+          const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD', force: true, ownerUserId: deepProjectOwnerUserId(projectId) });
           villaId = linkDeepProjectVilla(projectId, built.villaId);
         }
         const scheduled = isRunning(villaId)
@@ -1507,7 +1513,7 @@ async function api(req, res, url) {
         if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
         villaId=Number(detail.project.villa_id||0);
         if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
-          const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:handover.idea,agentCount:12,mode:'BUILD',force:true});
+          const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:handover.idea,agentCount:12,mode:'BUILD',force:true,ownerUserId:deepProjectOwnerUserId(projectId)});
           villaId=linkDeepProjectVilla(projectId,built.villaId);
         }
       }
@@ -1518,6 +1524,7 @@ async function api(req, res, url) {
   });
   const scheduleAutoStartDeepProject = (projectId) => {
     const id = Number(projectId);
+    deepAutoStartResults.delete(id);
     void autoStartDeepProject(id).then((result) => {
       deepAutoStartResults.set(id, result);
       if (deepAutoStartResults.size > 100) deepAutoStartResults.delete(deepAutoStartResults.keys().next().value);
@@ -1620,11 +1627,11 @@ async function api(req, res, url) {
     const projectId = Number(parts[3]);
     const d = deepProjectDetail(projectId);
     if (!d) return json(res, 404, { error: 'Projekt nicht gefunden' });
-    const development = {
-      pending: isDeepProjectDeveloping(projectId),
-      villaId: Number(d.project.villa_id || 0),
-      ...(deepAutoStartResults.get(projectId) || {})
-    };
+    const development = deepProjectDevelopmentStatus(
+      projectId,
+      isDeepProjectDeveloping(projectId),
+      deepAutoStartResults.get(projectId)
+    );
     return json(res, 200, {...d, development});
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'preview' && parts[4] && m === 'GET') {
