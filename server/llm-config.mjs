@@ -73,7 +73,14 @@ export function syncFreeRouteFlags() {
  }
  return {updated};
 }
-export function isLocalRoute(r) {return ['ollama','lmstudio'].includes(r.provider)||/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(r.base_url||'');}
+export function isLocalRoute(r) {return /^https?:\\/\\/(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::|\\/|$)/i.test(r.base_url||'');}
+export function isTrustedSelfHostedRoute(r) {
+ if(!['ollama','lmstudio'].includes(String(r?.provider||'').toLowerCase())) return false;
+ let host='';try{host=new URL(r?.base_url||'').hostname.toLowerCase();}catch{return false;}
+ if(!host) return false;
+ const trusted=String(process.env.VF_LLM_TRUSTED_SELF_HOSTED_HOSTS||'').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean);
+ return trusted.includes(host);
+}
 /** Infer known provider families for manually-added OpenAI-compatible endpoints. */
 export function routeProvider(r) {
  const declared=String(r?.provider||'').toLowerCase();
@@ -113,7 +120,7 @@ export function isFreeRoute(r) {
 }
 export function freeOnlyEnabled() {return !['0','false','off','no'].includes(String(process.env.VF_LLM_FREE_ONLY||'1').toLowerCase());}
 export function routeTier(r) {
- if(isLocalRoute(r)) return 6;
+ if(isLocalRoute(r)||isTrustedSelfHostedRoute(r)) return 6;
  const p=String(routeProvider(r)+' '+r.base_url).toLowerCase();
  if(/gemini|generativelanguage/.test(p)) return 1;
  if(/cerebras/.test(p)) return 2;
