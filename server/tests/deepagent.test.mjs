@@ -9,7 +9,8 @@ import { createUser } from '../auth.mjs';
 import { TMP } from './_env.mjs';
 
 process.env.DEEP_DIR = join(TMP, 'deep-files');
-const { createDeepProject, deepChat, addDeepFile, deepPreviewFile, deleteDeepProject, listDeepProjects, deepProjectDetail, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping, waitForInitialPlan, prepareDeepProjectHandover, isInitialPlanPending } = await import('../deepagent.mjs');
+const { createDeepProject, deepChat, addDeepFile, deepPreviewFile, deleteDeepProject, listDeepProjects, deepProjectDetail, deepProjectDevelopmentStatus, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping, waitForInitialPlan, prepareDeepProjectHandover, isInitialPlanPending } = await import('../deepagent.mjs');
+const { insertVillaRecord } = await import('../agents.mjs');
 const reply = async () => ({ content: 'Bauplan: MVP, Tests und Startanleitung.' });
 
 test('DeepAgent öffnet den Projektchat sofort und erzeugt den initialen Plan im Hintergrund', async () => {
@@ -227,6 +228,24 @@ test('DeepAgent Villa ownership cannot be reassigned to another project owner', 
   linkDeepProjectVilla(projectA.id, villaId);
   assert.throws(() => linkDeepProjectVilla(projectB.id, villaId), (error) => error.code === 'VILLA_OWNER_CONFLICT');
   assert.equal(db.prepare('SELECT owner_user_id FROM deep_villa_owners WHERE villa_id=?').get(villaId).owner_user_id, ownerA.id);
+});
+
+test('DeepAgent development status ignores stale results while pending and uses the current Villa link', async () => {
+  const project = await createDeepProject('Eine App mit einer aktuellen Projekt-Villa', {chatFn: reply});
+  const owner = createUser({email: `deepagent-status-${process.pid}@example.invalid`, password: 'test-only-password', role: 'user'});
+  const villaId = insertVillaRecord({name: 'Deep status Villa', idea: 'private project', ownerUserId: owner.id});
+  assert.equal(linkDeepProjectVilla(project.id, villaId), villaId);
+  const pending = deepProjectDevelopmentStatus(project.id, true, {ok: true, villaId: villaId + 1000, pending: false});
+  assert.deepEqual(pending, {pending: true, villaId});
+  const complete = deepProjectDevelopmentStatus(project.id, false, {ok: true, villaId: villaId + 1000, pending: true, started: true});
+  assert.deepEqual(complete, {ok: true, started: true, pending: false, villaId});
+});
+
+test('Villa owner mapping is committed atomically with the Villa row', () => {
+  const owner = createUser({email: `deepagent-atomic-owner-${process.pid}@example.invalid`, password: 'test-only-password', role: 'user'});
+  const villaId = insertVillaRecord({name: 'Atomic owner Villa', idea: 'private project', ownerUserId: owner.id});
+  const row = db.prepare('SELECT owner_user_id FROM deep_villa_owners WHERE villa_id=?').get(villaId);
+  assert.equal(row?.owner_user_id, owner.id);
 });
 
 test('DeepAgent memory never mixes project titles across owners', async () => {
