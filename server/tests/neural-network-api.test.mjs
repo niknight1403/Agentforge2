@@ -1,13 +1,18 @@
 import './_env.mjs';
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { db } from '../db.mjs';
-import { createUser, createSession } from '../auth.mjs';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
+process.env.VF_DB = join(mkdtempSync(join(tmpdir(), 'vf-neural-api-')), 'test.db');
+process.env.PORT = String(43000 + Math.floor(Math.random() * 1000));
 process.env.HOST = '127.0.0.1';
-process.env.PORT = '0';
 
-let server;
+const { db, now } = await import('../db.mjs');
+const { createUser, createSession } = await import('../auth.mjs');
+const { server } = await import('../server.mjs');
+
 let baseUrl;
 let userToken;
 let adminToken;
@@ -18,20 +23,20 @@ before(async () => {
   const admin = createUser({ email: 'neural-api-admin@example.test', password: 'test-password-123', role: 'ADMIN' });
   userToken = createSession(user.id);
   adminToken = createSession(admin.id);
+  const timestamp = now();
   villaId = Number(db.prepare(
     'INSERT INTO villas(name,idea,status,autonomy,max_agents,created_at,updated_at) VALUES (?,?,?,?,?,?,?)'
-  ).run('API authorization test', 'Isolated endpoint test', 'PAUSED', 0, 10, 1, 1).lastInsertRowid);
+  ).run('API authorization test', 'Isolated endpoint test', 'PAUSED', 0, 10, timestamp, timestamp).lastInsertRowid);
 
-  ({ server } = await import('../server.mjs'));
   if (!server.listening) await new Promise((resolve, reject) => {
     server.once('listening', resolve);
     server.once('error', reject);
   });
-  baseUrl = `http://127.0.0.1:${server.address().port}`;
+  baseUrl = `http://127.0.0.1:${process.env.PORT}`;
 });
 
 after(async () => {
-  if (server?.listening) await new Promise(resolve => server.close(resolve));
+  if (server.listening) await new Promise(resolve => server.close(resolve));
 });
 
 async function request(path, method = 'GET', token) {
