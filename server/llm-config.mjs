@@ -2,28 +2,38 @@ import { existsSync,readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseEnv } from 'node:util';
 import { db } from './db.mjs';
+import { FREE_ROUTE_CATALOG } from './routes.mjs';
 // Only provider configuration is loaded. Never print values or override the service environment.
-const allowed=/^(GEMINI_API_KEY|GOOGLE_API_KEY|OPENROUTER_API_KEY|GROQ_API_KEY|CEREBRAS_API_KEY|MISTRAL_API_KEY|XAI_API_KEY|HF_TOKEN|HUGGINGFACE_API_KEY|OLLAMA_API_KEY|FAL_KEY|VF_(?:LLM_.*|LOCAL_LLM_.*|GEMINI_MODEL|GROQ_MODEL|CEREBRAS_MODEL|MISTRAL_MODEL|XAI_MODEL|HF_MODEL|FAL_.*|MEDIA_MAX_BYTES))$/;
+const allowed=/^(GEMINI_API_KEY|GOOGLE_API_KEY|OPENROUTER_API_KEY|GROQ_API_KEY|CEREBRAS_API_KEY|MISTRAL_API_KEY|XAI_API_KEY|HF_TOKEN|HUGGINGFACE_API_KEY|OLLAMA_API_KEY|FAL_KEY|SAMBANOVA_API_KEY|NVIDIA_API_KEY|ZHIPU_API_KEY|CHUTES_API_KEY|HYPERBOLIC_API_KEY|TOGETHER_API_KEY|MODAL_API_KEY|MODAL_BASE_URL|MODAL_MODEL|VF_(?:LLM_.*|LOCAL_LLM_.*|GEMINI_MODEL|GROQ_MODEL|CEREBRAS_MODEL|MISTRAL_MODEL|XAI_MODEL|HF_MODEL|FAL_.*|MEDIA_MAX_BYTES))$/;
 for(const path of (process.env.VF_TEST==='1'?[]:[resolve('.env'),resolve('server/.env')])) {
   if(!existsSync(path)) continue;
   try { for(const [key,value] of Object.entries(parseEnv(readFileSync(path,'utf8')))) if(allowed.test(key)&&process.env[key]==null) process.env[key]=value; } catch { /* invalid optional file; service configuration still applies */ }
 }
-export const KEY_ALIASES={GEMINI_API_KEY:['GOOGLE_API_KEY'],HF_TOKEN:['HUGGINGFACE_API_KEY']};
+export const KEY_ALIASES={GEMINI_API_KEY:['GOOGLE_API_KEY'],GOOGLE_API_KEY:['GEMINI_API_KEY'],HF_TOKEN:['HUGGINGFACE_API_KEY'],HUGGINGFACE_API_KEY:['HF_TOKEN']};
 const configuredGroqModel=process.env.VF_GROQ_MODEL==='llama-3.3-70b-versatile'?'openai/gpt-oss-120b':(process.env.VF_GROQ_MODEL||'openai/gpt-oss-120b');
 export function cascadeDefaults() {
- return [
+ const primary=[
   ['Gemini','gemini','https://generativelanguage.googleapis.com/v1beta/openai',process.env.VF_GEMINI_MODEL||'gemini-3.1-flash-lite','GEMINI_API_KEY',10],
   ['Cerebras','cerebras','https://api.cerebras.ai/v1',process.env.VF_CEREBRAS_MODEL||'gpt-oss-120b','CEREBRAS_API_KEY',12],
   ['Groq','groq','https://api.groq.com/openai/v1',configuredGroqModel,'GROQ_API_KEY',20],
   ['Mistral','mistral','https://api.mistral.ai/v1',process.env.VF_MISTRAL_MODEL||'mistral-small-latest','MISTRAL_API_KEY',21],
   ['OpenRouter Free','openrouter','https://openrouter.ai/api/v1','openrouter/free','OPENROUTER_API_KEY',22],
-  // xAI is opt-in: it is not a free tier and must not silently incur charges.
-  ...(process.env.VF_XAI_MODEL ? [['xAI','xai','https://api.x.ai/v1',process.env.VF_XAI_MODEL,'XAI_API_KEY',21]]:[]),
+  ...(process.env.VF_XAI_MODEL?[['xAI','xai','https://api.x.ai/v1',process.env.VF_XAI_MODEL,'XAI_API_KEY',21]]:[]),
   ['Hugging Face','huggingface','https://router.huggingface.co/v1',process.env.VF_HF_MODEL||'openai/gpt-oss-120b:cerebras','HF_TOKEN',30],
   ['Ollama local','ollama',process.env.VF_LOCAL_LLM_URL||'http://127.0.0.1:11434/v1',process.env.VF_LOCAL_LLM_MODEL||'auto','',40],
   ['Local reserve','lmstudio',process.env.VF_LOCAL_LLM_SECONDARY_URL||'http://127.0.0.1:1234/v1',process.env.VF_LOCAL_LLM_SECONDARY_MODEL||'auto','',41]
  ].map(([name,provider,base_url,model,key_env,priority])=>({name:`Cascade: ${name}`,provider,base_url,model,key_env,priority}));
+ const identities=new Set(primary.map(r=>`${r.base_url}| ${r.model}`.replace('| ','|')));
+ const catalog=FREE_ROUTE_CATALOG.filter(r=>{
+  if(!r.baseUrl)return false; // Modal/remote endpoints appear only after explicit URL configuration.
+  try {const u=new URL(r.baseUrl);if(u.protocol!=='https:'&&!['localhost','127.0.0.1','[::1]'].includes(u.hostname))return false;}catch{return false;}
+  const identity=`${r.baseUrl}|${r.model}`;
+  if(identities.has(identity))return false;
+  identities.add(identity);return true;
+ }).map(r=>({name:`Catalog: ${r.name}`,provider:r.provider,base_url:r.baseUrl,model:r.model,key_env:r.keyEnv||'',priority:Number(r.priority||50)+30}));
+ return [...primary,...catalog];
 }
+
 export function syncCascadeRoutes() {
  let added=0;
  for(const r of cascadeDefaults()) {
@@ -35,7 +45,10 @@ export function syncCascadeRoutes() {
    if(existing.name===r.name&&((names[r.name]||[]).some(k=>process.env[k])||staleDefault))db.prepare('UPDATE routes SET base_url=?,model=? WHERE id=?').run(r.base_url,r.model,existing.id);
    continue;
   }
-  db.prepare('INSERT INTO routes(name,provider,base_url,model,key_env,priority) VALUES (?,?,?,?,?,?)').run(r.name,r.provider,r.base_url,r.model,r.key_env,r.priority);added++;
+  const free=isFreeRoute(r)?1:0;
+  // Free routes are enabled for immediate fallback. Paid/credit routes are
+  // registered but remain disabled until an administrator explicitly opts in.
+  db.prepare('INSERT INTO routes(name,provider,base_url,model,key_env,is_free,enabled,priority) VALUES (?,?,?,?,?,?,?,?)').run(r.name,r.provider,r.base_url,r.model,r.key_env,free,free,r.priority);added++;
  }
  return {added};
 }
@@ -60,6 +73,15 @@ export function routeProvider(r) {
  if(host==='api.mistral.ai')return 'mistral';
  if(host==='router.huggingface.co')return 'huggingface';
  if(host==='api.x.ai')return 'xai';
+ if(host==='api.sambanova.ai')return 'sambanova';
+ if(host==='integrate.api.nvidia.com')return 'nvidia';
+ if(host==='open.bigmodel.cn')return 'zhipu';
+ if(host==='llm.chutes.ai')return 'chutes';
+ if(host==='api.hyperbolic.xyz')return 'hyperbolic';
+ if(host==='api.together.xyz')return 'together';
+ if(host==='text.pollinations.ai')return 'pollinations';
+ if(host==='fal.run')return 'fal';
+ if(host.endsWith('.modal.run'))return 'modal';
  return declared||'openai-compatible';
 }
 /** Cost-safe default: unknown and credit-based cloud providers are opt-in. */
