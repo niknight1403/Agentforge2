@@ -191,20 +191,20 @@ jobs:
               WHERE table_schema='public' AND table_name IN (
                 'revenue_jobs','revenue_offers','revenue_experiments','revenue_attribution_events',
                 'revenue_cost_events','b2b_network_nodes','b2b_network_edges','influencer_learning_states',
-                'product_release_events','stripe_webhook_events','mcp_servers','mcp_governance_policies',
-                'mcp_credentials','mcp_circuits','mcp_agents','mcp_team_plans','mcp_team_runs',
+                'product_release_events','stripe_webhook_events','mcp_servers','mcp_tool_governance','mcp_approvals',
+                'mcp_credentials','mcp_circuits','mcp_agent_specs','mcp_agent_grants','mcp_team_plans','mcp_team_runs',
                 'mcp_execution_audit','mcp_approval_requests','credit_ledger_entries');
             SELECT string_agg(t, ', ') INTO missing FROM unnest(ARRAY[
                 'revenue_jobs','revenue_offers','revenue_experiments','revenue_attribution_events',
                 'revenue_cost_events','b2b_network_nodes','b2b_network_edges','influencer_learning_states',
-                'product_release_events','stripe_webhook_events','mcp_servers','mcp_governance_policies',
-                'mcp_credentials','mcp_circuits','mcp_agents','mcp_team_plans','mcp_team_runs',
+                'product_release_events','stripe_webhook_events','mcp_servers','mcp_tool_governance','mcp_approvals',
+                'mcp_credentials','mcp_circuits','mcp_agent_specs','mcp_agent_grants','mcp_team_plans','mcp_team_runs',
                 'mcp_execution_audit','mcp_approval_requests','credit_ledger_entries']) AS t
               WHERE to_regclass('public.'||quote_ident(t)) IS NULL;
             IF missing IS NOT NULL THEN
               RAISE EXCEPTION 'Schema unvollstaendig, fehlende Tabellen: %', missing;
             END IF;
-            RAISE NOTICE 'Journal-Eintraege: %, Pflicht-Tabellen vorhanden: %/20', j, expected;
+            RAISE NOTICE 'Journal-Eintraege: %, Pflicht-Tabellen vorhanden: %/22', j, expected;
           END $$;
           VERIFYSQL
           echo "Schema verifiziert: alle Pflicht-Tabellen vorhanden."
