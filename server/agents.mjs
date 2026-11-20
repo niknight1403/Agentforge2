@@ -1485,6 +1485,7 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
         /* assignments zaehlt jede Zuweisung. Ein Haenger, der endlos neu
            zugewiesen wird, faellt so auf, auch wenn started_at immer frisch ist. */
         db.prepare("UPDATE tasks SET status = 'RUNNING', started_at = ?, duration_ms = 0, assignments = COALESCE(assignments,0)+1, updated_at = ? WHERE id = ?").run(startedAt, startedAt, task.id);
+        emit('task.dispatch', { villaId, taskId: task.id, status: 'DISPATCHED', attempt: Number(task.assignments||0)+1, transport: process.env.VF_AGENT_RUNTIME_URL && process.env.VF_AGENT_RUNTIME_TOKEN ? 'remote_or_local_fallback' : 'local_scheduler' });
       }
 
       const executeLocally = (task) => executeTaskOnce(villaId, task).catch(async (e) => {
