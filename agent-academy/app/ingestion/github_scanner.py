@@ -40,6 +40,10 @@ class RepositoryTargetError(ValueError):
     """A controlled, user-correctable repository validation failure."""
 
 
+# Backwards-compatible name retained for Agent Academy callers/tests.
+RepositoryValidationError = RepositoryTargetError
+
+
 def _read_quoted_value(content: str, pos: int) -> tuple[str, int] | None:
     """Read a single- or triple-quoted scalar and return its value and end offset."""
     quote = content[pos]
