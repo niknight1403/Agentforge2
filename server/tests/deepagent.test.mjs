@@ -1,8 +1,10 @@
 import './_env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, closeSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
+import { db } from '../db.mjs';
 import { createUser } from '../auth.mjs';
 import { TMP } from './_env.mjs';
 
@@ -142,6 +144,19 @@ test('Parallele Deep-Projekt-Übergaben teilen denselben Entwicklungsauftrag', a
 });
 
 
+test('Deep-Projekt-Vorschau lehnt FIFOs ohne blockierenden Lesezugriff ab', async (t) => {
+  if (process.platform === 'win32') return t.skip('mkfifo ist auf Windows nicht verfügbar');
+  const project = await createDeepProject('Eine Web-App mit sicherer Vorschau', {chatFn: reply});
+  const dist = join(TMP, 'deep-files', String(project.id), 'dist');
+  mkdirSync(dist, {recursive: true});
+  const fifo = join(dist, 'blocked.pipe');
+  try { execFileSync('mkfifo', [fifo]); }
+  catch { return t.skip('mkfifo ist auf diesem Runner nicht verfügbar'); }
+  const started = Date.now();
+  assert.equal(deepPreviewFile(project.id, 'dist/blocked.pipe'), null);
+  assert.ok(Date.now() - started < 1000, 'opening a FIFO must not block the Hub event loop');
+});
+
 test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeichnissen', async () => {
   const project = await createDeepProject('Eine Web-App mit Live-Vorschau und Dashboard', { chatFn: reply });
   const dist = join(TMP, 'deep-files', String(project.id), 'dist');
@@ -184,6 +199,35 @@ test('Deep-Projekt-Vorschau erlaubt nur Dateien aus freigegebenen Build-Verzeich
   assert.equal(deepPreviewFile(project.id, 'dist/leak.txt'), null);
 });
 
+
+test('DeepAgent can recover from an offline initial plan after a successful chat', async () => {
+  const unavailable = Object.assign(new Error('Keine Route erreichbar'), {code: 'LLM_UNAVAILABLE'});
+  const project = await createDeepProject('Eine App, deren erster Plan zunächst offline ist', {
+    deferInitialPlan: true,
+    chatFn: async () => { throw unavailable; }
+  });
+  assert.equal((await waitForInitialPlan(project.id)).offline, true);
+  const recovery = await deepChat(project.id, 'Erstelle jetzt den konkreten Bauplan.', [], {chatFn: reply});
+  assert.equal(recovery.offline, false);
+  const handover = await prepareDeepProjectHandover(project.id);
+  assert.equal(handover.ok, true);
+  assert.match(handover.idea, /Bauplan: MVP/);
+});
+
+test('DeepAgent Villa ownership cannot be reassigned to another project owner', async () => {
+  const suffix = process.pid;
+  const ownerA = createUser({email: `deepagent-villa-a-${suffix}@example.invalid`, password: 'test-only-password-a', role: 'user'});
+  const ownerB = createUser({email: `deepagent-villa-b-${suffix}@example.invalid`, password: 'test-only-password-b', role: 'user'});
+  const projectA = await createDeepProject('Privates Deep-Projekt von Nutzer A', {chatFn: reply, ownerUserId: ownerA.id});
+  const projectB = await createDeepProject('Privates Deep-Projekt von Nutzer B', {chatFn: reply, ownerUserId: ownerB.id});
+  const ts = Date.now();
+  const villaId = Number(db.prepare(
+    'INSERT INTO villas (name, idea, status, max_agents, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?,?)'
+  ).run(`Deep owner conflict ${suffix}`, 'private test Villa', 'PLANNING', 12, 1, ts, ts).lastInsertRowid);
+  linkDeepProjectVilla(projectA.id, villaId);
+  assert.throws(() => linkDeepProjectVilla(projectB.id, villaId), (error) => error.code === 'VILLA_OWNER_CONFLICT');
+  assert.equal(db.prepare('SELECT owner_user_id FROM deep_villa_owners WHERE villa_id=?').get(villaId).owner_user_id, ownerA.id);
+});
 
 test('DeepAgent memory never mixes project titles across owners', async () => {
   const suffix = process.pid;
