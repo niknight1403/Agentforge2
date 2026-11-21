@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/villa-prompt-audit.yml'
       - 'scripts/audit-villas.mjs'
+      - 'scripts/villa-audit-diagnostics.mjs'
+      - 'scripts/villa-audit-diagnostics.test.mjs'
   workflow_run:
     workflows: [Hub-Deploy]
     types: [completed]
@@ -25,11 +27,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Aggregierte Audit-Diagnostik testen
+        run: node --test scripts/villa-audit-diagnostics.test.mjs
       - name: Alle Villen lesend pruefen (keine Modellkosten oder Projektstarts)
         env:
           VF_ADMIN_EMAIL: ${{ secrets.VF_ADMIN_EMAIL }}
           VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
         run: node scripts/audit-villas.mjs
+      - name: Sichere aggregierte Checkzahlen protokollieren
+        if: always()
+        run: node scripts/villa-audit-diagnostics.mjs artifacts/villa-configuration/report.json
       - name: Sicheren Befundbericht sichern
         if: always()
         uses: actions/upload-artifact@v4
