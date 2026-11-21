@@ -1,0 +1,12 @@
+{
+  admin off
+  auto_https off
+}
+
+http://n8n.localhost {
+  reverse_proxy n8n:5678
+}
+
+http://automation.localhost {
+  reverse_proxy activepieces:80
+}
