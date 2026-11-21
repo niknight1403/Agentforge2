@@ -28,3 +28,12 @@ test('Connectoren speichern nur Secret-Referenzen und validieren HTTPS sicher',(
  for(const endpoint of ['http://api.example.com','https://127.0.0.1/status','https://api.example.com/status?token=secret']) assert.throws(()=>store.validEndpoint(endpoint));
  assert.throws(()=>store.saveConnector({id:'bad-api',title:'Bad API',endpoint:'https://api.example.com',secretEnv:'Bearer abc'}),/Variablenname/);
 });
+
+test('Connector DNS policy rejects special-use IPv4 and IPv6 ranges', () => {
+  for (const ip of ['192.88.99.1', '2001:0:1::1', '2001:db8::1', '2002:c000:0204::1', '3fff::1', 'fd00::1', 'fe80::1', '::1']) {
+    assert.equal(store.publicAddress(ip), false, ip);
+  }
+  for (const ip of ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111', '2001:4860:4860::8888']) {
+    assert.equal(store.publicAddress(ip), true, ip);
+  }
+});
