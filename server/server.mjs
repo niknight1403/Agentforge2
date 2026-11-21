@@ -991,7 +991,7 @@ async function api(req, res, url) {
   // Unified, read-only integration inventory for the admin console. Secret
   // values are never returned; only configuration presence and safe metadata.
   if (p === '/api/integrations' && m === 'GET') {
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Integrationsstatus ist Admins vorbehalten.' });
+    if (!isAdmin) return json(res, needAuth ? 401 : 403, { error: 'Integrationsstatus ist Admins vorbehalten.' });
     const endpointOrigin=value=>{try{return new URL(String(value||'')).origin;}catch{return null;}};
     const routes=db.prepare('SELECT id,name,provider,base_url,model,key_env,is_free,enabled,status,ok,fail,lat_ms,cooldown_until FROM routes ORDER BY priority,id').all()
       .map(({base_url,...route})=>({...route,endpointOrigin:endpointOrigin(base_url),configured:!route.key_env||!!resolveKey(route.key_env),free:isFreeRoute({...route,base_url})}));
