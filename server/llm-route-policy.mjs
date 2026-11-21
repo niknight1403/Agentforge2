@@ -16,6 +16,7 @@ const PROVIDERS = Object.freeze({
   together: { hosts: ['api.together.xyz'], keyEnvs: ['TOGETHER_API_KEY'] },
   modal: { hosts: [], keyEnvs: ['MODAL_API_KEY'] },
   ollama: { hosts: ['ollama.cybersarah-ki.com'], keyEnvs: ['OLLAMA_API_KEY'] },
+  pollinations: { hosts: ['text.pollinations.ai'], keyEnvs: [] },
   lmstudio: { hosts: [], keyEnvs: [] }
 });
 
@@ -54,7 +55,7 @@ export function validateLlmRouteInput(input = {}) {
     huggingface: ['/v1'], xai: ['/v1'], fal: ['/openrouter/router/openai/v1'],
     sambanova: ['/v1'], nvidia: ['/v1'], zhipu: ['/api/paas/v4'],
     chutes: ['/v1'], hyperbolic: ['/v1'], together: ['/v1'],
-    ollama: ['/v1'], lmstudio: ['/v1']
+    ollama: ['/v1'], pollinations: ['/openai'], lmstudio: ['/v1']
   };
   if (provider !== 'modal' && !(allowedPaths[provider] || []).includes(path)) return { ok: false, error: 'ENDPOINT_PATH_NOT_ALLOWED' };
   return { ok: true, provider, baseUrl: url.toString().replace(/\/$/, ''), keyEnv };
