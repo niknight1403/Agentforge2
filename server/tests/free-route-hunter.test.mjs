@@ -100,6 +100,18 @@ test('probeRoute fragt ohne Key nicht an und schreibt Latenz bei Erfolg', async 
   assert.equal(stored.lat_ms >= 0, true);
 });
 
+test('probeRoute akzeptiert HTTP 200 ohne Modellantwort nicht als gesund', async () => {
+  const ins = db.prepare("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES ('Leere Antwort', 'test', 'https://empty.invalid/v1', 'empty-model', '', 1, 1, 30, 1, 'NEW', 0, 0, 0)").run();
+  const row = db.prepare('SELECT * FROM routes WHERE id = ?').get(Number(ins.lastInsertRowid));
+  const result = await probeRoute(row, { fetchImpl: async () => jsonRes({ choices: [{ message: { content: '   ' } }] }) });
+  assert.equal(result.state, 'INVALID_RESPONSE');
+  const stored = db.prepare('SELECT status, enabled, ok, fail FROM routes WHERE id = ?').get(row.id);
+  assert.equal(stored.status, 'INVALID_RESPONSE');
+  assert.equal(stored.enabled, 1, 'ein fehlerhaftes Payload darf die Route nicht dauerhaft deaktivieren');
+  assert.equal(stored.ok, 0);
+  assert.equal(stored.fail, 1);
+});
+
 test('probeRoute schaltet bei 401 die Route ab', async () => {
   const ins = db.prepare("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES ('Tot', 'test', 'https://dead.invalid/v1', 'dead-model', '', 1, 1, 30, 1, 'NEW', 0, 0, 0)").run();
   const row = db.prepare('SELECT * FROM routes WHERE id = ?').get(Number(ins.lastInsertRowid));
