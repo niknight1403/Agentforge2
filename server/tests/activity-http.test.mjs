@@ -63,8 +63,11 @@ test('activity heartbeat is UNKNOWN without work, ACTIVE on task progress, and S
   const villaId = Number(writer.prepare(
     "INSERT INTO villas(name,idea,status,autonomy,created_at,updated_at) VALUES (?,?,?,1,?,?)"
   ).run('Activity test', 'Heartbeat fixture', 'PAUSED', timestamp, timestamp).lastInsertRowid);
+  writer.prepare('UPDATE villas SET updated_at=? WHERE id=?').run(timestamp, villaId);
+  result = await activity();
+  assert.equal(result.body.activityState, 'UNKNOWN', 'Villa metadata is not work activity');
   writer.prepare(
-    "INSERT INTO tasks(villa_id,title,description,status,created_at,updated_at) VALUES (?,?,?,'PENDING',?,?)"
+    "INSERT INTO tasks(villa_id,title,description,status,created_at,updated_at) VALUES (?,?,?,'RUNNING',?,?)"
   ).run(villaId, 'Fresh task', 'Progress fixture', timestamp, timestamp);
 
   result = await activity();
