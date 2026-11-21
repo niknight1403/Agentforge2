@@ -73,7 +73,7 @@ Image, image-edit, video and audio generation continue through the dedicated Fal
 1. Configure only the provider credentials you are authorized to use; do not copy secrets into source files or logs.
 2. Restart the Hub and inspect `GET /api/integrations`.
 3. Confirm the route is present, configured, enabled and eligible before sending a test request.
-4. Test one provider at a time with a minimal request; verify the reported provider/model, latency, token usage and cooldown behavior.
+4. Test one provider at a time with a minimal request; verify the reported provider/model, latency, token usage and cooldown behavior. The Free Route Hunter marks a route healthy only after a non-empty OpenAI-compatible chat completion; an HTTP 2xx with malformed or empty content is not success.
 5. For MCP, start the server through the supervised runtime, approve the discovered tool, then verify it appears in `GET /api/tools`.
 6. For connectors, enable the connector, test it through the admin connector API, then verify its dynamic read tool appears.
 7. Keep paid/credit routes disabled until explicit operator approval and account-level budget limits are in place.
