@@ -353,9 +353,18 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const otherDelete = await fetch(`${base}/api/deep/projects/${projectId}`, { method: 'DELETE', headers: auth(tokenB) });
   assert.equal(otherDelete.status, 404);
   const ownerDelete = await fetch(`${base}/api/deep/projects/${projectId}`, { method: 'DELETE', headers: auth(tokenA) });
-  assert.equal(ownerDelete.status, 200);
+  assert.ok([200, 409].includes(ownerDelete.status), 'owner deletion succeeds when idle or is protected during an active development handoff');
+  if (ownerDelete.status === 409) {
+    const protectedDetail = await fetch(`${base}/api/deep/projects/${projectId}`, { headers: auth(tokenA) });
+    assert.equal(protectedDetail.status, 200, 'a blocked deletion must preserve the owner project');
+    const protectedOtherDetail = await fetch(`${base}/api/deep/projects/${projectId}`, { headers: auth(tokenB) });
+    assert.equal(protectedOtherDetail.status, 404, 'a blocked deletion must not expose the project to another user');
+  } else {
+    const deletedDetail = await fetch(`${base}/api/deep/projects/${projectId}`, { headers: auth(tokenA) });
+    assert.equal(deletedDetail.status, 404, 'a successful deletion must remove the owner project');
+  }
 
-  // Deleting the Deep project must not turn its surviving Villa into shared data.
+  // Deleting or protecting the Deep project must not turn its surviving Villa into shared data.
   const ownerVillaAfterDelete = await fetch(`${base}/api/villas/${villaId}`, { headers: auth(tokenA) });
   const otherVillaAfterDelete = await fetch(`${base}/api/villas/${villaId}`, { headers: auth(tokenB) });
   assert.equal(ownerVillaAfterDelete.status, 200, 'the original owner retains access to the surviving Villa');
