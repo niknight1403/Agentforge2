@@ -8,7 +8,7 @@ import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStud
 import { castOverview,createPersona,createWardrobePack,listPersonas,listWardrobePacks,personaCard,personaDetail,resolveLook,updatePersona } from './persona-packs.mjs';
 import { activeDirections,consumeDirections,directorHistory,directorStatus,postInstruction } from './director-chat.mjs';
 import { burnTitle,freeMediaStatus,imagesToVideo,mediaToolInventory,resizeImage,videoThumbnail } from './free-media-tools.mjs';
-import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, freeOnlyEnabled } from './llm-config.mjs';
+import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, freeOnlyEnabled, seedRouteCatalog } from './llm-config.mjs';
 import { mediaCapabilities } from './media.mjs';
 import { validateLlmRouteInput } from './llm-route-policy.mjs';
 import http from 'node:http';
@@ -118,14 +118,11 @@ const log = (...a) => console.log(new Date().toISOString(), '[villaforge]', ...a
 const logError = (...a) => console.error(new Date().toISOString(), '[villaforge]', ...a);
 
 /* --------------------------- Seed --------------------------- */
-if (db.prepare('SELECT COUNT(*) c FROM routes').get().c === 0) {
-  const ins = db.prepare(
-    'INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  );
-  for (const r of FREE_ROUTE_CATALOG) {
-    ins.run(r.name, r.provider, r.baseUrl, r.model, r.keyEnv, Number(isFreeRoute({provider:r.provider,base_url:r.baseUrl,model:r.model})), 1, r.priority, 1, 'NEW', 0, 0, 0);
-  }
-  console.log('[villaforge] Routen-Katalog initialisiert:', FREE_ROUTE_CATALOG.length);
+const routeSeed = seedRouteCatalog();
+const cascadeSeed = syncCascadeRoutes();
+const freeFlagSync = syncFreeRouteFlags();
+if (routeSeed.seeded || cascadeSeed.added || freeFlagSync.updated) {
+  log('LLM-Routenkatalog synchronisiert:', { seeded: routeSeed.seeded, cascadeAdded: cascadeSeed.added, freeFlagsUpdated: freeFlagSync.updated });
 }
 
 /* --------------------------- Admin-Bootstrap --------------------------- */
@@ -2029,21 +2026,32 @@ server.listen(PORT, HOST, () => {
     }).catch((error) => logError('Gratis-Routen-Scan:', error?.message || error));
   }, 6 * 60 * 60 * 1000);
   freeRouteLoop.unref();
-  // FREE ROUTE HUNTER: Health alle 30 Min; alle 6h (jeder 12. Tick) zusaetzlich
-  // lokale Ollama-Modelle + keyfreie Quellen integrieren und den Wochenbericht
-  // in den Villa-Workspace schreiben.
+  // FREE ROUTE HUNTER: erster vollstaendiger Lauf nach dem Start, danach
+  // Health-Probes alle 30 Min und Discovery/Integration alle 6 Stunden.
+  // Ein Busy-Guard verhindert ueberlappende Scans bei langsamen Providern.
   let hunterTicks = 0;
+  let hunterBusy = false;
+  const runHunterCycle = async (full = false) => {
+    if (hunterBusy) return;
+    hunterBusy = true;
+    try {
+      if (full) {
+        const result = await hunterTick({ monitorLimit: 8, includeLocal: true });
+        if (result.local.added.length) log(`Hunter: ${result.local.added.length} neue Gratis-Route(n) integriert`);
+        try { weeklyReport({ writeTo: reportPath() }); } catch { /* Bericht optional */ }
+      } else {
+        await monitor({ limit: 4 });
+      }
+    } catch (error) {
+      logError('Hunter:', error?.message || error);
+    } finally {
+      hunterBusy = false;
+    }
+  };
+  setTimeout(() => { runHunterCycle(true); }, 90_000).unref?.();
   const hunterLoop = setInterval(() => {
     hunterTicks += 1;
-    const full = hunterTicks % 12 === 1;
-    const work = full
-      ? hunterTick({ monitorLimit: 8, includeLocal: true }).then((r) => {
-          if (r.local.added.length) log(`Hunter: ${r.local.added.length} neue Gratis-Route(n) integriert`);
-          try { weeklyReport({ writeTo: reportPath() }); } catch { /* Bericht optional */ }
-          return r.probes.length;
-        })
-      : monitor({ limit: 4 }).then((p) => p.length);
-    work.catch((e) => logError('Hunter:', e?.message || e));
+    runHunterCycle(hunterTicks % 12 === 0);
   }, 30 * 60 * 1000);
   hunterLoop.unref();
   // Superintelligenz-Loop: alle 30 Min wird jede Villa mit faelliger Rat-Runde (>2 h) einberufen.
