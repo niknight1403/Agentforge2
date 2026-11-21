@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.DropdownMenu
@@ -130,7 +131,7 @@ fun ChatScreen(state: UiState, viewModel: MainViewModel) {
                         speechEngine.language = Locale.GERMAN
                         speechEngine.speak(message.content.take(12000), TextToSpeech.QUEUE_FLUSH, null, "villa-chat-${message.createdAt}")
                     }
-                }), speechEnabled = ttsReady)
+                }), onStop = { speechEngine.stop() }, speechEnabled = ttsReady)
             }
             if (state.busy) {
                 item {
@@ -256,7 +257,7 @@ fun ChatScreen(state: UiState, viewModel: MainViewModel) {
 }
 
 @Composable
-internal fun ChatBubble(message: ChatMessage, onSpeak: (() -> Unit)? = null, speechEnabled: Boolean = false) {
+internal fun ChatBubble(message: ChatMessage, onSpeak: (() -> Unit)? = null, onStop: (() -> Unit)? = null, speechEnabled: Boolean = false) {
     val isUser = message.role == "user"
     Row(
         Modifier.fillMaxWidth(),
@@ -287,6 +288,9 @@ internal fun ChatBubble(message: ChatMessage, onSpeak: (() -> Unit)? = null, spe
                     if (onSpeak != null) {
                         androidx.compose.material3.IconButton(onClick = onSpeak, enabled = speechEnabled) {
                             Icon(Icons.Filled.VolumeUp, contentDescription = "Antwort vorlesen", tint = if (speechEnabled) Aqua else TextMuted)
+                        }
+                        androidx.compose.material3.IconButton(onClick = { onStop?.invoke() }, enabled = speechEnabled) {
+                            Icon(Icons.Filled.StopCircle, contentDescription = "Sprachausgabe stoppen", tint = TextMuted)
                         }
                     }
                 }
