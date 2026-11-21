@@ -31,48 +31,23 @@ async def test_missing_service_token_fails_closed(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_analyzer_receives_all_indexed_files_while_evidence_stays_bounded(monkeypatch):
-    from app.api import endpoints
-    from app.schemas import AnalyzeRequest
-
-    files = [
-        {"path": f"src/module_{index}.py", "language": "py", "content": "source"}
-        for index in range(200)
-    ]
-    files.append({"path": "tests/test_late.py", "language": "py", "content": "test"})
-    captured = {}
-    monkeypatch.setattr(endpoints.store, "list_files", lambda _name: files)
-    monkeypatch.setattr(
-        endpoints.AuditorAgent,
-        "audit",
-        lambda self, repositories: captured.update(repositories) or {"count": len(repositories["sample"])},
-    )
-
-    result = await endpoints.analyze_synergies(AnalyzeRequest(repository_names=["sample"]))
-
-    assert len(captured["sample"]) == 201
-    assert captured["sample"][-1]["path"] == "tests/test_late.py"
-    assert "tests/test_late.py" not in result["evidence"]
-
-
-@pytest.mark.asyncio
-async def test_unexpected_value_error_during_sync_is_not_returned_to_client(monkeypatch):
+async def test_sync_does_not_expose_unexpected_value_error(monkeypatch):
     from app.api import endpoints
     from app.schemas import SyncRequest
 
-    async def unexpected_failure(*_args, **_kwargs):
-        raise ValueError("private filesystem path /srv/private/repo")
+    async def fail_clone(*_args, **_kwargs):
+        raise ValueError("/srv/private/checkout/configuration detail")
 
-    monkeypatch.setattr(endpoints.scanner, "clone_or_update", unexpected_failure)
-    payload = SyncRequest(repositories=[{
-        "name": "sample",
-        "url": "https://github.com/niknight1403/sample",
-    }])
-
+    monkeypatch.setattr(endpoints.scanner, "clone_or_update", fail_clone)
+    payload = SyncRequest(repositories=[{"name": "repo", "url": "https://github.com/niknight1403/repo"}])
     result = await endpoints.sync_repositories(payload)
 
-    assert result["repositories"]["sample"]["status"] == "failed"
-    assert result["repositories"]["sample"]["error"] == "Internal error during sync"
+    assert result["status"] == "partial"
+    assert result["repositories"]["repo"] == {
+        "status": "failed",
+        "error": "Internal error during sync",
+    }
+
 
 @pytest.mark.asyncio
 async def test_sync_returns_safe_repository_validation_message(monkeypatch):
@@ -84,14 +59,43 @@ async def test_sync_returns_safe_repository_validation_message(monkeypatch):
         raise RepositoryValidationError("Repository owner is not allowlisted")
 
     monkeypatch.setattr(endpoints.scanner, "clone_or_update", reject_target)
-    payload = SyncRequest(repositories=[{
-        "name": "sample",
-        "url": "https://github.com/niknight1403/sample",
-    }])
-
+    payload = SyncRequest(repositories=[{"name": "repo", "url": "https://github.com/niknight1403/repo"}])
     result = await endpoints.sync_repositories(payload)
 
-    assert result["repositories"]["sample"] == {
+    assert result["repositories"]["repo"] == {
         "status": "failed",
         "error": "Repository owner is not allowlisted",
     }
+
+
+@pytest.mark.asyncio
+async def test_sync_rejects_duplicate_repository_names_before_import(monkeypatch):
+    from app.api import endpoints
+    from app.schemas import SyncRequest
+
+    async def unexpected_clone(*_args, **_kwargs):
+        raise AssertionError("duplicate names must be rejected before cloning")
+
+    monkeypatch.setattr(endpoints.scanner, "clone_or_update", unexpected_clone)
+    payload = SyncRequest(repositories=[
+        {"name": "same", "url": "https://github.com/niknight1403/first"},
+        {"name": "SAME", "url": "https://github.com/niknight1403/second"},
+    ])
+    with pytest.raises(HTTPException) as error:
+        await endpoints.sync_repositories(payload)
+    assert error.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_audit_uses_all_indexed_paths_but_bounds_llm_evidence(monkeypatch):
+    from app.api import endpoints
+    from app.schemas import AnalyzeRequest
+
+    files = [{"path": f"src/module_{index}.py", "language": "py"} for index in range(200)]
+    files.append({"path": "tests/test_late_file.py", "language": "py"})
+    monkeypatch.setattr(endpoints.store, "list_files", lambda _name: files)
+
+    result = await endpoints.analyze_synergies(AnalyzeRequest(repository_names=["repo"], use_llm=False))
+
+    assert result["audit"]["passed"] is True
+    assert len(result["evidence"].splitlines()) == 201

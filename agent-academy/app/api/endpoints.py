@@ -1,12 +1,14 @@
+import asyncio
 import logging
 import secrets
+from filelock import FileLock, Timeout as FileLockTimeout
 from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.agents.auditor import AuditorAgent
 from app.agents.professor import ProfessorAgent
 from app.agents.optimizer import OptimizerAgent
 from app.config import settings
-from app.ingestion.github_scanner import GitHubScanner, RepositoryTargetError
+from app.ingestion.github_scanner import GitHubScanner, RepositoryValidationError
 from app.ingestion.knowledge_store import KnowledgeStore
 from app.schemas import AnalyzeRequest, OptimizeRequest, SyncRequest
 
@@ -30,31 +32,46 @@ async def require_token(authorization: str | None = Header(default=None)) -> Non
 @router.post("/sync-repos", dependencies=[Depends(require_token)])
 async def sync_repositories(payload: SyncRequest):
     """Clone and index allowlisted repositories, reporting failures per target."""
+    names = [target.name.casefold() for target in payload.repositories]
+    if len(names) != len(set(names)):
+        raise HTTPException(status_code=422, detail="Repository names must be unique within a sync request")
+
     results = {}
+    lock_dir = settings.data_dir / ".locks"
+    await asyncio.to_thread(lock_dir.mkdir, parents=True, exist_ok=True)
     for target in payload.repositories:
+        lock = FileLock(str(lock_dir / f"{target.name.casefold()}.lock"), timeout=120)
+        acquired = False
         try:
+            await asyncio.to_thread(lock.acquire)
+            acquired = True
             path = await scanner.clone_or_update(target.name, str(target.url))
             chunks = await scanner.scan(path)
-            store.replace_repository(target.name, chunks)
-            results[target.name] = {"status": "indexed", "files": len(chunks)}
-        except RepositoryTargetError as exc:
+            count = await asyncio.to_thread(store.replace_repository, target.name, chunks)
+            results[target.name] = {"status": "indexed", "files": count}
+        except RepositoryValidationError as exc:
             results[target.name] = {"status": "failed", "error": str(exc)}
+        except FileLockTimeout:
+            results[target.name] = {"status": "failed", "error": "Repository sync lock timed out"}
         except Exception:
             logger.exception("Sync failed for repository %s", target.name)
             results[target.name] = {"status": "failed", "error": "Internal error during sync"}
+        finally:
+            if acquired:
+                await asyncio.to_thread(lock.release)
     return {"status": "completed" if all(v["status"] == "indexed" for v in results.values()) else "partial", "repositories": results}
 
 
 @router.post("/analyze-synergies", dependencies=[Depends(require_token)])
 async def analyze_synergies(payload: AnalyzeRequest):
     """Build a deterministic audit from persistent repository file metadata."""
-    selected = payload.repository_names or store.list_repositories()
+    selected = payload.repository_names or await asyncio.to_thread(store.list_repositories)
     if not selected:
         raise HTTPException(status_code=404, detail="No repositories indexed")
     evidence = []
     repository_files = {}
     for name in selected:
-        files = store.list_files(name)
+        files = await asyncio.to_thread(store.list_files, name)
         if not files:
             raise HTTPException(status_code=404, detail=f"Repository not indexed: {name}")
         repository_files[name] = files
@@ -88,5 +105,5 @@ async def optimize_agents(payload: OptimizeRequest):
 
 @router.get("/knowledge/search", dependencies=[Depends(require_token)])
 async def search_knowledge(q: str, limit: int = 10):
-    """Search the persistent knowledge index for matching source excerpts."""
-    return {"results": store.search(q, limit)}
+    """Search the persistent knowledge index using a worker thread."""
+    return {"results": await asyncio.to_thread(store.search, q, limit)}

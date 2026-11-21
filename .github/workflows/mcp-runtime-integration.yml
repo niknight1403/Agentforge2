@@ -3,6 +3,7 @@ name: MCP Runtime Integration Tests
 on:
   pull_request:
     branches:
+      - main
       - feat/mcp-deployment-owned-rootless-profiles
     paths:
       - "server/mcp-*.mjs"
