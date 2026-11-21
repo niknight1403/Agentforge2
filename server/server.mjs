@@ -1209,8 +1209,8 @@ async function api(req, res, url) {
       return Number.isFinite(n) && n > 0 ? n : null;
     };
     const sources = {
-      tasks: latest('SELECT MAX(NULLIF(updated_at, 0)) AS ts FROM tasks'),
-      agents: latest('SELECT MAX(NULLIF(last_active_at, 0)) AS ts FROM agents'),
+      tasks: latest("SELECT MAX(NULLIF(updated_at, 0)) AS ts FROM tasks WHERE status NOT IN ('PENDING','READY')"),
+      agents: latest("SELECT MAX(NULLIF(last_active_at, 0)) AS ts FROM agents WHERE status='THINKING'"),
       messages: latest('SELECT MAX(NULLIF(created_at, 0)) AS ts FROM messages'),
       audit: latest('SELECT MAX(NULLIF(ts, 0)) AS ts FROM audit')
     };
@@ -1220,7 +1220,7 @@ async function api(req, res, url) {
     const activeWindowMs = 5 * 60 * 1000;
     const runningTasks = Number(db.prepare("SELECT COUNT(*) AS c FROM tasks WHERE status='RUNNING'").get().c || 0);
     const queuedTasks = Number(db.prepare("SELECT COUNT(*) AS c FROM tasks WHERE status IN ('PENDING','READY')").get().c || 0);
-    const activeAgents = Number(db.prepare('SELECT COUNT(*) AS c FROM agents WHERE last_active_at >= ?').get(generatedAt - activeWindowMs).c || 0);
+    const activeAgents = Number(db.prepare('SELECT COUNT(*) AS c FROM agents WHERE status='THINKING' AND last_active_at >= ?').get(generatedAt - activeWindowMs).c || 0);
     const runningVillas = Number(db.prepare("SELECT COUNT(*) AS c FROM villas WHERE status='RUNNING'").get().c || 0);
     const activityState = activityAt === null ? 'UNKNOWN' : activityAgeMs <= 90 * 60 * 1000 ? 'ACTIVE' : 'STALE';
     return json(res, 200, {
