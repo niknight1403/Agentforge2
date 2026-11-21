@@ -244,7 +244,7 @@ export function scheduleVilla(id, { concurrency = 0, maxRounds = 6, force = fals
   // HTTP- und Master-Pfade autonomy=1, obwohl der Scheduler den Start danach
   // mit FOCUS_ACTIVE ablehnte. Solche abgelehnten Starts blieben dadurch als
   // scheinbar laufende Villen in der DB und belegten den Abschluss-Sweep.
-  db.prepare('UPDATE villas SET autonomy=1, updated_at=? WHERE id=?').run(Date.now(), Number(id));
+  db.prepare("UPDATE villas SET autonomy=1, status=CASE WHEN status='PAUSED' THEN 'RUNNING' ELSE status END, updated_at=? WHERE id=?").run(Date.now(), Number(id));
   if (force) {
     const timer = retryTimers.get(Number(id));
     if (timer) clearTimeout(timer);
