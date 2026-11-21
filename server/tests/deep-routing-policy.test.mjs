@@ -28,6 +28,19 @@ test('selfHostedOnly denies unapproved remote Ollama endpoints',async()=>{
  assert.deepEqual(used,[]);
 });
 
+test('selfHostedOnly allows a remote Ollama host only after explicit HTTPS allowlisting', async () => {
+ const previous = process.env.VF_SELF_HOSTED_ALLOWED_HOSTS;
+ try {
+  process.env.VF_SELF_HOSTED_ALLOWED_HOSTS = 'model.example.com';
+  const { run, used } = mockCascade([cloud, remote]);
+  await run([{ role: 'user', content: 'test' }], { routeScope: 'selfHostedOnly' });
+  assert.deepEqual(used, ['ollama-remote']);
+ } finally {
+  if (previous === undefined) delete process.env.VF_SELF_HOSTED_ALLOWED_HOSTS;
+  else process.env.VF_SELF_HOSTED_ALLOWED_HOSTS = previous;
+ }
+});
+
 test('DeepAgent classifies explicit offline and adult-content tasks',async()=>{
  const {deepAgentRoutePolicy}=await import('../deepagent.mjs');
  assert.equal(deepAgentRoutePolicy('Flutter app','Nur lokal, ohne Internet entwickeln').routeScope,'offlineOnly');
