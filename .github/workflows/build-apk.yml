@@ -1,9 +1,9 @@
 name: Build Android APK
 
 on:
+  # Production signing is only available from the protected main workflow context.
+  # Do not execute a tag's potentially unreviewed workflow definition with release secrets.
   workflow_dispatch:
-  push:
-    tags: ['v*']
   workflow_run:
     workflows: [Hub-Deploy]
     types: [completed]
@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   apk:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
     env:
       VF_BUILD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     runs-on: ubuntu-latest
