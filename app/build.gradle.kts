@@ -3,6 +3,15 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Production signing is supplied only through protected CI environment variables.
+val releaseStorePath = System.getenv("ANDROID_RELEASE_KEYSTORE_PATH")
+val releaseStorePassword = System.getenv("ANDROID_RELEASE_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("ANDROID_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("ANDROID_RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = listOf(releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+    .all { !it.isNullOrBlank() }
+val allowDebugSigning = providers.gradleProperty("allowDebugSigning").orNull == "true"
+
 android {
     namespace = "dev.villaforge.app"
     // okhttp-android 5.x verlangt mindestens API 37 zum Kompilieren.
@@ -16,19 +25,32 @@ android {
         versionName = "1.66.0"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStorePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             // Production builds must use TLS; cleartext is limited to local debug setups.
             manifestPlaceholders["usesCleartextTraffic"] = "false"
             // Optimierter Release-Build: R8 verkleinert+verschleiert, Ressourcen werden
-            // gestrippt. Debug-Signatur haelt die APK direkt installierbar.
+            // gestrippt. Production uses the protected release keystore; PR QA may
+            // explicitly opt into a debug signature via -PallowDebugSigning=true.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseSigning) signingConfigs.getByName("release")
+                else signingConfigs.getByName("debug")
         }
         debug {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
@@ -49,6 +71,25 @@ android {
             "/META-INF/DEPENDENCIES",
             "/META-INF/INDEX.LIST"
         )
+    }
+}
+
+// A release task must never silently publish an APK signed with the debug key.
+val validateReleaseSigning = tasks.register("validateReleaseSigning") {
+    doLast {
+        if (!hasReleaseSigning && !allowDebugSigning) {
+            throw GradleException(
+                "Release signing is not configured. Set ANDROID_RELEASE_KEYSTORE_PATH, " +
+                    "ANDROID_RELEASE_KEYSTORE_PASSWORD, ANDROID_RELEASE_KEY_ALIAS and " +
+                    "ANDROID_RELEASE_KEY_PASSWORD in the protected build environment. " +
+                    "For PR-only QA builds, explicitly pass -PallowDebugSigning=true."
+            )
+        }
+    }
+}
+tasks.configureEach {
+    if (name == "assembleRelease" || name == "bundleRelease") {
+        dependsOn(validateReleaseSigning)
     }
 }
 
