@@ -1220,7 +1220,7 @@ async function api(req, res, url) {
     const activeWindowMs = 5 * 60 * 1000;
     const runningTasks = Number(db.prepare("SELECT COUNT(*) AS c FROM tasks WHERE status='RUNNING'").get().c || 0);
     const queuedTasks = Number(db.prepare("SELECT COUNT(*) AS c FROM tasks WHERE status IN ('PENDING','READY')").get().c || 0);
-    const activeAgents = Number(db.prepare('SELECT COUNT(*) AS c FROM agents WHERE status='THINKING' AND last_active_at >= ?').get(generatedAt - activeWindowMs).c || 0);
+    const activeAgents = Number(db.prepare("SELECT COUNT(*) AS c FROM agents WHERE status='THINKING' AND last_active_at >= ?").get(generatedAt - activeWindowMs).c || 0);
     const runningVillas = Number(db.prepare("SELECT COUNT(*) AS c FROM villas WHERE status='RUNNING'").get().c || 0);
     const activityState = activityAt === null ? 'UNKNOWN' : activityAgeMs <= 90 * 60 * 1000 ? 'ACTIVE' : 'STALE';
     return json(res, 200, {
