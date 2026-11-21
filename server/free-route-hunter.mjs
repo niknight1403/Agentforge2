@@ -153,11 +153,12 @@ export function integrate(candidates = []) {
 }
 
 /** HTTP-Status eines Probelaufs in DB-Zustand uebersetzen. */
-export function classifyProbe({ status = 0, ms = 0 } = {}) {
+export function classifyProbe({ status = 0, ms = 0, responseValid = true } = {}) {
   if (status === 429) return { state: 'COOLDOWN', cooldownMs: 120_000, dead: 0, enabled: 1 };
   if (status === 401 || status === 403) return { state: 'DEAD', cooldownMs: 0, dead: 1, enabled: 0 };
   if (status >= 500) return { state: 'ERROR', cooldownMs: 30_000, dead: 0, enabled: 1 };
   if (status === 0) return { state: 'UNREACHABLE', cooldownMs: 30_000, dead: 0, enabled: 1 };
+  if (status >= 200 && status < 300 && !responseValid) return { state: 'INVALID_RESPONSE', cooldownMs: 30_000, dead: 0, enabled: 1 };
   return { state: 'OK', cooldownMs: 0, dead: 0, enabled: 1 };
 }
 
@@ -174,6 +175,7 @@ export async function probeRoute(route, { fetchImpl = fetch, timeoutMs = 15_000 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let status = 0;
+  let responseValid = false;
   try {
     const res = await fetchImpl(`${String(route.base_url).replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
@@ -182,14 +184,22 @@ export async function probeRoute(route, { fetchImpl = fetch, timeoutMs = 15_000 
       body: JSON.stringify({ model: route.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 })
     });
     status = res.status;
-    if (res.ok) await res.text().catch(() => '');
+    if (res.ok) {
+      try {
+        const payload = await res.json();
+        responseValid = Array.isArray(payload?.choices)
+          && payload.choices.length > 0
+          && payload.choices[0] !== null
+          && typeof payload.choices[0] === 'object';
+      } catch { responseValid = false; }
+    }
   } catch {
     status = 0;
   } finally {
     clearTimeout(timer);
   }
   const ms = Date.now() - started;
-  const cls = classifyProbe({ status, ms });
+  const cls = classifyProbe({ status, ms, responseValid });
   const ok = cls.state === 'OK' ? 1 : 0;
   const ts = now();
   db.prepare(
