@@ -9,7 +9,7 @@ test('xAI reasoning gets a longer bounded default timeout', () => {
   try {
     delete process.env.VF_XAI_TIMEOUT_MS;
     process.env.VF_LLM_TIMEOUT_MS = '15000';
-    assert.equal(llmRequestTimeoutMs({ provider: 'xai' }), 120000);
+    assert.equal(llmRequestTimeoutMs({ provider: 'xai' }), 360000);
     assert.equal(llmRequestTimeoutMs({ provider: 'groq' }), 15000);
     process.env.VF_XAI_TIMEOUT_MS = '240000';
     assert.equal(llmRequestTimeoutMs({ provider: 'xai' }), 240000);
