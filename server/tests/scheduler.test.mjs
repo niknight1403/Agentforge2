@@ -365,3 +365,19 @@ test('a Villa paused during model backoff is not restarted when its retry timer 
     _resetScheduler();
   }
 });
+
+
+test('an explicit user start resumes a paused Villa, while passive queue dispatch does not', async () => {
+  _resetScheduler();
+  const id = villa('Explicit resume regression', 0, 1);
+  db.prepare("UPDATE villas SET status='PAUSED',autonomy=0 WHERE id=?").run(id);
+  let starts = 0;
+  configureScheduler({ start: async () => { starts += 1; return new Promise(() => {}); } });
+  const status = scheduleVilla(id, { force: true });
+  assert.ok(status.active.includes(id) || status.queue.includes(id));
+  assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status, 'RUNNING');
+  assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(id).autonomy, 1);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(starts, 1);
+  _resetScheduler();
+});
