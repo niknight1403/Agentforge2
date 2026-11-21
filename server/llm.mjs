@@ -189,9 +189,19 @@ async function callOpenAiCompatible(route, messages, opts) {
   }
 }
 
+export function llmRequestTimeoutMs(route, opts = {}) {
+  const explicit = Number(opts.timeoutMs);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.min(explicit, 3_600_000);
+  const envName = route?.provider === 'xai' ? 'VF_XAI_TIMEOUT_MS' : 'VF_LLM_TIMEOUT_MS';
+  const configured = Number(process.env[envName]);
+  const fallback = route?.provider === 'xai' ? 120_000 : 15_000;
+  return Math.max(1_000, Math.min(3_600_000,
+    Number.isFinite(configured) && configured > 0 ? configured : fallback));
+}
 const localModels=new Map();
 async function callOpenAiCompatibleRaw(route, messages, opts) {
-  const requestSignal=opts.signal?AbortSignal.any([opts.signal,AbortSignal.timeout(opts.timeoutMs??(Number(process.env.VF_LLM_TIMEOUT_MS)||15000))]):AbortSignal.timeout(opts.timeoutMs??15000);
+  const timeoutMs = llmRequestTimeoutMs(route, opts);
+  const requestSignal=opts.signal?AbortSignal.any([opts.signal,AbortSignal.timeout(timeoutMs)]):AbortSignal.timeout(timeoutMs);
   const key = resolveKey(route.key_env);
   const headers = { 'Content-Type': 'application/json' };
   // Fal.ai authentifiziert mit "Key" statt "Bearer": provider-abhaengig setzen.
@@ -201,7 +211,7 @@ async function callOpenAiCompatibleRaw(route, messages, opts) {
     const found=localModels.get(route.base_url);
     if(found && found.until>Date.now()) selectedModel=found.id;
     else {
-      const discoveryTimeout=AbortSignal.timeout(Math.min(opts.timeoutMs,1500));
+      const discoveryTimeout=AbortSignal.timeout(Math.min(timeoutMs,1500));
       const models=await fetch(`${route.base_url.replace(/\/$/,'')}/models`,{headers,signal:AbortSignal.any([requestSignal,discoveryTimeout]),redirect:'error'});
       if(!models.ok)throw Object.assign(new Error('Local model discovery failed'),{status:models.status});
       const data=await models.json();
