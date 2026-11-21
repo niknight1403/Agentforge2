@@ -16,7 +16,8 @@ Designziel: [ausgewählte Richtung 3](deepagent-studio-reference.webp) vom 21.11
 
 - `git diff --check`: bestanden.
 - 26 Hub-Tests (`deepagent`, `deepagent-auth`, `villa-build-download`): bestanden.
-- Android-Kompilierung: lokale Android-Toolchain in dieser Umgebung nicht vorhanden; CI-Build separat prüfen.
+- Android-PR-Checks für Commit `9d51d271`: Lint, Unit-Tests, Debug-APK und releaseähnliche QA-APK [bestanden](https://github.com/niknight1403/Agentforge2/actions/runs/44901996870). Beide APKs wurden als CI-Artefakte bereitgestellt. Die lokale Android-Toolchain ist hier nicht vorhanden.
+- Hub-Tests, DeepAgent Workspace CI, APEX Omega CI, Secret Hygiene und CodeQL für denselben Commit: bestanden.
 - Visueller Vergleich auf 360/390/430 Pixeln und Android-Screenreader: noch offen. Der Cloud-Browser erreicht den lokalen Hub nicht und kann die native Compose-Oberfläche ohnehin nicht abbilden.
 - Reales Flackern auf Android: noch nicht reproduziert oder als behoben nachgewiesen; die betroffene Navigation und die statischen Statusanzeigen wurden vereinfacht.
 
