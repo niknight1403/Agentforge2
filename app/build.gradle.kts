@@ -88,7 +88,12 @@ val validateReleaseSigning = tasks.register("validateReleaseSigning") {
     }
 }
 tasks.configureEach {
-    if (name == "assembleRelease" || name == "bundleRelease") {
+    // Guard aggregate tasks and direct APK/AAB packaging or signing task invocations.
+    // This prevents bypassing validation by calling packageRelease/signReleaseBundle directly.
+    if (name.contains("Release") &&
+        (name.startsWith("assemble") || name.startsWith("bundle") ||
+            name.startsWith("package") || name.startsWith("sign"))
+    ) {
         dependsOn(validateReleaseSigning)
     }
 }
