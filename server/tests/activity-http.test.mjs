@@ -70,7 +70,7 @@ test('activity heartbeat is UNKNOWN without work, ACTIVE on task progress, and S
   result = await activity();
   assert.equal(result.body.activityState, 'ACTIVE');
   assert.ok(result.body.activityAt >= timestamp);
-  assert.equal(result.body.counts.queuedTasks, 1);
+  assert.equal(result.body.counts.runningTasks, 1);
 
   writer.prepare('UPDATE tasks SET updated_at=? WHERE villa_id=?').run(Date.now() - 2 * 60 * 60 * 1000, villaId);
   result = await activity();
