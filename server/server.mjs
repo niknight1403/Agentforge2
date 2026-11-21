@@ -739,7 +739,7 @@ async function api(req, res, url) {
     return json(res, 200, rows.map((r) => ({ ...r, hasKey: r.provider === 'offline' || !!resolveKey(r.key_env) })));
   }
   if (p === '/api/routes' && m === 'POST') {
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Routen anlegen ist Admins vorbehalten.' });
+    if (!isAdmin) return json(res, 403, { error: 'Routen anlegen ist Admins vorbehalten.' });
     const b = await readBody(req);
     const id = db.prepare(
       'INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
@@ -747,14 +747,14 @@ async function api(req, res, url) {
     return json(res, 201, { id });
   }
   if (parts[0] === 'api' && parts[1] === 'routes' && parts[2] && m === 'PATCH') {
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Routen aendern ist Admins vorbehalten.' });
+    if (!isAdmin) return json(res, 403, { error: 'Routen aendern ist Admins vorbehalten.' });
     const b = await readBody(req);
     if (typeof b.enabled === 'boolean') db.prepare('UPDATE routes SET enabled = ? WHERE id = ?').run(b.enabled ? 1 : 0, Number(parts[2]));
     if (b.priority != null) db.prepare('UPDATE routes SET priority = ? WHERE id = ?').run(Number(b.priority), Number(parts[2]));
     return json(res, 200, { ok: true });
   }
   if (parts[0] === 'api' && parts[1] === 'routes' && parts[2] && m === 'DELETE') {
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Routen loeschen ist Admins vorbehalten.' });
+    if (!isAdmin) return json(res, 403, { error: 'Routen loeschen ist Admins vorbehalten.' });
     db.prepare('DELETE FROM routes WHERE id = ?').run(Number(parts[2]));
     return json(res, 200, { ok: true });
   }
