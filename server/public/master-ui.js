@@ -32,9 +32,10 @@ function speakMasterMessage(content) {
 function renderMasterMessages(rows) {
   $('#masterLog').innerHTML = rows.length ? rows.map(m => {
     const isUser = m.role === 'user';
-    return `<article class="master-bubble ${isUser ? 'user' : ''}"><small>${isUser ? 'Du' : 'Master-Agent'}</small><p>${esc(m.content)}</p>${isUser ? '' : `<button type="button" class="ghost master-speak" data-speak="${esc(m.content)}" aria-label="Master-Agent-Antwort vorlesen">Vorlesen</button>`}</article>`;
+    return `<article class="master-bubble ${isUser ? 'user' : ''}"><small>${isUser ? 'Du' : 'Master-Agent'}</small><p>${esc(m.content)}</p>${isUser ? '' : `<button type="button" class="ghost master-speak" data-speak="${esc(m.content)}" aria-label="Master-Agent-Antwort vorlesen">Vorlesen</button><button type="button" class="ghost master-stop" aria-label="Sprachausgabe stoppen">Stopp</button>`}</article>`;
   }).join('') : '<div class="empty-state"><b>Deine Zentrale für VillaForge</b><p>Beschreibe eine Änderung oder wähle einen Vorschlag. Du kannst mit „Status“ beginnen.</p></div>';
   document.querySelectorAll('.master-speak').forEach(button => button.addEventListener('click', () => speakMasterMessage(button.dataset.speak)));
+  document.querySelectorAll('.master-stop').forEach(button => button.addEventListener('click', () => window.speechSynthesis?.cancel()));
   $('#masterLog').scrollTop = $('#masterLog').scrollHeight;
 }
 async function refreshMaster() {
