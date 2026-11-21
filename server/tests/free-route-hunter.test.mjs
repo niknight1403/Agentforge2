@@ -87,7 +87,7 @@ test('probeRoute fragt ohne Key nicht an und schreibt Latenz bei Erfolg', async 
   const okRow = db.prepare('SELECT * FROM routes WHERE id = ?').get(Number(ins2.lastInsertRowid));
   let seen = null;
   const r = await probeRoute(okRow, {
-    fetchImpl: async (url, opts) => { seen = { url, opts }; return jsonRes({ ok: true }); }
+    fetchImpl: async (url, opts) => { seen = { url, opts }; return jsonRes({ choices: [{ message: { content: 'pong' } }] }); }
   });
   assert.equal(r.state, 'OK');
   assert.equal(seen.url, 'https://ok.invalid/v1/chat/completions');
@@ -96,6 +96,17 @@ test('probeRoute fragt ohne Key nicht an und schreibt Latenz bei Erfolg', async 
   assert.equal(stored.status, 'OK');
   assert.equal(stored.ok, 1);
   assert.equal(stored.lat_ms >= 0, true);
+});
+
+test('probeRoute markiert HTTP 200 ohne Chat-Completions-Antwort nicht als gesund', async () => {
+  const ins = db.prepare("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES ('Invalid response', 'test', 'https://invalid-response.invalid/v1', 'bad-model', '', 1, 1, 30, 1, 'NEW', 0, 0, 0)").run();
+  const row = db.prepare('SELECT * FROM routes WHERE id = ?').get(Number(ins.lastInsertRowid));
+  const result = await probeRoute(row, { fetchImpl: async () => jsonRes({ ok: true }) });
+  assert.equal(result.state, 'INVALID_RESPONSE');
+  const stored = db.prepare('SELECT status, cooldown_until, ok FROM routes WHERE id = ?').get(row.id);
+  assert.equal(stored.status, 'INVALID_RESPONSE');
+  assert.equal(stored.cooldown_until > Date.now(), true);
+  assert.equal(stored.ok, 0);
 });
 
 test('probeRoute schaltet bei 401 die Route ab', async () => {
@@ -130,7 +141,7 @@ test('monitor ignoriert bezahlte und noch gedrosselte Routen', async () => {
     limit: 50,
     fetchImpl: async (url) => {
       requested.push(String(url));
-      return jsonRes({});
+      return jsonRes({ choices: [{ message: { content: 'pong' } }] });
     }
   });
   assert.ok(rows.some((row) => row.id === eligibleId), 'eligible free route should be probed');

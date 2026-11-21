@@ -43,6 +43,14 @@ test('rejects nonstandard ports on public provider hosts', () => {
   }).error, 'ENDPOINT_PORT_NOT_ALLOWED');
 });
 
+test('allows the canonical xAI OpenAI-compatible endpoint with its own credential alias', () => {
+  assert.deepEqual(validateLlmRouteInput({
+    provider: 'xai', baseUrl: 'https://api.x.ai/v1', keyEnv: 'XAI_API_KEY'
+  }), {
+    ok: true, provider: 'xai', baseUrl: 'https://api.x.ai/v1', keyEnv: 'XAI_API_KEY'
+  });
+});
+
 test('allows the canonical keyless Pollinations endpoint', () => {
   assert.deepEqual(validateLlmRouteInput({
     provider: 'pollinations', baseUrl: 'https://text.pollinations.ai/openai', keyEnv: ''

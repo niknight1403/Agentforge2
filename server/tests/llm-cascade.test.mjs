@@ -139,6 +139,7 @@ test('Free-only mode uses approved free routes and skips paid or unknown cloud r
  assert.equal(isFreeRoute({...route(22,'gemini'),model:'gemini-3.5-flash-lite'}),false);
  assert.equal(isFreeRoute({...route(23,'openai-compatible'),base_url:'https://api.groq.com/openai/v1',model:'openai/gpt-oss-120b'}),true);
  assert.equal(isFreeRoute({...route(24,'openai-compatible'),base_url:'https://router.huggingface.co/v1',model:'openai/gpt-oss-120b:cerebras'}),false);
+ assert.equal(isFreeRoute({...route(25,'xai'),model:'grok-4'}),false,'xAI remains paid and excluded from free-only routing');
 });
 
 test('Lernende Kaskade bevorzugt pro Prioritätsgruppe die bewährte schnellere Route',async()=>{
