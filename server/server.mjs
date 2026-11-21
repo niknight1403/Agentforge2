@@ -739,7 +739,7 @@ async function api(req, res, url) {
     return json(res, 200, rows.map((r) => ({ ...r, hasKey: r.provider === 'offline' || !!resolveKey(r.key_env) })));
   }
   if (p === '/api/routes' && m === 'POST') {
-    if (!isAdmin) return json(res, 403, { error: 'Routen anlegen ist Admins vorbehalten.' });
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Routen anlegen ist Admins vorbehalten.' });
     const b = await readBody(req);
     const id = db.prepare(
       'INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
@@ -1201,7 +1201,7 @@ async function api(req, res, url) {
 
   // Authentifizierte Aktivitaetsmetrik: echte Arbeitsereignisse, keine Polling-/Villa-Metadaten.
   if (p === '/api/system/activity' && m === 'GET') {
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Nur Administratoren.' });
+    if (!isAdmin) return json(res, 403, { error: 'Nur Administratoren.' });
     const generatedAt = now();
     const latest = (sql) => {
       const value = db.prepare(sql).get()?.ts;
