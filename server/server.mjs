@@ -121,7 +121,7 @@ const logError = (...a) => console.error(new Date().toISOString(), '[villaforge]
 const routeSeed = seedRouteCatalog();
 const freeFlagSync = syncFreeRouteFlags();
 if (routeSeed.seeded || freeFlagSync.updated) {
-  log('LLM-Routenkatalog synchronisiert:', { seeded: routeSeed.seeded, freeFlagsUpdated: freeFlagSync.updated, skippedExisting: !!routeSeed.skippedExisting });
+  log('LLM-Routenkatalog synchronisiert:', { seeded: routeSeed.seeded, freeFlagsUpdated: freeFlagSync.updated });
 }
 
 /* --------------------------- Admin-Bootstrap --------------------------- */
