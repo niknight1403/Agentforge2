@@ -8,7 +8,7 @@ import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStud
 import { castOverview,createPersona,createWardrobePack,listPersonas,listWardrobePacks,personaCard,personaDetail,resolveLook,updatePersona } from './persona-packs.mjs';
 import { activeDirections,consumeDirections,directorHistory,directorStatus,postInstruction } from './director-chat.mjs';
 import { burnTitle,freeMediaStatus,imagesToVideo,mediaToolInventory,resizeImage,videoThumbnail } from './free-media-tools.mjs';
-import { syncFreeRouteFlags, isFreeRoute, freeOnlyEnabled, seedRouteCatalog } from './llm-config.mjs';
+import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, freeOnlyEnabled, seedRouteCatalog } from './llm-config.mjs';
 import { mediaCapabilities } from './media.mjs';
 import { validateLlmRouteInput } from './llm-route-policy.mjs';
 import http from 'node:http';
