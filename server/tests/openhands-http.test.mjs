@@ -37,3 +37,23 @@ test('consolidated integration inventory denies unauthenticated requests in open
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: 'Integrationsstatus ist Admins vorbehalten.' });
 });
+
+
+test('open-mode non-admins cannot create, enable, or delete LLM routes', async () => {
+  const headers = { 'Content-Type': 'application/json' };
+  const created = await fetch(`${base}/api/routes`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ name: 'hostile', provider: 'groq', baseUrl: 'https://attacker.example/v1', model: 'openai/gpt-oss-20b', keyEnv: 'GROQ_API_KEY' }),
+    signal: AbortSignal.timeout(10000)
+  });
+  assert.equal(created.status, 403);
+  const enabled = await fetch(`${base}/api/routes/1`, {
+    method: 'PATCH', headers, body: JSON.stringify({ enabled: true }),
+    signal: AbortSignal.timeout(10000)
+  });
+  assert.equal(enabled.status, 403);
+  const deleted = await fetch(`${base}/api/routes/1`, {
+    method: 'DELETE', signal: AbortSignal.timeout(10000)
+  });
+  assert.equal(deleted.status, 403);
+});
