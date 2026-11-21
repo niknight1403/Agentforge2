@@ -59,8 +59,6 @@ fun FileManagerScreen() {
         }
     }
 
-    LaunchedEffect(treeUri) { updateAccessStatus() }
-
     fun refresh(root: Uri? = treeUri) {
         root ?: return
         updateAccessStatus()
@@ -87,6 +85,12 @@ fun FileManagerScreen() {
         }
     }
 
+    // Re-read the persisted folder whenever this screen is entered or its tree changes.
+    LaunchedEffect(treeUri) {
+        updateAccessStatus()
+        if (treeUri != null) refresh(treeUri)
+    }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             try {
@@ -100,7 +104,6 @@ fun FileManagerScreen() {
                 }
                 treeUri = uri
                 prefs.edit().putString("tree", uri.toString()).apply()
-                refresh(uri)
             } catch (e: Exception) { result = "Ordnerzugriff konnte nicht gespeichert werden: ${e.message}" }
         }
     }
@@ -111,7 +114,7 @@ fun FileManagerScreen() {
         // Resolve an explicitly named file before interpreting words such as "jpg"
         // as a MIME category. This prevents "Lösche Urlaub.jpg" from selecting every photo.
         val needle = q.replace(
-            Regex("^(bitte\\s+)?(lösche|loesche|entferne|zeige|finde|suche|sortiere|ordne|verschiebe)\\s+(die\\s+)?(datei|dateien)?\\s*"),
+            Regex("^(bitte\\s+)?(lösche|loesche|entferne|delete|zeige|finde|suche|sortiere|ordne|verschiebe)\\s+(die\\s+)?(datei|dateien)?\\s*"),
             ""
         ).trim().trim('"', '\'')
         val exactNamedFiles = if (needle.contains('.')) {
