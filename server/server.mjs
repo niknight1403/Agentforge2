@@ -9,6 +9,7 @@ import { castOverview,createPersona,createWardrobePack,listPersonas,listWardrobe
 import { activeDirections,consumeDirections,directorHistory,directorStatus,postInstruction } from './director-chat.mjs';
 import { burnTitle,freeMediaStatus,imagesToVideo,mediaToolInventory,resizeImage,videoThumbnail } from './free-media-tools.mjs';
 import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config.mjs';
+import { validateLlmRouteInput } from './llm-route-policy.mjs';
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { createMasterControl } from './master-control.mjs';
@@ -739,24 +740,39 @@ async function api(req, res, url) {
     return json(res, 200, rows.map((r) => ({ ...r, hasKey: r.provider === 'offline' || !!resolveKey(r.key_env) })));
   }
   if (p === '/api/routes' && m === 'POST') {
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Routen anlegen ist Admins vorbehalten.' });
+    if (!isAdmin) return json(res, 403, { error: 'Administrator role required.' });
     const b = await readBody(req);
+    const validation = validateLlmRouteInput(b);
+    if (!validation.ok) return json(res, 400, { error: validation.error });
+    const model = String(b.model || '').trim();
+    if (!model || model.length > 160 || !/^[a-z0-9._:/-]+$/i.test(model)) return json(res, 400, { error: 'MODEL_INVALID' });
+    const name = String(b.name || 'Route').trim().slice(0, 120) || 'Route';
+    const route = { provider: validation.provider, base_url: validation.baseUrl, model };
+    const free = isFreeRoute(route) ? 1 : 0;
+    const priority = Number.isInteger(Number(b.priority)) ? Math.max(1, Math.min(999, Number(b.priority))) : 10;
     const id = db.prepare(
       'INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(b.name || 'Route', b.provider || 'openai-compatible', b.baseUrl || '', b.model || '', b.keyEnv || '', b.isFree ? 1 : 0, 1, Number(b.priority) || 10, 1, 'NEW', 0, 0, 0).lastInsertRowid;
+    ).run(name, validation.provider, validation.baseUrl, model, validation.keyEnv, free, 0, priority, 1, 'NEW', 0, 0, 0).lastInsertRowid;
     return json(res, 201, { id });
   }
   if (parts[0] === 'api' && parts[1] === 'routes' && parts[2] && m === 'PATCH') {
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Routen aendern ist Admins vorbehalten.' });
+    if (!isAdmin) return json(res, 403, { error: 'Administrator role required.' });
+    const routeId = Number(parts[2]);
+    if (!Number.isSafeInteger(routeId) || routeId < 1) return json(res, 400, { error: 'ROUTE_ID_INVALID' });
+    if (!db.prepare('SELECT id FROM routes WHERE id = ?').get(routeId)) return json(res, 404, { error: 'ROUTE_NOT_FOUND' });
     const b = await readBody(req);
-    if (typeof b.enabled === 'boolean') db.prepare('UPDATE routes SET enabled = ? WHERE id = ?').run(b.enabled ? 1 : 0, Number(parts[2]));
-    if (b.priority != null) db.prepare('UPDATE routes SET priority = ? WHERE id = ?').run(Number(b.priority), Number(parts[2]));
+    const priority = b.priority == null ? null : Number(b.priority);
+    if (priority != null && (!Number.isInteger(priority) || priority < 1 || priority > 999)) return json(res, 400, { error: 'ROUTE_PRIORITY_INVALID' });
+    if (typeof b.enabled === 'boolean') db.prepare('UPDATE routes SET enabled = ? WHERE id = ?').run(b.enabled ? 1 : 0, routeId);
+    if (priority != null) db.prepare('UPDATE routes SET priority = ? WHERE id = ?').run(priority, routeId);
     return json(res, 200, { ok: true });
   }
   if (parts[0] === 'api' && parts[1] === 'routes' && parts[2] && m === 'DELETE') {
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Routen loeschen ist Admins vorbehalten.' });
-    db.prepare('DELETE FROM routes WHERE id = ?').run(Number(parts[2]));
-    return json(res, 200, { ok: true });
+    if (!isAdmin) return json(res, 403, { error: 'Administrator role required.' });
+    const routeId = Number(parts[2]);
+    if (!Number.isSafeInteger(routeId) || routeId < 1) return json(res, 400, { error: 'ROUTE_ID_INVALID' });
+    const result = db.prepare('DELETE FROM routes WHERE id = ?').run(routeId);
+    return json(res, result.changes ? 200 : 404, { ok: result.changes > 0 });
   }
 
   // ---- KeyForge / RouteForge (Master-Agent-Charta 2026-10-18) ----
