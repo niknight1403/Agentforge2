@@ -130,7 +130,7 @@ fun ChatScreen(state: UiState, viewModel: MainViewModel) {
                     if (ttsReady) {
                         val languageStatus = speechEngine.setLanguage(Locale.GERMAN)
                         if (languageStatus >= TextToSpeech.LANG_AVAILABLE) {
-                            speechEngine.speak(message.content.take(12000), TextToSpeech.QUEUE_FLUSH, null, "villa-chat-${message.createdAt}")
+                            speechEngine.speak(message.content.take(12000), TextToSpeech.QUEUE_FLUSH, android.os.Bundle(), "villa-chat-${message.createdAt}")
                         }
                     }
                 }), onStop = { speechEngine.stop() }, speechEnabled = ttsReady)
