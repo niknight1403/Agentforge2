@@ -144,6 +144,9 @@ export function routeRpm(route) {
   if (provider === 'mistral') return Number(process.env.VF_RPM_MISTRAL) || 5;
   if (provider === 'openrouter') return Number(process.env.VF_RPM_OPENROUTER) || 12;
   if (provider === 'xai') return Number(process.env.VF_RPM_XAI) || 5;
+  // Conservative local request caps for additional providers; these are not
+  // representations of vendor-published quotas and can be overridden per provider.
+  if (['sambanova', 'nvidia', 'zhipu', 'chutes', 'hyperbolic', 'together', 'fal', 'huggingface'].includes(provider)) return 6;
   return Number(process.env.VF_RPM_DEFAULT) || 30;
 }
 
