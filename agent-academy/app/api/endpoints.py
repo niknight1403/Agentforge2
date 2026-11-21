@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import secrets
-from pathlib import Path
 from filelock import FileLock, Timeout as FileLockTimeout
 from fastapi import APIRouter, Depends, Header, HTTPException
 
