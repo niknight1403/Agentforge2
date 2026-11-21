@@ -50,7 +50,7 @@ test('Develop-Endpunkt verweigert die Villa, solange kein Produkt belegt ist', a
   const token = await tokenFor('gate-block@example.com');
   const created = await api('/api/deep/projects', {
     method: 'POST',
-    body: JSON.stringify({ idea: 'Eine App, die Rechnungen fuer Freelancer erzeugt und als CSV exportiert.' }),
+    body: JSON.stringify({ idea: 'Analysiere die fachlichen Anforderungen fuer die Abrechnung von Freelancern.' }),
   }, token);
   const projectId = Number(created.body?.project?.id || created.body?.id);
   assert.ok(projectId > 0, JSON.stringify(created.body));
