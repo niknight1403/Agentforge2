@@ -753,12 +753,12 @@ async function api(req, res, url) {
     if (!Number.isSafeInteger(routeId) || routeId < 1) return json(res, 400, { error: 'ROUTE_ID_INVALID' });
     if (!db.prepare('SELECT id FROM routes WHERE id = ?').get(routeId)) return json(res, 404, { error: 'ROUTE_NOT_FOUND' });
     const b = await readBody(req);
-    if (typeof b.enabled === 'boolean') db.prepare('UPDATE routes SET enabled = ? WHERE id = ?').run(b.enabled ? 1 : 0, routeId);
-    if (b.priority != null) {
-      const priority = Number(b.priority);
-      if (!Number.isInteger(priority) || priority < 1 || priority > 999) return json(res, 400, { error: 'ROUTE_PRIORITY_INVALID' });
-      db.prepare('UPDATE routes SET priority = ? WHERE id = ?').run(priority, routeId);
+    const priority = b.priority == null ? null : Number(b.priority);
+    if (priority != null && (!Number.isInteger(priority) || priority < 1 || priority > 999)) {
+      return json(res, 400, { error: 'ROUTE_PRIORITY_INVALID' });
     }
+    if (typeof b.enabled === 'boolean') db.prepare('UPDATE routes SET enabled = ? WHERE id = ?').run(b.enabled ? 1 : 0, routeId);
+    if (priority != null) db.prepare('UPDATE routes SET priority = ? WHERE id = ?').run(priority, routeId);
     return json(res, 200, { ok: true });
   }
   if (parts[0] === 'api' && parts[1] === 'routes' && parts[2] && m === 'DELETE') {
