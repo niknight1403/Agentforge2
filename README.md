@@ -1,5 +1,9 @@
 # VillaForge
 
+## Android-Release-Signierung
+
+Die Produktions-APK wird ausschließlich mit einem geschützten Release-Keystore aus GitHub Actions signiert. Einrichtung, Secret-Namen, Backup-Hinweise und QA/Production-Trennung: [docs/android-release-signing.md](docs/android-release-signing.md). PR-Builds erzeugen ausdrücklich nur QA-Artefakte mit Debug-Signatur.
+
 ## Audit-Diagnose 1.66.0
 
 - Bei roter Produktabnahme nennt der Bericht jetzt den Grund als stabilen Code
