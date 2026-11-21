@@ -2,7 +2,6 @@ package dev.villaforge.app.ui.screens
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
-import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
