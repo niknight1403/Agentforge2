@@ -186,6 +186,14 @@ export const FREE_ROUTE_CATALOG = [
     model: 'llama3.2:3b',
     keyEnv: '',
     priority: 30
+  },
+  {
+    name: 'Pollinations Text (keyless fallback)',
+    provider: 'pollinations',
+    baseUrl: 'https://text.pollinations.ai/openai',
+    model: 'openai',
+    keyEnv: '',
+    priority: 20
   }
 ];
 
