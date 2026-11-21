@@ -34,6 +34,7 @@ export function validateLlmRouteInput(input = {}) {
 
   const host = url.hostname.toLowerCase();
   const local = ['ollama', 'lmstudio'].includes(provider) && LOOPBACK.has(host);
+  if (!local && url.port) return { ok: false, error: 'ENDPOINT_PORT_NOT_ALLOWED' };
   if (local) {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return { ok: false, error: 'ENDPOINT_NOT_ALLOWED' };
   } else {
