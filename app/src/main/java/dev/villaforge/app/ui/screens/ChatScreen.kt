@@ -128,8 +128,10 @@ fun ChatScreen(state: UiState, viewModel: MainViewModel) {
             items(shownMessages) { message ->
                 ChatBubble(message, onSpeak = if (message.role == "user") null else ({
                     if (ttsReady) {
-                        speechEngine.language = Locale.GERMAN
-                        speechEngine.speak(message.content.take(12000), TextToSpeech.QUEUE_FLUSH, null, "villa-chat-${message.createdAt}")
+                        val languageStatus = speechEngine.setLanguage(Locale.GERMAN)
+                        if (languageStatus >= TextToSpeech.LANG_AVAILABLE) {
+                            speechEngine.speak(message.content.take(12000), TextToSpeech.QUEUE_FLUSH, null, "villa-chat-${message.createdAt}")
+                        }
                     }
                 }), onStop = { speechEngine.stop() }, speechEnabled = ttsReady)
             }
