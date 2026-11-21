@@ -306,8 +306,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val res = client.deepUploadFile(projectId, name, mime, base64)
             val fileId = res.optLong("id", 0)
             if (fileId > 0) {
-                _state.update {
-                    it.copy(deepPendingAttachments = it.deepPendingAttachments +
+                _state.update { current ->
+                    if (current.deepActiveProject?.id != projectId) current
+                    else current.copy(deepPendingAttachments = current.deepPendingAttachments +
                         DeepAttachment(kind = "file", fileId = fileId, name = res.optString("name", name)))
                 }
             } else _state.update { it.copy(message = res.optString("error", "Upload fehlgeschlagen")) }
@@ -337,8 +338,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val res = client.deepUploadFile(projectId, name, mime, base64)
             val fileId = res.optLong("id", 0)
             if (fileId > 0) {
-                _state.update {
-                    it.copy(deepPendingAttachments = it.deepPendingAttachments +
+                _state.update { current ->
+                    if (current.deepActiveProject?.id != projectId) current
+                    else current.copy(deepPendingAttachments = current.deepPendingAttachments +
                         DeepAttachment(kind = "file", fileId = fileId, name = res.optString("name", name)))
                 }
             } else _state.update { it.copy(message = res.optString("error", "Upload fehlgeschlagen")) }
