@@ -43,6 +43,29 @@ test('DeepAgent öffnet den Projektchat sofort und erzeugt den initialen Plan im
   assert.ok(!messages.some((message) => /analysiere deine Idee/i.test(message.content)));
 });
 
+test('DeepAgent deletion cancels a pending plan without recreating orphan messages', async () => {
+  let started;
+  const didStart = new Promise(resolve => { started = resolve; });
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const project = await createDeepProject('Ein Projekt das waehrend der ersten Analyse geloescht wird', {
+    deferInitialPlan: true,
+    chatFn: async () => {
+      started();
+      await gate;
+      return reply();
+    }
+  });
+  await didStart;
+  assert.equal(isInitialPlanPending(project.id), true);
+  assert.equal(deleteDeepProject(project.id), true);
+  assert.equal(isInitialPlanPending(project.id), false);
+  release();
+  await waitForInitialPlan(project.id);
+  assert.equal(deepProjectDetail(project.id), null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM deep_messages WHERE project_id=?').get(project.id).count, 0);
+});
+
 test('DeepAgent meldet einen Offline-Initialplan getrennt von einem fertigen Plan', async () => {
   const unavailable = Object.assign(new Error('Keine Route erreichbar'), { code: 'LLM_UNAVAILABLE' });
   const project = await createDeepProject('Eine App mit einem offline nicht verfügbaren Sprachmodell', {
