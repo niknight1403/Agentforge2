@@ -750,7 +750,7 @@ async function api(req, res, url) {
     const route = { provider: validated.provider, base_url: validated.baseUrl, model };
     const id = db.prepare(
       'INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(name, validated.provider, validated.baseUrl, model, validated.keyEnv, isFreeRoute(route) ? 1 : 0, 0, Number.isFinite(Number(b.priority)) ? Math.max(1, Math.min(1000, Math.trunc(Number(b.priority))) : 10, 1, 'NEW', 0, 0, 0).lastInsertRowid;
+    ).run(name, validated.provider, validated.baseUrl, model, validated.keyEnv, isFreeRoute(route) ? 1 : 0, 0, Number.isFinite(Number(b.priority)) ? Math.max(1, Math.min(1000, Math.trunc(Number(b.priority)))) : 10, 1, 'NEW', 0, 0, 0).lastInsertRowid;
     return json(res, 201, { id });
   }
   if (parts[0] === 'api' && parts[1] === 'routes' && parts[2] && m === 'PATCH') {
