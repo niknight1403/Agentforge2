@@ -1,6 +1,6 @@
 import { forgeLog } from './keyforge.mjs';
 import { db, now } from './db.mjs';
-import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute } from './llm-config.mjs';
+import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute,routeProvider } from './llm-config.mjs';
 import { createCascade, orderCascadeRoutes } from './llm-cascade.mjs';
 import { createRequestLimiter } from './request-limiter.mjs';
 import { routeAdmission, isLocalEndpoint } from './route-selection.mjs';
