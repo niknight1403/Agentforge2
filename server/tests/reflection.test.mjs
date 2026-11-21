@@ -16,6 +16,9 @@ const tmp = mkdtempSync(join(tmpdir(), 'refl-'));
 process.env.VF_DB = join(tmp, 'test.db');
 process.env.VF_WORKSPACE = join(tmp, 'ws');
 process.env.VF_LLM_FREE_ONLY = '0'; // mock route verifies reflection behavior independently of routing policy
+// Keep this unit test independent from runner-wide route-ledger/local-only settings.
+process.env.VF_ROUTE_LEDGER = '0';
+process.env.LLM_LOCAL_ONLY = '0';
 
 const { db, now } = await import('../db.mjs');
 const { runAgent, insertAgent } = await import('../agents.mjs');
@@ -109,6 +112,7 @@ test('identische Tool-Aufrufe loesen Prompt-Selbstheilung aus bevor der Lauf abg
   };
   try {
     const out = await runAgent(agent, 'Pruefe eine Datei.', { villaId, reflect: false });
+    assert.ok(out.answer, `runAgent failed: ${out.error || JSON.stringify(out)}`);
     assert.match(out.answer, /anderen Strategie/);
     assert.equal(i, 4);
     assert.ok(sent[3].some(message => String(message.content).includes('[SELF-HEALING]')));
