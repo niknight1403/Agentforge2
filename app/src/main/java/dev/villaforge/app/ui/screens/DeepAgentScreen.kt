@@ -419,7 +419,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                                         onClick = {
                                             val languageStatus = speechEngine.setLanguage(Locale.GERMAN)
                                             if (ttsReady && languageStatus >= TextToSpeech.LANG_AVAILABLE) {
-                                                speechEngine.speak(msg.content.take(12000), TextToSpeech.QUEUE_FLUSH, null, "deep-chat-${msg.createdAt}")
+                                                speechEngine.speak(msg.content.take(12000), TextToSpeech.QUEUE_FLUSH, android.os.Bundle(), "deep-chat-${msg.createdAt}")
                                             }
                                         },
                                         enabled = ttsReady
