@@ -30,3 +30,17 @@ test('OpenHands Canvas integration endpoint returns a sanitized, configured brow
     state: 'configured'
   });
 });
+
+test('open mode never grants anonymous LLM route mutation privileges', async () => {
+  const create = await fetch(`${base}/api/routes`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ provider: 'groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'openai/gpt-oss-120b', keyEnv: 'GROQ_API_KEY' })
+  });
+  assert.equal(create.status, 403);
+  const update = await fetch(`${base}/api/routes/1`, {
+    method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true })
+  });
+  assert.equal(update.status, 403);
+  const remove = await fetch(`${base}/api/routes/1`, { method: 'DELETE' });
+  assert.equal(remove.status, 403);
+});
