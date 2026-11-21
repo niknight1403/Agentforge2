@@ -31,6 +31,9 @@ data class UiState(
     val deepProjects: List<DeepProject> = emptyList(),
     /** Deep-Agent: aktuelles Projekt (0 = keins offen). */
     val deepActiveProject: DeepProject? = null,
+    /** Deep-Agent: angefordertes Projekt waehrend des asynchronen Ladens. */
+    val deepOpeningProjectId: Long? = null,
+    val deepOpenError: String? = null,
     /** Deep-Agent: Nachrichten des aktiven Projekts. */
     val deepMessages: List<DeepMessage> = emptyList(),
     /** Deep-Agent: Live-Workspace (Gates, Vorschau, Admin-Werkzeuge). */
@@ -189,13 +192,39 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Projekt oeffnen: Detail + Nachrichten laden. */
-    fun openDeepProject(id: Long) = viewModelScope.launch {
-        try {
-            val (project, messages) = client.deepProjectDetail(id)
-            _state.update { it.copy(deepActiveProject = project, deepMessages = messages, deepPendingAttachments = emptyList(), deepWorkspace = null) }
-            refreshDeepWorkspace(id)
-        } catch (_: Exception) { }
+    /** Projekt oeffnen: die Navigation darf niemals alte Projektdaten anzeigen. */
+    private var requestedDeepProjectId: Long? = null
+
+    fun openDeepProject(id: Long) {
+        requestedDeepProjectId = id
+        _state.update { it.copy(
+            deepActiveProject = null,
+            deepOpeningProjectId = id,
+            deepOpenError = null,
+            deepMessages = emptyList(),
+            deepPendingAttachments = emptyList(),
+            deepWorkspace = null
+        ) }
+        viewModelScope.launch {
+            try {
+                val (project, messages) = client.deepProjectDetail(id)
+                // An older response must not replace the project selected afterward.
+                if (requestedDeepProjectId != id) return@launch
+                _state.update { current ->
+                    if (requestedDeepProjectId != id) current else current.copy(
+                        deepActiveProject = project,
+                        deepOpeningProjectId = null,
+                        deepOpenError = null,
+                        deepMessages = messages
+                    )
+                }
+                refreshDeepWorkspace(id)
+            } catch (e: Exception) {
+                if (requestedDeepProjectId == id) _state.update { current ->
+                    current.copy(deepOpenError = e.message?.take(180) ?: "Hub nicht erreichbar")
+                }
+            }
+        }
     }
 
     /** Holt neue Chat-Nachrichten nach, ohne Eingabe-Anhänge oder Chat-Zustand zu löschen. */
@@ -333,6 +362,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Nachricht im Deep-Chat senden. */
     fun sendDeep(text: String) = viewModelScope.launch {
+        if (_state.value.busy) return@launch
         val projectId = state.value.deepActiveProject?.id ?: return@launch
         val attachments = state.value.deepPendingAttachments
         val userMsg = DeepMessage(
@@ -356,11 +386,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val updatedProject = if (activeProject != null && activeProject.id == projectId && developedVillaId > 0) {
                     activeProject.copy(villaId = developedVillaId)
                 } else activeProject
-                current.copy(deepMessages = current.deepMessages + reply, deepActiveProject = updatedProject, busy = false)
+                if (activeProject?.id != projectId) current.copy(busy = false)
+                else current.copy(deepMessages = current.deepMessages + reply, deepActiveProject = updatedProject, busy = false)
             }
         } catch (e: Exception) {
-            _state.update {
-                it.copy(busy = false, deepMessages = it.deepMessages + DeepMessage(
+            _state.update { current ->
+                if (current.deepActiveProject?.id != projectId) current.copy(busy = false)
+                else current.copy(busy = false, deepMessages = current.deepMessages + DeepMessage(
                     0, "assistant", "Fehler: ${e.message ?: "Hub nicht erreichbar"}", "", System.currentTimeMillis()))
             }
         }
