@@ -32,6 +32,7 @@ export function cascadeDefaults() {
  * free/local routes are enabled by default.
  */
 export function seedRouteCatalog() {
+ if (db.prepare('SELECT COUNT(*) AS count FROM routes').get().count > 0) return { seeded: 0, skippedExisting: true };
  let seeded = 0;
  const insert = db.prepare(
   'INSERT INTO routes (name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
