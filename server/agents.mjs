@@ -963,6 +963,15 @@ function openTasks(villaId) {
   ).all(villaId);
 }
 
+/**
+ * Eine Villa dispatcht genau eine Aufgabe pro Durchlauf. Die SQL-Reihenfolge
+ * (Prioritaet, danach Einfuege-ID) bleibt damit verbindlich; neue Aufgaben
+ * koennen keinen bereits laufenden Task ueberholen.
+ */
+export function selectSequentialTaskBatch(tasks) {
+  return Array.isArray(tasks) && tasks.length ? [tasks[0]] : [];
+}
+
 /** Fuehrt einen Agenten in einem begrenzten ReAct-Loop aus. */
 /* Kontext-Kompression: Der Agentenverlauf wuchs pro Werkzeugschritt um bis zu
    2.000 Zeichen Werkzeugausgabe und wurde bei jedem Schritt komplett erneut
@@ -1423,10 +1432,10 @@ export async function dispatchRemoteBatch({batch,villaId,job,runtimeUrl,runtimeT
 export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, adaptive = true, maxRounds = 6, runToCompletion = false } = {}) {
   if (db.prepare('SELECT status FROM villas WHERE id=?').get(villaId)?.status === 'ARCHIVED') return;
   if (running.get(villaId)) return;
-  // concurrency 0 = automatisch je nach Routen (schnelle Cloud-Routen -> mehr parallel)
-  const auto = Number(concurrency) > 0 ? Number(concurrency) : pickConcurrency();
-  const hardCap = Math.max(1, Number(process.env.VF_MAX_CONCURRENCY) || 3);
-  const job = { stop: false, controller: new AbortController(), processed: 0, concurrency: Math.max(1, Math.min(auto, hardCap)), runToCompletion: runToCompletion === true };
+  // Aufgaben einer Villa laufen strikt nacheinander. Die globale Parallelitaet
+  // entsteht ausschliesslich durch bis zu zwei verschiedene Villen im Scheduler;
+  // ein hoeherer API-concurrency-Wert darf keine Task-Batches parallelisieren.
+  const job = { stop: false, controller: new AbortController(), processed: 0, concurrency: 1, runToCompletion: runToCompletion === true };
   running.set(villaId, job);
   // Lauf-Budget: Im 24/7-Dauerbetrieb endet die Schleife nie von selbst - ohne
   // Budget belegt eine Villa ihren Slot STUNDENLANG und die restlichen Villen
@@ -1521,12 +1530,10 @@ export async function orchestrate(villaId, { concurrency = 0, maxTasks = 500, ad
         break;
       }
 
-      // Rollenpassende Aufgaben zuerst, damit Agenten nicht fachfremd arbeiten.
-      tasks.sort((a, b) => (guessRole(a) === guessRole(b) ? a.priority - b.priority : 0));
-
+      // openTasks liefert eine stabile Reihenfolge nach Prioritaet und ID.
+      // Immer nur den naechsten Eintrag starten und dessen Abschluss abwarten.
       const batchStart = now();
-      if (Number(concurrency) <= 0) job.concurrency = Math.max(1, Math.min(hardCap, pickConcurrency()));
-      const batch = tasks.slice(0, job.concurrency);
+      const batch = selectSequentialTaskBatch(tasks);
       for (const task of batch) {
         const startedAt = now();
         /* assignments zaehlt jede Zuweisung. Ein Haenger, der endlos neu
