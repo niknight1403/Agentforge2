@@ -26,7 +26,7 @@ def contains_secret(content: str) -> bool:
     if SECRET_MARKERS.search(content):
         return True
     for match in SECRET_ASSIGNMENTS.finditer(content):
-        value = match.group(1).strip().strip("\\"'")
+        value = match.group(1).strip().strip(chr(34) + chr(39))
         if value.lower() not in SAFE_SECRET_PLACEHOLDERS and not value.lower().startswith(("your-", "replace-", "example")):
             return True
     return False
