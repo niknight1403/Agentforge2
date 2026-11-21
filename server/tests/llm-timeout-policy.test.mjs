@@ -1,3 +1,4 @@
+import './_env.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { llmRequestTimeoutMs } from '../llm.mjs';
