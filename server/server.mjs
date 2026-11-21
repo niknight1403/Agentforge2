@@ -1448,6 +1448,14 @@ async function api(req, res, url) {
       if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
       let villaId=Number(detail.project.villa_id||0);
       if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
+        // Automatic idea/chat starts must obey the same evidence gates as
+        // the explicit /develop endpoint; otherwise they create a Villa first
+        // and make the later gate check ineffective.
+        const projectDir=deepProjectDir(projectId);
+        const gate=productGateForProjectDir(projectDir);
+        if(!gate.ready)return {ok:false,villaId:0,gateBlocked:true,blockers:gate.blockers,checks:gate.checks,code:'PRODUCT_GATE_BLOCKED'};
+        const handover=scanHandoverArtifacts(projectDir);
+        if(!handover.ready)return {ok:false,villaId:0,gateBlocked:true,artifactBlocked:true,blockers:handover.blockers,checks:{...gate.checks,...handover.checks},code:'HANDOVER_ARTIFACTS_BLOCKED'};
         const brief=[detail.project.idea,deepMissionBrief(detail.project.idea),villaLessonsContext()].join('\n\n').slice(0,9000);
         const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:brief,agentCount:12,mode:'BUILD'});
         villaId=linkDeepProjectVilla(projectId,built.villaId);
