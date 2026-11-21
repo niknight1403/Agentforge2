@@ -134,6 +134,10 @@ export function ollamaQueueStats() {
 const requestLimiter=createRequestLimiter();
 export function routeRpm(route) {
   const provider = routeProvider(route);
+  const providerKey = `VF_RPM_${provider.toUpperCase().replace(/-/g, '_')}`;
+  const providerOverride = Number(process.env[providerKey]);
+  if (Number.isFinite(providerOverride) && providerOverride > 0) return Math.max(1, Math.min(600, Math.floor(providerOverride)));
+  if (provider === 'pollinations') return 6;
   if (provider === 'gemini' || provider === 'gemini-openai') return Number(process.env.VF_RPM_GEMINI) || 8;
   if (provider === 'groq') return Number(process.env.VF_RPM_GROQ) || 20;
   if (provider === 'cerebras') return Number(process.env.VF_RPM_CEREBRAS) || 10;
