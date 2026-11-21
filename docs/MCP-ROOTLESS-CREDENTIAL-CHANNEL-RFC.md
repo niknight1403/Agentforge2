@@ -95,6 +95,13 @@ The container must not use `--rm` for this credential-capable protocol: automati
 
 The runner-generated expected shim metadata MUST be attached only after reservation and before process start, using reserved environment keys that registry input cannot set or override. The shim treats those values as untrusted unless they are supplied by the deployment-owned runner path; they are not secrets and may appear in inspect output. The implementation must test that profile JSON, registry fields, image defaults, and user-supplied config cannot override them. Host compromise remains out of scope.
 
+#### SQLite durability profile (normative)
+
+Before any credential-capable launch, the Hub database connection used by the launch registry MUST explicitly set and verify `PRAGMA journal_mode = WAL` and `PRAGMA synchronous = FULL`; relying on SQLite's default synchronous setting is prohibited. The implementation must read both pragmas back on the same `DatabaseSync` connection and fail closed if either value differs. Because `synchronous` is connection-scoped, every connection/process that can mutate the launch table must apply and verify the setting before writes. `BEGIN IMMEDIATE` plus a successful `COMMIT` is the only reservation/state-transition path.
+
+The launch database MUST reside on a local filesystem whose SQLite locking, atomic rename, and fsync semantics are supported; network filesystems and shared-folder mounts with unverified semantics are not acceptable. WAL and shared-memory sidecar files must be writable only by the Hub service account. The implementation must not delete or replace `-wal`/`-shm` files while a connection may be active. Backup/restore must use SQLite's online backup API or a documented quiesced procedure that captures a consistent database state.
+
+`synchronous=FULL` is a required durability setting, not a promise against defective storage, controllers that lie about flush completion, filesystem corruption, or host compromise. The acceptance suite must kill the Hub immediately before and after commit, restart it, and verify that each committed launch reservation remains present and each uncommitted reservation is absent; power-loss claims must be limited to the tested storage platform. If a durability check or recovery integrity check fails, authenticated launches remain disabled and the runner reports a degraded state.
 The database must enforce durable commits (including an explicitly tested SQLite synchronous/journal configuration), and startup recovery must be idempotent across repeated crashes. If the database is unavailable, locked beyond a short bounded retry, corrupt, or cannot guarantee the required durability, authenticated launch is disabled. No in-memory fallback is permitted.
 ### Compatibility
 
