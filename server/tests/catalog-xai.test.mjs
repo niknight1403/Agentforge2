@@ -9,6 +9,7 @@ test('Kaskade enthaelt xAI Grok als key-gestuetzte Route', () => {
   const r = xai[0];
   assert.equal(r.baseUrl, 'https://api.x.ai/v1');
   assert.equal(r.keyEnv, 'XAI_API_KEY');
+  assert.equal(r.model, process.env.VF_XAI_MODEL || 'grok-4.7');
   assert.ok(r.model && r.model.length > 0, 'Modellname gesetzt');
   assert.equal(typeof r.priority, 'number');
 });

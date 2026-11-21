@@ -61,7 +61,7 @@ export const FREE_ROUTE_CATALOG = [
     name: 'xAI Grok (XAI_API_KEY)',
     provider: 'xai',
     baseUrl: 'https://api.x.ai/v1',
-    model: process.env.VF_XAI_MODEL || 'grok-4-fast',
+    model: process.env.VF_XAI_MODEL || 'grok-4.7',
     keyEnv: 'XAI_API_KEY',
     priority: 4
   },
