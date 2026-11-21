@@ -112,11 +112,11 @@ test('monitor prueft ausschliesslich aktive kostenlose Routen', async () => {
   const paid = db.prepare("INSERT INTO routes (name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used) VALUES ('Paid Hunter Guard','test','https://paid.invalid/v1','paid-model','',0,1,1,1,'NEW',0,0,0)").run();
   const free = db.prepare("INSERT INTO routes (name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used) VALUES ('Free Hunter Guard','test','https://free.invalid/v1','free-model','',1,1,2,1,'NEW',0,0,0)").run();
   const seen = [];
-  const rows = await monitor({ limit: 100, fetchImpl: async (url) => { seen.push(String(url)); return jsonRes({ ok: true }); } });
+  const rows = await monitor({ limit: 100, fetchImpl: async (url) => { seen.push(new URL(String(url))); return jsonRes({ ok: true }); } });
   assert.equal(rows.some((row) => row.id === Number(paid.lastInsertRowid)), false, 'kostenpflichtige Route darf nicht angefragt werden');
   assert.equal(rows.some((row) => row.id === Number(free.lastInsertRowid)), true, 'kostenlose aktive Route wird geprüft');
-  assert.equal(seen.includes('https://paid.invalid/v1/chat/completions'), false);
-  assert.equal(seen.includes('https://free.invalid/v1/chat/completions'), true);
+  assert.equal(seen.some((url) => url.hostname === 'paid.invalid' && url.pathname === '/v1/chat/completions'), false);
+  assert.equal(seen.some((url) => url.hostname === 'free.invalid' && url.pathname === '/v1/chat/completions'), true);
 });
 
 test('hunterTick protokolliert den Zyklus, hunterStatus und weeklyReport lesen ihn', async () => {
