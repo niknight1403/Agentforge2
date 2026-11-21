@@ -1,6 +1,8 @@
 package dev.villaforge.app.ui
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -89,13 +91,14 @@ fun VillaForgeApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf(Screen.DASHBOARD) }
     var masterPrompt by remember { mutableStateOf("") }
+    var devFromDeep by remember { mutableStateOf(false) }
 
     /* Quality-Layer v2: EIN zentraler Aurora-Hintergrund auf App-Ebene. */
     Box(Modifier.fillMaxSize().auroraBg()) {
         Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            if (screen != Screen.DASHBOARD) TopAppBar(
+            if (screen != Screen.DASHBOARD && screen != Screen.DEEP_CHAT) TopAppBar(
                 title = {
                     Column {
                         Text("VillaForge", fontWeight = FontWeight.Bold)
@@ -110,7 +113,8 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                     if (!topLevelScreens.contains(screen)) {
                         IconButton(onClick = {
                             when (screen) {
-                                Screen.CHAT, Screen.DEV -> screen = Screen.DETAIL
+                                Screen.CHAT -> screen = Screen.DETAIL
+                                Screen.DEV -> screen = if (devFromDeep) Screen.DEEP_CHAT else Screen.DETAIL
                                 else -> { screen = Screen.LIST; viewModel.closeDetail() }
                             }
                         }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
@@ -168,8 +172,12 @@ fun VillaForgeApp(viewModel: MainViewModel) {
             } else AnimatedContent(
                 targetState = screen,
                 transitionSpec = {
-                    (slideInHorizontally(initialOffsetX = { it / 6 }) + fadeIn()) togetherWith
-                        (slideOutHorizontally(targetOffsetX = { -it / 6 }) + fadeOut())
+                    if (targetState == Screen.DEEP_CHAT || initialState == Screen.DEEP_CHAT) {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    } else {
+                        (slideInHorizontally(initialOffsetX = { it / 6 }) + fadeIn()) togetherWith
+                            (slideOutHorizontally(targetOffsetX = { -it / 6 }) + fadeOut())
+                    }
                 },
                 label = "screenTransition"
             ) { target ->
@@ -195,15 +203,15 @@ fun VillaForgeApp(viewModel: MainViewModel) {
                         viewModel.openVilla(id)
                         screen = Screen.CHAT
                     }
-                    Screen.DETAIL -> DetailScreen(state, viewModel, onChat = { screen = Screen.CHAT }, onDeleted = { screen = Screen.LIST }, onDev = { screen = Screen.DEV })
+                    Screen.DETAIL -> DetailScreen(state, viewModel, onChat = { screen = Screen.CHAT }, onDeleted = { screen = Screen.LIST }, onDev = { devFromDeep = false; screen = Screen.DEV })
                     Screen.CHAT -> ChatScreen(state, viewModel)
-                    Screen.DEV -> DevScreen(state, viewModel, onOpenVilla = { id -> viewModel.openVilla(id); screen = Screen.DEV })
+                    Screen.DEV -> DevScreen(state, viewModel, onOpenVilla = { id -> viewModel.openVilla(id); screen = Screen.DEV }, startTab = if (devFromDeep) 3 else 0)
                     Screen.DEEP -> DeepAgentScreen(state, viewModel, onOpenProject = { id -> viewModel.openDeepProject(id); screen = Screen.DEEP_CHAT }, onBack = { screen = Screen.DASHBOARD })
                     Screen.DEEP_CHAT -> DeepChatScreen(
                         state,
                         viewModel,
                         onBack = { screen = Screen.DEEP },
-                        onOpenVilla = { id -> viewModel.openVilla(id); screen = Screen.DEV }
+                        onOpenVilla = { id -> devFromDeep = true; viewModel.openVilla(id); screen = Screen.DEV }
                     )
                     Screen.SETTINGS -> SettingsScreen(state, viewModel) { screen = Screen.CAPABILITIES }
                     Screen.CAPABILITIES -> CapabilitiesScreen(state, viewModel) { prompt -> masterPrompt = prompt; screen = Screen.MASTER }

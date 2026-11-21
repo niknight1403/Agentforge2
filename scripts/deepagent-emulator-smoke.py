@@ -1,0 +1,88 @@
+"""Drive the real Android APK against the isolated VillaForge Hub in CI."""
+import os
+import re
+import subprocess
+import time
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+ARTIFACTS = Path(os.environ.get("E2E_ARTIFACTS", "emulator-evidence"))
+ARTIFACTS.mkdir(parents=True, exist_ok=True)
+
+
+def adb(*args):
+    return subprocess.run(["adb", *args], check=True, capture_output=True).stdout
+
+
+def hierarchy():
+    adb("shell", "uiautomator", "dump", "/sdcard/window.xml")
+    xml = adb("exec-out", "cat", "/sdcard/window.xml")
+    (ARTIFACTS / "last-window.xml").write_bytes(xml)
+    return ET.fromstring(xml)
+
+
+def matches(root, label):
+    return [n for n in root.iter() if label in (n.attrib.get("text", ""), n.attrib.get("content-desc", ""))]
+
+
+def wait(label, timeout=35, scroll=False):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        root = hierarchy()
+        nodes = matches(root, label)
+        if nodes:
+            return nodes[0]
+        if scroll:
+            adb("shell", "input", "swipe", "250", "780", "250", "300", "350")
+        time.sleep(1)
+    raise AssertionError(f"Android UI missing {label!r}; hierarchy saved in {ARTIFACTS}")
+
+
+def tap(label, **kwargs):
+    node = wait(label, **kwargs)
+    bounds = node.attrib.get("bounds", "")
+    coords = [int(x) for x in re.findall(r"\d+", bounds)]
+    if len(coords) != 4:
+        raise AssertionError(f"No bounds for {label}: {bounds}")
+    adb("shell", "input", "tap", str((coords[0] + coords[2]) // 2), str((coords[1] + coords[3]) // 2))
+    print(f"TAP {label}", flush=True)
+
+
+def capture(name):
+    (ARTIFACTS / f"{name}.png").write_bytes(adb("exec-out", "screencap", "-p"))
+
+
+try:
+    wait("Übersicht", timeout=45)
+    tap("Deep Agent", scroll=True)
+    tap("Emulator-Projekt Design 3")
+    wait("Chat")
+    wait("Vorschau")
+    wait("Live-Vorschau · Build verfügbar")
+    wait("Build & Downloads")
+    capture("01-chat-preview")
+
+    tap("Vorschau")
+    wait("Statusdetails und Werkzeuge anzeigen")
+    # The same fixture must be served by the Hub; the WebView render is captured.
+    capture("02-full-preview")
+    tap("Statusdetails und Werkzeuge anzeigen")
+    wait("Statusdetails schließen")
+    wait("Entwicklung fortsetzen", scroll=True)
+    capture("03-quality-tools")
+
+    tap("Chat")
+    tap("Nachricht an DeepAgent")
+    adb("shell", "input", "text", "E2E-Chatcheck-2026")
+    tap("Nachricht senden")
+    wait("E2E-Chatcheck-2026", timeout=30)
+    capture("04-chat-sent")
+    adb("shell", "input", "keyevent", "4")
+    tap("Build & Downloads", scroll=True)
+    wait("Fertigstellung", timeout=45)
+    wait("Produkt-Build (APK / Paket)", timeout=45, scroll=True)
+    capture("05-download-status")
+    print("ANDROID_DEEPAGENT_E2E_PASSED", flush=True)
+except Exception:
+    capture("failure")
+    raise

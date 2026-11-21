@@ -1672,7 +1672,7 @@ async function api(req, res, url) {
       const projectId = Number(parts[3]);
       if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
       const b = await readBody(req);
-      const r = await deepChat(projectId, b?.message || '', Array.isArray(b?.attachments) ? b.attachments : []);
+      const r = await deepChat(projectId, b?.message || '', Array.isArray(b?.attachments) ? b.attachments : [], { chatFn: deepProjectChatFn });
       const intent=classifyDeepDevelopmentIntent(b?.message);
       const development=intent.action==='AUTO_BUILD'?scheduleAutoStartDeepProject(Number(parts[3])):null;
       return json(res,200,{...r,intent:intent.action,development});
