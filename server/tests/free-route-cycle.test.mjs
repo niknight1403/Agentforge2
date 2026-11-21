@@ -45,3 +45,20 @@ test('scan errors are recorded and do not create routes', async () => {
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM routes').get().count, initialRoutes);
   assert.equal(freeRouteCycleStatus().latestScan.status, 'ERROR');
 });
+
+test('scanner finds free models beyond the first 500 paid catalog entries', async () => {
+  const models = Array.from({ length: 500 }, (_, index) => ({
+    id: `vendor/paid-${index}`,
+    pricing: { prompt: '0', completion: '0.000001' },
+  }));
+  models.push({ id: 'vendor/free-after-500:free', pricing: { prompt: '0', completion: '0' } });
+  const result = await scanFreeRoutes({
+    clock: () => 700,
+    fetchFn: async () => new Response(JSON.stringify({ data: models }), { status: 200 }),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.catalogCount, 501);
+  assert.equal(result.freeCount, 1);
+  assert.equal(result.discovered, 1);
+  assert.equal(db.prepare("SELECT enabled FROM routes WHERE model='vendor/free-after-500:free'").get().enabled, 1);
+});

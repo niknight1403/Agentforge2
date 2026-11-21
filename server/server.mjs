@@ -1510,7 +1510,7 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts.length === 4 && m === 'DELETE') {
     const projectId = Number(parts[3]);
     if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
-    if (isDeepProjectDeveloping(projectId) || isInitialPlanPending(projectId)) return json(res, 409, { error: 'Projekt wird gerade geplant oder an die Entwicklungs-Villa übergeben.' });
+    if (isDeepProjectDeveloping(projectId)) return json(res, 409, { error: 'Projekt wird gerade an die Entwicklungs-Villa übergeben.' });
     return deleteDeepProject(projectId)
       ? json(res, 200, { ok: true, deleted: true })
       : json(res, 404, { error: 'Projekt nicht gefunden' });

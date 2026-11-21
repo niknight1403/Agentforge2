@@ -4,12 +4,12 @@ import { parseEnv } from 'node:util';
 import { db } from './db.mjs';
 import { FREE_ROUTE_CATALOG } from './routes.mjs';
 // Only provider configuration is loaded. Never print values or override the service environment.
-const allowed=/^(GEMINI_API_KEY|GOOGLE_API_KEY|OPENROUTER_API_KEY|GROQ_API_KEY|CEREBRAS_API_KEY|MISTRAL_API_KEY|XAI_API_KEY|HF_TOKEN|HUGGINGFACE_API_KEY|OLLAMA_API_KEY|FAL_KEY|VF_(?:LLM_.*|LOCAL_LLM_.*|RPM_.*|SELF_HOSTED_ALLOWED_HOSTS|GEMINI_MODEL|GROQ_MODEL|CEREBRAS_MODEL|MISTRAL_MODEL|XAI_MODEL|XAI_TIMEOUT_MS|HF_MODEL|FAL_.*|MEDIA_MAX_BYTES))$/;
+const allowed=/^(GEMINI_API_KEY|GOOGLE_API_KEY|OPENROUTER_API_KEY|GROQ_API_KEY|CEREBRAS_API_KEY|MISTRAL_API_KEY|XAI_API_KEY|HF_TOKEN|HUGGINGFACE_API_KEY|OLLAMA_API_KEY|FAL_KEY|SAMBANOVA_API_KEY|NVIDIA_API_KEY|ZHIPU_API_KEY|CHUTES_API_KEY|HYPERBOLIC_API_KEY|TOGETHER_API_KEY|VF_(?:LLM_.*|LOCAL_LLM_.*|RPM_.*|SELF_HOSTED_ALLOWED_HOSTS|GEMINI_MODEL|GROQ_MODEL|CEREBRAS_MODEL|MISTRAL_MODEL|XAI_MODEL|XAI_TIMEOUT_MS|HF_MODEL|FAL_.*|MEDIA_MAX_BYTES))$/;
 for(const path of (process.env.VF_TEST==='1'?[]:[resolve('.env'),resolve('server/.env')])) {
   if(!existsSync(path)) continue;
   try { for(const [key,value] of Object.entries(parseEnv(readFileSync(path,'utf8')))) if(allowed.test(key)&&process.env[key]==null) process.env[key]=value; } catch { /* invalid optional file; service configuration still applies */ }
 }
-export const KEY_ALIASES={GEMINI_API_KEY:['GOOGLE_API_KEY'],HF_TOKEN:['HUGGINGFACE_API_KEY']};
+export const KEY_ALIASES={GEMINI_API_KEY:['GOOGLE_API_KEY'],GOOGLE_API_KEY:['GEMINI_API_KEY'],HF_TOKEN:['HUGGINGFACE_API_KEY'],HUGGINGFACE_API_KEY:['HF_TOKEN']};
 const configuredGroqModel=process.env.VF_GROQ_MODEL==='llama-3.3-70b-versatile'?'openai/gpt-oss-120b':(process.env.VF_GROQ_MODEL||'openai/gpt-oss-120b');
 export function cascadeDefaults() {
  return [
@@ -103,6 +103,15 @@ export function routeProvider(r) {
  if(host==='api.mistral.ai')return 'mistral';
  if(host==='router.huggingface.co')return 'huggingface';
  if(host==='api.x.ai')return 'xai';
+ if(host==='api.sambanova.ai')return 'sambanova';
+ if(host==='integrate.api.nvidia.com')return 'nvidia';
+ if(host==='open.bigmodel.cn')return 'zhipu';
+ if(host==='llm.chutes.ai')return 'chutes';
+ if(host==='api.hyperbolic.xyz')return 'hyperbolic';
+ if(host==='api.together.xyz')return 'together';
+ if(host==='fal.run')return 'fal';
+ if(host==='text.pollinations.ai')return 'pollinations';
+ if(host==='ollama.cybersarah-ki.com')return 'ollama';
  return declared||'openai-compatible';
 }
 /** Cost-safe default: unknown and credit-based cloud providers are opt-in. */

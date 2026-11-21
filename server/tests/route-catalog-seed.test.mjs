@@ -16,6 +16,12 @@ test('provider catalog seeds free routes enabled and paid/credit routes disabled
   const first = seedRouteCatalog();
   assert.equal(first.seeded, FREE_ROUTE_CATALOG.length);
 
+  const pollinationsCatalog = FREE_ROUTE_CATALOG.find(route => route.provider === 'pollinations');
+  assert.ok(pollinationsCatalog, 'keyless Pollinations must be present in the startup catalog');
+  const pollinations = db.prepare("SELECT is_free,enabled FROM routes WHERE provider='pollinations' AND base_url='https://text.pollinations.ai/openai'").get();
+  assert.equal(pollinations.is_free, 1);
+  assert.equal(pollinations.enabled, 1);
+
   const groq = db.prepare("SELECT is_free,enabled FROM routes WHERE provider='groq' AND model='openai/gpt-oss-120b'").get();
   assert.equal(groq.is_free, 1);
   assert.equal(groq.enabled, 1);
