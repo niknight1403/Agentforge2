@@ -357,12 +357,21 @@ export function listVillaProposals(villaId, { status = '' } = {}) {
   }));
 }
 
-/** Alle offenen Vorschlaege ueber alle Villen (fuer die App-Uebersicht). */
-export function listAllPending() {
-  return db.prepare(
-    `SELECT p.*, v.name AS villa_name FROM villa_proposals p JOIN villas v ON v.id = p.villa_id
-     WHERE p.status = 'pending' AND v.status != 'ARCHIVED' ORDER BY p.id DESC LIMIT 50`
-  ).all().map((r) => ({
+/** Alle offenen Vorschlaege; optionale Besitzerfilterung erfolgt vor dem LIMIT. */
+export function listAllPending({ ownerUserId } = {}) {
+  const ownerScoped = ownerUserId !== undefined && ownerUserId !== null;
+  const query = ownerScoped
+    ? `SELECT p.*, v.name AS villa_name
+       FROM villa_proposals p
+       JOIN villas v ON v.id = p.villa_id
+       LEFT JOIN deep_villa_owners owner ON owner.villa_id = v.id
+       WHERE p.status = 'pending' AND v.status != 'ARCHIVED'
+         AND (owner.villa_id IS NULL OR owner.owner_user_id = ?)
+       ORDER BY p.id DESC LIMIT 50`
+    : `SELECT p.*, v.name AS villa_name FROM villa_proposals p JOIN villas v ON v.id = p.villa_id
+       WHERE p.status = 'pending' AND v.status != 'ARCHIVED' ORDER BY p.id DESC LIMIT 50`;
+  const rows = ownerScoped ? db.prepare(query).all(Number(ownerUserId)) : db.prepare(query).all();
+  return rows.map((r) => ({
     id: r.id, villaId: r.villa_id, villaName: r.villa_name, kind: r.kind, title: r.title,
     summary: r.summary, items: JSON.parse(r.items || '[]'), round: r.round, createdAt: r.created_at
   }));

@@ -26,3 +26,20 @@ export function runtimeCapabilityInventory({run=spawnSync}={}){
   return {id:spec.id,family:spec.family,status:'available',version,verification:'binary-version-probe-only'};
  });
 }
+
+
+const CAPABILITY_CACHE_TTL_MS = 60_000;
+let capabilityCache = { at: 0, value: null };
+
+/** Cache bounded binary probes so repeated workspace polls do not block the event loop. */
+export function cachedRuntimeCapabilityInventory({run=spawnSync, now=Date.now}={}) {
+ const current = now();
+ if (!capabilityCache.value || current - capabilityCache.at >= CAPABILITY_CACHE_TTL_MS) {
+  capabilityCache = { at: current, value: runtimeCapabilityInventory({run}) };
+ }
+ return capabilityCache.value.map((entry) => ({...entry}));
+}
+
+export function resetRuntimeCapabilityInventoryCacheForTest() {
+ capabilityCache = { at: 0, value: null };
+}

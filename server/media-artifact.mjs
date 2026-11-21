@@ -26,7 +26,7 @@ const MAGIC = ({
   '.jpg': (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
   '.webp': (b) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP',
   '.svg': (b) => /<svg[\s>]/i.test(b.subarray(0, 4096).toString('utf8')),
-  '.tif': (b) => (b[0] === 0x49 && b[1] === 0x49) || (b[0] === 0x4d && b[1] === 0x4d)
+  '.tif': (b) => b.length >= 8 && ((b[0] === 0x49 && b[1] === 0x49 && ((b[2] === 0x2a && b[3] === 0x00) || (b[2] === 0x2b && b[3] === 0x00))) || (b[0] === 0x4d && b[1] === 0x4d && ((b[2] === 0x00 && b[3] === 0x2a) || (b[2] === 0x00 && b[3] === 0x2b))))
 });
 MAGIC['.jpeg'] = MAGIC['.jpg'];
 MAGIC['.tiff'] = MAGIC['.tif'];

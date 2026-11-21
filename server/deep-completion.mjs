@@ -7,24 +7,38 @@
  * welche Pruefungen bestehen, was genau fehlt und welcher Schritt als naechstes
  * wirklich hilft — ohne etwas als fertig zu bezeichnen, was es nicht ist.
  */
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { productGateForProjectDir } from './deep-product-gate.mjs';
-import { deepProjectDetail, deepProjectDir } from './deepagent.mjs';
+import { deepProjectDetail, deepProjectDir, deepPreviewFile } from './deepagent.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
 import { db } from './db.mjs';
+import { closeSync, fstatSync } from 'node:fs';
 
-/** Live-Ansicht gilt nur als erreichbar, wenn der Vorschau-Ordner existiert. */
+/** Live-Ansicht nur melden, wenn der Einstiegspunkt aus einem erlaubten Build-Root sicher auslieferbar ist. */
 export function liveViewState(projectId) {
-  const dir = deepProjectDir(projectId);
-  const candidates = ['index.html', join('dist', 'index.html'), join('public', 'index.html'), join('web-dist', 'index.html')];
-  const found = candidates.filter((relative) => existsSync(join(dir, relative)));
+  const candidates = ['dist/index.html', 'build/index.html', 'out/index.html', 'public/index.html', 'web-dist/index.html', 'index.html'];
+  let revision = null;
+  const found = candidates.find((relative) => {
+    const preview = deepPreviewFile(projectId, relative);
+    if (!preview) return false;
+    // This is only an availability probe; the HTTP route opens its own pinned
+    // descriptor when the user actually requests the preview.
+    try {
+      const stat = fstatSync(preview.fd);
+      revision = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      closeSync(preview.fd);
+    }
+  });
   return {
-    available: found.length > 0,
-    entry: found[0] || null,
-    detail: found.length
-      ? 'Vorschau-Einstiegspunkt vorhanden.'
-      : 'Kein Einstiegspunkt (index.html) im Projektordner — die Live-Ansicht ist noch nicht auslieferbar.'
+    available: Boolean(found),
+    entry: found || null,
+    revision: found ? revision : null,
+    detail: found
+      ? 'Vorschau-Einstiegspunkt in einem freigegebenen Build-Verzeichnis vorhanden.'
+      : 'Kein sicher auslieferbarer Einstiegspunkt in dist/, build/, out/, public/, web-dist/ oder als explizite Projekt-Root-index.html — die Live-Ansicht ist noch nicht verfügbar.'
   };
 }
 

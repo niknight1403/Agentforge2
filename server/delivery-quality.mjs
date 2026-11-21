@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { join, extname, basename } from 'node:path';
 import { db } from './db.mjs';
 import { PROJECT_WORKSPACE, projectDirectory, projectReadiness } from './project-verification.mjs';
 
@@ -178,7 +178,10 @@ export function deliverableExtensions(id) {
 
 export function deliveryProfile(villaId, ideaOverride) {
   const villa=db.prepare('SELECT idea,name FROM villas WHERE id=?').get(Number(villaId));
-  const id=classifyDeliverable(typeof ideaOverride==='string'?ideaOverride:(villa?.idea || villa?.name || ''));
+  const override=typeof ideaOverride==='string'?ideaOverride.trim():'';
+  const id=Object.prototype.hasOwnProperty.call(PROFILES,override)
+    ? override
+    : classifyDeliverable(override || villa?.idea || villa?.name || '');
   return { id, ...PROFILES[id] };
 }
 function outputs(villaId, profile) {
@@ -204,13 +207,24 @@ function outputs(villaId, profile) {
   }
   return found;
 }
-export function deliveryReadiness(villaId) {
-  const profile=deliveryProfile(villaId);
+export function deliveryReadiness(villaId, ideaOverride, validatedArtifact = null) {
+  const profile=deliveryProfile(villaId, ideaOverride);
   if(profile.id==='software') {
     const readiness=projectReadiness(Number(villaId));
     return {domain:profile.id,label:profile.label,verified:readiness.verified,status:readiness.status,blockers:readiness.blockers,checks:readiness.checks,artifacts:[],sourceFiles:readiness.sourceFiles};
   }
   const artifacts=outputs(Number(villaId),profile);
+  if (validatedArtifact &&
+      profile.extensions.includes(String(validatedArtifact.extension || '').toLowerCase()) &&
+      Number(validatedArtifact.bytes) >= 16 &&
+      !artifacts.some((artifact) => artifact.path === validatedArtifact.path)) {
+    artifacts.push({
+      name: basename(validatedArtifact.path || 'deliverable'),
+      path: validatedArtifact.path || '',
+      bytes: Number(validatedArtifact.bytes),
+      validated: true
+    });
+  }
   const tasks=db.prepare('SELECT t.title,t.status,t.result,a.role AS reviewer_role FROM tasks t LEFT JOIN agents a ON a.id=t.agent_id WHERE t.villa_id=?').all(Number(villaId));
   const review=tasks.find(t=>t.status==='DONE' && /\b(review|kritik|abnahme|qualit|pr[uü]fung|test)\b/i.test(t.title) && /\b(CRITIC|REVIEWER|TESTER|SECURITY)\b/i.test(t.reviewer_role||'') && String(t.result||'').trim().length>=20);
   const open=tasks.filter(t=>['PENDING','READY','RUNNING','REVIEW'].includes(t.status)).length;

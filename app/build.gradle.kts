@@ -18,6 +18,8 @@ android {
 
     buildTypes {
         release {
+            // Production builds must use TLS; cleartext is limited to local debug setups.
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
             // Optimierter Release-Build: R8 verkleinert+verschleiert, Ressourcen werden
             // gestrippt. Debug-Signatur haelt die APK direkt installierbar.
             isMinifyEnabled = true
@@ -29,6 +31,7 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
         debug {
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
             isMinifyEnabled = false
         }
     }
@@ -47,6 +50,13 @@ android {
             "/META-INF/INDEX.LIST"
         )
     }
+}
+
+// Kotlin 1.8+ includes JDK 7/8 extensions in kotlin-stdlib itself.
+// Exclude obsolete split artifacts requested by older AndroidX metadata.
+configurations.configureEach {
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
 }
 
 dependencies {
@@ -70,4 +80,5 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

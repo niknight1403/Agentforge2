@@ -1,7 +1,7 @@
 import { createPublishPost, listPublishPosts, getVillaRevenue } from './publishing.mjs';
 import {capabilityStatus,requestCapability} from './capability-autopilot.mjs';
 import { neuralNetworkStatus, activateNeuralNetwork, deactivateNeuralNetwork } from './neural-network.mjs';
-import {runtimeCapabilityInventory} from './runtime-capabilities.mjs';
+import {cachedRuntimeCapabilityInventory} from './runtime-capabilities.mjs';
 import {villaDiagnostics} from './villa-diagnostics.mjs';
 import { VERSION } from './version.mjs';
 import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStudioPreview } from './studio.mjs';
@@ -12,8 +12,9 @@ import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config
 import { validateLlmRouteInput } from './llm-route-policy.mjs';
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
+import { pipeline } from 'node:stream';
 import { createMasterControl } from './master-control.mjs';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, closeSync, createReadStream as createReadStreamFromFd } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { db, now } from './db.mjs';
 import { telemetrySummary } from './telemetry.mjs';
@@ -44,7 +45,7 @@ import { deepMissionBrief } from './deep-mission.mjs';
 import { classifyDeepDevelopmentIntent } from './deep-intent.mjs';
 import { villaLessonsContext } from './villa-knowledge.mjs';
 import { scanHandoverArtifacts } from './handover-artifacts.mjs';
-import { createDeepProject, listDeepProjects, deepProjectDetail, deepChat, addDeepFile, deepFileById, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
+import { createDeepProject, listDeepProjects, deepProjectDetail, deepProjectDevelopmentStatus, deepChat, addDeepFile, deepFileById, deepPreviewFile, deleteDeepProject, deepProjectDir, linkDeepProjectVilla, isDeepProjectDeveloping, isInitialPlanPending, waitForInitialPlan, prepareDeepProjectHandover, runDeepProjectDevelopmentOnce } from './deepagent.mjs';
 import { projectReadiness } from './deep-completion.mjs';
 import { keyforgeTick, keyforgeStatus } from './keyforge.mjs';
 import { routeforgeTick, routeforgeStatus } from './routeforge.mjs';
@@ -66,7 +67,7 @@ import { createReadStream, existsSync as fsExists } from 'node:fs';
 import { initBillingStore, createCheckoutSession, createBillingPortalSession, billingSummary, adminBillingMetrics, flushStripeUsage } from './billing.mjs';
 import { issueGatewayToken, gatewayPrincipal, hasGatewayScope, canAccessVilla, gatewayRoleScopes, initGatewayStore, createGatewayApiKey, listGatewayApiKeys, revokeGatewayApiKey } from './api-gateway.mjs';
 import { dlqTick, dlqStatus, restartFailedWorkflow, initDlq } from './event-dlq.mjs';
-import { sanitizeForStream } from './event-contracts.mjs';
+import { eventForStream } from './event-contracts.mjs';
 import { redisTryStreamAdd } from './redis.mjs';
 import { GENERATION_STREAM } from './generation-engine.mjs';
 import { initObservabilityStore, tokenBudgetStatus, httpMetrics, recordHttpRequest } from './observability.mjs';
@@ -74,6 +75,11 @@ import { handleMcpAdminRequest, mcpRuntimeSupervisor } from './mcp-hub-runtime.m
 
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
+const deepAutoStartResults = new Map();
+// Deterministic, network-free planner fixture for CI only. Production always uses the real LLM cascade.
+const deepProjectChatFn = process.env.VF_TEST === '1'
+  ? async () => ({ content: 'CI fixture: Projekt verstanden. Stack und Meilensteine werden in den E2E-Tests separat verifiziert.' })
+  : undefined;
 const PUBLIC_DIR = resolve(process.cwd(), 'server/public');
 const portIssue = !Number.isInteger(PORT) || PORT < 1 || PORT > 65535;
 if (portIssue) {
@@ -121,28 +127,20 @@ if (db.prepare('SELECT COUNT(*) c FROM routes').get().c === 0) {
   console.log('[villaforge] Routen-Katalog initialisiert:', FREE_ROUTE_CATALOG.length);
 }
 
-/* --------------------------- Admin-Autoanlage --------------------------- */
-// Optional: VF_ADMIN_EMAIL + VF_ADMIN_PASSWORD in der Umgebung des Hubs
-// legen beim ersten Start automatisch ein Admin-Konto an (Plan: elite).
-// Das Passwort wird ausschliesslich als Hash in der lokalen DB gespeichert.
+/* --------------------------- Admin-Bootstrap --------------------------- */
+// Ein Superadmin entsteht nur bei explizit konfigurierten Deployment-Secrets.
+// ensureSuperadmin erhaelt bestehende Passwort-Hashes bei jedem Neustart.
 initWebhookStore();
 initBillingStore();
 initGatewayStore();
 initObservabilityStore();
-ensureSuperadmin();
-
-/* v1.44.0 — SUPERADMIN-Anker (Nutzerdirektive 2026-10-19): Der Administrator
- * aus VF_ADMIN_EMAIL wird bei JEDEM Start idempotent gesichert — Rolle
- * SUPERADMIN, Plan elite, is_unlimited=1 (tokenBudget UNLIMITED). Selbst bei
- * DB-Manipulation heilt der Account beim naechsten Start nach. Kein Passwort
- * im Code: Quelle ist die VM-Umgebung (Secret). */
-if (process.env.VF_ADMIN_EMAIL && process.env.VF_ADMIN_PASSWORD) {
-  try {
-    upsertUser({ email: process.env.VF_ADMIN_EMAIL, password: process.env.VF_ADMIN_PASSWORD, role: 'superadmin', plan: 'elite', isUnlimited: true });
-    log('SUPERADMIN dauerhaft verankert (unlimited Tokens, Plan elite).');
-  } catch (err) {
-    logError('SUPERADMIN-Anker fehlgeschlagen:', err.message || err);
-  }
+try {
+  const admin = ensureSuperadmin();
+  if (admin) log('Superadmin-Bootstrap aus Deployment-Secrets abgeschlossen.');
+  else log('Kein Admin-Bootstrap: VF_ADMIN_EMAIL/VF_ADMIN_PASSWORD sind nicht gesetzt.');
+} catch (err) {
+  logError('Admin-Bootstrap fehlgeschlagen:', err.message || err);
+  process.exit(1);
 }
 
 /* --------------------------- Helpers --------------------------- */
@@ -292,7 +290,33 @@ async function api(req, res, url) {
   // ohne Lockout) oder dauerhaft via VF_OPEN_MODE=1.
   const openMode = process.env.VF_OPEN_MODE === '1' || !usersExist();
   const needAuth = !openMode && !user;
-  const isAdmin = checkIsAdmin(req) || (!!user && (user.role === 'admin' || user.role === 'superadmin' || user.role === 'SUPERADMIN' || Number(user.is_unlimited) === 1));
+  const isAdmin = checkIsAdmin(req);
+  const getHiddenDeepVillaIds = () => {
+    const hidden = new Set();
+    if (!openMode && !isAdmin) {
+      const privateDeepVillas = db.prepare(
+        'SELECT villa_id, owner_user_id FROM deep_villa_owners'
+      ).all();
+      for (const linked of privateDeepVillas) {
+        if (Number(linked.owner_user_id || 0) !== Number(user?.id || 0)) {
+          hidden.add(Number(linked.villa_id));
+        }
+      }
+    }
+    return hidden;
+  };
+  const isDeepPreviewRequest = parts[0] === 'api' && parts[1] === 'deep' &&
+    parts[2] === 'projects' && parts[3] && parts[4] === 'preview' && parts.length >= 6;
+  if (m === 'OPTIONS' && isDeepPreviewRequest) {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+      'Access-Control-Max-Age': '600',
+      'Vary': 'Origin'
+    });
+    return res.end();
+  }
   // Sicherheitsalarm: offener Modus ist ein stiller Auth-Ausfall (leere users-Tabelle
   // oder bewusst gesetzter Open-Mode-Schalter). Einmal pro Prozess laut protokollieren.
   if (openMode && !globalThis.__vfOpenModeWarned) {
@@ -433,7 +457,10 @@ async function api(req, res, url) {
     }
     return rpcErr(-32601, `Unbekannte Methode: ${body.method}`);
   }
-  if (p === '/api/system/runtime-capabilities' && m === 'GET') return json(res,200,{capabilities:runtimeCapabilityInventory(),note:'Availability only; not proof of configured, tested or verified product output.'});
+  if (p === '/api/system/runtime-capabilities' && m === 'GET') {
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Administrator role required.' });
+    return json(res,200,{capabilities:cachedRuntimeCapabilityInventory(),note:'Availability only; not proof of configured, tested or verified product output.'});
+  }
   if (p === '/api/system/audit') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     const audit = systemAudit();
@@ -647,13 +674,47 @@ async function api(req, res, url) {
   // Ausnahme: der SSE-Eventstrom (/api/events) laesst sich aus dem Browser
   // nicht mit Headern verbinden; er uebertraegt nur Fortschrittsereignisse.
   if (needAuth && p !== '/api/events' && p !== '/api/dlq/dashboard') return json(res, 401, { error: 'Login erforderlich.' });
+  const villaIdSegment = parts[0] === 'api' && parts[1] === 'villas' ? parts[2] : undefined;
+  const requestedVillaId = villaIdSegment !== undefined &&
+    /^[1-9]\d*$/.test(villaIdSegment) && Number.isSafeInteger(Number(villaIdSegment))
+    ? Number(villaIdSegment)
+    : 0;
+  const canAccessLinkedVilla = (villaId) => {
+    const id = Number(villaId);
+    if (!Number.isSafeInteger(id) || id <= 0) return false;
+    if (openMode || isAdmin) return true;
+    const linkedOwner = db.prepare('SELECT owner_user_id FROM deep_villa_owners WHERE villa_id = ?').get(id);
+    return !linkedOwner || Number(linkedOwner.owner_user_id || 0) === Number(user?.id || 0);
+  };
+  // Persona IDs are independently addressable API resources. Resolve their
+  // parent Villa before returning details or mutating packs/looks so a guessed
+  // persona ID cannot bypass the linked-Villa owner check.
+  const canAccessPersona = (personaId) => {
+    const id = Number(personaId);
+    if (!Number.isSafeInteger(id) || id <= 0) return false;
+    const persona = db.prepare('SELECT villa_id FROM personas WHERE id = ?').get(id);
+    return Boolean(persona && canAccessLinkedVilla(persona.villa_id));
+  };
+  // Owners may manage personas inside their own private DeepAgent Villa.
+  // Unlinked/public Villen remain administrator-managed unless open mode is enabled.
+  const canManagePersona = (personaId) => {
+    const id = Number(personaId);
+    if (!Number.isSafeInteger(id) || id <= 0) return false;
+    const persona = db.prepare('SELECT villa_id FROM personas WHERE id = ?').get(id);
+    if (!persona || !canAccessLinkedVilla(persona.villa_id)) return false;
+    if (openMode || isAdmin) return true;
+    const linkedOwner = db.prepare('SELECT owner_user_id FROM deep_villa_owners WHERE villa_id = ?').get(persona.villa_id);
+    return Boolean(linkedOwner && Number(linkedOwner.owner_user_id || 0) === Number(user?.id || 0));
+  };
+  if (villaIdSegment !== undefined && !requestedVillaId) return json(res, 404, {error: 'Villa nicht gefunden'});
+  if (requestedVillaId && !canAccessLinkedVilla(requestedVillaId)) return json(res, 404, {error: 'Villa nicht gefunden'});
   if (p === '/api/billing/summary' && m === 'GET') return user ? json(res,200,billingSummary(user.id)) : json(res,401,{error:'Login erforderlich.'});
   if (p === '/api/billing/checkout' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createCheckoutSession(user)); }
   if (p === '/api/billing/portal' && m === 'POST') { if(!user)return json(res,401,{error:'Login erforderlich.'}); return json(res,200,await createBillingPortalSession(user.id)); }
   if(parts[0]==='api'&&parts[1]==='villas'&&/^\d+$/.test(parts[2]||'')&&parts[3]==='capabilities'&&parts.length===4){
     if(!isAdmin)return json(res,needAuth?401:403,{error:'Administrator role required.'});
-    try{if(m==='GET')return json(res,200,capabilityStatus(Number(parts[2])));
-      if(m==='POST')return json(res,201,requestCapability(Number(parts[2]),await readBody(req)));
+    try{if(m==='GET')return json(res,200,capabilityStatus(requestedVillaId));
+      if(m==='POST')return json(res,201,requestCapability(requestedVillaId,await readBody(req)));
     }catch(e){return json(res,e.message==='VILLA_NOT_FOUND'?404:400,{error:e.message});}
     return json(res,405,{error:'Method not allowed.'});
   }
@@ -718,8 +779,14 @@ async function api(req, res, url) {
   if (await masterControl.handle(req, res, url, readBody, json, openMode || isAdmin)) return;
 
   // ---- Routen ----
+  const personaPath = /^\/api\/personas\/(\d+)(?:\/|$)/.exec(p);
+  if (personaPath) {
+    const persona = db.prepare('SELECT villa_id FROM personas WHERE id=?').get(Number(personaPath[1]));
+    if (!persona || !canAccessLinkedVilla(persona.villa_id)) return json(res, 404, {error: 'Figur nicht gefunden'});
+  }
   if(parts[0]==='api'&&parts[1]==='studio'&&parts[2]==='villas'&&/^\d+$/.test(parts[3]||'')) {
     const id=Number(parts[3]);
+    if (!canAccessLinkedVilla(id)) return json(res, 404, {error: 'Villa nicht gefunden'});
     if(parts.length===4&&m==='GET')return json(res,200,studioStatus(id));
     if(parts[4]==='designs'&&m==='POST')return json(res,200,await proposeDesigns(id));
     if(parts[4]==='design-selection'&&m==='POST'){const body=await readBody(req);return json(res,200,selectDesign(id,Number(body.designId),Number(body.index)));}
@@ -832,7 +899,11 @@ async function api(req, res, url) {
   if (p === '/api/resources' && m === 'GET') return json(res, 200, resourceStatus());
   if (p === '/api/resources/history' && m === 'GET') return json(res, 200, resourceHistory(url.searchParams.get('limit')));
   /* ---- Darstellerinnen: Persoenlichkeiten, Kleidungs-Packs, Regie-Chat ---- */
-  if (p === '/api/cast' && m === 'GET') return json(res, 200, castOverview(url.searchParams.get('villaId') || 0));
+  if (p === '/api/cast' && m === 'GET') {
+    const villaId = Number(url.searchParams.get('villaId') || 0);
+    if (villaId && !canAccessLinkedVilla(villaId)) return json(res, 404, {error: 'Villa nicht gefunden'});
+    return json(res, 200, castOverview(villaId));
+  }
   if (/^\/api\/villas\/\d+\/cast$/.test(p) && m === 'GET') {
     const villaId = Number(p.split('/')[3]);
     return json(res, 200, castOverview(villaId));
@@ -844,24 +915,43 @@ async function api(req, res, url) {
     try { return json(res, 200, { ok: true, persona: createPersona(villaId, b) }); }
     catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
   }
-  if (/^\/api\/personas\/\d+$/.test(p) && m === 'GET') return json(res, 200, personaDetail(Number(p.split('/')[3])));
+  if (/^\/api\/personas\/\d+$/.test(p) && m === 'GET') {
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
+    const persona = personaDetail(personaId);
+    return persona ? json(res, 200, persona) : json(res, 404, { error: 'Figur nicht gefunden.' });
+  }
   if (/^\/api\/personas\/\d+$/.test(p) && m === 'PATCH') {
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Figuren aendern ist Admins vorbehalten.' });
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
+    if (!canManagePersona(personaId)) return json(res, 403, { error: 'Nur der Villa-Eigentuemer oder ein Administrator darf diese Figur aendern.' });
     const b = await readBody(req);
-    try { return json(res, 200, { ok: true, persona: updatePersona(Number(p.split('/')[3]), b) }); }
+    try { return json(res, 200, { ok: true, persona: updatePersona(personaId, b) }); }
     catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
   }
-  if (/^\/api\/personas\/\d+\/card$/.test(p) && m === 'GET') return json(res, 200, personaCard(Number(p.split('/')[3])));
-  if (/^\/api\/personas\/\d+\/packs$/.test(p) && m === 'GET') return json(res, 200, { ok: true, packs: listWardrobePacks(Number(p.split('/')[3])) });
+  if (/^\/api\/personas\/\d+\/card$/.test(p) && m === 'GET') {
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
+    return json(res, 200, personaCard(personaId));
+  }
+  if (/^\/api\/personas\/\d+\/packs$/.test(p) && m === 'GET') {
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
+    return json(res, 200, { ok: true, packs: listWardrobePacks(personaId) });
+  }
   if (/^\/api\/personas\/\d+\/packs$/.test(p) && m === 'POST') {
-    if (!openMode && !isAdmin) return json(res, 403, { error: 'Kleidungs-Packs anlegen ist Admins vorbehalten.' });
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
+    if (!canManagePersona(personaId)) return json(res, 403, { error: 'Nur der Villa-Eigentuemer oder ein Administrator darf Packs anlegen.' });
     const b = await readBody(req);
-    try { return json(res, 200, { ok: true, pack: createWardrobePack(Number(p.split('/')[3]), b) }); }
+    try { return json(res, 200, { ok: true, pack: createWardrobePack(personaId, b) }); }
     catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
   }
   if (/^\/api\/personas\/\d+\/look$/.test(p) && m === 'GET') {
+    const personaId = Number(p.split('/')[3]);
+    if (!canAccessPersona(personaId)) return json(res, 404, { error: 'Figur nicht gefunden.' });
     try {
-      return json(res, 200, resolveLook(Number(p.split('/')[3]), { occasion: url.searchParams.get('occasion') || 'alltag', day: url.searchParams.get('day') || null }));
+      return json(res, 200, resolveLook(personaId, { occasion: url.searchParams.get('occasion') || 'alltag', day: url.searchParams.get('day') || null }));
     } catch (error) { return json(res, 400, { ok: false, error: String(error.message || error) }); }
   }
   if (/^\/api\/villas\/\d+\/director$/.test(p) && m === 'GET') {
@@ -1028,8 +1118,10 @@ async function api(req, res, url) {
     // 'queued' = autonomy an, aber kein Slot (Warteschlange). Sonst zeigen alle
     // aktiven Villen pauschal 'RUNNING' und niemand sieht, wer wirklich arbeitet.
     const rows = db.prepare("SELECT * FROM villas WHERE status != 'ARCHIVED' ORDER BY created_at DESC").all();
+    const hiddenDeepVillaIds = getHiddenDeepVillaIds();
+    const visibleRows = rows.filter((villa) => !hiddenDeepVillaIds.has(Number(villa.id)));
     const scheduler = schedulerStatus();
-    return json(res, 200, rows.map((v) => {
+    return json(res, 200, visibleRows.map((v) => {
       const counts = db.prepare("SELECT COUNT(*) AS tasks_total, SUM(CASE WHEN status='DONE' THEN 1 ELSE 0 END) AS tasks_done, SUM(CASE WHEN status IN ('FAILED','BLOCKED') THEN 1 ELSE 0 END) AS tasks_failed FROM tasks WHERE villa_id=?").get(v.id);
       const agents = db.prepare('SELECT COUNT(*) AS agents_count FROM agents WHERE villa_id=?').get(v.id);
       return {
@@ -1072,7 +1164,7 @@ async function api(req, res, url) {
     return json(res, 405, { error: 'Methode nicht erlaubt.' });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);
     if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
     villa.executing = isRunning(id) ? 1 : 0;
@@ -1105,7 +1197,7 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts.length === 3 && m === 'DELETE') {
     if (!openMode && !isAdmin) return json(res, 403, { error: 'Nur Administratoren.' });
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);
     if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
 
@@ -1140,7 +1232,7 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true, deleted: id, counts });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'source' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const b = await readBody(req);
     if (!b.path) return json(res, 400, { error: 'path fehlt' });
     const abs = setSource(id, b.path);
@@ -1148,7 +1240,7 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true, path: abs, exists });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'analyze' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const villa = db.prepare('SELECT * FROM villas WHERE id = ?').get(id);
     if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
     const root = db.prepare('SELECT * FROM agents WHERE villa_id = ? AND is_root = 1').get(id);
@@ -1156,11 +1248,11 @@ async function api(req, res, url) {
     return json(res, 202, { ok: true, started: true });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'reports' && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     return json(res, 200, db.prepare('SELECT * FROM reports WHERE villa_id = ? ORDER BY id DESC LIMIT 100').all(id));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'orchestrate' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const villa = db.prepare('SELECT status FROM villas WHERE id=?').get(id);
     if (!villa) return json(res, 404, { error: 'Villa nicht gefunden' });
     if (villa.status === 'ARCHIVED') return json(res, 409, { error: 'Archivierte Villa zuerst wiederherstellen.' });
@@ -1173,7 +1265,7 @@ async function api(req, res, url) {
     return json(res, 202, { ok: true, alreadyRunning, runToCompletion, started: scheduled.active.includes(id) || isRunning(id), queued: scheduled.queue.includes(id), scheduler: scheduled });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'stop' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     if (!db.prepare('SELECT id FROM villas WHERE id=?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
     const cancelled = cancelScheduledVilla(id);
     const stopped = stopVilla(id);
@@ -1181,7 +1273,7 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true, stopped, cancelled, status: stopped ? 'STOPPING' : 'PAUSED' });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'messages' && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const agentId = Number(url.searchParams.get('agentId') || 0);
     const rows = agentId
       ? db.prepare('SELECT * FROM messages WHERE villa_id = ? AND agent_id = ? ORDER BY id ASC LIMIT 400').all(id, agentId)
@@ -1189,7 +1281,7 @@ async function api(req, res, url) {
     return json(res, 200, rows);
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'chat' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const b = await readBody(req);
     const agent = b.agentId
       ? db.prepare('SELECT * FROM agents WHERE id = ?').get(Number(b.agentId))
@@ -1206,7 +1298,7 @@ async function api(req, res, url) {
   // ---- Direktchat mit einem Agenten (ohne Villa) ----
   if (parts[0] === 'api' && parts[1] === 'agents' && parts[2] && parts[3] === 'chat' && m === 'POST') {
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(Number(parts[2]));
-    if (!agent) return json(res, 404, { error: 'Agent nicht gefunden' });
+    if (!agent || !canAccessLinkedVilla(agent.villa_id)) return json(res, 404, { error: 'Agent nicht gefunden' });
     const b = await readBody(req);
     const r = await runAgent(agent, String(b.message || ''), { maxSteps: 6, villaId: agent.villa_id, priority: 'interactive' });
     if(r.code==='LLM_UNAVAILABLE')return json(res,503,{error:r.error,code:r.code,retryAfter:15});
@@ -1221,14 +1313,17 @@ async function api(req, res, url) {
     const count = (table) => one(`SELECT COUNT(*) c FROM ${table}`).c;
     const rows = db.prepare('SELECT name, ok, fail, cooldown_until, priority FROM routes ORDER BY priority ASC').all();
     const cooling = rows.filter((r) => Number(r.cooldown_until || 0) > Date.now());
+    const hiddenDeepVillaIds = getHiddenDeepVillaIds();
+    const statsVillas = db.prepare('SELECT id, name, status FROM villas').all()
+      .filter((villa) => !hiddenDeepVillaIds.has(Number(villa.id)));
     return json(res, 200, {
       version: VERSION,llm:routingSummary(), ts: now(), uptimeSec: Math.round(process.uptime()),
       packs: packSummary(),
-      villas: one("SELECT COUNT(*) c FROM villas WHERE status != 'ARCHIVED'").c, agents: count('agents'),
+      villas: statsVillas.filter((villa) => villa.status !== 'ARCHIVED').length, agents: count('agents'),
       tasks: { total: count('tasks'), done:one("SELECT COUNT(*) c FROM tasks WHERE status='DONE'").c,failed:one("SELECT COUNT(*) c FROM tasks WHERE status='FAILED'").c, open: one("SELECT COUNT(*) c FROM tasks WHERE status IN ('PENDING','READY','RUNNING','REVIEW')").c },
       memories: count('memories'), councilRounds: count('council'), audit: count('audit'), messages: count('messages'),
-      runningVillas: db.prepare("SELECT id FROM villas WHERE status = 'RUNNING'").all().map((r) => r.id),
-      maturity: db.prepare('SELECT id, name FROM villas').all().map((v) => { const mt = maturity(v.id); return { villaId: v.id, name: v.name, score: mt.score, planScore:mt.planScore,verified:mt.verified,blockers:mt.blockers,stage: mt.stage, phase: mt.currentPhase,currentPhase:mt.currentPhase }; }),
+      runningVillas: statsVillas.filter((villa) => villa.status === 'RUNNING').map((villa) => villa.id),
+      maturity: statsVillas.map((v) => { const mt = maturity(v.id); return { villaId: v.id, name: v.name, score: mt.score, planScore:mt.planScore,verified:mt.verified,blockers:mt.blockers,stage: mt.stage, phase: mt.currentPhase,currentPhase:mt.currentPhase }; }),
       routesHealth: {
         ok: rows.reduce((a, r) => a + Number(r.ok || 0), 0),
         fail: rows.reduce((a, r) => a + Number(r.fail || 0), 0),
@@ -1240,6 +1335,7 @@ async function api(req, res, url) {
   /* ---- Produkt-Telemetrie (2026-11-02): drei belegte Kennzahlen ---- */
   if (p === '/api/metrics/telemetry' && m === 'GET') {
     const villaParam = Number(new URL(req.url, 'http://localhost').searchParams.get('villaId') || 0);
+    if (villaParam > 0 && !canAccessLinkedVilla(villaParam)) return json(res, 404, {error: 'Villa nicht gefunden'});
     return json(res, 200, telemetrySummary({ villaId: villaParam > 0 ? villaParam : null }));
   }
   if (p === '/api/proposals' && m === 'GET') {
@@ -1263,10 +1359,13 @@ async function api(req, res, url) {
   }
   /* ---- Villa-Evolution (v1.30): jede Villa schlaegt selbst naechste Phasen/Perfektion/Marketplace vor ---- */
   if (p === '/api/evolution/pending' && m === 'GET') {
-    return json(res, 200, listAllPending());
+    const ownerUserId = !openMode && user && !isAdmin ? Number(user.id) : undefined;
+    const pending = listAllPending({ ownerUserId });
+    return json(res, 200, pending.filter((proposal) => canAccessLinkedVilla(proposal.villaId)));
   }
   if (parts[0] === 'api' && parts[1] === 'evolution' && parts[2] === 'villas' && parts[3] && !parts[4] && m === 'GET') {
     const id = Number(parts[3]);
+    if (!canAccessLinkedVilla(id)) return json(res, 404, {error: 'Villa nicht gefunden'});
     const st = evolutionState(id);
     if (!st) return json(res, 404, { error: 'Villa nicht gefunden' });
     return json(res, 200, {
@@ -1276,6 +1375,7 @@ async function api(req, res, url) {
     });
   }
   if (parts[0] === 'api' && parts[1] === 'evolution' && parts[2] === 'villas' && parts[3] && parts[4] === 'propose' && m === 'POST') {
+    if (!canAccessLinkedVilla(Number(parts[3]))) return json(res, 404, {error: 'Villa nicht gefunden'});
     const kind = String((await readBody(req))?.kind || '').toUpperCase();
     if (!EVOLVE_KINDS.includes(kind)) return json(res, 400, { error: 'kind muss NEXT_PHASES, PERFECT oder MARKETPLACE sein.' });
     try { return json(res, 200, await proposeForVilla(Number(parts[3]), kind)); }
@@ -1285,6 +1385,9 @@ async function api(req, res, url) {
     return json(res, 200, { made: await evolveAll({ maxPerTick: 3 }) });
   }
   if (parts[0] === 'api' && parts[1] === 'evolution' && parts[2] === 'proposals' && parts[3] && parts[4] === 'approve' && m === 'POST') {
+    const proposalTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='villa_proposals'").get();
+    const proposal = proposalTable ? db.prepare('SELECT villa_id FROM villa_proposals WHERE id=?').get(Number(parts[3])) : null;
+    if (proposal && !canAccessLinkedVilla(proposal.villa_id)) return json(res, 404, {error: 'Vorschlag nicht gefunden'});
     try {
       const r = approveVillaProposal(Number(parts[3]));
       if (r.added > 0 && !isRunning(r.villaId)) scheduleVilla(r.villaId, { concurrency: 0, maxRounds: 6 });
@@ -1292,21 +1395,24 @@ async function api(req, res, url) {
     } catch (e) { return json(res, 409, { error: String(e.message || e) }); }
   }
   if (parts[0] === 'api' && parts[1] === 'evolution' && parts[2] === 'proposals' && parts[3] && parts[4] === 'reject' && m === 'POST') {
+    const proposalTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='villa_proposals'").get();
+    const proposal = proposalTable ? db.prepare('SELECT villa_id FROM villa_proposals WHERE id=?').get(Number(parts[3])) : null;
+    if (proposal && !canAccessLinkedVilla(proposal.villa_id)) return json(res, 404, {error: 'Vorschlag nicht gefunden'});
     try { return json(res, 200, rejectVillaProposal(Number(parts[3]))); }
     catch (e) { return json(res, 409, { error: String(e.message || e) }); }
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'explain' && m === 'POST') {
-    return json(res, 200, await explainVilla(Number(parts[2])));
+    return json(res, 200, await explainVilla(requestedVillaId));
   }
 
   /* ---- Produkt-Build-Pipeline (v1.24): Status, Start, Download, Vorschau ---- */
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'delivery-evidence' && m === 'GET') {
-    const id=Number(parts[2]);
+    const id=requestedVillaId;
     if(!db.prepare('SELECT id FROM villas WHERE id=?').get(id))return json(res,404,{error:'Villa nicht gefunden'});
     return json(res,200,await deliveryEvidence(id));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'build' && parts[4] === 'download' && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     const art = buildArtifact(id);
     if (!art) return json(res, 404, { error: 'Kein Build-Artefakt bereit. Erst bauen lassen.' });
     res.writeHead(200, {
@@ -1319,10 +1425,10 @@ async function api(req, res, url) {
     return;
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'build' && m === 'GET') {
-    return json(res, 200, buildStatus(Number(parts[2])));
+    return json(res, 200, buildStatus(requestedVillaId));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'build' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     try {
       const rec = await startBuild(id);
       return json(res, 202, rec);
@@ -1331,22 +1437,42 @@ async function api(req, res, url) {
     }
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'preview' && !parts[4] && m === 'GET') {
-    return json(res, 200, previewInfo(Number(parts[2])));
+    return json(res, 200, previewInfo(requestedVillaId));
   }
 
   /* ---- Deep Agent: eigene App-Projekte abseits der Villen (v1.37.0) ---- */
+  // Deep projects, chat, uploads and previews contain private project data. Require
+  // an authenticated user outside the explicitly configured legacy open mode.
+  if ((p === '/api/deep/projects' || p.startsWith('/api/deep/')) && !openMode && !user) {
+    return json(res, 401, { error: 'Login erforderlich.' });
+  }
+  // Authenticated projects are tenant-scoped. Admins may support legacy/unassigned
+  // projects; open mode remains compatible only when no user session exists.
+  const canAccessDeepProject = (projectId) => {
+    const row = db.prepare('SELECT owner_user_id FROM deep_projects WHERE id = ?').get(Number(projectId));
+    if (!row) return false;
+    if (!user && openMode) return true;
+    if (isAdmin) return true;
+    return Boolean(user && row.owner_user_id !== null && Number(row.owner_user_id) === Number(user.id));
+  };
+  const deepProjectOwnerUserId = (projectId) => {
+    const row = db.prepare('SELECT owner_user_id FROM deep_projects WHERE id = ?').get(Number(projectId));
+    return row ? (row.owner_user_id ?? null) : null;
+  };
   if (p === '/api/deep/projects' && m === 'GET') {
-    return json(res, 200, listDeepProjects());
+    return json(res, 200, isAdmin || (!user && openMode) ? listDeepProjects() : listDeepProjects({ ownerUserId: user.id }));
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts.length === 4 && m === 'DELETE') {
     const projectId = Number(parts[3]);
-    if (isDeepProjectDeveloping(projectId)) return json(res, 409, { error: 'Projekt wird gerade an die Entwicklungs-Villa übergeben.' });
+    if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
+    if (isDeepProjectDeveloping(projectId) || isInitialPlanPending(projectId)) return json(res, 409, { error: 'Projekt wird gerade geplant oder an die Entwicklungs-Villa übergeben.' });
     return deleteDeepProject(projectId)
       ? json(res, 200, { ok: true, deleted: true })
       : json(res, 404, { error: 'Projekt nicht gefunden' });
   }
   /* ---- Deep-Projekt: Fertigstellungs-Bericht inkl. Live-Ansicht ---- */
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'completion' && m === 'GET') {
+    if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Projekt nicht gefunden' });
     const report = projectReadiness(Number(parts[3]));
     if (!report) return json(res, 404, { error: 'Projekt nicht gefunden' });
     return json(res, 200, report);
@@ -1369,19 +1495,23 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && (parts[4] === 'develop' || parts[4] === 'bootstrap') && m === 'POST') {
     const projectId = Number(parts[3]);
     const bootstrap = parts[4] === 'bootstrap';
+    if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
     const detail = deepProjectDetail(projectId);
     if (!detail) return json(res, 404, { error: 'Projekt nicht gefunden' });
+    deepAutoStartResults.delete(projectId);
     return runDeepProjectDevelopmentOnce(projectId, async () => {
       try {
-        const previousVillaId = Number(deepProjectDetail(projectId)?.project.villa_id || 0);
+        const currentDetail = deepProjectDetail(projectId);
+        if (!currentDetail) return json(res, 404, { error: 'Projekt nicht gefunden' });
+        const previousVillaId = Number(currentDetail.project.villa_id || 0);
         let villaId = previousVillaId;
         if (!villaId || !db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)) {
-          const context = detail.messages
+          const context = currentDetail.messages
             .filter((message) => message.role === 'user' || message.role === 'assistant')
             .slice(-8)
             .map((message) => `${message.role === 'user' ? 'Nutzer' : 'Projekt-Experte'}: ${String(message.content).slice(0, 900)}`)
             .join('\n');
-          const buildIdea = `${detail.project.idea}\n\n${deepMissionBrief(detail.project.idea)}\n\n${villaLessonsContext()}\n\nProjektanforderungen und DeepAgent-Plan:\n${context}`.slice(0, 9000);
+          const buildIdea = `${currentDetail.project.idea}\n\n${deepMissionBrief(currentDetail.project.idea)}\n\n${villaLessonsContext()}\n\nProjektanforderungen und DeepAgent-Plan:\n${context}`.slice(0, 9000);
           // Produkt-Gate (Nikos Auftrag 2026-11-02): Die Villa entsteht erst,
           // wenn das Projekt ein belegtes Produkt hervorgebracht hat. Fehlt ein
           // Beleg, antwortet der Endpunkt mit den konkreten Blockern.
@@ -1417,7 +1547,19 @@ async function api(req, res, url) {
                 'Fehlend: ' + handover.blockers.map((b) => `${b.label} (${b.detail})`).join('; ') + '.'
             });
           }
-          const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD' });
+          // Apply product and handover gates before waiting on an LLM. A missing
+          // provider must never mask a deterministic 409 gate response.
+          const initialPlan = await waitForInitialPlan(projectId);
+          if (initialPlan.offline) {
+            return json(res, 503, {
+              ok: false,
+              projectId,
+              villaId: 0,
+              code: 'LLM_UNAVAILABLE',
+              message: 'Kein Sprachmodell erreichbar. Das Projekt bleibt gespeichert; bitte nach Wiederherstellung einer LLM-Route erneut starten.'
+            });
+          }
+          const built = await createVilla({ name: `Deep · ${detail.project.title}`.slice(0, 60), idea: buildIdea, agentCount: 12, mode: 'BUILD', force: true, ownerUserId: deepProjectOwnerUserId(projectId) });
           villaId = linkDeepProjectVilla(projectId, built.villaId);
         }
         const scheduled = isRunning(villaId)
@@ -1446,25 +1588,46 @@ async function api(req, res, url) {
   // without the separate "Autonom umsetzen" button. Existing projects are reused.
   const autoStartDeepProject = async (projectId) => runDeepProjectDevelopmentOnce(projectId,async()=>{
     try {
-      const detail=deepProjectDetail(projectId);
+      let detail=deepProjectDetail(projectId);
       if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
       let villaId=Number(detail.project.villa_id||0);
       if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
-        const brief=[detail.project.idea,deepMissionBrief(detail.project.idea),villaLessonsContext()].join('\n\n').slice(0,9000);
-        const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:brief,agentCount:12,mode:'BUILD'});
-        villaId=linkDeepProjectVilla(projectId,built.villaId);
+        const handover=await prepareDeepProjectHandover(projectId);
+        if(!handover.ok)return {...handover,villaId:0,started:false,queued:false};
+        detail=deepProjectDetail(projectId);
+        if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
+        villaId=Number(detail.project.villa_id||0);
+        if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
+          const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:handover.idea,agentCount:12,mode:'BUILD',force:true,ownerUserId:deepProjectOwnerUserId(projectId)});
+          villaId=linkDeepProjectVilla(projectId,built.villaId);
+        }
       }
       const scheduled=isRunning(villaId)?{active:[villaId],queue:[]}:scheduleVilla(villaId,{concurrency:2,maxRounds:12});
       const blocked=Number(scheduled.blockedVillaId||0)===villaId;
       return {ok:!blocked,villaId,started:!blocked&&(scheduled.active||[]).includes(villaId),queued:!blocked&&(scheduled.queue||[]).includes(villaId),blocked,reason:scheduled.reason||null};
     }catch(error){return {ok:false,code:error.code||'AUTO_START_FAILED',error:String(error.message||error).slice(0,250)};}
   });
+  const scheduleAutoStartDeepProject = (projectId) => {
+    const id = Number(projectId);
+    deepAutoStartResults.delete(id);
+    void autoStartDeepProject(id).then((result) => {
+      deepAutoStartResults.set(id, result);
+      if (deepAutoStartResults.size > 100) deepAutoStartResults.delete(deepAutoStartResults.keys().next().value);
+      // Project detail polling exposes the stored handoff result without inventing an event type.
+    }).catch((error) => {
+      const result = {ok: false, code: 'AUTO_START_FAILED', error: String(error?.message || error).slice(0, 250)};
+      deepAutoStartResults.set(id, result);
+      // Project detail polling exposes this failure result.
+    });
+    return {ok: true, pending: true, started: false, queued: false};
+  };
   if (p === '/api/deep/projects' && m === 'POST') {
     try {
       const b = await readBody(req);
-      const created=await createDeepProject(b?.idea);
+      if (!user && !openMode) return json(res, 401, { error: 'Login erforderlich.' });
+      const created=await createDeepProject(b?.idea, { deferInitialPlan: true, ownerUserId: user?.id ?? null, chatFn: deepProjectChatFn });
       const intent=classifyDeepDevelopmentIntent(b?.idea,{projectCreation:true});
-      const development=intent.action==='AUTO_BUILD'?await autoStartDeepProject(created.id):null;
+      const development=intent.action==='AUTO_BUILD'?scheduleAutoStartDeepProject(created.id):null;
       return json(res,200,{...created,intent:intent.action,development});
     } catch (e) {
       return json(res, 400, { error: String(e.message || e).slice(0, 300) });
@@ -1472,10 +1635,12 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'chat' && m === 'POST') {
     try {
+      const projectId = Number(parts[3]);
+      if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
       const b = await readBody(req);
-      const r = await deepChat(Number(parts[3]), b?.message || '', Array.isArray(b?.attachments) ? b.attachments : []);
+      const r = await deepChat(projectId, b?.message || '', Array.isArray(b?.attachments) ? b.attachments : []);
       const intent=classifyDeepDevelopmentIntent(b?.message);
-      const development=intent.action==='AUTO_BUILD'?await autoStartDeepProject(Number(parts[3])):null;
+      const development=intent.action==='AUTO_BUILD'?scheduleAutoStartDeepProject(Number(parts[3])):null;
       return json(res,200,{...r,intent:intent.action,development});
     } catch (e) {
       return json(res, 400, { error: String(e.message || e).slice(0, 300) });
@@ -1483,13 +1648,59 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'files' && m === 'POST') {
     try {
+      if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Projekt nicht gefunden' });
       const b = await readBody(req);
       return json(res, 200, addDeepFile(Number(parts[3]), b?.name, b?.mime, b?.data));
     } catch (e) {
       return json(res, 400, { error: String(e.message || e).slice(0, 300) });
     }
   }
+  if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && parts[4] === 'preview' && parts.length >= 6 && m === 'GET') {
+    if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Keine Deep-Projekt-Vorschau-Datei' });
+    const f = deepPreviewFile(Number(parts[3]), parts.slice(5).join('/'));
+    if (!f) return json(res, 404, { error: 'Keine Deep-Projekt-Vorschau-Datei' });
+    const previewHeaders = {
+      'Content-Type': f.mime, 'Cache-Control': 'no-store',
+      'Content-Security-Policy': "sandbox allow-scripts; frame-ancestors 'self'; form-action 'none'",
+      'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+      'Access-Control-Max-Age': '600',
+      'Vary': 'Origin'
+    };
+    const previewFilePath = parts.slice(5).join('/');
+    const previewRootName = previewFilePath.split('/')[0].toLowerCase();
+    const previewRoot = ['dist', 'build', 'out', 'public', 'web-dist'].includes(previewRootName)
+      ? `${previewFilePath.split('/')[0]}/`
+      : '';
+    const previewBase = `/api/deep/projects/${parts[3]}/preview/${previewRoot}`;
+    if (f.mime.startsWith('text/css')) {
+      let css;
+      try { css = readFileSync(f.fd, 'utf8'); }
+      finally { closeSync(f.fd); }
+      css = css
+        .replace(/url\(\s*(["']?)\/(?!\/)([^)"']+)\1\s*\)/g, (_match, quote, assetPath) => 'url(' + quote + previewBase + assetPath + quote + ')')
+        .replace(/(@import\s+)(["'])\/(?!\/)([^"']+)\2/g, (_match, prefix, quote, assetPath) => prefix + quote + previewBase + assetPath + quote);
+      res.writeHead(200, previewHeaders);
+      return res.end(css);
+    }
+    if (f.mime.startsWith('text/html')) {
+      let html;
+      try { html = readFileSync(f.fd, 'utf8').replace(/(src|href)=("|')\/(?!\/)/g, '$1=$2'); }
+      finally { closeSync(f.fd); }
+      res.writeHead(200, previewHeaders);
+      return res.end(html);
+    }
+    res.writeHead(200, previewHeaders);
+    pipeline(createReadStreamFromFd(null, { fd: f.fd, autoClose: true }), res, (error) => {
+      if (error) logError('Deep preview stream failed:', error?.message || error);
+    });
+    return;
+  }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'files' && parts[3] && m === 'GET') {
+    const fileOwner = db.prepare('SELECT project_id FROM deep_files WHERE id = ?').get(Number(parts[3]));
+    if (!fileOwner || !canAccessDeepProject(fileOwner.project_id)) return json(res, 404, { error: 'Anhang nicht gefunden' });
     const f = deepFileById(Number(parts[3]));
     if (!f) return json(res, 404, { error: 'Anhang nicht gefunden' });
     res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'no-store' });
@@ -1497,18 +1708,25 @@ async function api(req, res, url) {
     return;
   }
   if (parts[0] === 'api' && parts[1] === 'deep' && parts[2] === 'projects' && parts[3] && !parts[4] && m === 'GET') {
-    const d = deepProjectDetail(Number(parts[3]));
+    if (!canAccessDeepProject(Number(parts[3]))) return json(res, 404, { error: 'Projekt nicht gefunden' });
+    const projectId = Number(parts[3]);
+    const d = deepProjectDetail(projectId);
     if (!d) return json(res, 404, { error: 'Projekt nicht gefunden' });
-    return json(res, 200, d);
+    const development = deepProjectDevelopmentStatus(
+      projectId,
+      isDeepProjectDeveloping(projectId),
+      deepAutoStartResults.get(projectId)
+    );
+    return json(res, 200, {...d, development});
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'preview' && parts[4] && m === 'GET') {
-    const f = previewFile(Number(parts[2]), parts.slice(4).join('/'));
+    const f = previewFile(requestedVillaId, parts.slice(4).join('/'));
     if (!f) return json(res, 404, { error: 'Keine Vorschau-Datei' });
     res.writeHead(200, { 'Content-Type': f.mime, 'Cache-Control': 'no-store', 'Content-Security-Policy':"sandbox allow-scripts; frame-ancestors 'self'; form-action 'none'", 'Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff' });
     if (f.mime.startsWith('text/html')) {
       /* Absolute Asset-Pfade auf den Vorschau-Pfad umlenken, damit Bundles
          (z. B. Vite "/assets/...") in der Live-Ansicht ebenfalls laden. */
-      const html = readFileSync(f.file, 'utf8').replace(/(src|href)=("|')\//g, '$1=$2');
+      const html = readFileSync(f.file, 'utf8').replace(/(src|href)=("|')\/(?!\/)/g, '$1=$2');
       return res.end(html);
     }
     createReadStream(f.file).pipe(res);
@@ -1516,11 +1734,11 @@ async function api(req, res, url) {
   }
 
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'council' && parts.length === 4 && m === 'GET') {
-    return json(res, 200, listCouncil(Number(parts[2]), 10));
+    return json(res, 200, listCouncil(requestedVillaId, 10));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'council' && parts.length === 4 && m === 'POST') {
     try {
-      const out = await runCouncil(Number(parts[2]));
+      const out = await runCouncil(requestedVillaId);
       return json(res, 200, { ok: true, ...out });
     } catch (e) {
       return json(res, 400, { error: e.message });
@@ -1531,21 +1749,21 @@ async function api(req, res, url) {
       const b = await readBody(req);
       const roundId = Number(b?.round) || 0;
       const round = roundId
-        ? db.prepare('SELECT * FROM council WHERE villa_id = ? AND id = ?').get(Number(parts[2]), roundId)
-        : db.prepare('SELECT * FROM council WHERE villa_id = ? ORDER BY id DESC').get(Number(parts[2]));
+        ? db.prepare('SELECT * FROM council WHERE villa_id = ? AND id = ?').get(requestedVillaId, roundId)
+        : db.prepare('SELECT * FROM council WHERE villa_id = ? ORDER BY id DESC').get(requestedVillaId);
       if (!round) return json(res, 404, { error: 'Keine Rat-Runde gefunden.' });
       let proposals = [];
       try { proposals = JSON.parse(round.proposals); } catch { proposals = []; }
-      const added = proposalsToTasks(Number(parts[2]), proposals);
+      const added = proposalsToTasks(requestedVillaId, proposals);
       db.prepare('INSERT INTO reports (villa_id, kind, title, content, data, created_at) VALUES (?,?,?,?,?,?)')
-        .run(Number(parts[2]), 'COUNCIL', `Rat Runde ${round.round} uebernommen`, `Vorschlaege der Runde ${round.round} wurden per Bestaetigung als Aufgaben uebernommen (neu: ${added}).`, JSON.stringify(proposals), now());
+        .run(requestedVillaId, 'COUNCIL', `Rat Runde ${round.round} uebernommen`, `Vorschlaege der Runde ${round.round} wurden per Bestaetigung als Aufgaben uebernommen (neu: ${added}).`, JSON.stringify(proposals), now());
       return json(res, 200, { ok: true, roundId: round.id, round: round.round, proposals: proposals.length, added });
     } catch (e) {
       return json(res, 400, { error: e.message });
     }
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'tasks' && parts.length === 4 && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
     const status = String(url.searchParams.get('status') || '').toUpperCase();
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 200, 1), 500);
@@ -1557,7 +1775,7 @@ async function api(req, res, url) {
     return json(res, 200, rows.map((t) => ({ ...t, result: String(t.result || '').slice(0, 2000) })));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'tasks' && parts[4] && parts[5] === 'retry' && m === 'POST') {
-    const id = Number(parts[2]), taskId = Number(parts[4]);
+    const id = requestedVillaId, taskId = Number(parts[4]);
     const task = db.prepare('SELECT * FROM tasks WHERE id = ? AND villa_id = ?').get(taskId, id);
     if (!task) return json(res, 404, { error: 'Aufgabe nicht gefunden' });
     if (task.status === 'RUNNING') return json(res, 409, { error: 'Aufgabe laeuft gerade.' });
@@ -1565,7 +1783,7 @@ async function api(req, res, url) {
     return json(res, 200, { ok: true });
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'audit' && parts.length === 4 && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 100, 1), 500);
     const offset = Math.max(Number(url.searchParams.get('offset')) || 0, 0);
@@ -1578,12 +1796,12 @@ async function api(req, res, url) {
   // Produkt-Pipeline: Marktreife, Phasen und Entwicklungszyklus je Villa.
   if (p === '/api/product/phases' && m === 'GET') return json(res, 200, PHASES.map(({ id, title, goal, weight }) => ({ id, title, goal, weight })));
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'product' && m === 'GET') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
     return json(res, 200, maturity(id));
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'develop' && m === 'POST') {
-    const id = Number(parts[2]);
+    const id = requestedVillaId;
     if (!db.prepare('SELECT id FROM villas WHERE id = ?').get(id)) return json(res, 404, { error: 'Villa nicht gefunden' });
     const out = developCycle(id);
     if (out.added > 0 && !isRunning(id)) scheduleVilla(id, { concurrency: 0, maxRounds: 6 });
@@ -1593,7 +1811,7 @@ async function api(req, res, url) {
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'publish' && m === 'POST') {
     try {
       const b = await readBody(req);
-      const out = createPublishPost(Number(parts[2]), b);
+      const out = createPublishPost(requestedVillaId, b);
       return json(res, 200, out);
     } catch (e) {
       return json(res, e.statusCode || 400, { error: e.message });
@@ -1601,7 +1819,7 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'publish' && m === 'GET') {
     try {
-      const out = listPublishPosts(Number(parts[2]));
+      const out = listPublishPosts(requestedVillaId);
       return json(res, 200, out);
     } catch (e) {
       return json(res, e.statusCode || 400, { error: e.message });
@@ -1609,7 +1827,7 @@ async function api(req, res, url) {
   }
   if (parts[0] === 'api' && parts[1] === 'villas' && parts[2] && parts[3] === 'revenue' && m === 'GET') {
     try {
-      const out = getVillaRevenue(Number(parts[2]));
+      const out = getVillaRevenue(requestedVillaId);
       return json(res, 200, out);
     } catch (e) {
       return json(res, e.statusCode || 400, { error: e.message });
@@ -1624,12 +1842,25 @@ async function api(req, res, url) {
     res.write('retry: 3000\n\n');
     // Ohne Anmeldung nur Metadaten (kein Prompt, keine Tool-Argumente, kein Code).
     const onEvent = (e) => {
-      const payload = user ? e : sanitizeForStream(e);
+      // Only administrators receive the full event payload. Ordinary authenticated
+      // users must get the same metadata-only view as anonymous clients: the bus is
+      // global and events are not yet partitioned by Villa ownership.
+      // Revalidate the bearer session and current role for every event; a deleted
+      // or demoted administrator must immediately lose access to raw global payloads.
+      let isCurrentAdmin = false;
+      try {
+        const sessionUser = userForRequest(req);
+        const role = String(sessionUser?.role || '').toUpperCase();
+        isCurrentAdmin = role === 'ADMIN' || role === 'SUPERADMIN';
+      } catch {
+        // Session lookup failures fail closed: publish metadata only.
+      }
+      const payload = eventForStream(e, { isAdmin: isCurrentAdmin });
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
     bus.on('event', onEvent);
     const ping = setInterval(() => res.write(': ping\n\n'), 15000);
-    req.on('close', () => { clearInterval(ping); bus.off('event', onEvent); });
+    res.on('close', () => { clearInterval(ping); bus.off('event', onEvent); });
     return;
   }
 
