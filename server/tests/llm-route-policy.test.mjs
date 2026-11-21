@@ -36,3 +36,9 @@ test('rejects custom Modal endpoints until deployment ownership is independently
     provider: 'modal', baseUrl: 'https://workspace--app.modal.run/v1', keyEnv: 'MODAL_API_KEY'
   }).error, 'CUSTOM_MODAL_ENDPOINT_REQUIRES_DEPLOYMENT_APPROVAL');
 });
+
+test('rejects nonstandard ports on public provider hosts', () => {
+  assert.equal(validateLlmRouteInput({
+    provider: 'groq', baseUrl: 'https://api.groq.com:8443/openai/v1', keyEnv: 'GROQ_API_KEY'
+  }).error, 'ENDPOINT_PORT_NOT_ALLOWED');
+});
