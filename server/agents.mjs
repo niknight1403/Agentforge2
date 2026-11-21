@@ -113,6 +113,7 @@ const TOOLS = {
     run: async (ctx, a) => {
       const q = String(a.query || '').trim();
       if (!q) return 'Leere Suchanfrage.';
+      if (q.length > 500) return 'Suchanfrage zu lang (maximal 500 Zeichen).';
       const decodeHref = (h) => {
         try {
           if (h.includes('uddg=')) return decodeURIComponent(h.split('uddg=')[1].split('&')[0]);
@@ -126,6 +127,7 @@ const TOOLS = {
           signal: AbortSignal.timeout(15000),
           headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0' }
         });
+        if (!res.ok) throw new Error(`Suche HTTP ${res.status}`);
         const html = await res.text();
         const links = [...html.matchAll(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
         const snips = [...html.matchAll(/class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/gi)];
@@ -147,6 +149,7 @@ const TOOLS = {
           body: 'q=' + encodeURIComponent(q),
           signal: AbortSignal.timeout(15000)
         });
+        if (!res.ok) throw new Error(`Suche HTTP ${res.status}`);
         const html = await res.text();
         const links = [...html.matchAll(/<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
         const out = [];

@@ -158,8 +158,11 @@ export function classifyProbe({ status = 0, ms = 0, responseValid = true } = {})
   if (status === 401 || status === 403) return { state: 'DEAD', cooldownMs: 0, dead: 1, enabled: 0 };
   if (status >= 500) return { state: 'ERROR', cooldownMs: 30_000, dead: 0, enabled: 1 };
   if (status === 0) return { state: 'UNREACHABLE', cooldownMs: 30_000, dead: 0, enabled: 1 };
+  if (status >= 400 && status < 500) return { state: 'CLIENT_ERROR', cooldownMs: 300_000, dead: 0, enabled: 1 };
+  if (status >= 300 && status < 400) return { state: 'REDIRECT', cooldownMs: 30_000, dead: 0, enabled: 1 };
   if (status >= 200 && status < 300 && !responseValid) return { state: 'INVALID_RESPONSE', cooldownMs: 30_000, dead: 0, enabled: 1 };
-  return { state: 'OK', cooldownMs: 0, dead: 0, enabled: 1 };
+  if (status >= 200 && status < 300) return { state: 'OK', cooldownMs: 0, dead: 0, enabled: 1 };
+  return { state: 'ERROR', cooldownMs: 30_000, dead: 0, enabled: 1 };
 }
 
 /** Eine Route mit Mini-Prompt pruefen und Ergebnis in die DB schreiben. */
@@ -179,6 +182,7 @@ export async function probeRoute(route, { fetchImpl = fetch, timeoutMs = 15_000 
   try {
     const res = await fetchImpl(`${String(route.base_url).replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
+      redirect: 'error',
       headers,
       signal: ctrl.signal,
       body: JSON.stringify({ model: route.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 })
