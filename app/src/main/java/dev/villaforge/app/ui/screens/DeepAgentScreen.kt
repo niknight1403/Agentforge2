@@ -199,7 +199,33 @@ fun DeepAgentScreen(state: UiState, viewModel: MainViewModel, onOpenProject: (Lo
 
 @Composable
 fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit, onOpenVilla: (Long) -> Unit) {
-    val project = state.deepActiveProject ?: run { onBack(); return }
+    val project = state.deepActiveProject
+    if (project == null) {
+        // Navigation is immediate, but project detail is loaded asynchronously.
+        // Never navigate from composition: that caused a back-navigation flash.
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (state.deepOpenError != null) {
+                Text("Projekt konnte nicht geladen werden", color = TextMain, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text(state.deepOpenError, color = TextMuted)
+                state.deepOpeningProjectId?.let { id ->
+                    TextButton(onClick = { viewModel.openDeepProject(id) }) { Text("Erneut versuchen") }
+                }
+            } else if (state.deepOpeningProjectId != null) {
+                CircularProgressIndicator(color = NeonCyan)
+                Spacer(Modifier.height(12.dp))
+                Text("Projekt wird geladen …", color = TextMuted)
+            } else {
+                Text("Kein Projekt geöffnet", color = TextMuted)
+            }
+            TextButton(onClick = onBack) { Text("Zurück zur Projektliste") }
+        }
+        return
+    }
     var input by remember { mutableStateOf("") }
     var showAttachMenu by remember { mutableStateOf(false) }
     var showRepoDialog by remember { mutableStateOf(false) }
