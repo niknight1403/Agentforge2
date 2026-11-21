@@ -195,7 +195,7 @@ export function llmRequestTimeoutMs(route, opts = {}) {
   if (Number.isFinite(explicit) && explicit > 0) return Math.min(explicit, 3_600_000);
   const envName = route?.provider === 'xai' ? 'VF_XAI_TIMEOUT_MS' : 'VF_LLM_TIMEOUT_MS';
   const configured = Number(process.env[envName]);
-  const fallback = route?.provider === 'xai' ? 120_000 : 15_000;
+  const fallback = route?.provider === 'xai' ? 360_000 : 15_000;
   return Math.max(1_000, Math.min(3_600_000,
     Number.isFinite(configured) && configured > 0 ? configured : fallback));
 }
