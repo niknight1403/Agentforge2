@@ -5,8 +5,37 @@ const setMsg=(id,msg,error=false)=>{const el=$(id);el.textContent=msg;el.style.c
 
 let masterPending = null;
 let masterSending = false;
+function speakMasterMessage(content) {
+  if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance !== 'function') {
+    setMsg('#masterMsg', 'Sprachausgabe wird von diesem Browser nicht unterstützt.', true);
+    return;
+  }
+  const text = String(content || '').trim();
+  if (!text) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text.slice(0, 12000));
+  const language = document.documentElement.lang || 'de-DE';
+  utterance.lang = language;
+  const voices = window.speechSynthesis.getVoices();
+  utterance.voice = voices.find(voice => voice.lang.toLowerCase() === language.toLowerCase())
+    || voices.find(voice => voice.lang.toLowerCase().startsWith(language.slice(0, 2).toLowerCase()))
+    || null;
+  utterance.onerror = event => {
+    if (event.error !== 'canceled' && event.error !== 'interrupted') {
+      setMsg('#masterMsg', 'Die Sprachausgabe konnte nicht gestartet werden.', true);
+    }
+  };
+  window.speechSynthesis.speak(utterance);
+  setMsg('#masterMsg', 'Sprachausgabe läuft. Mit „Vorlesen stoppen“ kannst du sie beenden.');
+}
+
 function renderMasterMessages(rows) {
-  $('#masterLog').innerHTML = rows.length ? rows.map(m => `<article class="master-bubble ${m.role === 'user' ? 'user' : ''}"><small>${m.role === 'user' ? 'Du' : 'Master-Agent'}</small><p>${esc(m.content)}</p></article>`).join('') : '<div class="empty-state"><b>Deine Zentrale für VillaForge</b><p>Beschreibe eine Änderung oder wähle einen Vorschlag. Du kannst mit „Status“ beginnen.</p></div>';
+  $('#masterLog').innerHTML = rows.length ? rows.map(m => {
+    const isUser = m.role === 'user';
+    return `<article class="master-bubble ${isUser ? 'user' : ''}"><small>${isUser ? 'Du' : 'Master-Agent'}</small><p>${esc(m.content)}</p>${isUser ? '' : `<button type="button" class="ghost master-speak" data-speak="${esc(m.content)}" aria-label="Master-Agent-Antwort vorlesen">Vorlesen</button><button type="button" class="ghost master-stop" aria-label="Sprachausgabe stoppen">Stopp</button>`}</article>`;
+  }).join('') : '<div class="empty-state"><b>Deine Zentrale für VillaForge</b><p>Beschreibe eine Änderung oder wähle einen Vorschlag. Du kannst mit „Status“ beginnen.</p></div>';
+  document.querySelectorAll('.master-speak').forEach(button => button.addEventListener('click', () => speakMasterMessage(button.dataset.speak)));
+  document.querySelectorAll('.master-stop').forEach(button => button.addEventListener('click', () => window.speechSynthesis?.cancel()));
   $('#masterLog').scrollTop = $('#masterLog').scrollHeight;
 }
 async function refreshMaster() {

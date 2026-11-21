@@ -23,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.DropdownMenu
@@ -35,7 +37,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import android.speech.tts.TextToSpeech
+import java.util.Locale
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +68,14 @@ import dev.villaforge.app.ui.theme.Violet
 fun ChatScreen(state: UiState, viewModel: MainViewModel) {
     var input by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
+    var ttsReady by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val speechEngine = remember(context) {
+        TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
+    }
+    DisposableEffect(speechEngine) {
+        onDispose { speechEngine.stop(); speechEngine.shutdown() }
+    }
     val listState = rememberLazyListState()
 
     /* Sprint 12: Verlauf lokal durchsuchen (Trefferzaehler inklusive). */
@@ -112,7 +125,16 @@ fun ChatScreen(state: UiState, viewModel: MainViewModel) {
                     )
                 }
             }
-            items(shownMessages) { ChatBubble(it) }
+            items(shownMessages) { message ->
+                ChatBubble(message, onSpeak = if (message.role == "user") null else ({
+                    if (ttsReady) {
+                        val languageStatus = speechEngine.setLanguage(Locale.GERMAN)
+                        if (languageStatus >= TextToSpeech.LANG_AVAILABLE) {
+                            speechEngine.speak(message.content.take(12000), TextToSpeech.QUEUE_FLUSH, android.os.Bundle(), "villa-chat-${message.createdAt}")
+                        }
+                    }
+                }), onStop = { speechEngine.stop() }, speechEnabled = ttsReady)
+            }
             if (state.busy) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(6.dp)) {
@@ -237,7 +259,7 @@ fun ChatScreen(state: UiState, viewModel: MainViewModel) {
 }
 
 @Composable
-internal fun ChatBubble(message: ChatMessage) {
+internal fun ChatBubble(message: ChatMessage, onSpeak: (() -> Unit)? = null, onStop: (() -> Unit)? = null, speechEnabled: Boolean = false) {
     val isUser = message.role == "user"
     Row(
         Modifier.fillMaxWidth(),
@@ -261,9 +283,19 @@ internal fun ChatBubble(message: ChatMessage) {
             if (!isUser) {
                 val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
                 Spacer(Modifier.height(4.dp))
-                TextButton(onClick = {
-                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.content))
-                }) { Text("Kopieren") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = {
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(message.content))
+                    }) { Text("Kopieren") }
+                    if (onSpeak != null) {
+                        androidx.compose.material3.IconButton(onClick = onSpeak, enabled = speechEnabled) {
+                            Icon(Icons.Filled.VolumeUp, contentDescription = "Antwort vorlesen", tint = if (speechEnabled) Aqua else TextMuted)
+                        }
+                        androidx.compose.material3.IconButton(onClick = { onStop?.invoke() }, enabled = speechEnabled) {
+                            Icon(Icons.Filled.StopCircle, contentDescription = "Sprachausgabe stoppen", tint = TextMuted)
+                        }
+                    }
+                }
             }
         }
     }

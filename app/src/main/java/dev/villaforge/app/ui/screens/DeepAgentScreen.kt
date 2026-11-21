@@ -1,6 +1,7 @@
 package dev.villaforge.app.ui.screens
 
 import android.content.Context
+import android.speech.tts.TextToSpeech
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,6 +37,8 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -45,6 +48,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -192,6 +196,13 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
     var repoUrl by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val context = LocalContext.current
+    var ttsReady by remember { mutableStateOf(false) }
+    val speechEngine = remember(context) {
+        TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
+    }
+    DisposableEffect(speechEngine) {
+        onDispose { speechEngine.stop(); speechEngine.shutdown() }
+    }
     val projectId = project.id
 
     /* Nativer Android-Picker: Fotos/Videos und beliebige Dateien */
@@ -401,6 +412,24 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                                 color = TextMuted,
                                 fontSize = 9.sp
                             )
+                            if (!mine) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = {
+                                            val languageStatus = speechEngine.setLanguage(Locale.GERMAN)
+                                            if (ttsReady && languageStatus >= TextToSpeech.LANG_AVAILABLE) {
+                                                speechEngine.speak(msg.content.take(12000), TextToSpeech.QUEUE_FLUSH, android.os.Bundle(), "deep-chat-${msg.createdAt}")
+                                            }
+                                        },
+                                        enabled = ttsReady
+                                    ) {
+                                        Icon(Icons.Filled.VolumeUp, contentDescription = "Antwort vorlesen", tint = if (ttsReady) NeonCyan else TextMuted)
+                                    }
+                                    IconButton(onClick = { speechEngine.stop() }, enabled = ttsReady) {
+                                        Icon(Icons.Filled.StopCircle, contentDescription = "Sprachausgabe stoppen", tint = TextMuted)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
