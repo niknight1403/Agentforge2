@@ -32,6 +32,10 @@ test('provider catalog seeds free routes enabled and paid/credit routes disabled
   assert.deepEqual(oracleOllama, { is_free: 0, enabled: 0 });
 
   assert.equal(seedRouteCatalog().seeded, 0, 'repeat startup must not duplicate catalog rows');
+  db.prepare("UPDATE routes SET enabled=0 WHERE provider='groq' AND model='openai/gpt-oss-120b'").run();
+  seedRouteCatalog();
+  assert.equal(db.prepare("SELECT enabled FROM routes WHERE provider='groq' AND model='openai/gpt-oss-120b'").get().enabled, 0,
+    'existing administrator route decisions must be preserved');
 
   syncCascadeRoutes();
   syncFreeRouteFlags();
