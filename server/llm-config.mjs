@@ -2,6 +2,7 @@ import { existsSync,readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseEnv } from 'node:util';
 import { db } from './db.mjs';
+import { FREE_ROUTE_CATALOG } from './routes.mjs';
 // Only provider configuration is loaded. Never print values or override the service environment.
 const allowed=/^(GEMINI_API_KEY|GOOGLE_API_KEY|OPENROUTER_API_KEY|GROQ_API_KEY|CEREBRAS_API_KEY|MISTRAL_API_KEY|XAI_API_KEY|HF_TOKEN|HUGGINGFACE_API_KEY|OLLAMA_API_KEY|FAL_KEY|VF_(?:LLM_.*|LOCAL_LLM_.*|RPM_.*|SELF_HOSTED_ALLOWED_HOSTS|GEMINI_MODEL|GROQ_MODEL|CEREBRAS_MODEL|MISTRAL_MODEL|XAI_MODEL|HF_MODEL|FAL_.*|MEDIA_MAX_BYTES))$/;
 for(const path of (process.env.VF_TEST==='1'?[]:[resolve('.env'),resolve('server/.env')])) {
@@ -24,6 +25,27 @@ export function cascadeDefaults() {
   ['Local reserve','lmstudio',process.env.VF_LOCAL_LLM_SECONDARY_URL||'http://127.0.0.1:1234/v1',process.env.VF_LOCAL_LLM_SECONDARY_MODEL||'auto','',41]
  ].map(([name,provider,base_url,model,key_env,priority])=>({name:`Cascade: ${name}`,provider,base_url,model,key_env,priority}));
 }
+/**
+ * Idempotently add missing provider-catalog entries. Existing route rows are
+ * administrator decisions and are never re-enabled or overwritten here.
+ * Paid/credit-based routes are inserted disabled; only centrally verified
+ * free/local routes are enabled by default.
+ */
+export function seedRouteCatalog() {
+ let seeded = 0;
+ const insert = db.prepare(
+  'INSERT INTO routes (name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+ );
+ const exists = db.prepare('SELECT id FROM routes WHERE name=? OR (base_url=? AND model=?)');
+ for (const route of FREE_ROUTE_CATALOG) {
+  if (exists.get(route.name, route.baseUrl, route.model)) continue;
+  const free = Number(isFreeRoute({ provider: route.provider, base_url: route.baseUrl, model: route.model }));
+  insert.run(route.name, route.provider, route.baseUrl, route.model, route.keyEnv, free, free, route.priority, 1, 'NEW', 0, 0, 0);
+  seeded += 1;
+ }
+ return { seeded };
+}
+
 export function syncCascadeRoutes() {
  let added=0;
  for(const r of cascadeDefaults()) {
@@ -35,7 +57,10 @@ export function syncCascadeRoutes() {
    if(existing.name===r.name&&((names[r.name]||[]).some(k=>process.env[k])||staleDefault))db.prepare('UPDATE routes SET base_url=?,model=? WHERE id=?').run(r.base_url,r.model,existing.id);
    continue;
   }
-  db.prepare('INSERT INTO routes(name,provider,base_url,model,key_env,priority) VALUES (?,?,?,?,?,?)').run(r.name,r.provider,r.base_url,r.model,r.key_env,r.priority);added++;
+  const free = Number(isFreeRoute(r));
+  db.prepare('INSERT INTO routes(name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+   .run(r.name,r.provider,r.base_url,r.model,r.key_env,free,free,r.priority,1,'NEW',0,0,0);
+  added++;
  }
  return {added};
 }
