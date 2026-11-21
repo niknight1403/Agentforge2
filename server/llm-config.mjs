@@ -47,7 +47,22 @@ export function syncFreeRouteFlags() {
  }
  return {updated};
 }
-export function isLocalRoute(r) {return ['ollama','lmstudio'].includes(r.provider)||/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(r.base_url||'');}
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+export function isLocalRoute(r) {
+ try {
+  const url = new URL(r?.base_url || '');
+  return ['http:', 'https:'].includes(url.protocol) && LOOPBACK_HOSTS.has(url.hostname.toLowerCase());
+ } catch { return false; }
+}
+export function isTrustedSelfHostedRoute(r) {
+ if (!['ollama', 'lmstudio'].includes(String(r?.provider || '').toLowerCase())) return false;
+ let url;
+ try { url = new URL(r?.base_url || ''); } catch { return false; }
+ if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return false;
+ const trusted = String(process.env.VF_SELF_HOSTED_ALLOWED_HOSTS || '')
+  .split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+ return trusted.includes(url.hostname.toLowerCase());
+}
 /** Infer known provider families for manually-added OpenAI-compatible endpoints. */
 export function routeProvider(r) {
  const declared=String(r?.provider||'').toLowerCase();
@@ -66,6 +81,7 @@ export function routeProvider(r) {
 export function isFreeRoute(r) {
  if(isLocalRoute(r)) return true;
  const provider=routeProvider(r);
+ if(provider==='ollama'||provider==='lmstudio') return isTrustedSelfHostedRoute(r);
  const model=String(r.model||'').toLowerCase();
  if(provider==='gemini'||provider==='gemini-openai') return model==='gemini-3.1-flash-lite';
  if(provider==='openrouter') return model==='openrouter/free'||model.endsWith(':free');
@@ -78,7 +94,7 @@ export function isFreeRoute(r) {
 }
 export function freeOnlyEnabled() {return !['0','false','off','no'].includes(String(process.env.VF_LLM_FREE_ONLY||'1').toLowerCase());}
 export function routeTier(r) {
- if(isLocalRoute(r)) return 6;
+ if(isLocalRoute(r)||isTrustedSelfHostedRoute(r)) return 6;
  const p=String(routeProvider(r)+' '+r.base_url).toLowerCase();
  if(/gemini|generativelanguage/.test(p)) return 1;
  if(/cerebras/.test(p)) return 2;

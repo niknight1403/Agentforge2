@@ -6,10 +6,10 @@ import {tmpdir} from 'node:os';
 process.env.VF_DB=join(mkdtempSync(join(tmpdir(),'cascade-')),'db');
 process.env.VF_LLM_FREE_ONLY='0';
 const {createCascade,LlmUnavailableError}=await import('../llm-cascade.mjs');
-const {syncCascadeRoutes,syncFreeRouteFlags,isFreeRoute,routeTier}=await import('../llm-config.mjs');
+const {syncCascadeRoutes,syncFreeRouteFlags,isFreeRoute,isLocalRoute,isTrustedSelfHostedRoute,routeTier}=await import('../llm-config.mjs');
 const {db}=await import('../db.mjs');
 const {chat,resolveKey,routingStatus}=await import('../llm.mjs');
-function route(id,provider,key_env='',extra={}){return {id,name:provider,provider,base_url:`http://${provider}`,model:'test',key_env,priority:id,...extra};}
+function route(id,provider,key_env='',extra={}){const local=['ollama','lmstudio'].includes(provider);const base_url=local?`http://127.0.0.1:${11430+id}/v1`:`http://${provider}`;return {id,name:provider,provider,base_url,model:'test',key_env,priority:id,...extra};}
 function makeCascade(options){return createCascade({freeOnly:false,...options});}
 const answer={content:'Echte Antwort',model:'test'};
 test('Quality-Rollen eskalieren Cloud-first und fallen lokal zurück',async()=>{
@@ -140,6 +140,26 @@ test('Free-only mode uses approved free routes and skips paid or unknown cloud r
  assert.equal(isFreeRoute({...route(23,'openai-compatible'),base_url:'https://api.groq.com/openai/v1',model:'openai/gpt-oss-120b'}),true);
  assert.equal(isFreeRoute({...route(24,'openai-compatible'),base_url:'https://router.huggingface.co/v1',model:'openai/gpt-oss-120b:cerebras'}),false);
  assert.equal(isFreeRoute({...route(25,'xai'),model:'grok-4'}),false,'xAI remains paid and excluded from free-only routing');
+});
+
+test('remote Ollama is not local/free unless its HTTPS host is explicitly trusted', async () => {
+ const remote = { ...route(30, 'ollama'), base_url: 'https://model.example.com/v1' };
+ const previous = process.env.VF_SELF_HOSTED_ALLOWED_HOSTS;
+ try {
+  delete process.env.VF_SELF_HOSTED_ALLOWED_HOSTS;
+  assert.equal(isLocalRoute(remote), false);
+  assert.equal(isTrustedSelfHostedRoute(remote), false);
+  assert.equal(isFreeRoute(remote), false);
+  process.env.VF_SELF_HOSTED_ALLOWED_HOSTS = 'model.example.com';
+  assert.equal(isLocalRoute(remote), false, 'remote host must never be classified as loopback');
+  assert.equal(isTrustedSelfHostedRoute(remote), true);
+  assert.equal(isFreeRoute(remote), true, 'operator-trusted self-hosted inference is allowed in free-only mode');
+  assert.equal(isTrustedSelfHostedRoute({ ...remote, base_url: 'http://model.example.com/v1' }), false);
+  assert.equal(isTrustedSelfHostedRoute({ ...remote, base_url: 'https://other.example.com/v1' }), false);
+ } finally {
+  if (previous === undefined) delete process.env.VF_SELF_HOSTED_ALLOWED_HOSTS;
+  else process.env.VF_SELF_HOSTED_ALLOWED_HOSTS = previous;
+ }
 });
 
 test('Lernende Kaskade bevorzugt pro Prioritätsgruppe die bewährte schnellere Route',async()=>{

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { freeOnlyEnabled,isFreeRoute,isLocalRoute,routeTier } from './llm-config.mjs';
+import { freeOnlyEnabled,isFreeRoute,isLocalRoute,isTrustedSelfHostedRoute,routeTier } from './llm-config.mjs';
 import { withOtelSpan } from './otel.mjs';
 const finiteLimit=(value,fallback,min,max)=>{const n=Number(value);return Number.isFinite(n)&&n>0?Math.max(min,Math.min(max,Math.floor(n))):fallback;};
 export const normalizeEndpoint=value=>String(value||'').replace(/\/+$/,'');
@@ -76,7 +76,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
    }catch{return false;}
   };
   const scopedRoutes=configuredRoutes.filter(r=>{
-   if(opts.routeScope==='selfHostedOnly')return isLocalRoute(r)&&isApprovedHost(r);
+   if(opts.routeScope==='selfHostedOnly')return (isLocalRoute(r)||isTrustedSelfHostedRoute(r))&&isApprovedHost(r);
    if(opts.routeScope==='offlineOnly'){
     if(!isLocalRoute(r))return false;
     try {const host=new URL(r.base_url).hostname.toLowerCase();return ['localhost','127.0.0.1','::1','[::1]'].includes(host);}catch{return false;}
