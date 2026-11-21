@@ -236,9 +236,13 @@ function proposalView(r) {
 }
 
 export function listProposals({ status = '' } = {}) {
+  // The default endpoint is the actionable suggestion inbox: once a proposal
+  // is being started (approving) or has created/linked a Villa (approved), it
+  // must disappear immediately. Keep the row as durable history and allow an
+  // explicit status filter for diagnostics/admin history.
   const rows = status
     ? db.prepare('SELECT * FROM proposals WHERE status = ? ORDER BY id DESC LIMIT 20').all(status)
-    : db.prepare("SELECT * FROM proposals WHERE status IN ('pending','approving','approved') ORDER BY id DESC LIMIT 20").all();
+    : db.prepare("SELECT * FROM proposals WHERE status = 'pending' ORDER BY id DESC LIMIT 20").all();
   return rows.map(proposalView);
 }
 
