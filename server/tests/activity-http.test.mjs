@@ -55,6 +55,9 @@ test('activity heartbeat is UNKNOWN without work, ACTIVE on task progress, and S
   assert.equal(result.body.activityState, 'UNKNOWN');
   assert.equal(result.body.activityAt, null);
   assert.equal(result.body.activityAgeMs, null);
+  await fetch(base + '/api/stats');
+  result = await activity();
+  assert.equal(result.body.activityState, 'UNKNOWN', 'polling stats must not create activity');
 
   const timestamp = Date.now();
   const villaId = Number(writer.prepare(
