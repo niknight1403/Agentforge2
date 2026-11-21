@@ -10,7 +10,7 @@ import { TMP } from './_env.mjs';
 
 process.env.DEEP_DIR = join(TMP, 'deep-files');
 const { createDeepProject, deepChat, addDeepFile, deepPreviewFile, deleteDeepProject, listDeepProjects, deepProjectDetail, deepProjectDevelopmentStatus, linkDeepProjectVilla, runDeepProjectDevelopmentOnce, isDeepProjectDeveloping, waitForInitialPlan, prepareDeepProjectHandover, isInitialPlanPending } = await import('../deepagent.mjs');
-const { insertVillaRecord } = await import('../agents.mjs');
+const { insertVillaRecord, selectSequentialTaskBatch } = await import('../agents.mjs');
 const reply = async () => ({ content: 'Bauplan: MVP, Tests und Startanleitung.' });
 
 test('DeepAgent öffnet den Projektchat sofort und erzeugt den initialen Plan im Hintergrund', async () => {
@@ -288,4 +288,14 @@ test('DeepAgent memory never mixes project titles across owners', async () => {
 
   assert.match(systemContext, /Privates Projekt von Nutzer A/);
   assert.doesNotMatch(systemContext, /Geheimes Projekt von Nutzer B/);
+});
+
+
+test('Villa dispatcht Aufgaben strikt einzeln und respektiert die vorbereitete Prioritaetsreihenfolge', () => {
+  const first = { id: 11, priority: 1 };
+  const second = { id: 12, priority: 2 };
+  const third = { id: 13, priority: 3 };
+  assert.deepEqual(selectSequentialTaskBatch([first, second, third]), [first]);
+  assert.deepEqual(selectSequentialTaskBatch([second]), [second]);
+  assert.deepEqual(selectSequentialTaskBatch([]), []);
 });
