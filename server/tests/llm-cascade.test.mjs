@@ -9,7 +9,7 @@ const {createCascade,LlmUnavailableError}=await import('../llm-cascade.mjs');
 const {syncCascadeRoutes,syncFreeRouteFlags,isFreeRoute,routeTier}=await import('../llm-config.mjs');
 const {db}=await import('../db.mjs');
 const {chat,resolveKey,routingStatus}=await import('../llm.mjs');
-function route(id,provider,key_env='',extra={}){return {id,name:provider,provider,base_url:`http://${provider}`,model:'test',key_env,priority:id,...extra};}
+function route(id,provider,key_env='',extra={}){const local=['ollama','lmstudio'].includes(provider);const base_url=local?`http://127.0.0.1:${11430+id}/v1`:`http://${provider}`;return {id,name:provider,provider,base_url,model:'test',key_env,priority:id,...extra};}
 function makeCascade(options){return createCascade({freeOnly:false,...options});}
 const answer={content:'Echte Antwort',model:'test'};
 test('Quality-Rollen eskalieren Cloud-first und fallen lokal zurück',async()=>{
