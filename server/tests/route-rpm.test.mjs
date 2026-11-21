@@ -18,6 +18,7 @@ test('RPM budgets are selected by provider identity, not display name', () => {
     assert.equal(routeRpm({ name: 'Custom xAI alias', provider: 'xai', base_url: 'https://api.x.ai/v1' }), 4);
     assert.equal(routeRpm({ name: 'Gemini proxy name', provider: 'gemini-openai', base_url: 'https://generativelanguage.googleapis.com/v1beta/openai' }), 7);
     assert.equal(routeRpm({ name: 'SambaNova alias', provider: 'openai-compatible', base_url: 'https://api.sambanova.ai/v1' }), 9);
+    assert.equal(routeRpm({ name: 'NVIDIA alias', provider: 'openai-compatible', base_url: 'https://integrate.api.nvidia.com/v1' }), 6);
     assert.equal(routeRpm({ name: 'Pollinations keyless', provider: 'openai-compatible', base_url: 'https://text.pollinations.ai/openai' }), 4);
     assert.equal(routeRpm({ name: 'Unclassified route', provider: 'openai-compatible', base_url: 'https://example.com/v1' }), 31);
   } finally {
