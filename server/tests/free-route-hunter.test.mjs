@@ -93,7 +93,7 @@ test('probeRoute fragt ohne Key nicht an und schreibt Latenz bei Erfolg', async 
   });
   assert.equal(r.state, 'OK');
   assert.equal(seen.url, 'https://ok.invalid/v1/chat/completions');
-  assert.equal(JSON.parse(seen.opts.body).max_tokens, 1);
+  assert.equal(JSON.parse(seen.opts.body).max_tokens, 8);
   const stored = db.prepare('SELECT status, ok, lat_ms FROM routes WHERE id = ?').get(okRow.id);
   assert.equal(stored.status, 'OK');
   assert.equal(stored.ok, 1);
