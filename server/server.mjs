@@ -1009,8 +1009,17 @@ async function api(req, res, url) {
     if (!openMode && !isAdmin) return json(res, 403, { error: 'Gratis-Routen-Scan ist Admins vorbehalten.' });
     return json(res, 200, await scanFreeRoutes());
   }
-  /* ---- Free Route Hunter: Health-Probes, lokale/keyfreie Quellen, Wochenbericht ---- */
-  if (p === '/api/free-routes/hunter' && m === 'GET') return json(res, 200, hunterStatus());
+  /* ---- Free Route Hunter: vollständiger Status inkl. Wochenbericht und Medienwerkzeuge ---- */
+  if (p === '/api/free-routes/hunter' && m === 'GET') {
+    const media = await freeMediaStatus();
+    return json(res, 200, {
+      ok: true,
+      hunter: hunterStatus(),
+      weekly: weeklyReport(),
+      mediaTools: { available: media.available, missing: media.missing, can: media.can },
+      note: 'Verfügbarkeit ist keine Fertigmeldung: freie Routen und Werkzeuge werden nur benutzt, wenn ein Lauf sie tatsächlich aufruft.'
+    });
+  }
   if (p === '/api/free-routes/monitor' && m === 'POST') {
     if (!openMode && !isAdmin) return json(res, 403, { error: 'Routen-Probe ist Admins vorbehalten.' });
     return json(res, 200, { ok: true, probes: await monitor({ limit: Number(url.searchParams.get('limit') || 6) }) });
@@ -1476,17 +1485,6 @@ async function api(req, res, url) {
     const report = projectReadiness(Number(parts[3]));
     if (!report) return json(res, 404, { error: 'Projekt nicht gefunden' });
     return json(res, 200, report);
-  }
-  /* ---- Gratis-Routen-Jaeger: Werkzeug- und LLM-Routen im Ueberblick ---- */
-  if (p === '/api/free-routes/hunter' && m === 'GET') {
-    const media = await freeMediaStatus();
-    return json(res, 200, {
-      ok: true,
-      hunter: hunterStatus(),
-      weekly: weeklyReport(),
-      mediaTools: { available: media.available, missing: media.missing, can: media.can },
-      note: 'Verfuegbarkeit ist keine Fertigmeldung: freie Routen und Werkzeuge werden nur benutzt, wenn ein Lauf sie tatsaechlich aufruft.'
-    });
   }
   if (p === '/api/free-routes/hunter/tick' && m === 'POST') {
     if (!openMode && !isAdmin) return json(res, 403, { error: 'Routen-Jagd ist Admins vorbehalten.' });
