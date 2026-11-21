@@ -49,6 +49,7 @@ export async function discoverMcpServerTools({ serverId, client, timeoutMs = DEF
   if (!server) throw fail('MCP_SERVER_NOT_FOUND', 'MCP server is not registered');
   if (server.status === 'disabled') throw fail('MCP_SERVER_DISABLED', 'Disabled MCP servers cannot be discovered');
   if (!client || typeof client.listTools !== 'function') throw fail('MCP_CLIENT_REQUIRED', 'A connected MCP SDK client with listTools() is required');
+  if (client.serverId !== serverId) throw fail('MCP_CLIENT_SERVER_MISMATCH', 'MCP discovery client must be bound to the requested registered server');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) throw new TypeError('timeoutMs must be an integer between 100 and 120000');
   let timeout;
   try {
