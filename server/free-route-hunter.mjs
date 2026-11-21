@@ -194,7 +194,8 @@ export async function probeRoute(route, { fetchImpl = fetch, timeoutMs = 15_000 
       validResponse = typeof content === 'string' && content.trim().length > 0;
     }
   } catch {
-    status = 0;
+    // Keep a received HTTP status: malformed/empty JSON is not a network outage.
+    if (!status) status = 0;
   } finally {
     clearTimeout(timer);
   }
