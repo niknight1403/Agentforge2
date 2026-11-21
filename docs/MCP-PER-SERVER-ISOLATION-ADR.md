@@ -78,18 +78,32 @@ If a required control cannot be verified, the runner is unavailable and stdio st
 5. Add adversarial integration tests and deployment evidence.
 6. Only after independent review, permit production enablement for approved profiles.
 
-## Current status
+## Current status — re-audited 2026-11-21
 
-This ADR records the required architecture; it does **not** claim that per-server isolation has been implemented. The current PR #162 process-group transport and Compose hardening remain defense-in-depth only. Untrusted MCP server execution remains blocked pending all acceptance tests and independent review.
+Per-server rootless Podman routing is now wired in the default-branch code. This is an implemented execution path for unauthenticated stdio MCP images, but it is not blanket production approval for arbitrary registry servers.
 
-## Implementation evidence (PR #162)
+## Implementation evidence
 
-The current code is a fail-closed scaffold, not a connected per-server runtime:
+- `server/mcp-hub-runtime.mjs` resolves a deployment-owned profile by registered server UUID and routes supervisor connections through `connectMcpPodmanServer`. It does not fall back to shared-Hub stdio.
+- `server/mcp-rootless-profile-registry.mjs` validates a bounded deployment-owned UUID-to-profile mapping. It rejects unknown profile fields and requires an immutable image digest and the required isolation/resource settings.
+- `server/mcp-podman-rootless-runner.mjs` builds a shell-free Podman invocation with rootless mode, no network, read-only root, dropped capabilities, no-new-privileges, non-root UID, and bounded memory/CPU/PIDs/runtime.
+- `server/mcp-podman-runtime-adapter.mjs` connects the pinned MCP SDK to the image ENTRYPOINT over stdio. Registry command/args/cwd/config are not passed into the container.
+- `server/mcp-runtime-supervisor.mjs` owns bounded start/stop, execution admission, drain, reconciliation and cleanup fencing.
+- The adapter deliberately rejects authenticated registrations (`authMode !== 'none'` or a credential reference) with `MCP_PODMAN_CREDENTIAL_CHANNEL_UNAVAILABLE`. No credential is passed to Podman. Authenticated MCP remains disabled until a scoped secret channel is designed and verified.
+- The real-runtime test `server/tests/mcp-podman-rootless.integration.test.mjs` covers initialize/listTools/callTool, independent per-server containers, crash cleanup and forced removal after a SIGTERM-resistant runtime deadline.
 
-- `mcp-podman-rootless-runner.mjs` builds a constrained Podman command and probes `podman info` for rootless mode.
-- `mcp-podman-transport.mjs` can attach the image's configured ENTRYPOINT over stdio and attempts explicit container cleanup. It does not translate registry `command`, `args`, `cwd`, or `config` into an image contract, and it does not deliver a scoped credential from the MCP credential vault.
-- `mcp-rootless-runner-profile.mjs` validates deployment-owned image/resource profiles, but `assertMcpRootlessRunnerAvailable()` intentionally returns `MCP_ROOTLESS_RUNNER_UNAVAILABLE` even when a probe callback is supplied.
-- `mcp-hub-runtime.mjs` still wires only `connectMcpStdioServer` and requires the shared-Hub namespace acknowledgement. The runtime supervisor has no deployment-owned server-id-to-profile resolver or Podman transport selection.
-- Current Podman transport tests inject a fake spawn function and fake successful rootless probe. They verify command construction and lifecycle behavior, not a real Podman daemon, kernel enforcement, or hostile-server isolation.
+## CI evidence and limitations
 
-Consequently, a successful CI run validates the implemented code and its automated tests only. It does not satisfy the target-host integration or security acceptance criteria above. Do not enable `MCP_ROOTLESS_RUNNER_ENABLED` as a production readiness signal, and do not remove the shared-Hub fail-closed guard until the full image/config/credential contract, supervisor routing, real-runtime tests, and independent review are complete.
+MCP Runtime Integration workflow run `44025936286` on commit `129c4015ec69cc7d068bb6ddc75723d09fec333f` completed successfully. Both `mcp-runtime` and `mcp-rootless-podman` jobs passed. The latter installed Podman on Linux, verified rootless mode, built the disposable fixture image and ran the integration suite against the actual Podman runtime. This is real runtime CI evidence, not mocked spawn/probe evidence.
+
+That run is not on the current default-branch head `0140191ead8f72dd03308ea8c2dc170744a0de70`. The workflow's pull-request target filter now includes `main` so a future MCP change PR targeting the default branch will execute the real-Podman job. A fresh exact-head run is still required for a final release decision.
+
+## Remaining release blockers
+
+1. Implement and adversarially test a scoped credential channel for authenticated MCP servers. Never place secrets in Podman CLI args, container environment, logs, image layers, shared mounts or host-visible plaintext files.
+2. Run the real rootless Podman workflow on the final intended code head and retain its logs/artifacts.
+3. Verify the deployment's actual rootless Podman/kernel configuration and production image compatibility; the fixture image is not proof that every registry image obeys the expected stdio contract.
+4. Update/retain independent security review evidence and resolve all high/critical findings before enabling untrusted workloads.
+5. Keep remote HTTP/SSE/WebSocket execution disabled unless a separate transport-specific security model is implemented and reviewed.
+
+A green CI run validates only the exact commit and tests exercised. It does not establish production deployment, arbitrary image compatibility, secure authenticated MCP credentials, or independent security certification. Do not enable authenticated or untrusted MCP servers until the remaining release blockers are satisfied.
