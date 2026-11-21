@@ -19,7 +19,7 @@ The design MUST preserve these invariants:
 - Plaintext credentials never appear in Podman CLI arguments, container environment variables, image layers, Podman inspect/config metadata, persistent files, shared writable mounts, logs, audit records, API responses, or error messages.
 - The Hub master key and vault database are never mounted or exposed to the container.
 - A credential is authorized for one registered server and one runtime instance only; no cross-server or cross-run access.
-- Delivery is one-time, bounded, short-lived, and fail-closed. Replays, duplicate frames, malformed frames, wrong bindings, and expired capabilities are rejected.
+- Delivery is one-time, bounded, short-lived, and fail-closed. The Hub atomically consumes the launch capability; the shim verifies a Hub signature over the complete launch binding. Replays, malformed frames, wrong bindings, and expired capabilities are rejected.
 - Stop, startup failure, crash, timeout, and forced removal close the delivery channel and revoke the capability.
 - Only deployment-owned, immutable image digests and runner profiles may select the credential shim contract. Registry-provided commands, args, cwd, and arbitrary entrypoint overrides remain untrusted and unused.
 - Existing unauthenticated rootless execution behavior remains unchanged.
@@ -37,16 +37,31 @@ A candidate approach is a versioned bootstrap frame sent over the already-attach
 5. Send a strictly length-delimited, versioned bootstrap frame over the Podman stdin pipe. Enforce a small maximum frame size and an absolute delivery deadline.
 6. After the frame is written, release Hub-side plaintext buffers best-effort and continue with the normal MCP stdio stream. Revoke the capability on every terminal path.
 
+### Wire format and trust binding
+
+The implementation MUST use a single normative encoding; the following is the proposed v1 contract:
+
+- Frame prefix: 8-byte ASCII magic `AFMCPCRD`, unsigned 16-bit big-endian version (`1`), then unsigned 32-bit big-endian payload length.
+- Payload: canonical CBOR map with exactly the required fields `serverId`, `runId`, `credentialRef`, `imageDigest`, `expiresAt`, `nonce`, `credential`, and `signature`. Reject unknown critical fields, duplicate map keys, non-canonical encodings, invalid UTF-8 identifiers, and any payload above a small fixed limit (proposed 16 KiB).
+- Signature: Ed25519 over a domain-separated canonical encoding of every field except `signature`. The trusted shim contains only the corresponding Hub public verification key(s); it never contains a signing/private key. Key IDs and rotation overlap must be specified before implementation. The signature authenticates the metadata and credential as one indivisible envelope.
+- The Hub broker remains the authorization authority: it validates the administrator-approved registration and credential assignment, binds the launch to the actual deployment-owned profile and image digest, and atomically consumes the unpredictable one-time capability before writing. The shim verifies the signature, expiry, nonce shape, and that the envelope is for the launch it was started to serve. The runner—not an image-supplied field—establishes the actual immutable image digest used for launch.
+- Expiry uses an absolute Unix timestamp with a strict maximum lifetime; both Hub and shim reject expired envelopes. Clock-skew allowance must be explicit and bounded. Nonces are generated cryptographically and are single-use because each shim instance accepts exactly one bootstrap envelope; the Hub broker additionally prevents a capability from being issued/consumed twice.
+- The shim reads the fixed prefix and exactly the declared payload length with a hard deadline. EOF before completion, unsupported versions, oversized lengths, signature failure, or parse failure abort startup. Bytes after that exact boundary belong to the MCP stdin stream; they are not interpreted as a second bootstrap frame. The MCP JSON-RPC parser must reject a second frame as invalid protocol input. The Hub writer MUST serialize the bootstrap frame before forwarding any client MCP bytes, so the boundary cannot race.
+- The frame parser must never scan for a later magic marker or attempt resynchronization. A malformed bootstrap is fatal for that run.
+
+This encoding is a design baseline, not permission to implement without maintainer approval and a reviewed cryptographic test vector.
+
 ### Trusted image-side shim
 
 Only images explicitly built and pinned for this contract may use it. Their trusted ENTRYPOINT shim MUST:
 
 1. Read exactly one bounded bootstrap frame before launching the MCP child.
 2. Validate protocol version, framing, expected server/run binding, expiry, and one-time nonce; reject truncation, trailing/duplicate frames, and replay.
-3. Pass the credential to the child through a dedicated anonymous pipe/file descriptor, not argv, environment variables, or a file. The child must explicitly implement this FD contract.
-4. Close the pipe after the one-time read and zero mutable buffers best-effort.
-5. Start the MCP child without arbitrary registry-supplied command overrides, then forward normal MCP stdin/stdout without altering protocol bytes.
-6. Terminate the child and close all descriptors on parent loss, timeout, malformed input, or shutdown. Disable core dumps where supported.
+3. Verify the Ed25519 signature against the public key pinned in the trusted shim and validate the signed launch binding before releasing the credential. The shim MUST NOT trust unsigned frame fields or a client-supplied server/run ID.
+4. Pass only the credential bytes to the intended child through a dedicated anonymous pipe/file descriptor, not argv, environment variables, or a file. Use close-on-exec by default and an explicit spawn file action to expose only the designated descriptor to the direct child; close every unrelated inherited descriptor.
+5. The child contract MUST read the descriptor once and close it immediately, before spawning helpers or loading plugins. The descriptor MUST NOT be inherited by descendants. The shim closes its copy immediately after successful spawn and terminates the child on delivery failure. A malicious credential-consuming child can still disclose a credential it has legitimately received; this design protects delivery and unintended exposure, not a compromised recipient.
+6. Start the MCP child without arbitrary registry-supplied command overrides, then forward normal MCP stdin/stdout without altering protocol bytes.
+7. Terminate the child and close all descriptors on parent loss, timeout, malformed input, or shutdown. Disable core dumps where supported.
 
 The credential itself MUST NOT be exposed through process arguments or environment variables. A fixed, documented descriptor number is acceptable only if the child reads the descriptor directly and no secret-bearing value is used as the descriptor selector.
 
@@ -81,8 +96,8 @@ Audit data may contain opaque server/run/credential references, image digest, ti
 
 The implementation is not acceptable until tests prove all of the following against the real rootless Podman integration fixture:
 
-1. Reject truncated, oversized, malformed, expired, duplicate, and replayed bootstrap frames.
-2. Reject wrong server, run, image digest, credential reference, and cross-server/cross-run attempts.
+1. Verify canonical encoding and published Ed25519 test vectors; reject truncated, oversized, malformed, unsupported-version, invalid-signature, expired, duplicate, and replayed bootstrap frames.
+2. Reject wrong server, run, image digest, credential reference, and cross-server/cross-run attempts, including tampered signed fields.
 3. Prove concurrent launches cannot race or consume the same one-time capability.
 4. Prove the secret is absent from Podman argv, host/container environment, inspect/config output, logs, audit events, API responses, errors, image layers, persistent filesystem, and core dumps.
 5. Prove only the intended child receives the one-time FD and cannot access another run's descriptor.
