@@ -54,9 +54,9 @@ import dev.villaforge.app.ui.theme.TextMuted
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DevScreen(state: UiState, viewModel: MainViewModel, onOpenVilla: (Long) -> Unit = {}) {
+fun DevScreen(state: UiState, viewModel: MainViewModel, onOpenVilla: (Long) -> Unit = {}, startTab: Int = 0) {
     val detail = state.detail ?: return
-    var tab by remember { mutableStateOf(0) }
+    var tab by remember(detail.villa.id, startTab) { mutableStateOf(startTab) }
 
     Column(Modifier.fillMaxSize()) {
         state.error?.let { ErrorBanner(it) { viewModel.refreshAll() } }
