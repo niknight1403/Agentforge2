@@ -115,6 +115,30 @@ test('monitor prueft ausschliesslich aktive Routen', async () => {
   assert.equal(typeof disabled, 'number');
 });
 
+test('monitor ignoriert bezahlte und noch gedrosselte Routen', async () => {
+  const paidId = Number(db.prepare(
+    "INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used, cooldown_until) VALUES ('Hunter paid must skip', 'test', 'https://paid.invalid/v1', 'paid-model', '', 0, 1, 1, 1, 'NEW', 0, 0, 0, 0)"
+  ).run().lastInsertRowid);
+  const coolingId = Number(db.prepare(
+    "INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used, cooldown_until) VALUES ('Hunter cooling must skip', 'test', 'https://cooling.invalid/v1', 'cooling-model', '', 1, 1, 1, 1, 'COOLDOWN', 0, 1, 0, ?)"
+  ).run(Date.now() + 120_000).lastInsertRowid);
+  const eligibleId = Number(db.prepare(
+    "INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used, cooldown_until) VALUES ('Hunter eligible free', 'test', 'https://eligible.invalid/v1', 'eligible-model', '', 1, 1, 1, 1, 'NEW', 0, 0, 0, 0)"
+  ).run().lastInsertRowid);
+  const requested = [];
+  const rows = await monitor({
+    limit: 50,
+    fetchImpl: async (url) => {
+      requested.push(String(url));
+      return jsonRes({});
+    }
+  });
+  assert.ok(rows.some((row) => row.id === eligibleId), 'eligible free route should be probed');
+  assert.ok(!rows.some((row) => row.id === paidId), 'paid route must never be probed');
+  assert.ok(!rows.some((row) => row.id === coolingId), '429 cooldown must suppress repeated probes');
+  assert.ok(!requested.some((url) => url.includes('paid.invalid') || url.includes('cooling.invalid')));
+});
+
 test('hunterTick protokolliert den Zyklus, hunterStatus und weeklyReport lesen ihn', async () => {
   const fetchImpl = fakeFetch((url) => {
     if (url.includes('openrouter.ai')) return jsonRes({ data: [{ id: 'x:free', pricing: { prompt: '0', completion: '0' } }] });
