@@ -8,7 +8,8 @@ import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStud
 import { castOverview,createPersona,createWardrobePack,listPersonas,listWardrobePacks,personaCard,personaDetail,resolveLook,updatePersona } from './persona-packs.mjs';
 import { activeDirections,consumeDirections,directorHistory,directorStatus,postInstruction } from './director-chat.mjs';
 import { burnTitle,freeMediaStatus,imagesToVideo,mediaToolInventory,resizeImage,videoThumbnail } from './free-media-tools.mjs';
-import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config.mjs';
+import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, freeOnlyEnabled } from './llm-config.mjs';
+import { mediaCapabilities } from './media.mjs';
 import { validateLlmRouteInput } from './llm-route-policy.mjs';
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
@@ -1109,6 +1110,45 @@ async function api(req, res, url) {
     return json(res, 200, { ...schedulerStatus(), ranking: villaRanking(), cmd: cmdGateStatus() });
   }
   if (p === '/api/tools' && m === 'GET') return json(res, 200, toolSpecs());
+  // Admin-only integration inventory; never return secret values or full connector URLs.
+  if (p === '/api/integrations' && m === 'GET') {
+    if (!isAdmin) return json(res, needAuth ? 401 : 403, { error: 'Integrationsstatus ist Admins vorbehalten.' });
+    const endpointOrigin = value => { try { return new URL(String(value || '')).origin; } catch { return null; } };
+    const routes = db.prepare('SELECT id,name,provider,base_url,model,key_env,is_free,enabled,status,ok,fail,lat_ms,cooldown_until FROM routes ORDER BY priority,id')
+      .all()
+      .map(({ base_url, ...route }) => ({
+        ...route,
+        endpointOrigin: endpointOrigin(base_url),
+        configured: !route.key_env || !!resolveKey(route.key_env),
+        free: isFreeRoute({ ...route, base_url }),
+      }));
+    const connectors = controlCatalog().connectors.map(({ id, title, endpoint, enabled, last_status }) => ({
+      id, title, endpointOrigin: endpointOrigin(endpoint), enabled: !!enabled, status: last_status,
+    }));
+    const tools = toolSpecs();
+    const providerCatalog = FREE_ROUTE_CATALOG.map(route => route.provider === 'xai'
+      ? { ...route, model: process.env.VF_XAI_MODEL || route.model }
+      : route);
+    return json(res, 200, {
+      llm: {
+        freeOnly: freeOnlyEnabled(),
+        routes,
+        providerCatalog: providerCatalog.map(({ name, provider, baseUrl, model, keyEnv, priority }) => ({
+          name, provider, endpointOrigin: endpointOrigin(baseUrl), model, keyEnv, priority,
+          endpointConfigured: !!baseUrl,
+          configured: !!baseUrl && (!keyEnv || !!resolveKey(keyEnv)),
+        })),
+        summary: routingSummary(),
+      },
+      api: {
+        connectors,
+        endpoints: ['/api/routes', '/api/llm/status', '/api/connectors', '/api/admin/mcp/servers', '/api/admin/mcp/servers/:serverId/tools', '/api/admin/mcp/tools/:toolId/policy'],
+      },
+      tools,
+      mcpTools: tools.filter(tool => tool.name.startsWith('mcp:')),
+      media: mediaCapabilities(),
+    });
+  }
   // ---- Rollen-Katalog: alle verfuegbaren Agenten-Rollen inkl. AGI-Quintett ----
   if (p === '/api/roles' && m === 'GET') return json(res, 200, { roles: ROLES, promptVersion: PROMPT_VERSION });
   // ---- Packs: eine Wahrheit fuer Hub, Web-UI und Android-App ----
