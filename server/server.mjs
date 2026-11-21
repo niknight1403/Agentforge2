@@ -10,6 +10,7 @@ import { activeDirections,consumeDirections,directorHistory,directorStatus,postI
 import { burnTitle,freeMediaStatus,imagesToVideo,mediaToolInventory,resizeImage,videoThumbnail } from './free-media-tools.mjs';
 import { mediaCapabilities } from './media.mjs';
 import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, freeOnlyEnabled, seedRouteCatalog } from './llm-config.mjs';
+import { validateLlmRouteInput } from './llm-route-policy.mjs';
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { createMasterControl } from './master-control.mjs';
