@@ -20,7 +20,8 @@
     "forge": "node scripts/fullstack.mjs",
     "worker:fullstack": "node scripts/fullstack-worker.mjs",
     "worker:generation": "node server/generation-worker.mjs",
-    "check:secrets": "node scripts/check-secrets.mjs"
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "test:pollinations": "node server/scripts/pollinations-smoke.mjs"
   },
   "engines": {
     "node": ">=22"

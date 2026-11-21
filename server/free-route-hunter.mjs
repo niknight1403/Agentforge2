@@ -153,11 +153,12 @@ export function integrate(candidates = []) {
 }
 
 /** HTTP-Status eines Probelaufs in DB-Zustand uebersetzen. */
-export function classifyProbe({ status = 0, ms = 0 } = {}) {
+export function classifyProbe({ status = 0, ms = 0, validResponse = false } = {}) {
   if (status === 429) return { state: 'COOLDOWN', cooldownMs: 120_000, dead: 0, enabled: 1 };
   if (status === 401 || status === 403) return { state: 'DEAD', cooldownMs: 0, dead: 1, enabled: 0 };
   if (status >= 500) return { state: 'ERROR', cooldownMs: 30_000, dead: 0, enabled: 1 };
   if (status === 0) return { state: 'UNREACHABLE', cooldownMs: 30_000, dead: 0, enabled: 1 };
+  if (status < 200 || status >= 300 || !validResponse) return { state: 'INVALID_RESPONSE', cooldownMs: 30_000, dead: 0, enabled: 1 };
   return { state: 'OK', cooldownMs: 0, dead: 0, enabled: 1 };
 }
 
@@ -167,29 +168,39 @@ export async function probeRoute(route, { fetchImpl = fetch, timeoutMs = 15_000 
   if (route.key_env) {
     const row = db.prepare('SELECT value FROM secrets WHERE name = ?').get(route.key_env);
     const value = row?.value || process.env[route.key_env] || '';
-    if (!value) return { id: route.id, name: route.name, state: 'NOKEY', ms: 0, status: 0 };
+    if (!value) {
+      db.prepare("UPDATE routes SET status = 'NOKEY', last_used = ? WHERE id = ?").run(now(), route.id);
+      return { id: route.id, name: route.name, state: 'NOKEY', ms: 0, status: 0 };
+    }
     headers.Authorization = `Bearer ${value}`;
   }
   const started = Date.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let status = 0;
+  let validResponse = false;
   try {
-    const res = await fetchImpl(`${String(route.base_url).replace(/\/$/, '')}/chat/completions`, {
+    const endpoint = String(route.base_url).replace(/\/$/, '') + '/chat/completions';
+    const res = await fetchImpl(endpoint, {
       method: 'POST',
       headers,
       signal: ctrl.signal,
-      body: JSON.stringify({ model: route.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 })
+      body: JSON.stringify({ model: route.model, messages: [{ role: 'user', content: 'Reply with the single word: pong' }], max_tokens: 8 })
     });
     status = res.status;
-    if (res.ok) await res.text().catch(() => '');
+    if (res.ok) {
+      const payload = await res.json();
+      const content = payload?.choices?.[0]?.message?.content;
+      validResponse = typeof content === 'string' && content.trim().length > 0;
+    }
   } catch {
-    status = 0;
+    // Keep a received HTTP status: malformed/empty JSON is not a network outage.
+    if (!status) status = 0;
   } finally {
     clearTimeout(timer);
   }
   const ms = Date.now() - started;
-  const cls = classifyProbe({ status, ms });
+  const cls = classifyProbe({ status, ms, validResponse });
   const ok = cls.state === 'OK' ? 1 : 0;
   const ts = now();
   db.prepare(
@@ -201,8 +212,11 @@ export async function probeRoute(route, { fetchImpl = fetch, timeoutMs = 15_000 
 
 /** Die N am laengsten ungepruefte aktive Routen testen. */
 export async function monitor({ limit = 6, fetchImpl = fetch } = {}) {
+  // The hunter is strictly free-only: never probe paid or credit-based routes.
+  // Prioritize low-numbered routes so keyless fallbacks (priority 20) are tested
+  // before unreachable local Ollama routes (priority 30) on a fresh deployment.
   const rows = db.prepare(
-    "SELECT id, name, base_url, model, key_env FROM routes WHERE enabled = 1 AND provider != 'offline' ORDER BY COALESCE(last_used,0) ASC, id ASC LIMIT ?"
+    "SELECT id, name, base_url, model, key_env FROM routes WHERE enabled = 1 AND is_free = 1 AND provider != 'offline' ORDER BY priority ASC, COALESCE(last_used,0) ASC, id ASC LIMIT ?"
   ).all(Math.max(1, Number(limit) || 6));
   const out = [];
   for (const r of rows) out.push(await probeRoute(r, { fetchImpl }));

@@ -8,7 +8,8 @@ import { studioStatus,proposeDesigns,selectDesign,createPreviewSession,serveStud
 import { castOverview,createPersona,createWardrobePack,listPersonas,listWardrobePacks,personaCard,personaDetail,resolveLook,updatePersona } from './persona-packs.mjs';
 import { activeDirections,consumeDirections,directorHistory,directorStatus,postInstruction } from './director-chat.mjs';
 import { burnTitle,freeMediaStatus,imagesToVideo,mediaToolInventory,resizeImage,videoThumbnail } from './free-media-tools.mjs';
-import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config.mjs';
+import { mediaCapabilities } from './media.mjs';
+import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute, freeOnlyEnabled, seedRouteCatalog } from './llm-config.mjs';
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { createMasterControl } from './master-control.mjs';
@@ -110,15 +111,8 @@ const log = (...a) => console.log(new Date().toISOString(), '[villaforge]', ...a
 const logError = (...a) => console.error(new Date().toISOString(), '[villaforge]', ...a);
 
 /* --------------------------- Seed --------------------------- */
-if (db.prepare('SELECT COUNT(*) c FROM routes').get().c === 0) {
-  const ins = db.prepare(
-    'INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  );
-  for (const r of FREE_ROUTE_CATALOG) {
-    ins.run(r.name, r.provider, r.baseUrl, r.model, r.keyEnv, Number(isFreeRoute({provider:r.provider,base_url:r.baseUrl,model:r.model})), 1, r.priority, 1, 'NEW', 0, 0, 0);
-  }
-  console.log('[villaforge] Routen-Katalog initialisiert:', FREE_ROUTE_CATALOG.length);
-}
+const routeSeed = seedRouteCatalog();
+if (routeSeed.seeded) log('Routen-Katalog initialisiert:', routeSeed.seeded);
 
 /* --------------------------- Admin-Autoanlage --------------------------- */
 // Optional: VF_ADMIN_EMAIL + VF_ADMIN_PASSWORD in der Umgebung des Hubs
@@ -994,6 +988,26 @@ async function api(req, res, url) {
     return json(res, 200, { ...schedulerStatus(), ranking: villaRanking(), cmd: cmdGateStatus() });
   }
   if (p === '/api/tools' && m === 'GET') return json(res, 200, toolSpecs());
+  // Unified, read-only integration inventory for the admin console. Secret
+  // values are never returned; only configuration presence and safe metadata.
+  if (p === '/api/integrations' && m === 'GET') {
+    if (!isAdmin) return json(res, needAuth ? 401 : 403, { error: 'Integrationsstatus ist Admins vorbehalten.' });
+    const endpointOrigin=value=>{try{return new URL(String(value||'')).origin;}catch{return null;}};
+    const routes=db.prepare('SELECT id,name,provider,base_url,model,key_env,is_free,enabled,status,ok,fail,lat_ms,cooldown_until FROM routes ORDER BY priority,id').all()
+      .map(({base_url,...route})=>({...route,endpointOrigin:endpointOrigin(base_url),configured:!route.key_env||!!resolveKey(route.key_env),free:isFreeRoute({...route,base_url})}));
+    const connectors=controlCatalog().connectors.map(({id,title,endpoint,enabled,last_status})=>({id,title,endpointOrigin:endpointOrigin(endpoint),enabled:!!enabled,status:last_status}));
+    const tools=toolSpecs();
+    const providerCatalog=FREE_ROUTE_CATALOG.map(route=>route.provider==='modal'
+      ?{...route,baseUrl:process.env.MODAL_BASE_URL||route.baseUrl,model:process.env.MODAL_MODEL||route.model}
+      :route.provider==='xai'?{...route,model:process.env.VF_XAI_MODEL||route.model}:route);
+    return json(res,200,{
+      llm:{freeOnly:freeOnlyEnabled(),routes,providerCatalog:providerCatalog.map(({name,provider,baseUrl,model,keyEnv,priority})=>({name,provider,endpointOrigin:endpointOrigin(baseUrl),model,keyEnv,priority,endpointConfigured:!!baseUrl,configured:!!baseUrl&&(!keyEnv||!!resolveKey(keyEnv))})),summary:routingSummary()},
+      api:{connectors,endpoints:['/api/routes','/api/llm/status','/api/connectors','/api/admin/mcp/servers','/api/admin/mcp/servers/:serverId/tools','/api/admin/mcp/tools/:toolId/policy']},
+      tools,
+      mcpTools:tools.filter(tool=>tool.name.startsWith('mcp:')),
+      media:mediaCapabilities()
+    });
+  }
   // ---- Rollen-Katalog: alle verfuegbaren Agenten-Rollen inkl. AGI-Quintett ----
   if (p === '/api/roles' && m === 'GET') return json(res, 200, { roles: ROLES, promptVersion: PROMPT_VERSION });
   // ---- Packs: eine Wahrheit fuer Hub, Web-UI und Android-App ----
@@ -1434,6 +1448,14 @@ async function api(req, res, url) {
       if(!detail)return {ok:false,code:'PROJECT_NOT_FOUND'};
       let villaId=Number(detail.project.villa_id||0);
       if(!villaId||!db.prepare('SELECT id FROM villas WHERE id=?').get(villaId)){
+        // Automatic idea/chat starts must obey the same evidence gates as
+        // the explicit /develop endpoint; otherwise they create a Villa first
+        // and make the later gate check ineffective.
+        const projectDir=deepProjectDir(projectId);
+        const gate=productGateForProjectDir(projectDir);
+        if(!gate.ready)return {ok:false,villaId:0,gateBlocked:true,blockers:gate.blockers,checks:gate.checks,code:'PRODUCT_GATE_BLOCKED'};
+        const handover=scanHandoverArtifacts(projectDir);
+        if(!handover.ready)return {ok:false,villaId:0,gateBlocked:true,artifactBlocked:true,blockers:handover.blockers,checks:{...gate.checks,...handover.checks},code:'HANDOVER_ARTIFACTS_BLOCKED'};
         const brief=[detail.project.idea,deepMissionBrief(detail.project.idea),villaLessonsContext()].join('\n\n').slice(0,9000);
         const built=await createVilla({name:('Deep · '+detail.project.title).slice(0,60),idea:brief,agentCount:12,mode:'BUILD'});
         villaId=linkDeepProjectVilla(projectId,built.villaId);
@@ -1744,21 +1766,32 @@ server.listen(PORT, HOST, () => {
     }).catch((error) => logError('Gratis-Routen-Scan:', error?.message || error));
   }, 6 * 60 * 60 * 1000);
   freeRouteLoop.unref();
-  // FREE ROUTE HUNTER: Health alle 30 Min; alle 6h (jeder 12. Tick) zusaetzlich
-  // lokale Ollama-Modelle + keyfreie Quellen integrieren und den Wochenbericht
-  // in den Villa-Workspace schreiben.
+  // FREE ROUTE HUNTER: erster vollstaendiger Lauf nach dem Start, danach
+  // Health-Probes alle 30 Min und Discovery/Integration alle 6 Stunden.
+  // Ein Busy-Guard verhindert ueberlappende Scans bei langsamen Providern.
   let hunterTicks = 0;
+  let hunterBusy = false;
+  const runHunterCycle = async (full = false) => {
+    if (hunterBusy) return;
+    hunterBusy = true;
+    try {
+      if (full) {
+        const result = await hunterTick({ monitorLimit: 8, includeLocal: true });
+        if (result.local.added.length) log(`Hunter: ${result.local.added.length} neue Gratis-Route(n) integriert`);
+        try { weeklyReport({ writeTo: reportPath() }); } catch { /* Bericht optional */ }
+      } else {
+        await monitor({ limit: 4 });
+      }
+    } catch (error) {
+      logError('Hunter:', error?.message || error);
+    } finally {
+      hunterBusy = false;
+    }
+  };
+  setTimeout(() => { runHunterCycle(true); }, 90_000).unref?.();
   const hunterLoop = setInterval(() => {
     hunterTicks += 1;
-    const full = hunterTicks % 12 === 1;
-    const work = full
-      ? hunterTick({ monitorLimit: 8, includeLocal: true }).then((r) => {
-          if (r.local.added.length) log(`Hunter: ${r.local.added.length} neue Gratis-Route(n) integriert`);
-          try { weeklyReport({ writeTo: reportPath() }); } catch { /* Bericht optional */ }
-          return r.probes.length;
-        })
-      : monitor({ limit: 4 }).then((p) => p.length);
-    work.catch((e) => logError('Hunter:', e?.message || e));
+    runHunterCycle(hunterTicks % 12 === 0);
   }, 30 * 60 * 1000);
   hunterLoop.unref();
   // Superintelligenz-Loop: alle 30 Min wird jede Villa mit faelliger Rat-Runde (>2 h) einberufen.

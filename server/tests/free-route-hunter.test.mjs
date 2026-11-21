@@ -27,6 +27,7 @@ const jsonRes = (data, status = 200) => ({
 });
 
 const fakeFetch = (handler) => async (url, opts) => handler(String(url), opts);
+const completion = { choices: [{ message: { content: 'pong' } }] };
 
 test('discoverLocalAndKeyless findet lokale Ollama-Modelle und keyfreie Endpunkte', async () => {
   const fetchImpl = fakeFetch((url) => {
@@ -74,7 +75,8 @@ test('classifyProbe bildet Statuscodes korrekt ab', () => {
   assert.equal(classifyProbe({ status: 403 }).enabled, 0);
   assert.equal(classifyProbe({ status: 500 }).state, 'ERROR');
   assert.equal(classifyProbe({ status: 0 }).state, 'UNREACHABLE');
-  assert.equal(classifyProbe({ status: 200, ms: 90 }).state, 'OK');
+  assert.equal(classifyProbe({ status: 200, ms: 90, validResponse: true }).state, 'OK');
+  assert.equal(classifyProbe({ status: 200, ms: 90, validResponse: false }).state, 'INVALID_RESPONSE');
 });
 
 test('probeRoute fragt ohne Key nicht an und schreibt Latenz bei Erfolg', async () => {
@@ -87,15 +89,27 @@ test('probeRoute fragt ohne Key nicht an und schreibt Latenz bei Erfolg', async 
   const okRow = db.prepare('SELECT * FROM routes WHERE id = ?').get(Number(ins2.lastInsertRowid));
   let seen = null;
   const r = await probeRoute(okRow, {
-    fetchImpl: async (url, opts) => { seen = { url, opts }; return jsonRes({ ok: true }); }
+    fetchImpl: async (url, opts) => { seen = { url, opts }; return jsonRes(completion); }
   });
   assert.equal(r.state, 'OK');
   assert.equal(seen.url, 'https://ok.invalid/v1/chat/completions');
-  assert.equal(JSON.parse(seen.opts.body).max_tokens, 1);
+  assert.equal(JSON.parse(seen.opts.body).max_tokens, 8);
   const stored = db.prepare('SELECT status, ok, lat_ms FROM routes WHERE id = ?').get(okRow.id);
   assert.equal(stored.status, 'OK');
   assert.equal(stored.ok, 1);
   assert.equal(stored.lat_ms >= 0, true);
+});
+
+test('probeRoute akzeptiert HTTP 200 ohne Modellantwort nicht als gesund', async () => {
+  const ins = db.prepare("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES ('Leere Antwort', 'test', 'https://empty.invalid/v1', 'empty-model', '', 1, 1, 30, 1, 'NEW', 0, 0, 0)").run();
+  const row = db.prepare('SELECT * FROM routes WHERE id = ?').get(Number(ins.lastInsertRowid));
+  const result = await probeRoute(row, { fetchImpl: async () => jsonRes({ choices: [{ message: { content: '   ' } }] }) });
+  assert.equal(result.state, 'INVALID_RESPONSE');
+  const stored = db.prepare('SELECT status, enabled, ok, fail FROM routes WHERE id = ?').get(row.id);
+  assert.equal(stored.status, 'INVALID_RESPONSE');
+  assert.equal(stored.enabled, 1, 'ein fehlerhaftes Payload darf die Route nicht dauerhaft deaktivieren');
+  assert.equal(stored.ok, 0);
+  assert.equal(stored.fail, 1);
 });
 
 test('probeRoute schaltet bei 401 die Route ab', async () => {
@@ -108,18 +122,22 @@ test('probeRoute schaltet bei 401 die Route ab', async () => {
   assert.equal(after.status, 'DEAD');
 });
 
-test('monitor prueft ausschliesslich aktive Routen', async () => {
-  const rows = await monitor({ limit: 40, fetchImpl: async () => jsonRes({ ok: true }) });
-  assert.equal(rows.length > 0, true);
-  const disabled = db.prepare("SELECT COUNT(*) n FROM routes WHERE enabled = 0 AND provider != 'offline'").get().n;
-  assert.equal(typeof disabled, 'number');
+test('monitor prueft ausschliesslich aktive kostenlose Routen', async () => {
+  const paid = db.prepare("INSERT INTO routes (name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used) VALUES ('Paid Hunter Guard','test','https://paid.invalid/v1','paid-model','',0,1,1,1,'NEW',0,0,0)").run();
+  const free = db.prepare("INSERT INTO routes (name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used) VALUES ('Free Hunter Guard','test','https://free.invalid/v1','free-model','',1,1,2,1,'NEW',0,0,0)").run();
+  const seen = [];
+  const rows = await monitor({ limit: 100, fetchImpl: async (url) => { seen.push(new URL(String(url))); return jsonRes(completion); } });
+  assert.equal(rows.some((row) => row.id === Number(paid.lastInsertRowid)), false, 'kostenpflichtige Route darf nicht angefragt werden');
+  assert.equal(rows.some((row) => row.id === Number(free.lastInsertRowid)), true, 'kostenlose aktive Route wird geprüft');
+  assert.equal(seen.some((url) => url.hostname === 'paid.invalid' && url.pathname === '/v1/chat/completions'), false);
+  assert.equal(seen.some((url) => url.hostname === 'free.invalid' && url.pathname === '/v1/chat/completions'), true);
 });
 
 test('hunterTick protokolliert den Zyklus, hunterStatus und weeklyReport lesen ihn', async () => {
   const fetchImpl = fakeFetch((url) => {
     if (url.includes('openrouter.ai')) return jsonRes({ data: [{ id: 'x:free', pricing: { prompt: '0', completion: '0' } }] });
     if (url.includes('/api/tags')) return jsonRes({ models: [] });
-    return jsonRes({ ok: true });
+    return jsonRes(completion);
   });
   const run = await hunterTick({ fetchImpl, monitorLimit: 2 });
   assert.equal(typeof run.ts, 'number');

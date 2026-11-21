@@ -30,3 +30,10 @@ test('OpenHands Canvas integration endpoint returns a sanitized, configured brow
     state: 'configured'
   });
 });
+
+
+test('consolidated integration inventory denies unauthenticated requests in open mode', async () => {
+  const response = await fetch(`${base}/api/integrations`, {signal:AbortSignal.timeout(10000)});
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: 'Integrationsstatus ist Admins vorbehalten.' });
+});

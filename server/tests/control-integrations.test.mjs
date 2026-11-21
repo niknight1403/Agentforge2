@@ -21,6 +21,10 @@ test('eigene Skills koennen gespeichert, deaktiviert und geloescht werden',()=>{
  assert.doesNotMatch(store.skillInstructions(),/Release Review/);
  assert.equal(store.deleteControlSkill('release-review').deleted,true);
 });
+test('Connector DNS address policy rejects special-use IPv4 and IPv6 ranges',()=>{
+ for(const ip of ['192.88.99.1','2001:0:1::1','2001:db8::1','2002:c000:0204::1','3fff::1','fd00::1','fe80::1','::1']) assert.equal(store.publicAddress(ip),false,ip);
+ for(const ip of ['8.8.8.8','1.1.1.1','2606:4700:4700::1111','2001:4860:4860::8888']) assert.equal(store.publicAddress(ip),true,ip);
+});
 test('Connectoren speichern nur Secret-Referenzen und validieren HTTPS sicher',()=>{
  const c=store.saveConnector({id:'demo-api',title:'Demo API',endpoint:'https://api.example.com/status',secretEnv:'DEMO_API_TOKEN'});
  assert.equal(c.secret_env,'DEMO_API_TOKEN');

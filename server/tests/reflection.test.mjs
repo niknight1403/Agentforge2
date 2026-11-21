@@ -16,6 +16,11 @@ const tmp = mkdtempSync(join(tmpdir(), 'refl-'));
 process.env.VF_DB = join(tmp, 'test.db');
 process.env.VF_WORKSPACE = join(tmp, 'ws');
 process.env.VF_LLM_FREE_ONLY = '0'; // mock route verifies reflection behavior independently of routing policy
+// Each test uses the same credential-scoped limiter; leave headroom for the whole suite.
+process.env.VF_RPM_FAL = '600';
+// Keep this unit test independent from runner-wide route-ledger/local-only settings.
+process.env.VF_ROUTE_LEDGER = '0';
+process.env.LLM_LOCAL_ONLY = '0';
 
 const { db, now } = await import('../db.mjs');
 const { runAgent, insertAgent } = await import('../agents.mjs');
@@ -99,13 +104,17 @@ test('Defektes Reflexions-JSON faellt sanft auf die Original-Antwort zurueck', a
 
 test('identische Tool-Aufrufe loesen Prompt-Selbstheilung aus bevor der Lauf abgebrochen wird', async () => {
   const orig = globalThis.fetch; let i = 0; const sent = [];
-  globalThis.fetch = async (_url, init) => {
-    const request = JSON.parse(String(init.body)); sent.push(request.messages);
+  globalThis.fetch = async (url, init) => {
+    // The mock must only consume model-completion requests. OpenTelemetry
+    // exporters and other auxiliary HTTP calls share global fetch in CI.
+    if (!String(url).includes('/chat/completions')) return new Response('{}', { status: 200 });
+    const request = JSON.parse(String(init?.body || '{}')); sent.push(request.messages);
     const content = i++ < 3 ? JSON.stringify({ tool: 'project_read', args: { path: 'missing.txt' } }) : JSON.stringify({ final: 'Mit einer anderen Strategie abgeschlossen.' });
     return new Response(JSON.stringify({ choices: [{ message: { content } }], model: 'mock-model' }), { status: 200 });
   };
   try {
     const out = await runAgent(agent, 'Pruefe eine Datei.', { villaId, reflect: false });
+    assert.ok(out.answer, `runAgent failed: ${out.error || JSON.stringify(out)}`);
     assert.match(out.answer, /anderen Strategie/);
     assert.equal(i, 4);
     assert.ok(sent[3].some(message => String(message.content).includes('[SELF-HEALING]')));
