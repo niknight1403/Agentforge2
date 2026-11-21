@@ -47,7 +47,7 @@ test('disabled servers are rejected before listTools', async () => {
 test('discovery timeout closes a stalled client', async () => {
   const item = server('discovery-timeout');
   let closed = false;
-  await assert.rejects(discoverMcpServerTools({ serverId: item.id, timeoutMs: 100, client: { listTools() { return new Promise(() => {}); }, async close() { closed = true; } } }), { code: 'MCP_DISCOVERY_TIMEOUT' });
+  await assert.rejects(discoverMcpServerTools({ serverId: item.id, timeoutMs: 100, client: { serverId: item.id, listTools() { return new Promise(() => {}); }, async close() { closed = true; } } }), { code: 'MCP_DISCOVERY_TIMEOUT' });
   assert.equal(closed, true);
   assert.equal(getMcpServer(item.id).status, 'failed');
 });
