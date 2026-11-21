@@ -160,3 +160,50 @@ The implementation is not acceptable until tests prove all of the following agai
 ## 8. Explicit non-goals
 
 This RFC does not authorize authenticated MCP today, change the current adapter guard, introduce arbitrary image commands, pass secrets through environment variables or CLI args, mount host credential stores, or claim production readiness.
+
+## 3.1 Normative protocol clarifications (review follow-up)
+
+The following requirements resolve the authorization-binding, child-isolation, and wire-schema ambiguities. They are part of the proposed v1 contract and remain subject to maintainer approval.
+
+### Authorization must be reserved and bound before signing
+
+The ordering is normative:
+
+1. The trusted runner generates a fresh `launchInstanceId` and deterministic container name, then commits a `RESERVED` row containing the complete immutable tuple `(serverId, runId, launchInstanceId, credentialRef, imageDigest, profileId, expiresAt)`. The unique launch ID and active-run constraint must be enforced by SQLite before any broker authorization is requested.
+2. The broker accepts an authorization request only for that already-committed `RESERVED` row. It verifies the admin-approved server/credential assignment, profile, image digest, expiry, and exact launch ID from the row; caller-supplied values are comparison inputs, never authority.
+3. The broker creates a one-time authorization record bound to that exact `launchInstanceId` and tuple. Consumption is a conditional transaction: verify the row is still `RESERVED`, verify every binding field, verify authorization is unexpired and unconsumed, then atomically mark it consumed for that launch ID. A conditional update must affect exactly one row or the operation fails closed.
+4. Only after successful consumption may the Hub decrypt the credential, sign the frame including the same launch ID, and deliver it to the already-reserved container creation. The runner may not substitute another launch ID or container after authorization.
+5. If reservation, authorization, signing, container creation, or delivery fails, the launch ID is terminally failed/tombstoned and the authorization is unusable. A retry reserves a new launch ID and obtains a new authorization.
+
+The broker and runner must share the same durable transactional authority for the reservation/consumption invariant, or use an equivalently reviewed atomic protocol. A process-local lock is insufficient. A race test must start two reservations concurrently with one authorization: exactly the reserved launch ID may consume it; the other must fail before any frame is signed or credential bytes are released.
+
+### Child environment and verification-key isolation
+
+The shim MUST remove every reserved runner-metadata variable and every verification-configuration variable from the environment passed to the MCP child before spawn/exec. The exact reserved names are fixed by the implementation and cannot be supplied or overridden by registry/profile input. The shim must construct a fresh child environment from an explicit allowlist rather than copying the parent environment wholesale.
+
+The Hub public verification key (or key-set configuration) is available only to the trusted shim. It must not be passed to the MCP child, its helpers, plugins, or descendants unless a separately reviewed child contract requires a public key. The child receives only the designated credential pipe descriptor; that descriptor is closed by the child immediately after the one-time read and is not inherited by descendants. Tests must inspect the child and a spawned descendant and prove neither can read runner metadata, verification configuration, unrelated descriptors, or the credential descriptor after the initial read.
+
+### Canonical v1 field types and bounds
+
+V1 uses deterministic/canonical CBOR and rejects all duplicate map keys and all unknown map fields (not merely unknown critical fields). No extension fields are permitted in v1; extensions require a new protocol version. The implementation must publish cross-language positive and negative test vectors.
+
+The exact v1 map is:
+
+| Field | CBOR type | Required validation |
+|---|---|---|
+| `serverId` | UTF-8 text | 1–128 bytes; exact registered ID |
+| `runId` | UTF-8 text | 1–128 bytes; exact reserved run ID |
+| `launchInstanceId` | UTF-8 text | 32 lowercase hexadecimal characters from a CSPRNG |
+| `credentialRef` | UTF-8 text | 1–128 bytes; opaque reference only |
+| `imageDigest` | UTF-8 text | Exact immutable `sha256:` plus 64 lowercase hex characters |
+| `expiresAt` | unsigned integer | Unix seconds; maximum lifetime 60 seconds; explicit maximum clock skew 5 seconds |
+| `nonce` | byte string | Exactly 32 CSPRNG bytes |
+| `credential` | byte string | 1–8,192 bytes; never interpreted as text |
+| `keyId` | UTF-8 text | 1–64 bytes; selects one pinned public key from the shim's configured key set |
+| `signature` | byte string | Exactly 64 bytes; Ed25519 signature |
+
+The complete encoded payload MUST remain at or below 16 KiB. The parser rejects non-canonical CBOR, indefinite-length items, invalid UTF-8 text, out-of-range lengths, integer overflow, duplicate keys, missing fields, unknown fields, unsupported key IDs, invalid digest/ID formats, expired frames, and any credential exceeding 8,192 bytes. The signature covers a domain-separation string, protocol version, key ID, and the deterministic encoding of every other field. Key rotation requires an overlap window with explicitly pinned old/new key IDs, a documented retirement procedure, and test vectors for both keys; no key may be selected from an untrusted frame without matching the shim's pinned key set.
+
+The 60-second lifetime and 5-second skew are proposed hard v1 limits. Implementations must use a monotonic deadline for frame delivery in addition to checking the signed absolute expiry. They must not silently widen either bound.
+
+These clarifications do not authorize runtime implementation, change the current adapter guard, or constitute security approval. All rollout gates in section 7 remain mandatory.
