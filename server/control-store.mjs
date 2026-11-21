@@ -90,11 +90,26 @@ export function validEndpoint(value) {
   return url.toString();
 }
 export function publicAddress(ip) {
-  if (isIP(ip) === 4) {
-    const [a,b] = ip.split('.').map(Number);
-    return !(a === 0 || a === 10 || a === 127 || a === 169 && b === 254 || a === 172 && b >= 16 && b <= 31 || a === 192 && [0,168].includes(b) || a === 100 && b >= 64 && b <= 127 || a === 198 && [18,19,51].includes(b) || a === 203 && b === 0 || a >= 224);
+  const family = isIP(ip);
+  if (family === 4) {
+    const [a, b, c] = ip.split('.').map(Number);
+    return !(a === 0 || a === 10 || a === 127 || a === 169 && b === 254
+      || a === 172 && b >= 16 && b <= 31
+      || a === 192 && ([0, 168].includes(b) || b === 88 && c === 99)
+      || a === 100 && b >= 64 && b <= 127
+      || a === 198 && [18, 19, 51].includes(b)
+      || a === 203 && b === 0 || a >= 224);
   }
-  return isIP(ip) === 6 && /^[23]/i.test(ip) && !/^2001:db8:/i.test(ip);
+  if (family !== 6) return false;
+  // Accept only global-unicast 2000::/3; exclude special-use, documentation,
+  // 6to4 and protocol-assignment ranges within that block.
+  const [firstPart = '0', secondPart = '0'] = ip.toLowerCase().split(':');
+  const first = Number.parseInt(firstPart || '0', 16);
+  const second = Number.parseInt(secondPart || '0', 16);
+  return first >= 0x2000 && first <= 0x3fff
+    && !(first === 0x2001 && (second <= 0x01ff || second === 0x0db8))
+    && first !== 0x2002
+    && !(first === 0x3fff && second <= 0x0fff);
 }
 /** GET-only JSON adapter. DNS is checked at the socket lookup; redirects are never followed. */
 export async function readConnector(id) {
