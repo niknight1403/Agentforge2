@@ -99,11 +99,11 @@ test('Defektes Reflexions-JSON faellt sanft auf die Original-Antwort zurueck', a
 
 test('identische Tool-Aufrufe loesen Prompt-Selbstheilung aus bevor der Lauf abgebrochen wird', async () => {
   const orig = globalThis.fetch; let i = 0; const sent = [];
-  globalThis.fetch = async (_url, init) => {
-    // OpenTelemetry exports use the same global fetch; keep telemetry traffic
-    // out of the mocked model-response sequence.
-    if (String(init?.body || '').includes('"resourceSpans"')) return new Response('{}', { status: 200 });
-    const request = JSON.parse(String(init.body)); sent.push(request.messages);
+  globalThis.fetch = async (url, init) => {
+    // The mock must only consume model-completion requests. OpenTelemetry
+    // exporters and other auxiliary HTTP calls share global fetch in CI.
+    if (!String(url).includes('/chat/completions')) return new Response('{}', { status: 200 });
+    const request = JSON.parse(String(init?.body || '{}')); sent.push(request.messages);
     const content = i++ < 3 ? JSON.stringify({ tool: 'project_read', args: { path: 'missing.txt' } }) : JSON.stringify({ final: 'Mit einer anderen Strategie abgeschlossen.' });
     return new Response(JSON.stringify({ choices: [{ message: { content } }], model: 'mock-model' }), { status: 200 });
   };
