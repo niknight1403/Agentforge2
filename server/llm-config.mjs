@@ -26,8 +26,8 @@ export function cascadeDefaults() {
  ].map(([name,provider,base_url,model,key_env,priority])=>({name:`Cascade: ${name}`,provider,base_url,model,key_env,priority}));
 }
 /**
- * Idempotently add missing provider-catalog entries. Existing route rows are
- * administrator decisions and are never re-enabled or overwritten here.
+ * Seed the provider catalog only on a fresh install. Existing route rows are
+ * administrator decisions and are never re-enabled or overwritten on upgrade.
  * Paid/credit-based routes are inserted disabled; only centrally verified
  * free/local routes are enabled by default.
  */
@@ -38,7 +38,10 @@ export function seedRouteCatalog() {
   'INSERT INTO routes (name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
  );
  const exists = db.prepare('SELECT id FROM routes WHERE name=? OR (base_url=? AND model=?)');
- for (const route of FREE_ROUTE_CATALOG) {
+ for (const catalogRoute of FREE_ROUTE_CATALOG) {
+  const route = catalogRoute.provider === 'xai'
+    ? { ...catalogRoute, model: process.env.VF_XAI_MODEL || catalogRoute.model }
+    : catalogRoute;
   if (exists.get(route.name, route.baseUrl, route.model)) continue;
   const free = Number(isFreeRoute({ provider: route.provider, base_url: route.baseUrl, model: route.model }));
   insert.run(route.name, route.provider, route.baseUrl, route.model, route.keyEnv, free, free, route.priority, 1, 'NEW', 0, 0, 0);
