@@ -16,6 +16,8 @@ const tmp = mkdtempSync(join(tmpdir(), 'refl-'));
 process.env.VF_DB = join(tmp, 'test.db');
 process.env.VF_WORKSPACE = join(tmp, 'ws');
 process.env.VF_LLM_FREE_ONLY = '0'; // mock route verifies reflection behavior independently of routing policy
+// Each test uses the same credential-scoped limiter; leave headroom for the whole suite.
+process.env.VF_RPM_FAL = '600';
 // Keep this unit test independent from runner-wide route-ledger/local-only settings.
 process.env.VF_ROUTE_LEDGER = '0';
 process.env.LLM_LOCAL_ONLY = '0';
