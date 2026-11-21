@@ -21,8 +21,8 @@ Status: baseline audit and implementation plan. This document is not a claim tha
 - Do not weaken the fail-closed isolation gate or silently fall back to shared namespace execution.
 
 ### TTS / speech / audio
-- The current default-branch file inventory did not reveal a dedicated TTS/speech provider adapter, speech synthesis API, voice catalogue, or end-to-end TTS test suite.
-- Treat TTS as not yet verified/integrated. Next implementation needs a provider-neutral interface, explicit provider/voice allowlist, timeout/cancellation, text and audio size limits, safe output storage, usage/cost reporting, and mocked contract tests. Add real provider acceptance only when credentials and deployment consent are available.
+- PR #201 merged local browser/device speech playback with start/stop controls in the web master chat and Android Villa/DeepAgent chats. Browser SpeechSynthesis and Android TextToSpeech use the device/browser speech engine; no cloud TTS credentials are required.
+- This is local playback, not a hosted TTS API, voice cloning, or generated audio-file service. A provider-neutral hosted TTS adapter, voice catalogue, audio artifact pipeline, usage/cost reporting, and live provider acceptance remain unimplemented.
 
 ### UI / UX / AI
 - Web master UI currently sends idempotent request IDs, polls pending turns, and displays an explicit LLM-unavailable result rather than inventing a response.
