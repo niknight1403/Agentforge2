@@ -1766,21 +1766,32 @@ server.listen(PORT, HOST, () => {
     }).catch((error) => logError('Gratis-Routen-Scan:', error?.message || error));
   }, 6 * 60 * 60 * 1000);
   freeRouteLoop.unref();
-  // FREE ROUTE HUNTER: Health alle 30 Min; alle 6h (jeder 12. Tick) zusaetzlich
-  // lokale Ollama-Modelle + keyfreie Quellen integrieren und den Wochenbericht
-  // in den Villa-Workspace schreiben.
+  // FREE ROUTE HUNTER: erster vollstaendiger Lauf nach dem Start, danach
+  // Health-Probes alle 30 Min und Discovery/Integration alle 6 Stunden.
+  // Ein Busy-Guard verhindert ueberlappende Scans bei langsamen Providern.
   let hunterTicks = 0;
+  let hunterBusy = false;
+  const runHunterCycle = async (full = false) => {
+    if (hunterBusy) return;
+    hunterBusy = true;
+    try {
+      if (full) {
+        const result = await hunterTick({ monitorLimit: 8, includeLocal: true });
+        if (result.local.added.length) log(`Hunter: ${result.local.added.length} neue Gratis-Route(n) integriert`);
+        try { weeklyReport({ writeTo: reportPath() }); } catch { /* Bericht optional */ }
+      } else {
+        await monitor({ limit: 4 });
+      }
+    } catch (error) {
+      logError('Hunter:', error?.message || error);
+    } finally {
+      hunterBusy = false;
+    }
+  };
+  setTimeout(() => { runHunterCycle(true); }, 90_000).unref?.();
   const hunterLoop = setInterval(() => {
     hunterTicks += 1;
-    const full = hunterTicks % 12 === 1;
-    const work = full
-      ? hunterTick({ monitorLimit: 8, includeLocal: true }).then((r) => {
-          if (r.local.added.length) log(`Hunter: ${r.local.added.length} neue Gratis-Route(n) integriert`);
-          try { weeklyReport({ writeTo: reportPath() }); } catch { /* Bericht optional */ }
-          return r.probes.length;
-        })
-      : monitor({ limit: 4 }).then((p) => p.length);
-    work.catch((e) => logError('Hunter:', e?.message || e));
+    runHunterCycle(hunterTicks % 12 === 0);
   }, 30 * 60 * 1000);
   hunterLoop.unref();
   // Superintelligenz-Loop: alle 30 Min wird jede Villa mit faelliger Rat-Runde (>2 h) einberufen.
