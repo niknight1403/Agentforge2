@@ -795,9 +795,9 @@ async function executeTool(ctx, name, args) {
   const mcpMatch = dynamicMcp ? /^mcp:([A-Za-z0-9_-]{1,128}):(.{1,160})$/.exec(String(name)) : null;
   const connectorMatch = dynamicConnector ? /^connector:([a-z0-9_-]{2,48}):read$/.exec(String(name)) : null;
   const auditArgs = dynamicMcp
-    ? { serverId: mcpMatch?.[1] || 'unknown', toolName: mcpMatch?.[2] || 'unknown', argumentKeys: Object.keys(args || {}).slice(0, 40) }
+    ? { serverId: mcpMatch?.[1] || 'unknown', toolName: mcpMatch?.[2] || 'unknown', argumentCount: Object.keys(args || {}).length }
     : name === 'mcp_call'
-      ? { serverId: String(args?.serverId || 'unknown'), toolName: String(args?.toolName || 'unknown'), argumentKeys: Object.keys(args?.arguments || {}).slice(0, 40) }
+      ? { serverId: String(args?.serverId || 'unknown'), toolName: String(args?.toolName || 'unknown'), argumentCount: Object.keys(args?.arguments || {}).length }
       : dynamicConnector ? { connectorId: connectorMatch?.[1] || 'unknown' }
         : name === 'connector_read' ? { connectorId: String(args?.connectorId || 'unknown') } : args;
   const redactExternal = mcpAction || connectorAction;
