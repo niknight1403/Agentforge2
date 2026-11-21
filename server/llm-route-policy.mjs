@@ -31,6 +31,8 @@ export function validateLlmRouteInput(input = {}) {
   let url;
   try { url = new URL(raw); } catch { return { ok: false, error: 'ENDPOINT_INVALID' }; }
   if (url.username || url.password || url.search || url.hash) return { ok: false, error: 'ENDPOINT_INVALID' };
+  // Modal endpoints remain categorically blocked until deployment ownership is independently approved.
+  if (provider === 'modal') return { ok: false, error: 'CUSTOM_MODAL_ENDPOINT_REQUIRES_DEPLOYMENT_APPROVAL' };
 
   const host = url.hostname.toLowerCase();
   const local = ['ollama', 'lmstudio'].includes(provider) && LOOPBACK.has(host);
@@ -55,7 +57,5 @@ export function validateLlmRouteInput(input = {}) {
     ollama: ['/v1'], lmstudio: ['/v1']
   };
   if (provider !== 'modal' && !(allowedPaths[provider] || []).includes(path)) return { ok: false, error: 'ENDPOINT_PATH_NOT_ALLOWED' };
-  if (provider === 'modal') return { ok: false, error: 'CUSTOM_MODAL_ENDPOINT_REQUIRES_DEPLOYMENT_APPROVAL' };
-
   return { ok: true, provider, baseUrl: url.toString().replace(/\/$/, ''), keyEnv };
 }
