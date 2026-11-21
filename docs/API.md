@@ -235,3 +235,7 @@ POST /api/villas/:id/neural-network/deactivate
 ```
 
 Die Statusantwort enthaelt ausschliesslich die tatsaechliche Agenten-Topologie, Rollen, Eltern-/Workflow-Kanten, Task-Status und Workload-Zuordnung. `activate` nutzt den vorhandenen VillaForge-Scheduler und dessen Slot-/Ressourcenlimits; `deactivate` pausiert nur die ausgewaehlte Villa. Alle drei Routen sind Administrator-Endpunkte.
+
+## Admin integration inventory
+
+`GET /api/integrations` is restricted to administrators. It returns the effective Free-Only policy, configured LLM route metadata and provider catalog, connector origin/status, currently available tool aliases, MCP tool inventory, and media capability summary. Secret values and full connector URLs are never returned. Unauthenticated requests receive 401 when authentication is required, otherwise 403 in open mode.
