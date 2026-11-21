@@ -684,8 +684,9 @@ function resolveMcpTool(name) {
     })).slice(0, 12000),
   };
 }
-function isDynamicExternalTool(name) {
-  return typeof name === 'string' && (name.startsWith('mcp:') || name.startsWith('connector:'));
+function isExternalTool(name) {
+  return name === 'mcp_call' || name === 'connector_read'
+    || (typeof name === 'string' && (name.startsWith('mcp:') || name.startsWith('connector:')));
 }
 
 export const TOOL_SPECS = Object.entries(TOOLS).map(([name, t]) => {
@@ -789,26 +790,31 @@ const SOURCE_WRITE_TOOLS = new Set(['project_write', 'project_patch', 'code_writ
 async function executeTool(ctx, name, args) {
   const dynamicMcp = String(name || '').startsWith('mcp:');
   const dynamicConnector = String(name || '').startsWith('connector:');
+  const mcpAction = dynamicMcp || name === 'mcp_call';
+  const connectorAction = dynamicConnector || name === 'connector_read';
   const mcpMatch = dynamicMcp ? /^mcp:([A-Za-z0-9_-]{1,128}):(.{1,160})$/.exec(String(name)) : null;
   const connectorMatch = dynamicConnector ? /^connector:([a-z0-9_-]{2,48}):read$/.exec(String(name)) : null;
   const auditArgs = dynamicMcp
     ? { serverId: mcpMatch?.[1] || 'unknown', toolName: mcpMatch?.[2] || 'unknown', argumentKeys: Object.keys(args || {}).slice(0, 40) }
-    : dynamicConnector ? { connectorId: connectorMatch?.[1] || 'unknown' } : args;
-  const redactExternal = dynamicMcp || dynamicConnector;
+    : name === 'mcp_call'
+      ? { serverId: String(args?.serverId || 'unknown'), toolName: String(args?.toolName || 'unknown'), argumentKeys: Object.keys(args?.arguments || {}).slice(0, 40) }
+      : dynamicConnector ? { connectorId: connectorMatch?.[1] || 'unknown' }
+        : name === 'connector_read' ? { connectorId: String(args?.connectorId || 'unknown') } : args;
+  const redactExternal = mcpAction || connectorAction;
   const tool = TOOLS[name] || (dynamicMcp ? resolveMcpTool(name) : dynamicConnector ? resolveConnectorTool(name) : null);
   if (!tool) {
     observeMissingTool(ctx.villaId, name);
     audit(ctx.villaId, ctx.agentId, name, auditArgs, redactExternal ? 'external integration unavailable' : 'unbekanntes Werkzeug', 0);
     return redactExternal ? 'Externe Integration nicht verfügbar.' : `Unbekanntes Werkzeug: ${name}`;
   }
-  const gate = canUseTool(dynamicMcp ? 'mcp_call' : dynamicConnector ? 'connector_read' : name);
+  const gate = canUseTool(mcpAction ? 'mcp_call' : connectorAction ? 'connector_read' : name);
   if (!gate.allowed) {
     audit(ctx.villaId, ctx.agentId, name, auditArgs, `blockiert: ${gate.reason}`, 0);
     emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, blocked: true, reason: gate.reason });
     return `Werkzeug blockiert: ${gate.reason} Aktiviere das Pack in den Einstellungen.`;
   }
   // Unknown MCP actions may write to project state; block all MCP calls while an acceptance fingerprint is locked.
-  if (dynamicMcp && villaLock(ctx.villaId)) {
+  if (mcpAction && villaLock(ctx.villaId)) {
     audit(ctx.villaId, ctx.agentId, name, auditArgs, 'blockiert: verification-lock', 0);
     emit('tool', { villaId: ctx.villaId, agentId: ctx.agentId, tool: name, blocked: true, reason: 'verification-lock' });
     return 'MCP-Werkzeuge sind während der laufenden Abnahme gesperrt.';
@@ -1139,7 +1145,7 @@ export async function runAgent(agent, userPrompt, { maxSteps = 5, maxTokens = 15
     );
     if (parsed && parsed.tool && (TOOLS[parsed.tool] || dynamicToolAlias)) {
       const result = await runTool(ctx, parsed.tool, parsed.args);
-      const external = isDynamicExternalTool(parsed.tool);
+      const external = isExternalTool(parsed.tool);
       trace.push({ step, tool: parsed.tool, args: external ? { redacted: true } : parsed.args, result: external ? '[external integration output omitted from trace]' : result });
       const fingerprint=JSON.stringify([parsed.tool,parsed.args||{}]);
       const resultFingerprint=String(result).slice(0,1000);
