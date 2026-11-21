@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import secrets
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -30,13 +31,17 @@ async def require_token(authorization: str | None = Header(default=None)) -> Non
 @router.post("/sync-repos", dependencies=[Depends(require_token)])
 async def sync_repositories(payload: SyncRequest):
     """Clone and index allowlisted repositories, reporting failures per target."""
+    names = [target.name.casefold() for target in payload.repositories]
+    if len(names) != len(set(names)):
+        raise HTTPException(status_code=422, detail="Repository names must be unique within a sync request")
+
     results = {}
     for target in payload.repositories:
         try:
             path = await scanner.clone_or_update(target.name, str(target.url))
             chunks = await scanner.scan(path)
-            store.replace_repository(target.name, chunks)
-            results[target.name] = {"status": "indexed", "files": len(chunks)}
+            count = await asyncio.to_thread(store.replace_repository, target.name, chunks)
+            results[target.name] = {"status": "indexed", "files": count}
         except RepositoryValidationError as exc:
             results[target.name] = {"status": "failed", "error": str(exc)}
         except Exception:
@@ -48,18 +53,19 @@ async def sync_repositories(payload: SyncRequest):
 @router.post("/analyze-synergies", dependencies=[Depends(require_token)])
 async def analyze_synergies(payload: AnalyzeRequest):
     """Build a deterministic audit from persistent repository file metadata."""
-    selected = payload.repository_names or store.list_repositories()
+    selected = payload.repository_names or await asyncio.to_thread(store.list_repositories)
     if not selected:
         raise HTTPException(status_code=404, detail="No repositories indexed")
     evidence = []
     repository_files = {}
     for name in selected:
-        files = store.list_files(name)
+        files = await asyncio.to_thread(store.list_files, name)
         if not files:
             raise HTTPException(status_code=404, detail=f"Repository not indexed: {name}")
-        repository_files[name] = files[:200]
+        repository_files[name] = files
+        evidence_files = files[:200]
         evidence.append(f"## {name}\n" + "\n".join(
-            f"- {item['path']} ({item['language']})" for item in repository_files[name]
+            f"- {item['path']} ({item['language']})" for item in evidence_files
         ))
     audit = AuditorAgent().audit(repository_files)
     report = {"repositories": selected, "audit": audit, "evidence": "\n".join(evidence)}
@@ -88,4 +94,4 @@ async def optimize_agents(payload: OptimizeRequest):
 @router.get("/knowledge/search", dependencies=[Depends(require_token)])
 async def search_knowledge(q: str, limit: int = 10):
     """Search the persistent knowledge index for matching source excerpts."""
-    return {"results": store.search(q, limit)}
+    return {"results": await asyncio.to_thread(store.search, q, limit)}
