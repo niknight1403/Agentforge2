@@ -201,9 +201,12 @@ export async function probeRoute(route, { fetchImpl = fetch, timeoutMs = 15_000 
 
 /** Die N am laengsten ungepruefte aktive Routen testen. */
 export async function monitor({ limit = 6, fetchImpl = fetch } = {}) {
+  // The hunter is deliberately free-only and must honor provider cooldowns.
+  // A 429 response is not a retry invitation: leave that route untouched until
+  // its persisted cooldown expires. Bound each pass to keep probes predictable.
   const rows = db.prepare(
-    "SELECT id, name, base_url, model, key_env FROM routes WHERE enabled = 1 AND provider != 'offline' ORDER BY COALESCE(last_used,0) ASC, id ASC LIMIT ?"
-  ).all(Math.max(1, Number(limit) || 6));
+    "SELECT id, name, base_url, model, key_env FROM routes WHERE enabled = 1 AND is_free = 1 AND provider != 'offline' AND COALESCE(cooldown_until,0) <= ? ORDER BY COALESCE(last_used,0) ASC, id ASC LIMIT ?"
+  ).all(now(), Math.min(50, Math.max(1, Number(limit) || 6)));
   const out = [];
   for (const r of rows) out.push(await probeRoute(r, { fetchImpl }));
   return out;
