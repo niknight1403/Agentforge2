@@ -13,7 +13,7 @@ const { villaRanking, enqueueVillas, configureScheduler, schedulerStatus, cancel
 
 function villa(name, done, open, failed = 0) {
   const t = now();
-  const id = Number(db.prepare('INSERT INTO villas (name, idea, status, created_at, updated_at) VALUES (?,?,?,?,?)').run(name, 'i', 'RUNNING', t, t).lastInsertRowid);
+  const id = Number(db.prepare('INSERT INTO villas (name, idea, status, autonomy, created_at, updated_at) VALUES (?,?,?,?,?,?)').run(name, 'i', 'RUNNING', 1, t, t).lastInsertRowid);
   const add = (status, n) => { for (let i = 0; i < n; i++) db.prepare('INSERT INTO tasks (villa_id, title, description, status, priority, created_at, updated_at) VALUES (?,?,?,?,?,?,?)').run(id, 't', 'd', status, 5, t, t); };
   add('DONE', done); add('PENDING', open); add('FAILED', failed);
   return id;
@@ -321,4 +321,47 @@ test('neural network activation dispatches one run through the configured produc
   assert.equal(received.options.maxRounds, 6);
   assert.equal(db.prepare('SELECT autonomy FROM villas WHERE id=?').get(id).autonomy, 1);
   _resetScheduler();
+});
+
+
+test('paused and autonomy-disabled villas are never dispatched from the queue', async () => {
+  _resetScheduler();
+  const paused = villa('Paused scheduler regression', 0, 1);
+  const disabled = villa('Disabled scheduler regression', 0, 1);
+  const running = villa('Running scheduler regression', 0, 1);
+  db.prepare("UPDATE villas SET status='PAUSED' WHERE id=?").run(paused);
+  db.prepare('UPDATE villas SET autonomy=0 WHERE id=?').run(disabled);
+  const started = [];
+  configureScheduler({ start: async (id) => { started.push(id); return new Promise(() => {}); } });
+  enqueueVillas([paused, disabled, running]);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(started, [running]);
+  _resetScheduler();
+});
+
+test('a Villa paused during model backoff is not restarted when its retry timer fires', async () => {
+  _resetScheduler();
+  const previous = process.env.VF_RETRY_MIN_MS;
+  process.env.VF_RETRY_MIN_MS = '5';
+  try {
+    const id = villa('Pause during retry regression', 0, 1);
+    let starts = 0;
+    configureScheduler({
+      start: async () => {
+        starts += 1;
+        throw Object.assign(new Error('model unavailable'), { code: 'LLM_UNAVAILABLE' });
+      }
+    });
+    scheduleVilla(id, { force: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status, 'WAITING_FOR_MODEL');
+    db.prepare("UPDATE villas SET status='PAUSED' WHERE id=?").run(id);
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.equal(starts, 1);
+    assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status, 'PAUSED');
+  } finally {
+    if (previous === undefined) delete process.env.VF_RETRY_MIN_MS;
+    else process.env.VF_RETRY_MIN_MS = previous;
+    _resetScheduler();
+  }
 });
