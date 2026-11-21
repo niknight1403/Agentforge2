@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import secrets
+from pathlib import Path
+from filelock import FileLock, Timeout as FileLockTimeout
 from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.agents.auditor import AuditorAgent
@@ -36,17 +38,28 @@ async def sync_repositories(payload: SyncRequest):
         raise HTTPException(status_code=422, detail="Repository names must be unique within a sync request")
 
     results = {}
+    lock_dir = settings.data_dir / ".locks"
+    await asyncio.to_thread(lock_dir.mkdir, parents=True, exist_ok=True)
     for target in payload.repositories:
+        lock = FileLock(str(lock_dir / f"{target.name.casefold()}.lock"), timeout=120)
+        acquired = False
         try:
+            await asyncio.to_thread(lock.acquire)
+            acquired = True
             path = await scanner.clone_or_update(target.name, str(target.url))
             chunks = await scanner.scan(path)
             count = await asyncio.to_thread(store.replace_repository, target.name, chunks)
             results[target.name] = {"status": "indexed", "files": count}
         except RepositoryValidationError as exc:
             results[target.name] = {"status": "failed", "error": str(exc)}
+        except FileLockTimeout:
+            results[target.name] = {"status": "failed", "error": "Repository sync lock timed out"}
         except Exception:
             logger.exception("Sync failed for repository %s", target.name)
             results[target.name] = {"status": "failed", "error": "Internal error during sync"}
+        finally:
+            if acquired:
+                await asyncio.to_thread(lock.release)
     return {"status": "completed" if all(v["status"] == "indexed" for v in results.values()) else "partial", "repositories": results}
 
 
@@ -93,5 +106,5 @@ async def optimize_agents(payload: OptimizeRequest):
 
 @router.get("/knowledge/search", dependencies=[Depends(require_token)])
 async def search_knowledge(q: str, limit: int = 10):
-    """Search the persistent knowledge index for matching source excerpts."""
+    """Search the persistent knowledge index using a worker thread."""
     return {"results": await asyncio.to_thread(store.search, q, limit)}
