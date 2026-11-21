@@ -235,7 +235,8 @@ async function callOpenAiCompatibleRaw(route, messages, opts) {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal: requestSignal
+    signal: requestSignal,
+    redirect: 'error'
   });
   if (!res.ok) {
     await res.body?.cancel().catch(()=>{});
