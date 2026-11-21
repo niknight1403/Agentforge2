@@ -10,7 +10,7 @@ ALLOWED_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".yml",
 IGNORED_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "coverage", ".next"}
 IGNORED_NAMES = {".env", ".env.local", ".env.production", "id_rsa", "id_ed25519"}
 SECRET_ASSIGNMENTS = re.compile(
-    r"""(?im)\b(?:api[_-]?key|client[_-]?secret|secret|password|passwd|access[_-]?token|auth[_-]?token|private[_-]?key)\b\s*[:=]\s*["']?([^\s"'#,;]{6,})"""
+    r"""(?im)\b(?:api[_-]?key|client[_-]?secret|secret|password|passwd|access[_-]?token|auth[_-]?token|private[_-]?key)\b["']?\s*[:=]\s*["']?([^\s"'#,;]{6,})"""
 )
 SECRET_MARKERS = re.compile(
     r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|"
@@ -20,13 +20,13 @@ SECRET_MARKERS = re.compile(
 )
 SAFE_SECRET_PLACEHOLDERS = {"changeme", "change-me", "replace-me", "your_api_key", "your-token", "placeholder"}
 
+
 def contains_secret(content: str) -> bool:
     """Return whether content matches known credential assignments or key formats."""
-    sample = content
-    if SECRET_MARKERS.search(sample):
+    if SECRET_MARKERS.search(content):
         return True
-    for match in SECRET_ASSIGNMENTS.finditer(sample):
-        value = match.group(1).strip().strip("\"'")
+    for match in SECRET_ASSIGNMENTS.finditer(content):
+        value = match.group(1).strip().strip("\\"'")
         if value.lower() not in SAFE_SECRET_PLACEHOLDERS and not value.lower().startswith(("your-", "replace-", "example")):
             return True
     return False
@@ -41,7 +41,7 @@ class GitHubScanner:
         """Validate repository names, canonical GitHub HTTPS URLs and owner allowlist."""
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", name):
             raise RepositoryValidationError("Invalid repository name")
-        match = re.fullmatch(r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?", url)
+        match = re.fullmatch(r"https://(?:www\.)?github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?", url)
         if not match:
             raise RepositoryValidationError("Repository URL must be a canonical GitHub HTTPS URL")
         if match.group(1).lower() not in settings.allowed_orgs:
@@ -86,11 +86,10 @@ class GitHubScanner:
                     content = path.read_text(encoding="utf-8")
                 except (OSError, UnicodeError):
                     continue
-                # Never index files with credential assignments or recognizable secret formats.
                 if contains_secret(content):
                     continue
                 chunks.append({
-                    "path": path.relative_to(repo_path).as_posix(),
+                    "path": relative.as_posix(),
                     "language": path.suffix.lstrip(".").lower(),
                     "content": content,
                 })
