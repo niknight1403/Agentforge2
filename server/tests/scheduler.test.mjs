@@ -349,14 +349,14 @@ test('a Villa paused during model backoff is not restarted when its retry timer 
     configureScheduler({
       start: async () => {
         starts += 1;
-        throw Object.assign(new Error('model unavailable'), { code: 'LLM_UNAVAILABLE' });
+        throw Object.assign(new Error('model unavailable'), { code: 'LLM_UNAVAILABLE', retryAfter: 0.01 });
       }
     });
     scheduleVilla(id, { force: true });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status, 'WAITING_FOR_MODEL');
     db.prepare("UPDATE villas SET status='PAUSED' WHERE id=?").run(id);
-    await new Promise(resolve => setTimeout(resolve, 25));
+    await new Promise(resolve => setTimeout(resolve, 40));
     assert.equal(starts, 1);
     assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status, 'PAUSED');
   } finally {
