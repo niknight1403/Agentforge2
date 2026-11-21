@@ -65,6 +65,37 @@ Only images explicitly built and pinned for this contract may use it. Their trus
 
 The credential itself MUST NOT be exposed through process arguments or environment variables. A fixed, documented descriptor number is acceptable only if the child reads the descriptor directly and no secret-bearing value is used as the descriptor selector.
 
+### Durable runner launch registry and crash recovery
+
+The single-instance invariant MUST be enforced by a durable, transactional registry owned by the deployment runner, not by an in-memory map or the shim alone. The existing Hub SQLite database is the proposed backing store because the runner and registry already share the Hub process/database. The implementation must verify the actual database durability settings and filesystem semantics before relying on them.
+
+The registry MUST use a dedicated table with, at minimum:
+
+- `launch_instance_id TEXT PRIMARY KEY` (cryptographically random; never reused).
+- `server_id`, `run_id`, `image_digest`, and `profile_id` (immutable launch binding).
+- `container_name TEXT UNIQUE` and `container_id TEXT UNIQUE` (container identity; `container_id` may be null until discovered).
+- `state` constrained to `RESERVED`, `STARTING`, `BOUND`, `ACTIVE`, `TERMINATING`, `TERMINAL`, or `FAILED`.
+- `created_at`, `updated_at`, `expires_at`, and `terminal_at`.
+- A unique partial constraint preventing more than one non-terminal launch for the same `(server_id, run_id)`; the implementation must define the exact SQLite index predicate and prove it under concurrent writers.
+
+Every state transition MUST run inside `BEGIN IMMEDIATE` with conditional updates that check the prior state and affected-row count. A launch ID is reserved and committed before Podman is invoked. The runner then creates/starts only the deterministic, registry-bound container name and immutable digest, discovers the actual container ID from Podman, and atomically binds it to the reserved row. It may mark the launch `ACTIVE` only after the container ID, name, digest, server/run binding, and shim-ready handshake have all been verified. A failed or ambiguous transition is fail-closed; it never falls back to an untracked `podman run`.
+
+The runner MUST NOT hold a SQLite write transaction open while waiting for Podman or a child process. Cross-resource coordination is a recoverable state machine, not a pretend atomic transaction spanning SQLite and Podman:
+
+1. `RESERVED`: durable unique launch ID and unique container name committed; no container may yet exist.
+2. `STARTING`: a conditional transaction claims the reservation before the Podman create/start operation.
+3. `BOUND`: the actual Podman container ID has been verified and durably recorded against the expected name, image digest, and launch label.
+4. `ACTIVE`: the trusted shim has validated the signed envelope and confirmed readiness; the runner records activation.
+5. `TERMINATING` then `TERMINAL`: teardown is requested, the exact recorded container ID is stopped/removed, and Podman confirms absence. The launch ID remains permanently tombstoned.
+6. `FAILED`: startup or reconciliation cannot prove the expected container identity or cleanup. The ID remains permanently unusable; an operator-visible degraded state is required.
+
+On Hub/runner restart, reconciliation MUST enumerate non-terminal registry rows and Podman containers carrying the corresponding runner-owned launch label. It must compare the complete tuple (launch ID, server ID, run ID, container name, container ID, immutable image digest). Only an exact one-to-one match may be resumed for cleanup or advanced through a documented recovery transition. Missing, duplicate, mismatched, or untracked labeled containers are quarantined and forcibly removed only after identity is proven; otherwise the server remains degraded and requires operator intervention. The runner MUST never adopt an arbitrary container based only on a registry-controlled name or image-supplied metadata.
+
+The container must not use `--rm` for this credential-capable protocol: automatic removal would erase evidence needed to reconcile a runner crash between Podman creation and durable container-ID binding. Use an explicit create/start/attach or equivalent cidfile flow, persist the verified container ID, and remove it only through the runner's idempotent teardown/reconciliation path. The cidfile, if used, is non-secret, private to the runner, created with restrictive permissions, and removed after its value is durably committed. No credential, capability, frame, or secret-derived value may enter that file or any label.
+
+The runner-generated expected shim metadata MUST be attached only after reservation and before process start, using reserved environment keys that registry input cannot set or override. The shim treats those values as untrusted unless they are supplied by the deployment-owned runner path; they are not secrets and may appear in inspect output. The implementation must test that profile JSON, registry fields, image defaults, and user-supplied config cannot override them. Host compromise remains out of scope.
+
+The database must enforce durable commits (including an explicitly tested SQLite synchronous/journal configuration), and startup recovery must be idempotent across repeated crashes. If the database is unavailable, locked beyond a short bounded retry, corrupt, or cannot guarantee the required durability, authenticated launch is disabled. No in-memory fallback is permitted.
 ### Compatibility
 
 This protocol cannot authenticate arbitrary existing MCP images. A server image must implement the approved shim and child-FD consumer contract, or use a separately reviewed transport with equivalent guarantees. No generic fallback is permitted.
@@ -105,6 +136,9 @@ The implementation is not acceptable until tests prove all of the following agai
 7. Prove startup failure, timeout, crash, SIGTERM-resistant shutdown, forced removal, server disable/removal, and credential deletion revoke delivery and close descriptors.
 8. Prove unauthenticated rootless MCP lifecycle tests remain unchanged and pass.
 9. Include leak-scanning assertions over captured process arguments, environment, diagnostics, filesystem snapshots, and test logs.
+10. Crash/restart the Hub at every state transition (`RESERVED`, `STARTING`, Podman-created-before-bind, `BOUND`, shim-ready-before-`ACTIVE`, `TERMINATING`); prove startup reconciliation is idempotent, no duplicate container is adopted/launched, and ambiguous rows fail closed.
+11. Exercise concurrent Hub processes/threads against the SQLite launch table; prove the unique active `(server_id, run_id)` invariant, one-time launch ID reservation, tombstones, and durable commit behavior under process kill/power-loss simulation.
+12. Prove an untracked container, duplicate launch label, wrong image digest, wrong container ID, and stale cidfile cannot be adopted as a valid launch.
 
 ## 7. Rollout gates
 
