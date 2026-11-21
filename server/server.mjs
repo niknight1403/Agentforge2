@@ -1045,7 +1045,7 @@ async function api(req, res, url) {
   // ---- Projekt-Fokus: erst die priorisierten Projekte fertigstellen ----
   if (parts[0] === 'api' && parts[1] === 'focus') {
     if (m === 'GET') return json(res, 200, { ...focusStatus(), history: focusHistory(10) });
-    if (!isAdmin) return json(res, 403, { error: 'Nur Administratoren.' });
+    if (!openMode && !isAdmin) return json(res, 403, { error: 'Nur Administratoren.' });
     if (m === 'POST') {
       const b = await readBody(req).catch(() => ({}));
       const ids = Array.isArray(b.villaIds) ? b.villaIds : [b.villaId];
