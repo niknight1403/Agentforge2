@@ -119,7 +119,7 @@ const retryBaseMs = () => Math.max(0, Number(process.env.VF_RETRY_MIN_MS) || 15_
 function retryVilla(id, requestedDelayMs = retryBaseMs(), reason = 'MODEL_UNAVAILABLE') {
   const villaId = Number(id);
   const villa = db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(villaId);
-  if (!villa || villa.autonomy !== 1 || ['ARCHIVED','STOPPING','COMPLETED'].includes(villa.status)) return;
+  if (!villa || villa.autonomy !== 1 || !['RUNNING','WAITING_FOR_MODEL'].includes(villa.status)) return;
   if (retryTimers.has(villaId)) return;
   const attempt = (retryCounts.get(villaId) || 0) + 1;
   retryCounts.set(villaId, attempt);
@@ -129,7 +129,7 @@ function retryVilla(id, requestedDelayMs = retryBaseMs(), reason = 'MODEL_UNAVAI
     retryTimers.delete(villaId);
     retryDetails.delete(villaId);
     const villa = db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(villaId);
-    if (!villa || villa.autonomy !== 1 || villa.status === 'ARCHIVED') return;
+    if (!villa || villa.autonomy !== 1 || villa.status !== 'WAITING_FOR_MODEL') return;
     // Dieselbe unfertige Villa behaelt ihre Ausfuehrungsspur. Sie wird vor
     // spaeter eingereihten Villen fortgesetzt, sobald der Backoff endet.
     if (!active.has(villaId) && !queue.includes(villaId)) {
@@ -170,7 +170,7 @@ function pump(preserveFront = 0) {
     const id = queue.shift();
     reservedResumes.delete(Number(id));
     const villa=db.prepare('SELECT status, autonomy FROM villas WHERE id=?').get(id);
-    if(active.has(id)||!villa||villa.autonomy!==1||['ARCHIVED','STOPPING','COMPLETED'].includes(villa.status)){runOptions.delete(id);continue;}
+    if(active.has(id)||!villa||villa.autonomy!==1||!['RUNNING','WAITING_FOR_MODEL'].includes(villa.status)){runOptions.delete(id);continue;}
     active.add(id);
     const generation = generations.get(id) || 0;
     const failed = (err) => {
