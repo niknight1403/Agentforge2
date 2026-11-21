@@ -238,3 +238,18 @@ test('Villa-Bindung ist idempotent und hat Vorrang vor dem Git-Remote', () => {
   assert.equal(villasForRepo('neu/repo').length, 1);
   assert.equal(villaRepoMap().get('neu/repo')[0].id, villaId);
 });
+
+test('started proposals disappear from active suggestions but remain in history', async () => {
+  const { id } = addProposal();
+  const result = await approveProposal(id, async () => ({ villaId: 987, name: 'Started Villa' }));
+  assert.equal(result.villaId, 987);
+  assert.equal(listProposals().some((p) => p.id === id), false, 'approved proposal is no longer actionable');
+  assert.equal(listProposals({ status: 'approved' }).some((p) => p.id === id), true, 'history is retained');
+  assert.equal(listProposals({ status: 'approved' }).find((p) => p.id === id).villaId, 987);
+});
+
+test('proposals being started are hidden from the active suggestion inbox', () => {
+  const { id } = addProposal({ status: 'approving' });
+  assert.equal(listProposals().some((p) => p.id === id), false);
+  assert.equal(listProposals({ status: 'approving' }).some((p) => p.id === id), true);
+});
