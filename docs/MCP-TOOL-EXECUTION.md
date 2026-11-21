@@ -20,3 +20,11 @@ The discovery helper requires the injected connected client to expose a `serverI
 ## Audit storage failure on identity denial
 
 A client/server identity mismatch is rejected regardless of audit database availability. The denial audit write is attempted without inspecting tool arguments; if persistence fails, the original `MCP_CLIENT_SERVER_MISMATCH` error is still thrown with a non-enumerable `auditWriteFailed=true` diagnostic flag. No durable audit row can be guaranteed in that failure case. This is a deliberate fail-closed execution decision with best-effort denial telemetry; operators must monitor audit storage health separately.
+
+## Agent tool discovery
+
+The agent prompt may expose a dynamic alias `mcp:<serverId>:<toolName>` only while its registered server is active and that exact tool is explicitly approved. The alias is resolved again at execution time and still passes through the MCP runtime supervisor and execution-policy gate. The `mcp` tool pack and the project verification lock are enforced; all MCP calls are blocked while a source acceptance fingerprint is locked.
+
+Enabled HTTPS JSON connectors may be exposed as `connector:<connectorId>:read`. Connector execution remains GET-only and uses the existing DNS/public-address checks, no-redirect behavior, bounded JSON response, and secret-reference handling.
+
+MCP and connector arguments, outputs, and error details are omitted from the agent audit and trace; only bounded identifiers and argument counts are retained. Tool descriptions and outputs are untrusted data. The admin integration inventory is available at `GET /api/integrations`; it is admin-only and returns safe origins/status metadata, never secret values or full connector URLs.
