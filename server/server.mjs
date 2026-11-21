@@ -75,6 +75,10 @@ import { handleMcpAdminRequest, mcpRuntimeSupervisor } from './mcp-hub-runtime.m
 const PORT = Number(process.env.PORT || 12000);
 const HOST = process.env.HOST || '0.0.0.0';
 const deepAutoStartResults = new Map();
+// Deterministic, network-free planner fixture for CI only. Production always uses the real LLM cascade.
+const deepProjectChatFn = process.env.VF_TEST === '1'
+  ? async () => ({ content: 'CI fixture: Projekt verstanden. Stack und Meilensteine werden in den E2E-Tests separat verifiziert.' })
+  : undefined;
 const PUBLIC_DIR = resolve(process.cwd(), 'server/public');
 const portIssue = !Number.isInteger(PORT) || PORT < 1 || PORT > 65535;
 if (portIssue) {
@@ -1605,7 +1609,7 @@ async function api(req, res, url) {
     try {
       const b = await readBody(req);
       if (!user && !openMode) return json(res, 401, { error: 'Login erforderlich.' });
-      const created=await createDeepProject(b?.idea, { deferInitialPlan: true, ownerUserId: user?.id ?? null });
+      const created=await createDeepProject(b?.idea, { deferInitialPlan: true, ownerUserId: user?.id ?? null, chatFn: deepProjectChatFn });
       const intent=classifyDeepDevelopmentIntent(b?.idea,{projectCreation:true});
       const development=intent.action==='AUTO_BUILD'?scheduleAutoStartDeepProject(created.id):null;
       return json(res,200,{...created,intent:intent.action,development});
