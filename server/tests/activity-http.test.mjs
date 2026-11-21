@@ -13,15 +13,19 @@ const port = 37000 + Math.floor(Math.random() * 2000);
 const base = `http://127.0.0.1:${port}`;
 let child;
 let writer;
+let authHeaders;
 
-async function activity() {
-  const response = await fetch(base + '/api/system/activity');
+async function activity(headers = authHeaders) {
+  const response = await fetch(base + '/api/system/activity', { headers });
   return { status: response.status, body: await response.json() };
 }
 
 before(async () => {
   process.env.VF_DB = dbPath;
   const { db } = await import('../db.mjs');
+  const { upsertUser, createSession } = await import('../auth.mjs');
+  const admin = upsertUser({ email: 'activity-admin@example.test', password: 'test-password-activity', role: 'admin' });
+  authHeaders = { Authorization: 'Bearer ' + createSession(admin.id) };
   db.close();
   child = spawn(process.execPath, ['server/server.mjs'], {
     cwd: resolve(import.meta.dirname, '../..'),
@@ -50,6 +54,8 @@ after(async () => {
 });
 
 test('activity heartbeat is UNKNOWN without work, ACTIVE on task progress, and STALE when old', async () => {
+  const denied = await activity({});
+  assert.equal(denied.status, 403, 'endpoint must reject unauthenticated callers even in open mode');
   let result = await activity();
   assert.equal(result.status, 200);
   assert.equal(result.body.activityState, 'UNKNOWN');
