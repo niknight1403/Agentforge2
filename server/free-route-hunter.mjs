@@ -187,10 +187,11 @@ export async function probeRoute(route, { fetchImpl = fetch, timeoutMs = 15_000 
     if (res.ok) {
       try {
         const payload = await res.json();
-        responseValid = Array.isArray(payload?.choices)
-          && payload.choices.length > 0
-          && payload.choices[0] !== null
-          && typeof payload.choices[0] === 'object';
+        const message = payload?.choices?.[0]?.message;
+        responseValid = message !== null
+          && typeof message === 'object'
+          && ((typeof message.content === 'string' && message.content.trim().length > 0)
+            || (typeof message.refusal === 'string' && message.refusal.trim().length > 0));
       } catch { responseValid = false; }
     }
   } catch {
