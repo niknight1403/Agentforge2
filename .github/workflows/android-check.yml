@@ -25,8 +25,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.8.2'
-      - name: Android lint, unit tests, debug and release builds
-        run: gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace
+      - name: Android lint, unit tests, debug and release-QA builds (debug-signed)
+        # PRs must not receive production signing credentials. This explicit flag
+        # allows a debug-signed minified release variant for build/test coverage only.
+        run: gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease -PallowDebugSigning=true --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: villaforge-debug-apk
