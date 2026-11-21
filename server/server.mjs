@@ -9,6 +9,7 @@ import { castOverview,createPersona,createWardrobePack,listPersonas,listWardrobe
 import { activeDirections,consumeDirections,directorHistory,directorStatus,postInstruction } from './director-chat.mjs';
 import { burnTitle,freeMediaStatus,imagesToVideo,mediaToolInventory,resizeImage,videoThumbnail } from './free-media-tools.mjs';
 import { syncCascadeRoutes, syncFreeRouteFlags, isFreeRoute } from './llm-config.mjs';
+import { validateLlmRouteInput } from './llm-route-policy.mjs';
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { createMasterControl } from './master-control.mjs';
@@ -741,9 +742,15 @@ async function api(req, res, url) {
   if (p === '/api/routes' && m === 'POST') {
     if (!isAdmin) return json(res, 403, { error: 'Routen anlegen ist Admins vorbehalten.' });
     const b = await readBody(req);
+    const validated = validateLlmRouteInput(b);
+    if (!validated.ok) return json(res, 400, { error: validated.error });
+    const model = String(b.model || '').trim();
+    if (!model || model.length > 200 || /[\\r\\n\\0]/.test(model)) return json(res, 400, { error: 'MODEL_INVALID' });
+    const name = String(b.name || 'Route').trim().slice(0, 120) || 'Route';
+    const route = { provider: validated.provider, base_url: validated.baseUrl, model };
     const id = db.prepare(
       'INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(b.name || 'Route', b.provider || 'openai-compatible', b.baseUrl || '', b.model || '', b.keyEnv || '', b.isFree ? 1 : 0, 1, Number(b.priority) || 10, 1, 'NEW', 0, 0, 0).lastInsertRowid;
+    ).run(name, validated.provider, validated.baseUrl, model, validated.keyEnv, isFreeRoute(route) ? 1 : 0, 0, Number.isFinite(Number(b.priority)) ? Math.max(1, Math.min(1000, Math.trunc(Number(b.priority))) : 10, 1, 'NEW', 0, 0, 0).lastInsertRowid;
     return json(res, 201, { id });
   }
   if (parts[0] === 'api' && parts[1] === 'routes' && parts[2] && m === 'PATCH') {
