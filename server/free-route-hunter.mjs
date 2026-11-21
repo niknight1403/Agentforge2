@@ -201,8 +201,11 @@ export async function probeRoute(route, { fetchImpl = fetch, timeoutMs = 15_000 
 
 /** Die N am laengsten ungepruefte aktive Routen testen. */
 export async function monitor({ limit = 6, fetchImpl = fetch } = {}) {
+  // The hunter is strictly free-only: never probe paid or credit-based routes.
+  // Prioritize low-numbered routes so keyless fallbacks (priority 20) are tested
+  // before unreachable local Ollama routes (priority 30) on a fresh deployment.
   const rows = db.prepare(
-    "SELECT id, name, base_url, model, key_env FROM routes WHERE enabled = 1 AND provider != 'offline' ORDER BY COALESCE(last_used,0) ASC, id ASC LIMIT ?"
+    "SELECT id, name, base_url, model, key_env FROM routes WHERE enabled = 1 AND is_free = 1 AND provider != 'offline' ORDER BY priority ASC, COALESCE(last_used,0) ASC, id ASC LIMIT ?"
   ).all(Math.max(1, Number(limit) || 6));
   const out = [];
   for (const r of rows) out.push(await probeRoute(r, { fetchImpl }));
