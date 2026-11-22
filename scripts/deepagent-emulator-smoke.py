@@ -75,6 +75,8 @@ try:
     tap("Chat")
     tap("Nachricht an DeepAgent")
     adb("shell", "input", "text", "E2E-Chatcheck-2026")
+    capture("04-keyboard")
+    print("POST_INPUT_UI", [(n.attrib.get("text"), n.attrib.get("content-desc"), n.attrib.get("bounds")) for n in hierarchy().iter() if n.attrib.get("text") or n.attrib.get("content-desc")], flush=True)
     tap("Nachricht senden")
     wait("E2E-Chatcheck-2026", timeout=30)
     capture("04-chat-sent")
@@ -85,5 +87,6 @@ try:
     capture("05-download-status")
     print("ANDROID_DEEPAGENT_E2E_PASSED", flush=True)
 except Exception:
+    print("FAILURE_UI", [(n.attrib.get("text"), n.attrib.get("content-desc"), n.attrib.get("bounds")) for n in hierarchy().iter() if n.attrib.get("text") or n.attrib.get("content-desc")], flush=True)
     capture("failure")
     raise
