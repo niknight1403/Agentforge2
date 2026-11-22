@@ -304,6 +304,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
         }
         Spacer(Modifier.height(12.dp))
 
+        if (showPreview || !keyboardOpen) {
         Column(
             modifier = Modifier.fillMaxWidth()
                 .then(if (showPreview || showWorkspaceDetails) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier)
@@ -449,6 +450,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
             }
         }
         Spacer(Modifier.height(12.dp))
+        }
         if (!showPreview) {
             LazyColumn(state = listState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (state.deepMessages.isEmpty()) item {
