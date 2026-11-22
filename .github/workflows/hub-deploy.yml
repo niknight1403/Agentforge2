@@ -180,7 +180,26 @@ jobs:
           ROLLBACK_REQUIRED=1
           systemctl daemon-reload
           systemctl restart "$UNIT"
-          sleep 6
+          # A healthy Hub can stay in systemd 'activating' while its workers
+          # initialize. Do not fail the deployment after an arbitrary 6s.
+          # Keep the readiness gate: fail on a failed unit or after 90s.
+          echo "== Auf aktiven Hub-Dienst warten (max. 90s) =="
+          SERVICE_READY=0
+          for ((attempt=1; attempt<=30; attempt++)); do
+            if systemctl is-active --quiet "$UNIT"; then
+              SERVICE_READY=1
+              break
+            fi
+            if systemctl is-failed --quiet "$UNIT"; then
+              break
+            fi
+            sleep 3
+          done
+          if [ "$SERVICE_READY" -ne 1 ]; then
+            systemctl status "$UNIT" --no-pager --lines=25 || true
+            echo "Hub-Dienst wurde nicht rechtzeitig aktiv; Rollback erforderlich."
+            exit 6
+          fi
           echo "== Dienststatus =="
           systemctl is-active "$UNIT"
           UNIT_ENV=$(systemctl show "$UNIT" -p Environment --value)
@@ -191,7 +210,7 @@ jobs:
           PORT=$(systemctl show "$UNIT" -p Environment --value 2>/dev/null | grep -oE 'PORT=[0-9]+' | cut -d= -f2 || true)
           [ -n "$PORT" ] || PORT=3000
           HEALTH_FILE=$(mktemp)
-          curl --fail --silent --show-error --max-time 30 "http://127.0.0.1:${PORT}/api/health" -o "$HEALTH_FILE"
+          curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 2 --max-time 10 "http://127.0.0.1:${PORT}/api/health" -o "$HEALTH_FILE"
           python3 -c 'import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8")); assert d.get("ok") is True; assert d.get("masterControl")==1; assert "master-control-v1" in d.get("capabilities",[]); print("Lokaler Health-Check: Master-Control aktiv, Version",d.get("version"))' "$HEALTH_FILE"
           rm -f "$HEALTH_FILE"
           ROLLBACK_REQUIRED=0
