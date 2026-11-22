@@ -78,7 +78,7 @@ try:
     capture("04-keyboard")
     print("POST_INPUT_UI", [(n.attrib.get("text"), n.attrib.get("content-desc"), n.attrib.get("bounds")) for n in hierarchy().iter() if n.attrib.get("text") or n.attrib.get("content-desc")], flush=True)
     tap("Nachricht senden")
-    wait("E2E-Chatcheck-2026", timeout=30)
+    wait("CI fixture: Projekt verstanden. Stack und Meilensteine werden in den E2E-Tests separat verifiziert.", timeout=30)
     capture("04-chat-sent")
     tap("Build & Downloads", scroll=True)
     wait("Fertigstellung", timeout=45)
