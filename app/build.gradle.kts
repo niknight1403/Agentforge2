@@ -21,8 +21,8 @@ android {
         applicationId = "dev.villaforge.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 81
-        versionName = "1.66.0"
+        versionCode = 82
+        versionName = "1.66.1"
     }
 
     signingConfigs {

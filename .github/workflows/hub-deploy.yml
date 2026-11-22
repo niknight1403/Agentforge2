@@ -202,7 +202,8 @@ jobs:
           echo "DEPLOY-ENDE"
           DEP
           scp -o StrictHostKeyChecking=no -i ~/.ssh/oracle_key /tmp/deploy.sh ubuntu@92.5.177.159:/tmp/deploy.sh
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GT='$GT' GTP='$GTP' bash -c 'export GT GTP; bash /tmp/deploy.sh'"
+          # Backend-Tests can run silently for up to 600s; keep the SSH transport alive.
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=30 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GT='$GT' GTP='$GTP' bash -c 'export GT GTP; bash /tmp/deploy.sh'"
 
       - name: Kostenlose LLM-Secrets in den Hub synchronisieren
         env:
@@ -215,7 +216,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GTOKEN='$GTP' GROQ_API_KEY='$GROQ_API_KEY' OPENROUTER_API_KEY='$OPENROUTER_API_KEY' GEMINI_API_KEY='$GEMINI_API_KEY' bash -s" <<'SEED'
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=30 -i ~/.ssh/oracle_key ubuntu@92.5.177.159 "sudo GTOKEN='$GTP' GROQ_API_KEY='$GROQ_API_KEY' OPENROUTER_API_KEY='$OPENROUTER_API_KEY' GEMINI_API_KEY='$GEMINI_API_KEY' bash -s" <<'SEED'
           set -euo pipefail
           DBP=$(systemctl show villaforge-hub -p Environment --value 2>/dev/null | grep -oE 'VF_DB=[^ ]+' | cut -d= -f2 || true)
           [ -n "$DBP" ] || DBP=/opt/villaforge/server/data/villaforge.db

@@ -19,7 +19,7 @@ export const TMP = mkdtempSync(join(tmpdir(), 'vf-test-'));
 process.env.VF_TEST = '1';
 process.env.VF_DB = join(TMP, 'test.db');
 process.env.VF_WORKSPACE = join(TMP, 'workspace');
-process.env.DEEP_DIR = join(TMP, 'deep-projects');
+process.env.DEEP_DIR = join(TMP, 'deep');
 // Hub unit tests must not inherit the runtime integration service connection.
 // RESP-client tests configure their own sockets; runtime tests use real Redis.
 delete process.env.REDIS_URL;

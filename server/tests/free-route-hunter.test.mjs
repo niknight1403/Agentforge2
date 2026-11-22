@@ -73,6 +73,9 @@ test('classifyProbe bildet Statuscodes korrekt ab', () => {
   assert.equal(classifyProbe({ status: 401 }).state, 'DEAD');
   assert.equal(classifyProbe({ status: 403 }).enabled, 0);
   assert.equal(classifyProbe({ status: 500 }).state, 'ERROR');
+  assert.equal(classifyProbe({ status: 400 }).state, 'CLIENT_ERROR');
+  assert.equal(classifyProbe({ status: 404 }).state, 'CLIENT_ERROR');
+  assert.equal(classifyProbe({ status: 302 }).state, 'REDIRECT');
   assert.equal(classifyProbe({ status: 0 }).state, 'UNREACHABLE');
   assert.equal(classifyProbe({ status: 200, ms: 90 }).state, 'OK');
 });
@@ -117,6 +120,17 @@ test('probeRoute schaltet bei 401 die Route ab', async () => {
   const after = db.prepare('SELECT enabled, dead, status FROM routes WHERE id = ?').get(row.id);
   assert.equal(after.enabled, 0);
   assert.equal(after.status, 'DEAD');
+});
+
+test('probeRoute nimmt nicht vorhandene Modelle in Cooldown statt sie gesund zu melden', async () => {
+  const ins = db.prepare("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES ('Missing model', 'test', 'https://missing.invalid/v1', 'missing', '', 1, 1, 30, 1, 'NEW', 0, 0, 0)").run();
+  const route = db.prepare('SELECT * FROM routes WHERE id = ?').get(Number(ins.lastInsertRowid));
+  const result = await probeRoute(route, { fetchImpl: async () => jsonRes({}, 404) });
+  assert.equal(result.state, 'CLIENT_ERROR');
+  const stored = db.prepare('SELECT ok, fail, cooldown_until FROM routes WHERE id = ?').get(route.id);
+  assert.equal(stored.ok, 0);
+  assert.equal(stored.fail, 1);
+  assert.ok(stored.cooldown_until > Date.now());
 });
 
 test('monitor prueft ausschliesslich aktive Routen', async () => {

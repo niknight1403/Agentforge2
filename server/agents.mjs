@@ -16,6 +16,7 @@ import { emit } from './events.mjs';
 import { mkdirSync, writeFileSync, readdirSync, statSync, existsSync, readFileSync } from 'node:fs';
 import { execSync,execFileSync } from 'node:child_process';
 import { resolve, join, dirname } from 'node:path';
+import { isIP } from 'node:net';
 import { projectSummary, searchProject, readProjectFile, runCommand, safePath } from './fs-tools.mjs';
 import { canUseTool, toolPackOf, packEnabled } from './packs.mjs';
 import { generateMedia, mediaCapabilities } from './media.mjs';
@@ -87,12 +88,18 @@ const TOOLS = {
     description: 'Laedt eine URL und gibt den Text zurueck - Kaskade: Jina Reader (Markdown, kostenlos) -> Direkt-Fetch (nur http/https).',
     schema: { url: 'string' },
     run: async (ctx, a) => {
-      const url = String(a.url || '');
-      if (!/^https?:\/\//i.test(url)) return 'Nur http/https erlaubt.';
+      const url = String(a.url || '').trim();
+      let target;
+      try { target = new URL(url); } catch { return 'Ungueltige URL.'; }
+      if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password) return 'Nur http/https ohne Zugangsdaten erlaubt.';
+      if (url.length > 2048) return 'URL zu lang.';
+      const host = target.hostname.toLowerCase();
+      if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal') || isIP(host.replace(/^\[|\]$/g, ''))) return 'Nur oeffentliche Web-Adressen erlaubt.';
       /* Stufe 1: Jina Reader - sauberes Markdown ohne Key */
       try {
         const r = await fetch(`https://r.jina.ai/${url}`, {
           signal: AbortSignal.timeout(25000),
+          redirect: 'error',
           headers: { 'User-Agent': 'VillaForge/1.0', 'Accept': 'text/plain' }
         });
         if (r.ok) {
@@ -101,7 +108,8 @@ const TOOLS = {
         }
       } catch { /* naechste Stufe */ }
       /* Stufe 2: Direkt-Fetch mit Tag-Strip */
-      const res = await fetch(url, { signal: AbortSignal.timeout(20000), headers: { 'User-Agent': 'VillaForge/1.0' } });
+      const res = await fetch(url, { signal: AbortSignal.timeout(20000), redirect: 'error', headers: { 'User-Agent': 'VillaForge/1.0' } });
+      if (!res.ok) return `HTTP ${res.status}: Quelle nicht verfuegbar.`;
       const html = await res.text();
       const text = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
       return `HTTP ${res.status}\n${text.slice(0, 4000)}`;
@@ -113,6 +121,7 @@ const TOOLS = {
     run: async (ctx, a) => {
       const q = String(a.query || '').trim();
       if (!q) return 'Leere Suchanfrage.';
+      if (q.length > 500) return 'Suchanfrage zu lang (maximal 500 Zeichen).';
       const decodeHref = (h) => {
         try {
           if (h.includes('uddg=')) return decodeURIComponent(h.split('uddg=')[1].split('&')[0]);
@@ -124,8 +133,10 @@ const TOOLS = {
       try {
         const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, {
           signal: AbortSignal.timeout(15000),
+          redirect: 'error',
           headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0' }
         });
+        if (!res.ok) throw new Error(`Suche HTTP ${res.status}`);
         const html = await res.text();
         const links = [...html.matchAll(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
         const snips = [...html.matchAll(/class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/gi)];
@@ -145,8 +156,10 @@ const TOOLS = {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0' },
           body: 'q=' + encodeURIComponent(q),
-          signal: AbortSignal.timeout(15000)
+          signal: AbortSignal.timeout(15000),
+          redirect: 'error'
         });
+        if (!res.ok) throw new Error(`Suche HTTP ${res.status}`);
         const html = await res.text();
         const links = [...html.matchAll(/<a[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
         const out = [];
