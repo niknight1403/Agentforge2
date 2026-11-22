@@ -282,6 +282,14 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
     val projectEvents = if (project.villaId > 0) state.events.filter { it.villaId == project.villaId }.take(5) else emptyList()
     val keyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val compactChat = LocalConfiguration.current.screenHeightDp < 700
+    val blockers = completion?.optJSONArray("blockers")?.length() ?: 0
+    val acceptanceStatus = when {
+        workspace?.has("error") == true -> "Abnahme: Status nicht erreichbar"
+        completion?.optBoolean("ready") == true -> "Abnahme: bereit"
+        completion == null -> "Abnahme: noch nicht geprüft"
+        blockers > 0 -> "Abnahme: $blockers Prüfungen offen"
+        else -> "Abnahme: offen · Nachweis fehlt"
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp).imePadding()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -312,6 +320,19 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
             }
         }
         Spacer(Modifier.height(12.dp))
+
+        if (compactChat && !showPreview && !keyboardOpen && !composerFocused) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(acceptanceStatus, modifier = Modifier.weight(1f),
+                    color = if (completion?.optBoolean("ready") == true) Success else Warn,
+                    style = MaterialTheme.typography.bodySmall)
+                if (project.villaId > 0) {
+                    TextButton(onClick = { onOpenVilla(project.villaId) }, modifier = Modifier.heightIn(min = 44.dp)) {
+                        Text("Build & Downloads", color = NeonCyan)
+                    }
+                }
+            }
+        }
 
         if (showPreview || (!keyboardOpen && !composerFocused && !compactChat)) {
         Column(
@@ -396,16 +417,9 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                     style = MaterialTheme.typography.bodyMedium, color = TextMuted
                 )
             }
-            val blockers = completion?.optJSONArray("blockers")?.length() ?: 0
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    when {
-                        workspace?.has("error") == true -> "Abnahme: Status nicht erreichbar"
-                        completion?.optBoolean("ready") == true -> "Abnahme: bereit"
-                        completion == null -> "Abnahme: noch nicht geprüft"
-                        blockers > 0 -> "Abnahme: $blockers Prüfungen offen"
-                        else -> "Abnahme: offen · Nachweis fehlt"
-                    },
+                    acceptanceStatus,
                     modifier = Modifier.weight(1f),
                     color = if (completion?.optBoolean("ready") == true) Success else Warn,
                     style = MaterialTheme.typography.bodyMedium
