@@ -80,7 +80,6 @@ try:
     tap("Nachricht senden")
     wait("E2E-Chatcheck-2026", timeout=30)
     capture("04-chat-sent")
-    adb("shell", "input", "keyevent", "4")
     tap("Build & Downloads", scroll=True)
     wait("Fertigstellung", timeout=45)
     wait("Produkt-Build (APK / Paket)", timeout=45, scroll=True)

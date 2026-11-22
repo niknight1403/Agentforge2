@@ -60,8 +60,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.viewinterop.AndroidView
@@ -227,6 +230,9 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
         return
     }
     var input by remember { mutableStateOf("") }
+    var composerFocused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     var showAttachMenu by remember { mutableStateOf(false) }
     var showRepoDialog by remember { mutableStateOf(false) }
     var showPreview by remember { mutableStateOf(false) }
@@ -304,7 +310,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
         }
         Spacer(Modifier.height(12.dp))
 
-        if (showPreview || !keyboardOpen) {
+        if (showPreview || (!keyboardOpen && !composerFocused)) {
         Column(
             modifier = Modifier.fillMaxWidth()
                 .then(if (showPreview || showWorkspaceDetails) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier)
@@ -317,7 +323,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                 else "Live-Vorschau · noch nicht verfügbar",
                 style = MaterialTheme.typography.titleMedium, color = TextMain
             )
-            if (completion?.optBoolean("liveViewAvailable") == true && entry.isNotBlank() && !keyboardOpen) {
+            if (completion?.optBoolean("liveViewAvailable") == true && entry.isNotBlank() && !keyboardOpen && !composerFocused) {
                     AndroidView(
                         modifier = Modifier.fillMaxWidth().height(if (showPreview) 360.dp else 170.dp)
                             .clip(RoundedCornerShape(12.dp)),
@@ -575,7 +581,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                     value = input,
                     onValueChange = { input = it },
                     placeholder = { Text("Nachricht an DeepAgent") },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).onFocusChanged { composerFocused = it.isFocused },
                     maxLines = 4
                 )
                 IconButton(
@@ -583,6 +589,8 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                         if (input.isNotBlank()) {
                             viewModel.sendDeep(input)
                             input = ""
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
                         }
                     },
                     enabled = input.isNotBlank() && !state.busy
