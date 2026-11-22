@@ -46,8 +46,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -89,9 +89,9 @@ private val topLevelScreens = listOf(Screen.LIST, Screen.DASHBOARD, Screen.MASTE
 @Composable
 fun VillaForgeApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var screen by remember { mutableStateOf(Screen.DASHBOARD) }
-    var masterPrompt by remember { mutableStateOf("") }
-    var devFromDeep by remember { mutableStateOf(false) }
+    var screen by rememberSaveable { mutableStateOf(Screen.DASHBOARD) }
+    var masterPrompt by rememberSaveable { mutableStateOf("") }
+    var devFromDeep by rememberSaveable { mutableStateOf(false) }
 
     /* Quality-Layer v2: EIN zentraler Aurora-Hintergrund auf App-Ebene. */
     Box(Modifier.fillMaxSize().auroraBg()) {

@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -229,15 +230,15 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
         }
         return
     }
-    var input by remember { mutableStateOf("") }
+    var input by rememberSaveable(project.id) { mutableStateOf("") }
     var composerFocused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     var showAttachMenu by remember { mutableStateOf(false) }
     var showRepoDialog by remember { mutableStateOf(false) }
-    var showPreview by remember { mutableStateOf(false) }
-    var showWorkspaceDetails by remember { mutableStateOf(false) }
-    var repoUrl by remember { mutableStateOf("") }
+    var showPreview by rememberSaveable(project.id) { mutableStateOf(false) }
+    var showWorkspaceDetails by rememberSaveable(project.id) { mutableStateOf(false) }
+    var repoUrl by rememberSaveable(project.id) { mutableStateOf("") }
     val listState = rememberLazyListState()
     val context = LocalContext.current
     var ttsReady by remember { mutableStateOf(false) }
