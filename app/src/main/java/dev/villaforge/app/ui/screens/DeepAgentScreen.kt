@@ -63,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -280,6 +281,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
     val previewReloadKey = "$previewUrl|${livePreview?.optString("revision").orEmpty()}"
     val projectEvents = if (project.villaId > 0) state.events.filter { it.villaId == project.villaId }.take(5) else emptyList()
     val keyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val compactChat = LocalConfiguration.current.screenHeightDp < 700
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp).imePadding()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -311,7 +313,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
         }
         Spacer(Modifier.height(12.dp))
 
-        if (showPreview || (!keyboardOpen && !composerFocused)) {
+        if (showPreview || (!keyboardOpen && !composerFocused && !compactChat)) {
         Column(
             modifier = Modifier.fillMaxWidth()
                 .then(if (showPreview || showWorkspaceDetails) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier)
