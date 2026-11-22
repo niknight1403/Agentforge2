@@ -292,7 +292,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
             listOf("Chat", "Vorschau").forEachIndexed { index, label ->
                 val selected = showPreview == (index == 1)
                 TextButton(
-                    onClick = { showPreview = index == 1 },
+                    onClick = { showPreview = index == 1; if (index == 0) showWorkspaceDetails = false },
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                         .semantics { this.selected = selected }
                         .clip(RoundedCornerShape(12.dp))
@@ -306,7 +306,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
 
         Column(
             modifier = Modifier.fillMaxWidth()
-                .then(if (showPreview) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier)
+                .then(if (showPreview || showWorkspaceDetails) Modifier.weight(1f).verticalScroll(rememberScrollState()) else Modifier)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Surface1).border(1.dp, Border, RoundedCornerShape(16.dp)).padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
