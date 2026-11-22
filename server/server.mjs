@@ -1532,6 +1532,20 @@ async function api(req, res, url) {
     if (!canAccessDeepProject(projectId)) return json(res, 404, { error: 'Projekt nicht gefunden' });
     const detail = deepProjectDetail(projectId);
     if (!detail) return json(res, 404, { error: 'Projekt nicht gefunden' });
+    // A project can already be bootstrapping from its automatic handoff.
+    // Never return that existing job's Promise here: it belongs to another
+    // request and does not write a response to this HTTP connection.
+    if (isDeepProjectDeveloping(projectId)) {
+      return json(res, 202, {
+        ok: true,
+        pending: true,
+        projectId,
+        villaId: Number(detail.project.villa_id || 0),
+        started: false,
+        queued: false,
+        message: 'Projektentwicklung läuft bereits. Fortschritt über das Projektdetail abfragen.'
+      });
+    }
     deepAutoStartResults.delete(projectId);
     return runDeepProjectDevelopmentOnce(projectId, async () => {
       try {

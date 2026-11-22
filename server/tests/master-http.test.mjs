@@ -2,6 +2,7 @@ import './_env.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync,rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join,resolve } from 'node:path';
@@ -15,13 +16,25 @@ before(async()=>{
  db.prepare('INSERT INTO routes(name,provider,base_url,model,enabled) VALUES (?,?,?,?,?)').run('test-offline','offline','','offline',1);
  db.close();
  child=spawn(process.execPath,['server/server.mjs'],{cwd:resolve(import.meta.dirname,'../..'),env:{...process.env,VF_DB:join(dir,'hub.db'),VF_WORKSPACE:join(dir,'work'),HOST:'127.0.0.1',PORT:String(port),VF_RESUME:'0',VF_OPEN_MODE:'1',VF_RATE_WAIT_MS:'1'},stdio:'ignore'});
- for(let i=0;i<150;i++){try{if((await fetch(base+'/api/health')).ok)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw new Error('Hub startup failed');
+ for(let i=0;i<150;i++){try{if((await fetch(base+'/api/health')).ok){
+  // Server startup seeds free/local routes. Explicitly disable real routes
+  // so this HTTP test is deterministic even on a host running Ollama.
+  const isolated=new DatabaseSync(join(dir,'hub.db'));
+  try {
+   isolated.prepare("UPDATE routes SET enabled=0 WHERE provider != 'offline'").run();
+   assert.equal(isolated.prepare("SELECT COUNT(*) AS n FROM routes WHERE enabled=1 AND provider != 'offline'").get().n,0);
+  } finally { isolated.close(); }
+  return;
+ }}catch{}await new Promise(r=>setTimeout(r,100));}throw new Error('Hub startup failed');
 });
 after(async()=>{if(child?.exitCode===null){child.kill('SIGTERM');await new Promise(r=>{child.once('exit',r);setTimeout(()=>{child.kill('SIGKILL');r();},1500).unref();});}rmSync(dir,{recursive:true,force:true});});
 test('Master API: status, honest LLM outage, stable retry, history, suggestions and archive',async()=>{
  assert.equal((await call('/api/master/status')).status,200);
  const request={message:'Erstelle Villa "Master Test": Prüfe den vollständigen Ablauf',requestId:'http-master-create-123'};
- const first=await call('/api/master/chat',request);assert.equal(first.status,503);assert.equal(first.body.ok,false);assert.equal(first.body.code,'LLM_UNAVAILABLE');assert.equal(first.body.steps[0].type,'create_villa');
+ // The explicit create command is parsed without an LLM, but executing
+ // createVilla still requires a real model. With routes disabled it must
+ // fail closed, create no Villa, and return the same idempotent response.
+ const first=await call('/api/master/chat',request);assert.equal(first.status,503,JSON.stringify(first.body));assert.equal(first.body.ok,false);assert.equal(first.body.code,'LLM_UNAVAILABLE');assert.equal(first.body.steps[0].type,'create_villa');
  const second=await call('/api/master/chat',request);assert.deepEqual(second,first);
  const villas=await call('/api/villas');assert.equal(villas.body.length,0);
  assert.equal((await call('/api/master/messages')).body.length,2);
@@ -29,7 +42,10 @@ test('Master API: status, honest LLM outage, stable retry, history, suggestions 
  assert.equal((await call('/api/master/turn/http-master-create-123')).body.answer,first.body.answer);
  assert.ok(Array.isArray((await call('/api/master/suggestions')).body));
  assert.ok(Array.isArray((await call('/api/master/duplicates/archive',{})).body.archived));
- const unavailable=await call('/api/master/chat',{message:'Erkläre mir in zwei Sätzen, wie eine bestehende Villa gestartet wird.',requestId:'http-master-unavailable-123'});assert.equal(unavailable.status,503);assert.equal(unavailable.body.code,'LLM_UNAVAILABLE');assert.ok(Array.isArray(unavailable.body.routeAttempts));
+ // Freeform questions require a real model; with all real routes disabled
+ // the API must return a genuine 503, not invent a successful AI response.
+ const unavailable=await call('/api/master/chat',{message:'Erkläre mir in zwei Sätzen, wie eine bestehende Villa gestartet wird.',requestId:'http-master-unavailable-123'});assert.equal(unavailable.status,503,JSON.stringify(unavailable.body));assert.equal(unavailable.body.code,'LLM_UNAVAILABLE');assert.ok(Array.isArray(unavailable.body.routeAttempts));
+ assert.equal((await call('/api/villas')).body.length,0,'offline freeform request must not create a Villa');
  const malformed=await call('/api/master/chat',{message:'Status',requestId:'x'});assert.equal(malformed.status,400);
 });
 

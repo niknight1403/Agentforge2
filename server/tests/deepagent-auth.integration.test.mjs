@@ -353,7 +353,35 @@ test('DeepAgent endpoints require login and isolate projects, chat and files by 
   const otherDelete = await fetch(`${base}/api/deep/projects/${projectId}`, { method: 'DELETE', headers: auth(tokenB) });
   assert.equal(otherDelete.status, 404);
   const ownerDelete = await fetch(`${base}/api/deep/projects/${projectId}`, { method: 'DELETE', headers: auth(tokenA) });
-  assert.equal(ownerDelete.status, 200);
+  // Project creation intentionally starts an asynchronous plan. Deleting it
+  // while that job is active must be blocked; a settled job may be deleted.
+  assert.ok([200, 409].includes(ownerDelete.status), `unexpected owner deletion status ${ownerDelete.status}`);
+  if (ownerDelete.status === 409) {
+    const stillOwned = await fetch(`${base}/api/deep/projects/${projectId}`, { headers: auth(tokenA) });
+    assert.equal(stillOwned.status, 200, 'a pending project must survive the deletion conflict');
+    const stillPrivate = await fetch(`${base}/api/deep/projects/${projectId}`, { headers: auth(tokenB) });
+    assert.equal(stillPrivate.status, 404);
+  }
+
+  // Verify successful deletion separately on an idle, owner-scoped project:
+  // it has no pending planner or development job and has its own linked Villa.
+  const idleId = Number(db.prepare(
+    'INSERT INTO deep_projects (title, idea, status, created_at, updated_at, owner_user_id) VALUES (?,?,?,?,?,?)'
+  ).run('Idle private project', 'Project without pending planning', 'ACTIVE', now(), now(), userA.id).lastInsertRowid);
+  const idleVillaId = insertVillaRecord({
+    name: 'Deep · Idle private project',
+    idea: 'Owner-only Villa surviving project deletion',
+    createdAt: now(),
+    ownerUserId: userA.id
+  });
+  linkDeepProjectVilla(idleId, idleVillaId);
+  const otherIdleDelete = await fetch(`${base}/api/deep/projects/${idleId}`, { method: 'DELETE', headers: auth(tokenB) });
+  assert.equal(otherIdleDelete.status, 404);
+  const ownerIdleDelete = await fetch(`${base}/api/deep/projects/${idleId}`, { method: 'DELETE', headers: auth(tokenA) });
+  assert.equal(ownerIdleDelete.status, 200, 'the owner can delete an idle project');
+  assert.equal((await fetch(`${base}/api/deep/projects/${idleId}`, { headers: auth(tokenA) })).status, 404);
+  assert.equal((await fetch(`${base}/api/villas/${idleVillaId}`, { headers: auth(tokenA) })).status, 200);
+  assert.equal((await fetch(`${base}/api/villas/${idleVillaId}`, { headers: auth(tokenB) })).status, 404);
 
   // Deleting the Deep project must not turn its surviving Villa into shared data.
   const ownerVillaAfterDelete = await fetch(`${base}/api/villas/${villaId}`, { headers: auth(tokenA) });
