@@ -31,13 +31,12 @@ after(async()=>{if(child?.exitCode===null){child.kill('SIGTERM');await new Promi
 test('Master API: status, honest LLM outage, stable retry, history, suggestions and archive',async()=>{
  assert.equal((await call('/api/master/status')).status,200);
  const request={message:'Erstelle Villa "Master Test": Prüfe den vollständigen Ablauf',requestId:'http-master-create-123'};
- // A direct, explicitly named create command does not need an LLM. It may
- // create a paused Villa shell, but must not claim verified delivery.
- const first=await call('/api/master/chat',request);assert.equal(first.status,200,JSON.stringify(first.body));assert.equal(first.body.ok,true);assert.equal(first.body.steps[0].type,'create_villa');
+ // The explicit create command is parsed without an LLM, but executing
+ // createVilla still requires a real model. With routes disabled it must
+ // fail closed, create no Villa, and return the same idempotent response.
+ const first=await call('/api/master/chat',request);assert.equal(first.status,503,JSON.stringify(first.body));assert.equal(first.body.ok,false);assert.equal(first.body.code,'LLM_UNAVAILABLE');assert.equal(first.body.steps[0].type,'create_villa');
  const second=await call('/api/master/chat',request);assert.deepEqual(second,first);
- const villas=await call('/api/villas');assert.equal(villas.body.length,1);
- assert.equal(villas.body[0].status,'CREATED');
- assert.equal(villas.body[0].name,'Master Test');
+ const villas=await call('/api/villas');assert.equal(villas.body.length,0);
  assert.equal((await call('/api/master/messages')).body.length,2);
  assert.equal((await call('/api/master/history')).body.length,2);
  assert.equal((await call('/api/master/turn/http-master-create-123')).body.answer,first.body.answer);
@@ -46,7 +45,7 @@ test('Master API: status, honest LLM outage, stable retry, history, suggestions 
  // Freeform questions require a real model; with all real routes disabled
  // the API must return a genuine 503, not invent a successful AI response.
  const unavailable=await call('/api/master/chat',{message:'Erkläre mir in zwei Sätzen, wie eine bestehende Villa gestartet wird.',requestId:'http-master-unavailable-123'});assert.equal(unavailable.status,503,JSON.stringify(unavailable.body));assert.equal(unavailable.body.code,'LLM_UNAVAILABLE');assert.ok(Array.isArray(unavailable.body.routeAttempts));
- assert.equal((await call('/api/villas')).body.length,1,'offline freeform request must not create a second Villa');
+ assert.equal((await call('/api/villas')).body.length,0,'offline freeform request must not create a Villa');
  const malformed=await call('/api/master/chat',{message:'Status',requestId:'x'});assert.equal(malformed.status,400);
 });
 
