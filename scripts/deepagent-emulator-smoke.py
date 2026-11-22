@@ -80,12 +80,34 @@ try:
     tap("Nachricht senden")
     wait("CI fixture: Projekt verstanden. Stack und Meilensteine werden in den E2E-Tests separat verifiziert.", timeout=30)
     capture("04-chat-sent")
+
+    # About 314 dp wide on this emulator: exercise the smallest supported phone layout.
+    app_pid = adb("shell", "pidof", "dev.villaforge.app").strip()
+    adb("shell", "wm", "size", "864x1760")
+    wait("Nachricht an DeepAgent")
+    capture("05-compact-chat")
+    for _ in range(3):
+        tap("Vorschau")
+        wait("LIVE VORSCHAU TEST")
+        tap("Chat")
+        wait("Nachricht an DeepAgent")
+    if adb("shell", "pidof", "dev.villaforge.app").strip() != app_pid:
+        raise AssertionError("Android app restarted during rapid Chat/Vorschau switching")
+
     tap("Build & Downloads", scroll=True)
     wait("Fertigstellung", timeout=45)
-    wait("Produkt-Build (APK / Paket)", timeout=45, scroll=True)
-    capture("05-download-status")
+    wait("Produkt-Build (APK / Paket)", timeout=45)
+    wait("noch nicht gebaut")
+    capture("06-compact-download-status")
+    tap("Alternativen und Scout anzeigen", scroll=True)
+    wait("Jetzt nach besserer Alternative suchen", scroll=True)
+    tap("Alternativen ausblenden", scroll=True)
+    tap("Phasenplanung und Evolution anzeigen", scroll=True)
+    wait("Villa-Evolution", scroll=True)
     print("ANDROID_DEEPAGENT_E2E_PASSED", flush=True)
 except Exception:
     print("FAILURE_UI", [(n.attrib.get("text"), n.attrib.get("content-desc"), n.attrib.get("bounds")) for n in hierarchy().iter() if n.attrib.get("text") or n.attrib.get("content-desc")], flush=True)
     capture("failure")
     raise
+finally:
+    adb("shell", "wm", "size", "reset")
