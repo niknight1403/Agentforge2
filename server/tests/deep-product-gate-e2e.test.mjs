@@ -141,6 +141,31 @@ test('Belegtes Produkt ohne TASTE/SPION erzeugt keine Villa', async () => {
   assert.match(res.body.message, /Uebergabe-Artefakte fehlen/);
 });
 
+test('Concurrent bootstrap acknowledges an existing development job without hanging',async()=>{
+ const token=await tokenFor('bootstrap-concurrent@example.com');
+ const created=await api('/api/deep/projects',{method:'POST',body:JSON.stringify({idea:'Analysiere die fachlichen Anforderungen fuer die Abrechnung von Freelancern.'})},token);
+ const projectId=Number(created.body?.id);
+ assert.ok(projectId>0,JSON.stringify(created.body));
+ const {runDeepProjectDevelopmentOnce}=await import('../deepagent.mjs');
+ let release;
+ const hold=new Promise(resolve=>{release=resolve;});
+ const job=runDeepProjectDevelopmentOnce(projectId,()=>hold);
+ try {
+  const response=await api(`/api/deep/projects/${projectId}/bootstrap`,{method:'POST',body:'{}',signal:AbortSignal.timeout(3000)},token);
+  assert.equal(response.status,202,JSON.stringify(response.body));
+  assert.equal(response.body.pending,true);
+  assert.equal(response.body.projectId,projectId);
+  assert.equal(response.body.villaId,0);
+  const detail=await api(`/api/deep/projects/${projectId}`,{},token);
+  assert.equal(detail.body.development.pending,true);
+ } finally {
+  release({ok:true});
+  await job;
+ }
+ const after=await api(`/api/deep/projects/${projectId}`,{},token);
+ assert.equal(after.body.development.pending,false);
+});
+
 test('Bootstrap allows a new idea into development without prematurely declaring delivery verified',async()=>{
  const token=await tokenFor('bootstrap-idea@example.com');
  const created=await api('/api/deep/projects',{method:'POST',body:JSON.stringify({idea:'Eine Android App zur Verwaltung von Inventar und QR Codes.'})},token);
