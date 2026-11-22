@@ -62,9 +62,9 @@ jobs:
       VF_TEST: '1'
       VF_OPEN_MODE: '1'
       VF_RESUME: '0'
-      VF_DB: ${{ runner.temp }}/villaforge-android-e2e.sqlite
-      VF_WORKSPACE: ${{ runner.temp }}/villaforge-android-workspace
-      DEEP_DIR: ${{ runner.temp }}/villaforge-android-deep
+      VF_DB: /tmp/villaforge-android-e2e.sqlite
+      VF_WORKSPACE: /tmp/villaforge-android-workspace
+      DEEP_DIR: /tmp/villaforge-android-deep
       E2E_ARTIFACTS: emulator-evidence
       HOST: 127.0.0.1
       PORT: '12222'
