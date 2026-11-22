@@ -58,17 +58,18 @@ try:
     tap("Emulator-Projekt Design 3")
     wait("Chat")
     wait("Vorschau")
-    wait("Live-Vorschau · Build verfügbar")
+    wait("Live-Vorschau · Webansicht verfügbar")
     wait("Build & Downloads")
     capture("01-chat-preview")
 
     tap("Vorschau")
+    wait("LIVE VORSCHAU TEST")
     wait("Statusdetails und Werkzeuge anzeigen")
     # The same fixture must be served by the Hub; the WebView render is captured.
     capture("02-full-preview")
     tap("Statusdetails und Werkzeuge anzeigen")
     wait("Statusdetails schließen")
-    wait("Entwicklung fortsetzen", scroll=True)
+    wait("Entwicklung fortsetzen")
     capture("03-quality-tools")
 
     tap("Chat")

@@ -312,7 +312,7 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                if (completion?.optBoolean("liveViewAvailable") == true && entry.isNotBlank()) "Live-Vorschau · Build verfügbar"
+                if (completion?.optBoolean("liveViewAvailable") == true && entry.isNotBlank()) "Live-Vorschau · Webansicht verfügbar"
                 else "Live-Vorschau · noch nicht verfügbar",
                 style = MaterialTheme.typography.titleMedium, color = TextMain
             )
@@ -415,6 +415,10 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                 Text(if (showWorkspaceDetails) "Statusdetails schließen" else "Statusdetails und Werkzeuge anzeigen")
             }
             if (showWorkspaceDetails) {
+                TextButton(onClick = { viewModel.developDeepProject(projectId) }, enabled = !state.busy,
+                    modifier = Modifier.heightIn(min = 44.dp)) {
+                    Text(if (project.villaId > 0) "Entwicklung fortsetzen" else "Autonom umsetzen")
+                }
                 Column(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Villa: ${if (project.villaId > 0) "#${project.villaId}" else "noch offen"} · " +
@@ -440,9 +444,6 @@ fun DeepChatScreen(state: UiState, viewModel: MainViewModel, onBack: () -> Unit,
                     } else projectEvents.forEach { event ->
                         Text("${event.type}: ${event.text}", style = MaterialTheme.typography.bodySmall,
                             color = TextMain, maxLines = 2)
-                    }
-                    TextButton(onClick = { viewModel.developDeepProject(projectId) }, enabled = !state.busy) {
-                        Text(if (project.villaId > 0) "Entwicklung fortsetzen" else "Autonom umsetzen")
                     }
                 }
             }
