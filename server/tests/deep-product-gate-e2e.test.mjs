@@ -149,9 +149,18 @@ test('Bootstrap allows a new idea into development without prematurely declaring
  const result=await api(`/api/deep/projects/${projectId}/bootstrap`,{method:'POST',body:'{}'},token);
  assert.notEqual(result.body.gateBlocked,true,JSON.stringify(result.body));
  assert.notEqual(result.body.artifactBlocked,true,JSON.stringify(result.body));
- // A real language model is unavailable in CI; bootstrap may correctly fail at that boundary.
- if(result.body.error)assert.ok(['LLM_UNAVAILABLE','DEVELOPMENT_START_FAILED'].includes(result.body.code),JSON.stringify(result.body));
- else {
+ // Automatic handoff may already be running. A second request must get
+ // an immediate 202 response rather than hanging on the first job's Promise.
+ if (result.body.pending) {
+  assert.equal(result.status,202,JSON.stringify(result.body));
+  assert.equal(result.body.projectId,projectId);
+  assert.equal(result.body.started,false);
+  const detail=await api(`/api/deep/projects/${projectId}`,{},token);
+  assert.equal(detail.status,200);
+  assert.equal(typeof detail.body.development?.pending,'boolean');
+ } else if(result.body.error) {
+  assert.ok(['LLM_UNAVAILABLE','DEVELOPMENT_START_FAILED'].includes(result.body.code),JSON.stringify(result.body));
+ } else {
   assert.ok(Number(result.body.villaId)>0,JSON.stringify(result.body));
   assert.equal(result.body.projectId,projectId);
  }
