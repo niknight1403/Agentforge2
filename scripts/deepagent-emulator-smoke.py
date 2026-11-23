@@ -34,7 +34,7 @@ def wait(label, timeout=35, scroll=False, scroll_direction="up"):
             return nodes[0]
         if scroll:
             if scroll_direction == "down":
-                adb("shell", "input", "swipe", "250", "350", "250", "1200", "350")
+                adb("shell", "input", "swipe", "250", "600", "250", "1500", "350")
             else:
                 adb("shell", "input", "swipe", "250", "780", "250", "300", "350")
         time.sleep(1)
