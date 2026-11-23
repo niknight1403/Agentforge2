@@ -4,15 +4,17 @@ import { parseEnv } from 'node:util';
 import { db } from './db.mjs';
 import { FREE_ROUTE_CATALOG } from './routes.mjs';
 // Only provider configuration is loaded. Never print values or override the service environment.
-const allowed=/^(GEMINI_API_KEY|GOOGLE_API_KEY|OPENROUTER_API_KEY|GROQ_API_KEY|CEREBRAS_API_KEY|MISTRAL_API_KEY|XAI_API_KEY|HF_TOKEN|HUGGINGFACE_API_KEY|OLLAMA_API_KEY|FAL_KEY|VF_(?:LLM_.*|LOCAL_LLM_.*|RPM_.*|SELF_HOSTED_ALLOWED_HOSTS|GEMINI_MODEL|GROQ_MODEL|CEREBRAS_MODEL|MISTRAL_MODEL|XAI_MODEL|XAI_TIMEOUT_MS|HF_MODEL|FAL_.*|MEDIA_MAX_BYTES))$/;
+const allowed=/^(GEMINI_API_KEY|GOOGLE_API_KEY|OPENROUTER_API_KEY|GROQ_API_KEY|CEREBRAS_API_KEY|MISTRAL_API_KEY|XAI_API_KEY|HF_TOKEN|HUGGINGFACE_API_KEY|OLLAMA_API_KEY|FAL_KEY|VF_(?:LLM_.*|LOCAL_LLM_.*|RPM_.*|SELF_HOSTED_ALLOWED_HOSTS|GEMINI_MODEL|GROQ_MODEL|CEREBRAS_MODEL|MISTRAL_MODEL|XAI_MODEL|XAI_TIMEOUT_MS|HF_MODEL|FAL_.*|VERCEL_AI_GATEWAY(?:_MODEL)?|MEDIA_MAX_BYTES))$/;
 for(const path of (process.env.VF_TEST==='1'?[]:[resolve('.env'),resolve('server/.env')])) {
   if(!existsSync(path)) continue;
   try { for(const [key,value] of Object.entries(parseEnv(readFileSync(path,'utf8')))) if(allowed.test(key)&&process.env[key]==null) process.env[key]=value; } catch { /* invalid optional file; service configuration still applies */ }
 }
 export const KEY_ALIASES={GEMINI_API_KEY:['GOOGLE_API_KEY'],HF_TOKEN:['HUGGINGFACE_API_KEY']};
+export function isVercelAiGatewayEnabled(){return ['1','true','yes','on'].includes(String(process.env.VF_VERCEL_AI_GATEWAY||'').toLowerCase());}
 const configuredGroqModel=process.env.VF_GROQ_MODEL==='llama-3.3-70b-versatile'?'openai/gpt-oss-120b':(process.env.VF_GROQ_MODEL||'openai/gpt-oss-120b');
 export function cascadeDefaults() {
  return [
+  ...(isVercelAiGatewayEnabled()?[['Vercel AI Gateway','vercel-ai-gateway','https://ai-gateway.vercel.sh/v1',process.env.VF_VERCEL_AI_GATEWAY_MODEL||'google/gemini-3.8-flash','',1]]:[]),
   ['Gemini','gemini','https://generativelanguage.googleapis.com/v1beta/openai',process.env.VF_GEMINI_MODEL||'gemini-3.1-flash-lite','GEMINI_API_KEY',10],
   ['Cerebras','cerebras','https://api.cerebras.ai/v1',process.env.VF_CEREBRAS_MODEL||'gpt-oss-120b','CEREBRAS_API_KEY',12],
   ['Groq','groq','https://api.groq.com/openai/v1',configuredGroqModel,'GROQ_API_KEY',20],
@@ -55,14 +57,15 @@ export function syncCascadeRoutes() {
   // Existing rows (including disabled rows) are an administrator decision.
   const existing=db.prepare('SELECT id,name,model FROM routes WHERE name=? OR (base_url=? AND model=?)').get(r.name,r.base_url,r.model);
   if(existing){
-   const names={'Cascade: Gemini':['VF_GEMINI_MODEL'],'Cascade: Cerebras':['VF_CEREBRAS_MODEL'],'Cascade: Groq':['VF_GROQ_MODEL'],'Cascade: Mistral':['VF_MISTRAL_MODEL'],'Cascade: Hugging Face':['VF_HF_MODEL'],'Cascade: xAI':['VF_XAI_MODEL'],'Cascade: Ollama local':['VF_LOCAL_LLM_URL','VF_LOCAL_LLM_MODEL'],'Cascade: Local reserve':['VF_LOCAL_LLM_SECONDARY_URL','VF_LOCAL_LLM_SECONDARY_MODEL']};
+   const names={'Cascade: Vercel AI Gateway':['VF_VERCEL_AI_GATEWAY_MODEL'],'Cascade: Gemini':['VF_GEMINI_MODEL'],'Cascade: Cerebras':['VF_CEREBRAS_MODEL'],'Cascade: Groq':['VF_GROQ_MODEL'],'Cascade: Mistral':['VF_MISTRAL_MODEL'],'Cascade: Hugging Face':['VF_HF_MODEL'],'Cascade: xAI':['VF_XAI_MODEL'],'Cascade: Ollama local':['VF_LOCAL_LLM_URL','VF_LOCAL_LLM_MODEL'],'Cascade: Local reserve':['VF_LOCAL_LLM_SECONDARY_URL','VF_LOCAL_LLM_SECONDARY_MODEL']};
    const staleDefault=(r.name==='Cascade: Gemini'&&['auto','gemini-2.0-flash','gemini-3.5-flash-lite'].includes(existing.model)&&!process.env.VF_GEMINI_MODEL)||(r.name==='Cascade: Cerebras'&&existing.model==='llama-3.3-70b'&&!process.env.VF_CEREBRAS_MODEL)||(r.name==='Cascade: Groq'&&existing.model==='llama-3.3-70b-versatile'&&(!process.env.VF_GROQ_MODEL||process.env.VF_GROQ_MODEL==='llama-3.3-70b-versatile'));
    if(existing.name===r.name&&((names[r.name]||[]).some(k=>process.env[k])||staleDefault))db.prepare('UPDATE routes SET base_url=?,model=? WHERE id=?').run(r.base_url,r.model,existing.id);
    continue;
   }
   const free = Number(isFreeRoute(r));
+  const enabled = free || (r.provider === 'vercel-ai-gateway' && isVercelAiGatewayEnabled());
   db.prepare('INSERT INTO routes(name,provider,base_url,model,key_env,is_free,enabled,priority,weight,status,ok,fail,last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
-   .run(r.name,r.provider,r.base_url,r.model,r.key_env,free,free,r.priority,1,'NEW',0,0,0);
+   .run(r.name,r.provider,r.base_url,r.model,r.key_env,free,Number(enabled),r.priority,1,'NEW',0,0,0);
   added++;
  }
  return {added};
@@ -119,6 +122,10 @@ export function isFreeRoute(r) {
  // Cerebras currently provides expiring trial credits, not a renewable free tier.
  // Hugging Face free accounts have no included inference-provider credits.
  return false;
+}
+export function routeAllowedByCostPolicy(r,{freeOnlyMode=freeOnlyEnabled()}={}) {
+ if(routeProvider(r)==='vercel-ai-gateway') return isVercelAiGatewayEnabled();
+ return !freeOnlyMode||isFreeRoute(r);
 }
 export function freeOnlyEnabled() {return !['0','false','off','no'].includes(String(process.env.VF_LLM_FREE_ONLY||'1').toLowerCase());}
 export function routeTier(r) {

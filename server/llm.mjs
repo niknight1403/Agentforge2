@@ -1,6 +1,7 @@
+import { generateText, Output } from 'ai';
 import { forgeLog } from './keyforge.mjs';
 import { db, now } from './db.mjs';
-import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute,routeProvider } from './llm-config.mjs';
+import { freeOnlyEnabled,isFreeRoute,KEY_ALIASES,isLocalRoute,routeAllowedByCostPolicy,routeProvider } from './llm-config.mjs';
 import { createCascade, orderCascadeRoutes } from './llm-cascade.mjs';
 import { createRequestLimiter } from './request-limiter.mjs';
 import { routeAdmission, isLocalEndpoint } from './route-selection.mjs';
@@ -31,7 +32,7 @@ export function enabledRoutes() {
 
 /** Waehlt die naechste Route: Prioritaet, dann gewichtete Rotation. */
 export function pickRoute() {
-  return enabledRoutes().filter(r=>r.provider!=='offline' && (!freeOnlyEnabled()||isFreeRoute(r)) && isUsable(r))[0] || null;
+  return enabledRoutes().filter(r=>r.provider!=='offline' && routeAllowedByCostPolicy(r) && isUsable(r))[0] || null;
 }
 
 /* GATEWAY-Metriken (Charta 2026-10-18): Latenz (EMA) und Token-Verbrauch je Route. */
@@ -199,10 +200,66 @@ export function llmRequestTimeoutMs(route, opts = {}) {
   return Math.max(1_000, Math.min(3_600_000,
     Number.isFinite(configured) && configured > 0 ? configured : fallback));
 }
+function gatewayPrompt(messages) {
+  const instructions = [];
+  const conversation = [];
+  for (const message of messages) {
+    if (message?.role === 'system') {
+      instructions.push(String(message.content ?? ''));
+      continue;
+    }
+    if (!['user', 'assistant'].includes(message?.role)) {
+      throw new Error(`Unsupported Vercel AI Gateway message role: ${String(message?.role || 'unknown')}`);
+    }
+    conversation.push({ role: message.role, content: String(message.content ?? '') });
+  }
+  if (!conversation.length) throw new Error('Vercel AI Gateway requires at least one user or assistant message');
+  return { instructions: instructions.join('\n\n'), messages: conversation };
+}
+
+async function callVercelAiGateway(route, messages, opts, signal) {
+  const prompt = gatewayPrompt(messages);
+  let result;
+  try {
+    result = await generateText({
+      model: route.model,
+      ...(prompt.instructions ? { instructions: prompt.instructions } : {}),
+      messages: prompt.messages,
+      maxOutputTokens: Math.max(1, Math.min(8192, Number(opts.maxTokens) || 2048)),
+      temperature: opts.temperature ?? 0.6,
+      maxRetries: 0,
+      abortSignal: signal,
+      telemetry: { isEnabled: false },
+      ...(opts.json ? { output: Output.json() } : {})
+    });
+  } catch (error) {
+    const status = Number(error?.status ?? error?.statusCode);
+    if (Number.isInteger(status) && status > 0 && error && typeof error === 'object' && error.status == null) error.status = status;
+    throw error;
+  }
+
+  if (opts.json && (!result.output || typeof result.output !== 'object' || Array.isArray(result.output))) {
+    throw new Error('Vercel AI Gateway returned non-object JSON');
+  }
+  const content = opts.json ? JSON.stringify(result.output) : String(result.text || '').trim();
+  if (!content.trim()) throw new Error('Vercel AI Gateway returned an empty answer');
+  return {
+    content,
+    model: route.model,
+    route: route.name,
+    usage: {
+      total_tokens: result.usage?.totalTokens,
+      prompt_tokens: result.usage?.inputTokens,
+      completion_tokens: result.usage?.outputTokens
+    }
+  };
+}
+
 const localModels=new Map();
 async function callOpenAiCompatibleRaw(route, messages, opts) {
   const timeoutMs = llmRequestTimeoutMs(route, opts);
   const requestSignal=opts.signal?AbortSignal.any([opts.signal,AbortSignal.timeout(timeoutMs)]):AbortSignal.timeout(timeoutMs);
+  if (route.provider === 'vercel-ai-gateway') return callVercelAiGateway(route, messages, opts, requestSignal);
   const key = resolveKey(route.key_env);
   const headers = { 'Content-Type': 'application/json' };
   // Fal.ai authentifiziert mit "Key" statt "Bearer": provider-abhaengig setzen.
@@ -371,7 +428,7 @@ export function routingStatus() {
     const zulassung=routeAdmission.status().find((row)=>row.id===String(r.id));
     const lokalerPfad=isLocalEndpoint(r.base_url)||String(r.provider||'')==='ollama';
     const ledgerSperrt=routeAdmission.enabled&&(zulassung?zulassung.usable===false:(routeAdmission.localOnly&&!lokalerPfad));
-    const eligible=(!freeOnly||isFreeRoute(r))&&configured&&Number(r.cooldown_until||0)<=Date.now()&&(circuit.state!=='OPEN'||circuit.retryAt<=Date.now())&&!ledgerSperrt;
+    const eligible=routeAllowedByCostPolicy(r,{freeOnlyMode:freeOnly})&&configured&&Number(r.cooldown_until||0)<=Date.now()&&(circuit.state!=='OPEN'||circuit.retryAt<=Date.now())&&!ledgerSperrt;
     return {id:r.id,name:r.name,model:r.model,provider:r.provider,priority:r.priority,isFree:isFreeRoute(r),local:isLocalRoute(r),configured,eligible,cooldownUntil:r.cooldown_until||0,status:r.status,circuit:{state:circuit.state,retryAt:circuit.retryAt},quota:zulassung?{account:zulassung.account,usedDay:zulassung.usedDay,usedMinute:zulassung.usedMinute,headroom:zulassung.headroom,cooldownMs:zulassung.cooldownMs,cooldownReason:zulassung.cooldownReason}:null};
   });
   const eligibleIds=new Set(routes.filter(r=>r.eligible).map(r=>r.id));
