@@ -9,4 +9,4 @@ Ausgewählt am 23.11.2026: erste der vier im Chat gezeigten mobilen Designrichtu
 - Projektwahl, Start/Pause, Details, Qualitätsnachweis, DeepAgent und Navigation verwenden die vorhandenen Handler und Daten. Ein Qualitätsstatus wird nicht allein aus dem UI behauptet.
 - Kleine Displays erhalten kompakte Projektinformationen; bei breiten Ansichten stehen Projekt und Aktionen nebeneinander. Reduzierte Bewegung ist berücksichtigt.
 
-Das Bild aus der Ideation ist ein visuelles Ziel, kein Beleg für eine live laufende Testvilla. Die projektbezogene Studio-Illustration im bestehenden Detailbereich bleibt vorläufig erhalten, bis der tatsächliche Browservergleich möglich ist.
+Das Bild aus der Ideation ist ein visuelles Ziel, kein Beleg für eine live laufende Testvilla. Die frühere Aurora-Projektgrafik wird in Orbit Command ausgeblendet; andere Themes bleiben unverändert.

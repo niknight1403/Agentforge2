@@ -18,7 +18,7 @@
 :root[data-theme="orbital"] .hero-project-head .eyebrow { color:var(--cyan); }
 :root[data-theme="orbital"] .aurora-project-body { display:flex; align-items:center; gap:8px; }
 :root[data-theme="orbital"] .hero-project-idea { font-size:13px; margin:8px 0; }
-:root[data-theme="orbital"] .aurora-project-art { width:96px; height:72px; object-fit:cover; flex:none; opacity:.88; border-radius:12px; }
+:root[data-theme="orbital"] .aurora-project-art { display:none; }
 :root[data-theme="orbital"] .dashboard-actions { order:4; padding:10px 0; }
 :root[data-theme="orbital"] .aurora-model-status { order:5; margin:0; font-size:12px; }
 :root[data-theme="orbital"] .active-actions { order:2; display:flex; flex-direction:column-reverse; gap:9px; margin:0; max-width:none; }
