@@ -101,7 +101,9 @@ try:
     capture("06-compact-download-status")
     tap("Alternativen und Scout anzeigen", scroll=True)
     wait("Jetzt nach besserer Alternative suchen", scroll=True)
-    tap("Alternativen ausblenden", scroll=True)
+    for _ in range(3):
+        adb("shell", "input", "swipe", "250", "350", "250", "1200", "350")
+    tap("Alternativen ausblenden")
     tap("Phasenplanung und Evolution anzeigen", scroll=True)
     wait("Villa-Evolution", scroll=True)
     print("ANDROID_DEEPAGENT_E2E_PASSED", flush=True)
