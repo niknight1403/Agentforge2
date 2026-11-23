@@ -255,6 +255,7 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
             OutlinedButton(onClick = { viewModel.scanProposals() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                 Text("Jetzt nach besserer Alternative suchen")
             }
+            TextButton(onClick = { showAlternatives = false }) { Text("Alternativen ausblenden") }
         }
 
         SectionCard("Autonome Fertigstellung") {
@@ -371,6 +372,7 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
                     ) { Text("AI Marketplace") }
                 }
             }
+            TextButton(onClick = { showEvolution = false }) { Text("Phasenplanung ausblenden") }
         }
 
         SectionHeader("Entwicklungsvorschläge")
