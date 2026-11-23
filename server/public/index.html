@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0" />
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/aurora.css" />
+  <link rel="stylesheet" href="/orbit-command.css" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 </head>
 <body>
@@ -21,7 +22,7 @@
 
   <!-- ============ KOPFZEILE (sticky, Handy-optimiert) ============ -->
   <header class="topbar">
-    <div class="brand"><span class="logo-mark material-symbols-rounded" aria-hidden="true">auto_awesome</span><span><strong>VillaForge</strong><small>AURORA STUDIO</small></span></div>
+    <div class="brand"><span class="logo-mark material-symbols-rounded" aria-hidden="true">auto_awesome</span><span><strong>VillaForge</strong><small>AGENTFORGE2</small></span></div>
     <div class="topbar-actions"><div class="topbar-status"><span id="healthDot" class="dot"></span><span id="healthText">verbinde…</span></div><button id="masterOpenBtn" class="master-nav material-symbols-rounded" type="button" aria-label="Master-Agent öffnen" title="Master-Agent öffnen">auto_awesome</button><button id="newVillaBtn" class="topbar-add material-symbols-rounded" type="button" aria-label="Neue Villa erstellen" title="Neue Villa erstellen">add</button></div>
   </header>
 
@@ -29,6 +30,7 @@
   <main id="view-home" class="view active" aria-label="Übersicht">
     <p id="fixtureBanner" class="fixture-banner" role="status" hidden>VORSCHAU · isolierte Testdaten und lokales Modell-Fixture</p>
     <label class="project-picker" for="dashboardProject"><span class="visually-hidden">Dein Projekt im Cockpit</span><select id="dashboardProject" aria-label="Projekt im Cockpit wählen"><option value="">Noch kein Projekt</option></select></label>
+    <img class="orbit-scene" src="/assets/orbit-command-bridge.webp" alt="" width="1536" height="768" decoding="async" />
     <section class="hero-cockpit active-villa" id="activeVillaCard" aria-labelledby="dashboardTitle">
       <div class="hero-copy"><h1 id="dashboardTitle">Dein nächstes Ergebnis.</h1><p class="dashboard-intro">Ideen umsetzen. Mit klaren Schritten und prüfbaren Ergebnissen.</p></div>
       <div class="aurora-project">

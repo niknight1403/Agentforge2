@@ -576,9 +576,9 @@ async function addControlSkill() {
   if (result.error) { toast(result.error); return; }
   ['skillId','skillTitle','skillInstructions'].forEach(id => { $('#'+id).value = ''; }); toast('Skill gespeichert'); loadControlCatalog();
 }
-const themes = { orbital: { bg:'#080D1E', card:'rgba(17,24,45,.88)', 'card-solid':'#11192E', cyan:'#31D9FF', purple:'#955CFF', pink:'#E26AFF', green:'#46E7B8', blue:'#3477FF' }, aurora: { bg:'#100C24', card:'rgba(28,23,48,.92)', 'card-solid':'#1C1730', cyan:'#FFA49B', purple:'#B69AF7', pink:'#FF8FAD', green:'#7DE8C4', blue:'#B6B8FF' }, nebula: { bg:'#0C0916', card:'rgba(27,20,42,.82)', 'card-solid':'#1B142A', cyan:'#A78BFA', purple:'#C084FC', pink:'#F472B6', green:'#86EFAC', blue:'#60A5FA' }, slate: { bg:'#0B1114', card:'rgba(19,31,34,.84)', 'card-solid':'#131F22', cyan:'#5EEAD4', purple:'#2DD4BF', pink:'#A7F3D0', green:'#86EFAC', blue:'#67E8F9' } };
+const themes = { orbital: { bg:'#090F19', card:'#151F2B', 'card-solid':'#172331', cyan:'#36D9ED', purple:'#A879E9', pink:'#D18BED', green:'#72E4C2', blue:'#478AE8' }, aurora: { bg:'#100C24', card:'rgba(28,23,48,.92)', 'card-solid':'#1C1730', cyan:'#FFA49B', purple:'#B69AF7', pink:'#FF8FAD', green:'#7DE8C4', blue:'#B6B8FF' }, nebula: { bg:'#0C0916', card:'rgba(27,20,42,.82)', 'card-solid':'#1B142A', cyan:'#A78BFA', purple:'#C084FC', pink:'#F472B6', green:'#86EFAC', blue:'#60A5FA' }, slate: { bg:'#0B1114', card:'rgba(19,31,34,.84)', 'card-solid':'#131F22', cyan:'#5EEAD4', purple:'#2DD4BF', pink:'#A7F3D0', green:'#86EFAC', blue:'#67E8F9' } };
 function applyTheme(name) {
-  const key = themes[name] ? name : 'aurora'; const t = themes[key];
+  const key = themes[name] ? name : 'orbital'; const t = themes[key];
   const root = document.documentElement; root.dataset.theme = key;
   for (const [prop,value] of Object.entries(t)) root.style.setProperty('--'+prop,value);
   localStorage.setItem('vf_design_theme', key);
@@ -714,11 +714,11 @@ $('#addRouteBtn').addEventListener('click', addRoute);
 $('#addConnectorBtn').addEventListener('click', addConnector);
 $('#addSkillBtn').addEventListener('click', addControlSkill);
 document.querySelectorAll('[data-theme-choice]').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.themeChoice)));
-if (localStorage.getItem('vf_design_theme_version') !== 'aurora-6-1') {
-  localStorage.setItem('vf_design_theme', 'aurora');
-  localStorage.setItem('vf_design_theme_version', 'aurora-6-1');
+if (!localStorage.getItem('vf_design_theme') || localStorage.getItem('vf_design_theme_version') === 'aurora-6-1') {
+  localStorage.setItem('vf_design_theme', 'orbital');
+  localStorage.setItem('vf_design_theme_version', 'orbit-command-1');
 }
-applyTheme(localStorage.getItem('vf_design_theme') || 'aurora');
+applyTheme(localStorage.getItem('vf_design_theme') || 'orbital');
 loadCustomThemes();
 // Der Skip-Link springt auf die gerade sichtbare Ansicht, nicht auf eine versteckte.
 document.querySelectorAll('.skip-link').forEach((link) => link.addEventListener('click', (event) => {
