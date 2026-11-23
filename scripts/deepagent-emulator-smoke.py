@@ -106,7 +106,7 @@ try:
     wait("Jetzt nach besserer Alternative suchen", scroll=True)
     tap("Alternativen ausblenden", scroll=True)
     tap("Phasenplanung und Evolution anzeigen", scroll=True, scroll_direction="down", timeout=60)
-    wait("Villa-Evolution", scroll=True)
+    wait("Villa-Evolution", scroll=True, scroll_direction="down", timeout=60)
     print("ANDROID_DEEPAGENT_E2E_PASSED", flush=True)
 except Exception:
     print("FAILURE_UI", [(n.attrib.get("text"), n.attrib.get("content-desc"), n.attrib.get("bounds")) for n in hierarchy().iter() if n.attrib.get("text") or n.attrib.get("content-desc")], flush=True)
