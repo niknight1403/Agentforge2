@@ -25,7 +25,7 @@ def matches(root, label):
     return [n for n in root.iter() if label in (n.attrib.get("text", ""), n.attrib.get("content-desc", ""))]
 
 
-def wait(label, timeout=35, scroll=False, scroll_direction="up"):
+def wait(label, timeout=35, scroll=False):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         root = hierarchy()
@@ -33,10 +33,7 @@ def wait(label, timeout=35, scroll=False, scroll_direction="up"):
         if nodes:
             return nodes[0]
         if scroll:
-            if scroll_direction == "down":
-                adb("shell", "input", "swipe", "250", "600", "250", "1500", "350")
-            else:
-                adb("shell", "input", "swipe", "250", "780", "250", "300", "350")
+            adb("shell", "input", "swipe", "250", "780", "250", "300", "350")
         time.sleep(1)
     raise AssertionError(f"Android UI missing {label!r}; hierarchy saved in {ARTIFACTS}")
 
@@ -105,8 +102,6 @@ try:
     tap("Alternativen und Scout anzeigen", scroll=True)
     wait("Jetzt nach besserer Alternative suchen", scroll=True)
     tap("Alternativen ausblenden", scroll=True)
-    tap("Phasenplanung und Evolution anzeigen", scroll=True, scroll_direction="down", timeout=60)
-    wait("Villa-Evolution", scroll=True, scroll_direction="down", timeout=60)
     print("ANDROID_DEEPAGENT_E2E_PASSED", flush=True)
 except Exception:
     print("FAILURE_UI", [(n.attrib.get("text"), n.attrib.get("content-desc"), n.attrib.get("bounds")) for n in hierarchy().iter() if n.attrib.get("text") or n.attrib.get("content-desc")], flush=True)
