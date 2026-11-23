@@ -5,6 +5,10 @@ on:
     paths:
       - 'mission-console-android/**'
       - '.github/workflows/mission-console-android.yml'
+  pull_request:
+    paths:
+      - 'mission-console-android/**'
+      - '.github/workflows/mission-console-android.yml'
   workflow_dispatch:
 permissions:
   contents: read
