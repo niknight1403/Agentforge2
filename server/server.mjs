@@ -1353,6 +1353,36 @@ async function api(req, res, url) {
 
   // ---- SSE ----
 
+  // Authentifizierte Aktivitaetsmetrik: echte Arbeitsereignisse, keine Polling-/Villa-Metadaten.
+  if (p === '/api/system/activity' && m === 'GET') {
+    if (!isAdmin) return json(res, 403, { error: 'Nur Administratoren.' });
+    const generatedAt = now();
+    const latest = (sql) => {
+      const value = db.prepare(sql).get()?.ts;
+      const n = Number(value);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const sources = {
+      tasks: latest("SELECT MAX(NULLIF(updated_at, 0)) AS ts FROM tasks WHERE status NOT IN ('PENDING','READY')"),
+      agents: latest("SELECT MAX(NULLIF(last_active_at, 0)) AS ts FROM agents WHERE status='THINKING'"),
+      messages: latest('SELECT MAX(NULLIF(created_at, 0)) AS ts FROM messages'),
+      audit: latest('SELECT MAX(NULLIF(ts, 0)) AS ts FROM audit')
+    };
+    const timestamps = Object.values(sources).filter(Number.isFinite);
+    const activityAt = timestamps.length ? Math.max(...timestamps) : null;
+    const activityAgeMs = activityAt === null ? null : Math.max(0, generatedAt - activityAt);
+    const activeWindowMs = 5 * 60 * 1000;
+    const runningTasks = Number(db.prepare("SELECT COUNT(*) AS c FROM tasks WHERE status='RUNNING'").get().c || 0);
+    const queuedTasks = Number(db.prepare("SELECT COUNT(*) AS c FROM tasks WHERE status IN ('PENDING','READY')").get().c || 0);
+    const activeAgents = Number(db.prepare("SELECT COUNT(*) AS c FROM agents WHERE status='THINKING' AND last_active_at >= ?").get(generatedAt - activeWindowMs).c || 0);
+    const runningVillas = Number(db.prepare("SELECT COUNT(*) AS c FROM villas WHERE status='RUNNING'").get().c || 0);
+    const activityState = activityAt === null ? 'UNKNOWN' : activityAgeMs <= 90 * 60 * 1000 ? 'ACTIVE' : 'STALE';
+    return json(res, 200, {
+      generatedAt, activityAt, activityAgeMs, activityState, sources,
+      counts: { runningTasks, queuedTasks, activeAgents, runningVillas }
+    });
+  }
+
   /* ---- Mission Control (Port aus Agentforge2 v1.11): Stats, Rat, Aufgaben, Audit ---- */
   if (p === '/api/stats' && m === 'GET') {
     const one = (sql, ...args) => db.prepare(sql).get(...args);

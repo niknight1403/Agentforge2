@@ -59,63 +59,28 @@ jobs:
           else:
               hub = {'state': 'DOWN', 'error': 'Login fehlgeschlagen'}
 
-          # 2) Hub-interne Aktivitaetsmetrik (Minuten seit max(updated_at) aller Villen)
-          # Option 1 (bevorzugt): GET /api/villas updated_at auswerten
-          villa_activity_min = None
-          max_updated_dt = None
-
-          for v in villas:
-              val = v.get('updated_at')
-              if val is None:
-                  continue
-              dt_val = None
-              if isinstance(val, (int, float)):
-                  ts_sec = val / 1000.0 if val > 1e11 else float(val)
-                  try:
-                      dt_val = datetime.datetime.fromtimestamp(ts_sec, datetime.timezone.utc)
-                  except Exception:
-                      pass
-              elif isinstance(val, str):
-                  val_s = val.strip()
-                  if val_s.isdigit():
-                      v_num = float(val_s)
-                      ts_sec = v_num / 1000.0 if v_num > 1e11 else v_num
-                      try:
-                          dt_val = datetime.datetime.fromtimestamp(ts_sec, datetime.timezone.utc)
-                      except Exception:
-                          pass
-                  else:
-                      try:
-                          dt_val = datetime.datetime.fromisoformat(val_s.replace('Z', '+00:00'))
-                          if dt_val.tzinfo is None:
-                              dt_val = dt_val.replace(tzinfo=datetime.timezone.utc)
-                      except Exception:
-                          pass
-              if dt_val:
-                  if max_updated_dt is None or dt_val > max_updated_dt:
-                      max_updated_dt = dt_val
-
-          if max_updated_dt:
-              villa_activity_min = int((now - max_updated_dt).total_seconds() / 60)
-
-          # Option 2 (Fallback): GET /api/stats nutzen, falls updated_at unbrauchbar/fehlt
-          if villa_activity_min is None and tok:
-              rs, err_s = get('https://hub.cybersarah-ki.com/api/stats',
+          # 2) Echte Arbeitsaktivitaet aus Tasks/Agents/Messages/Audit.
+          # Villa.updated_at und stats.ts sind explizit keine Aktivitaetsbelege.
+          activity = {}
+          activity_state = 'UNKNOWN'
+          activity_age_min = None
+          if tok:
+              ra, err_a = get('https://hub.cybersarah-ki.com/api/system/activity',
                               {'Authorization': 'Bearer ' + tok}, 12)
-              if rs:
+              if ra:
                   try:
-                      stats_data = json.load(rs)
-                      ts_val = stats_data.get('ts')
-                      if ts_val:
-                          ts_sec = ts_val / 1000.0 if ts_val > 1e11 else float(ts_val)
-                          stats_dt = datetime.datetime.fromtimestamp(ts_sec, datetime.timezone.utc)
-                          villa_activity_min = int((now - stats_dt).total_seconds() / 60)
+                      activity = json.load(ra)
+                      activity_state = activity.get('activityState', 'UNKNOWN')
+                      age_ms = activity.get('activityAgeMs')
+                      if isinstance(age_ms, (int, float)) and age_ms >= 0:
+                          activity_age_min = int(age_ms / 60000)
                   except Exception:
-                      pass
+                      activity = {'activityState': 'UNKNOWN', 'error': 'invalid activity response'}
 
-          status = {'checked_at': now.isoformat(), 'hub': hub, 'villa_activity_min': villa_activity_min}
+          status = {'checked_at': now.isoformat(), 'hub': hub, 'activity': activity,
+                    'activity_state': activity_state, 'activity_age_min': activity_age_min}
           state = hub.get('state', 'DOWN')
-          if state == 'UP' and (villa_activity_min is None or villa_activity_min > 90):
+          if state == 'UP' and activity_state != 'ACTIVE':
               state = 'DEGRADED'
           status['state'] = state
           print(json.dumps(status, indent=2))
@@ -132,7 +97,7 @@ jobs:
                       old_data = json.loads(base64.b64decode(res_obj['content']).decode('utf-8'))
                   except Exception:
                       old_data = {}
-          if old_data.get('state') == state and 'sync_age_min' not in old_data and (state == 'DOWN' or (old_data.get('hub', {}).get('running') == hub.get('running') and old_data.get('villa_activity_min') == villa_activity_min)):
+          if old_data.get('state') == state and 'sync_age_min' not in old_data and (state == 'DOWN' or (old_data.get('hub', {}).get('running') == hub.get('running') and old_data.get('activity_state') == activity_state and old_data.get('activity_age_min') == activity_age_min)):
               print('Zustand unveraendert:', state, '- kein Update.')
               raise SystemExit(0 if state == 'UP' else 1)
 
