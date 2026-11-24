@@ -26,6 +26,16 @@ jobs:
         with:
           gradle-version: '8.10'
       - run: gradle -p mission-console-android :app:assembleDebug --no-daemon
+      - name: Verify APK package and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=mission-console-android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          tools_dir="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$tools_dir/apksigner" verify --verbose "$apk"
+          "$tools_dir/aapt" dump badging "$apk" | grep -E "package: name='de.missionconsole.app'.*versionName='1.0.0'"
+          sha256sum "$apk"
       - uses: actions/upload-artifact@v4
         with:
           name: mission-console-v1.0.0-debug-apk
