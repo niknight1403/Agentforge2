@@ -1,6 +1,8 @@
-# Verbindliche Designrichtung: Aurora (Variante 6)
+# Frühere Designrichtung: Aurora (Variante 6)
 
-Auswahl des Benutzers: die sechste im Chat angezeigte Generierung vom 29.10.2026. Keine andere Richtung ist freigegeben.
+Am 23.11.2026 wurde für VillaForge „Orbit Command“ gewählt. Die aktuelle Umsetzung ist in `docs/orbit-command-design.md` beschrieben. Die folgenden Angaben dokumentieren die frühere Aurora-Auswahl.
+
+Frühere Auswahl des Benutzers: die sechste im Chat angezeigte Generierung vom 29.10.2026.
 
 Repository-Referenz: `docs/design/aurora-reference.webp` (visuelle Referenz, keine UI-Implementierung).
 
