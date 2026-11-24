@@ -42,7 +42,7 @@ jobs:
           else
             HEALTH=""
           fi
-          if echo "$HEALTH" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d,dict) and d.get("version") and not d.get("error") and d.get("ok") is not False' 2>/dev/null; then
+          if echo "$HEALTH" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d,dict) and d.get("version") and not d.get("error") and d.get("ok") is True' 2>/dev/null; then
             STATE="up"
             VER=$(echo "$HEALTH" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version","?"))' 2>/dev/null || echo "?")
             ROUTES=$(curl -fsS -m 60 -H "Authorization: Bearer $VF" https://hub.cybersarah-ki.com/api/routes || true)
@@ -68,4 +68,5 @@ jobs:
           git config user.email "healer@users.noreply.github.com"
           git add HEALER.json
           git commit -m "healer: $(python3 -c 'import json; d=json.load(open("HEALER.json")); print(d["state"], d["version"], d["routes"])' 2>/dev/null || echo status)" || echo "nichts zu committen"
-          git push origin HEAD:main || echo "Push-Konflikt ignoriert"
+          git pull --rebase origin main
+          git push origin HEAD:main
