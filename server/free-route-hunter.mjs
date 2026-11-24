@@ -43,16 +43,7 @@ const TIMEOUT_MS = 12_000;
 export const OLLAMA_LOCAL_BASE = process.env.OLLAMA_LOCAL_BASE || 'http://127.0.0.1:11434';
 
 /** Keyfreie Endpunkte (statisch gepflegt, bewusst konservativ). */
-export const KEYLESS_CANDIDATES = [
-  {
-    name: 'Pollinations Text (kein Key)',
-    provider: 'pollinations',
-    baseUrl: 'https://text.pollinations.ai/openai',
-    model: 'openai',
-    keyEnv: '',
-    priority: 20
-  }
-];
+export const KEYLESS_CANDIDATES = []; // No verified keyless cloud endpoint currently configured.
 
 const norm = (s) => String(s || '').trim().toLowerCase();
 const keyOf = (r) => `${norm(r.base_url || r.baseUrl)}|${norm(r.model)}`;
@@ -97,7 +88,7 @@ export async function discoverLocalAndKeyless({ fetchImpl = fetch, includeLocal 
   }
 
   candidates.push(...KEYLESS_CANDIDATES);
-  sources.push({ source: 'no-key', ok: true, count: KEYLESS_CANDIDATES.length });
+  sources.push({ source: 'no-key', ok: KEYLESS_CANDIDATES.length > 0, count: KEYLESS_CANDIDATES.length });
 
   const seen = new Set();
   const unique = candidates.filter((c) => {
