@@ -25,6 +25,8 @@ jobs:
           node-version: '22'
       - run: npm ci
       - run: npm run check:syntax
+      - run: npm test
+      - run: npm run build:web
       - run: npm run test:llm
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
