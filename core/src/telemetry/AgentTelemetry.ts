@@ -15,7 +15,7 @@ export class AgentTelemetry {
     // 'none' deaktiviert das SDK explizit (z. B. ohne Collector im Hub).
     if (collectorEndpoint === 'none' || process.env.OTEL_ENABLED === '0') return false;
     try {
-      const [{ NodeSDK }, { OTLPTraceExporter }, { Resource }, { SemanticResourceAttributes }] =
+      const [{ NodeSDK }, { OTLPTraceExporter }, { resourceFromAttributes }, { SemanticResourceAttributes }] =
         await Promise.all([
           import('@opentelemetry/sdk-node'),
           import('@opentelemetry/exporter-trace-otlp-http'),
@@ -23,7 +23,7 @@ export class AgentTelemetry {
           import('@opentelemetry/semantic-conventions'),
         ]);
       const sdk = new NodeSDK({
-        resource: new Resource({ [SemanticResourceAttributes.SERVICE_NAME]: 'agentforge2-core' }),
+        resource: resourceFromAttributes({ [SemanticResourceAttributes.SERVICE_NAME]: 'agentforge2-core' }),
         traceExporter: new OTLPTraceExporter({ url: collectorEndpoint }),
       });
       sdk.start();
