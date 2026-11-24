@@ -27,6 +27,22 @@ jobs:
       - run: npm run check:syntax
       - run: npm test
       - run: npm run build:web
+      - name: Verify free provider credentials are configured
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GOOGLE_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          found=0
+          for key in GEMINI_API_KEY GROQ_API_KEY OPENROUTER_API_KEY; do
+            if [ -n "${!key}" ]; then
+              echo "$key: configured"
+              found=1
+            else
+              echo "$key: missing"
+            fi
+          done
+          test "$found" = 1
       - run: npm run test:llm
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GOOGLE_API_KEY }}
