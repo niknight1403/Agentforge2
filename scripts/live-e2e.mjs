@@ -121,6 +121,9 @@ async function run() {
     if (!h.ok) throw new Error('Health meldet kein ok');
     return `v${h.version}, ${h.routes} Routen`;
   });
+  if (!hub || hub.exitCode != null) {
+    throw new Error('Live-E2E abgebrochen: Hub ist nach dem Startcheck nicht verfügbar; abhängige UI-Prüfungen werden nicht ausgeführt.');
+  }
 
   await check('Chrome startet (headless)', async () => {
     chrome = await launchChrome({ port: CDP_PORT, headless: !has('headful') });

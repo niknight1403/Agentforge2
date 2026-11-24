@@ -96,7 +96,6 @@ async function sendMaster(e) {
   }
 }
 $('#masterOpenBtn').addEventListener('click',openMaster);
-$('#mobileMasterBtn')?.addEventListener('click',openMaster);
 $('#masterCloseBtn').addEventListener('click',() => $('#masterDialog').close());
 $('#masterForm').addEventListener('submit',sendMaster);
 $('#masterInput').addEventListener('keydown',e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMaster(); } });

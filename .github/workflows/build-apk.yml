@@ -149,10 +149,8 @@ jobs:
           path: VillaForge-Web.zip
           if-no-files-found: error
 
-      # Live-Gate gegen die produktive LLM-Kette. Sind keine Zugangsdaten
-      # hinterlegt (VF_ADMIN_EMAIL/VF_ADMIN_PASSWORD), wird der Schritt sichtbar
-      # uebersprungen statt den Build rot zu machen. Mit Zugangsdaten gilt
-      # weiterhin fail-closed: ein echter Fehler der Live-Kette bricht ab.
+      # Live-Gate gegen die produktive LLM-Kette. Für Releases ist die Abnahme
+      # Pflicht; ohne Zugangsdaten darf kein getestetes Release behauptet werden.
       - name: Produktive LLM-Kette und Villa-Produktabnahme prüfen
         env:
           VF_SMOKE_BASE_URL: https://hub.cybersarah-ki.com
@@ -160,14 +158,14 @@ jobs:
           VF_ADMIN_PASSWORD: ${{ secrets.VF_ADMIN_PASSWORD }}
         run: |
           if [ -z "${VF_ADMIN_EMAIL}" ] || [ -z "${VF_ADMIN_PASSWORD}" ]; then
-            echo "::warning::VF_ADMIN_EMAIL/VF_ADMIN_PASSWORD fehlen - Live-LLM-Gate uebersprungen."
+            echo "::error::VF_ADMIN_EMAIL/VF_ADMIN_PASSWORD fehlen - produktives Live-LLM-Gate ist fuer Releases verpflichtend."
             {
               echo "### Live-LLM-Gate uebersprungen"
               echo ""
               echo "Keine Live-Zugangsdaten (VF_ADMIN_EMAIL/VF_ADMIN_PASSWORD) hinterlegt."
               echo "APK und Web-Build wurden gebaut und getestet, aber nicht live gegen die produktive LLM-Kette abgenommen."
             } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+            exit 1
           fi
           node scripts/live-llm-smoke.mjs
 

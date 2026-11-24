@@ -6,6 +6,7 @@
   "description": "VillaForge Hub – Deep-Agent-Villa mit 1000 Agenten, kostenlosem LLM-Routen-Rotator und Gedaechtnis",
   "scripts": {
     "check": "node scripts/check.mjs",
+    "check:all": "npm run check && npm ci --prefix core --no-audit --no-fund && npm --prefix core run typecheck && npm --prefix core test && npm ci --prefix runtime --no-audit --no-fund && npm --prefix runtime run test && npm ci --prefix pilot --no-audit --no-fund && npm --prefix pilot run check && npm --prefix pilot test",
     "check:syntax": "node scripts/check-syntax.mjs",
     "start": "node server/server.mjs",
     "dev": "node --watch scripts/dev.mjs",

@@ -23,6 +23,11 @@ process.env.DEEP_DIR = join(TMP, 'deep');
 // Hub unit tests must not inherit the runtime integration service connection.
 // RESP-client tests configure their own sockets; runtime tests use real Redis.
 delete process.env.REDIS_URL;
+// Die Sandbox kann OTLP-Exporter-Variablen erben. Telemetrie läuft im
+// Hintergrund und würde in Tests, die globalThis.fetch mocken, als zusätzlicher
+// Provider-/Web-Request erscheinen und die Call-Anzahl verfälschen.
+delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
 
 for (const r of FREE_ROUTE_CATALOG) {
   if (r.keyEnv) delete process.env[r.keyEnv];
