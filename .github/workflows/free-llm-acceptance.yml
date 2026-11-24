@@ -42,11 +42,15 @@ jobs:
           node-version: '22'
       - run: npm ci
       - run: npm run test:live
+      - run: npm run test:design
+        if: success() || failure()
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: browser-evidence
-          path: artifacts/live-e2e/
+          path: |
+            artifacts/live-e2e/
+            artifacts/design-audit/
           retention-days: 3
   production:
     needs: [acceptance, browser]
