@@ -45,7 +45,8 @@ test('discoverLocalAndKeyless vertraegt ausgefallenes Ollama', async () => {
   const fetchImpl = fakeFetch(() => jsonRes({}, 503));
   const { candidates, sources } = await discoverLocalAndKeyless({ fetchImpl });
   assert.equal(sources.find((s) => s.source === 'ollama:local').ok, false);
-  assert.equal(candidates.length >= 1, true, 'keyfreie Kandidaten bleiben');
+  assert.equal(candidates.length, 0);
+  assert.equal(sources.find(s => s.source === 'no-key').ok, false);
 });
 
 test('integrate legt nur Neues an, ueberspringt Dubletten und Bezahltes', () => {
@@ -200,15 +201,11 @@ test('integrate ueberspringt unvollstaendige Kandidaten ohne die Runde abzubrech
   assert.equal(db.prepare("SELECT COUNT(*) n FROM routes WHERE name = '' OR model = ''").get().n, 0, 'keine kaputten Zeilen');
 });
 
-test('Pollinations keyless route bleibt nach Free-Flag-Sync kostenlos und nutzbar', () => {
-  const candidate = KEYLESS_CANDIDATES[0];
-  const route = { provider: candidate.provider, base_url: candidate.baseUrl, model: candidate.model };
-  assert.equal(isFreeRoute(route), true);
-  assert.equal(isFreeRoute({ ...route, base_url: 'https://attacker.invalid/openai' }), false);
-  integrate([candidate]);
-  const stored = db.prepare('SELECT id, provider, base_url, model, is_free FROM routes WHERE provider = ? AND base_url = ? AND model = ?').get(candidate.provider, candidate.baseUrl, candidate.model);
-  assert.ok(stored, 'Hunter route wurde angelegt');
+test('legacy Pollinations is excluded from free discovery and flag sync', () => {
+  assert.equal(KEYLESS_CANDIDATES.length, 0);
+  const route = { provider: 'pollinations', base_url: 'https://text.pollinations.ai/openai', model: 'openai' };
+  assert.equal(isFreeRoute(route), false);
+  const id = Number(db.prepare("INSERT INTO routes (name, provider, base_url, model, key_env, is_free, enabled, priority, weight, status, ok, fail, last_used) VALUES ('Legacy Pollinations regression', 'pollinations', ?, 'openai', '', 1, 1, 30, 1, 'NEW', 0, 0, 0)").run(route.base_url).lastInsertRowid);
   syncFreeRouteFlags();
-  const refreshed = db.prepare('SELECT is_free FROM routes WHERE id = ?').get(stored.id);
-  assert.equal(refreshed.is_free, 1, 'Free-Flag darf beim Sync nicht auf 0 fallen');
+  assert.equal(db.prepare('SELECT is_free FROM routes WHERE id = ?').get(id).is_free, 0);
 });
