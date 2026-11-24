@@ -35,7 +35,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 
 const child = spawn(process.execPath, [...process.execArgv, 'server/server.mjs'], {
   cwd: ROOT,
-  env: { ...process.env, VF_DB: DB, PORT: String(PORT), VF_LLM_FREE_ONLY: "1" },
+  env: { ...process.env, VF_DB: DB, PORT: String(PORT), HOST: "127.0.0.1", VF_OPEN_MODE: "1", VF_RESUME: "0", VF_LLM_FREE_ONLY: "1" },
   stdio: ['ignore', 'pipe', 'pipe']
 });
 let log = '';
@@ -56,7 +56,7 @@ async function waitForHub() {
   for (let i = 0; i < 40; i++) {
     try {
       const res = await fetch(`${BASE}/api/health`);
-      if (res.ok) return;
+      if (res.ok && (await res.json()).ok === true) return;
     } catch { /* noch nicht oben */ }
     await sleep(500);
   }
