@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { freeOnlyEnabled,isFreeRoute,isLocalRoute,isTrustedSelfHostedRoute,routeTier } from './llm-config.mjs';
+import { freeOnlyEnabled,isLocalRoute,isTrustedSelfHostedRoute,isVercelAiGatewayEnabled,routeAllowedByCostPolicy,routeTier } from './llm-config.mjs';
 import { withOtelSpan } from './otel.mjs';
 const finiteLimit=(value,fallback,min,max)=>{const n=Number(value);return Number.isFinite(n)&&n>0?Math.max(min,Math.min(max,Math.floor(n))):fallback;};
 export const normalizeEndpoint=value=>String(value||'').replace(/\/+$/,'');
@@ -8,10 +8,10 @@ export class LlmUnavailableError extends Error {
 }
 const QUALITY_ROLES=new Set(['ROOT','CODER','ARCHITECT','REVIEWER','INTEGRATOR']);
 export function orderCascadeRoutes(routes,{role='',strategy='',freeOnlyMode=freeOnlyEnabled(),preferredModel=''}={}) {
- const localFirst=strategy==='LOCAL_FIRST'||(strategy!=='FALLBACK'&&!QUALITY_ROLES.has(String(role||'').toUpperCase()));
+ const localFirst=!isVercelAiGatewayEnabled()&&(strategy==='LOCAL_FIRST'||(strategy!=='FALLBACK'&&!QUALITY_ROLES.has(String(role||'').toUpperCase())));
  const checkedAt=Date.now();
  const verifiedCloud=r=>!isLocalRoute(r)&&r.status==='OK'&&Number(r.last_used)>0&&checkedAt-Number(r.last_used)>=0&&checkedAt-Number(r.last_used)<300000;
- return routes.filter(r=>r.provider!=='offline'&&(!freeOnlyMode||isFreeRoute(r)))
+ return routes.filter(r=>r.provider!=='offline'&&routeAllowedByCostPolicy(r,{freeOnlyMode}))
   .sort((a,b)=>(preferredModel?Number(String(b.model||'')===preferredModel)-Number(String(a.model||'')===preferredModel):0)||(localFirst?Number(!isLocalRoute(a))-Number(!isLocalRoute(b)):0)||Number(verifiedCloud(b))-Number(verifiedCloud(a))||routeTier(a)-routeTier(b)||Number(a.priority)-Number(b.priority)||Number(b.weight||1)-Number(a.weight||1)||Number(a.last_used||0)-Number(b.last_used||0)||a.id-b.id);
 }
 /** Single pass, no cooldown sleeps and no duplicate endpoint/model attempts. */
@@ -61,7 +61,7 @@ export function createCascade({routes,key,call,success=()=>{},failure=()=>{},clo
   const attempted=[],seen=new Set();let earliestRetryAt=Infinity;
   for(const [credential,until] of credentialBlocks)if(until<=clock())credentialBlocks.delete(credential);
   const freeOnlyMode=typeof freeOnly==='function'?freeOnly():Boolean(freeOnly);
-  const configuredRoutes=routes().filter(r=>(!r.key_env||key(r.key_env))&&(!freeOnlyMode||isFreeRoute(r))&&r.provider!=='offline');
+  const configuredRoutes=routes().filter(r=>(!r.key_env||key(r.key_env))&&routeAllowedByCostPolicy(r,{freeOnlyMode})&&r.provider!=='offline');
   for(const r of configuredRoutes)if(Number(r.cooldown_until)>clock())earliestRetryAt=Math.min(earliestRetryAt,Number(r.cooldown_until));
   // Route scopes are enforced before ordering, retries and failover.
   // offlineOnly accepts only loopback endpoints; selfHostedOnly permits trusted remote Ollama nodes.

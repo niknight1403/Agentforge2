@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.4.0",
+    "ai": "^7.0.179",
     "stripe": "23.1.0"
   }
 }

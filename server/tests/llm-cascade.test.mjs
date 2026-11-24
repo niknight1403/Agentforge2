@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 process.env.VF_DB=join(mkdtempSync(join(tmpdir(),'cascade-')),'db');
 process.env.VF_LLM_FREE_ONLY='0';
 const {createCascade,LlmUnavailableError}=await import('../llm-cascade.mjs');
-const {syncCascadeRoutes,syncFreeRouteFlags,isFreeRoute,isLocalRoute,isTrustedSelfHostedRoute,routeTier}=await import('../llm-config.mjs');
+const {cascadeDefaults,syncCascadeRoutes,syncFreeRouteFlags,isFreeRoute,isLocalRoute,isTrustedSelfHostedRoute,routeAllowedByCostPolicy,routeTier}=await import('../llm-config.mjs');
 const {db}=await import('../db.mjs');
 const {chat,resolveKey,routingStatus}=await import('../llm.mjs');
 function route(id,provider,key_env='',extra={}){const local=['ollama','lmstudio'].includes(provider);const base_url=local?`http://127.0.0.1:${11430+id}/v1`:`http://${provider}`;return {id,name:provider,provider,base_url,model:'test',key_env,priority:id,...extra};}
@@ -140,6 +140,40 @@ test('Free-only mode uses approved free routes and skips paid or unknown cloud r
  assert.equal(isFreeRoute({...route(23,'openai-compatible'),base_url:'https://api.groq.com/openai/v1',model:'openai/gpt-oss-120b'}),true);
  assert.equal(isFreeRoute({...route(24,'openai-compatible'),base_url:'https://router.huggingface.co/v1',model:'openai/gpt-oss-120b:cerebras'}),false);
  assert.equal(isFreeRoute({...route(25,'xai'),model:'grok-4'}),false,'xAI remains paid and excluded from free-only routing');
+});
+
+test('Vercel AI Gateway is catalogued only when explicitly enabled and remains billable', () => {
+ const previous=process.env.VF_VERCEL_AI_GATEWAY;
+ try {
+  delete process.env.VF_VERCEL_AI_GATEWAY;
+  assert.equal(cascadeDefaults().some(route=>route.provider==='vercel-ai-gateway'),false);
+  process.env.VF_VERCEL_AI_GATEWAY='1';
+  const gateway=cascadeDefaults().find(route=>route.provider==='vercel-ai-gateway');
+  assert.equal(gateway?.name,'Cascade: Vercel AI Gateway');
+  assert.equal(gateway?.model,'google/gemini-3.8-flash');
+  assert.equal(isFreeRoute(gateway),false);
+ } finally {
+  if(previous===undefined)delete process.env.VF_VERCEL_AI_GATEWAY;
+  else process.env.VF_VERCEL_AI_GATEWAY=previous;
+ }
+});
+
+test('Vercel AI Gateway stays paid and requires explicit opt-in in free-only mode', async () => {
+ const previous=process.env.VF_VERCEL_AI_GATEWAY;
+ const gateway=route(13,'vercel-ai-gateway');
+ const run=createCascade({freeOnly:true,routes:()=>[gateway],key:()=>'',call:async()=>answer});
+ try {
+  delete process.env.VF_VERCEL_AI_GATEWAY;
+  assert.equal(isFreeRoute(gateway),false);
+  assert.equal(routeAllowedByCostPolicy(gateway,{freeOnlyMode:true}),false);
+  await assert.rejects(run([]),e=>e.code==='LLM_UNAVAILABLE');
+  process.env.VF_VERCEL_AI_GATEWAY='1';
+  assert.equal(routeAllowedByCostPolicy(gateway,{freeOnlyMode:true}),true);
+  assert.equal((await run([])).content,answer.content);
+ } finally {
+  if(previous===undefined)delete process.env.VF_VERCEL_AI_GATEWAY;
+  else process.env.VF_VERCEL_AI_GATEWAY=previous;
+ }
 });
 
 test('remote Ollama is not local/free unless its HTTPS host is explicitly trusted', async () => {
