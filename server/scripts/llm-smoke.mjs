@@ -24,7 +24,7 @@ const KEY_NAMES = ['GEMINI_API_KEY','CEREBRAS_API_KEY','GROQ_API_KEY','MISTRAL_A
 const present = KEY_NAMES.filter((k) => process.env[k] && process.env[k].length > 8);
 if (!present.length) {
   console.log('SKIP: kein LLM-Key in der Umgebung ( Secrets fehlen). Offline-Modus bleibt erlaubt.');
-  process.exit(0);
+  process.exit(process.env.VF_REQUIRE_LIVE_LLM === "1" ? 1 : 0);
 }
 console.log('Schluessel vorhanden:', present.join(', '));
 
@@ -35,7 +35,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 
 const child = spawn(process.execPath, [...process.execArgv, 'server/server.mjs'], {
   cwd: ROOT,
-  env: { ...process.env, VF_DB: DB, PORT: String(PORT) },
+  env: { ...process.env, VF_DB: DB, PORT: String(PORT), VF_LLM_FREE_ONLY: "1" },
   stdio: ['ignore', 'pipe', 'pipe']
 });
 let log = '';
