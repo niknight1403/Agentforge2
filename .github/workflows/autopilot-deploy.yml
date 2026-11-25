@@ -7,7 +7,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Repo laden (Hub-Snapshot)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Module pruefen und uebertragen
         env:
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}

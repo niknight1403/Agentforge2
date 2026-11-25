@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Read production Villa39 status without creating tasks
@@ -24,7 +24,7 @@ jobs:
         run: node scripts/inspect-villa39.mjs
       - name: Save sanitized operation evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: villa39-live-diagnosis-${{ github.run_id }}
           path: villa39-live-diagnostics.json

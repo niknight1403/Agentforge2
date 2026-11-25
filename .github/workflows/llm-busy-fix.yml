@@ -7,7 +7,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Repo laden (enthiel haelt Hub-Snapshot)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Datei pruefen und auf VM uebertragen
         run: |
           set -euo pipefail
