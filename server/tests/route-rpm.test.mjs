@@ -22,3 +22,17 @@ test('RPM budgets are selected by provider identity, not display name', () => {
     }
   }
 });
+
+test('additional provider RPM overrides are bounded and do not enable paid routes', async () => {
+ const {routeProvider,isFreeRoute}=await import('../llm-config.mjs');
+ const route={provider:'openai-compatible',base_url:'https://api.sambanova.ai/v1',model:'test'};
+ const previous=process.env.VF_RPM_SAMBANOVA;
+ try {
+  assert.equal(routeProvider(route),'sambanova');
+  assert.equal(isFreeRoute(route),false);
+  process.env.VF_RPM_SAMBANOVA='900';
+  assert.equal(routeRpm(route),600);
+  process.env.VF_RPM_SAMBANOVA='0';
+  assert.equal(routeRpm(route),6);
+ } finally {if(previous===undefined)delete process.env.VF_RPM_SAMBANOVA;else process.env.VF_RPM_SAMBANOVA=previous;}
+});
