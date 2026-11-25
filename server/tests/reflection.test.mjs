@@ -16,6 +16,8 @@ const tmp = mkdtempSync(join(tmpdir(), 'refl-'));
 process.env.VF_DB = join(tmp, 'test.db');
 process.env.VF_WORKSPACE = join(tmp, 'ws');
 process.env.VF_LLM_FREE_ONLY = '0'; // mock route verifies reflection behavior independently of routing policy
+// Mock responses share one provider quota across tests; isolate reflection from production throttling.
+process.env.VF_RPM_FAL = '600';
 
 const { db, now } = await import('../db.mjs');
 const { runAgent, insertAgent } = await import('../agents.mjs');
