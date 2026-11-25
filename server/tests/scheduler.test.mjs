@@ -353,7 +353,8 @@ test('a Villa paused during model backoff is not restarted when its retry timer 
       }
     });
     scheduleVilla(id, { force: true });
-    await new Promise(resolve => setImmediate(resolve));
+    // The rejected starter schedules its retry in a microtask. Pause before yielding to timers.
+    await Promise.resolve();
     assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status, 'WAITING_FOR_MODEL');
     db.prepare("UPDATE villas SET status='PAUSED' WHERE id=?").run(id);
     await new Promise(resolve => setTimeout(resolve, 40));
