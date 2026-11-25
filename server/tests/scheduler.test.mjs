@@ -339,8 +339,9 @@ test('paused and autonomy-disabled villas are never dispatched from the queue', 
   _resetScheduler();
 });
 
-test('a Villa paused during model backoff is not restarted when its retry timer fires', async () => {
+test('a Villa paused during model backoff is not restarted when its retry timer fires', async (t) => {
   _resetScheduler();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const previous = process.env.VF_RETRY_MIN_MS;
   process.env.VF_RETRY_MIN_MS = '5';
   try {
@@ -353,17 +354,18 @@ test('a Villa paused during model backoff is not restarted when its retry timer 
       }
     });
     scheduleVilla(id, { force: true });
-    // The rejected starter schedules its retry in a microtask. Pause before yielding to timers.
-    await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
     assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status, 'WAITING_FOR_MODEL');
     db.prepare("UPDATE villas SET status='PAUSED' WHERE id=?").run(id);
-    await new Promise(resolve => setTimeout(resolve, 40));
+    t.mock.timers.tick(40);
+    await new Promise(resolve => setImmediate(resolve));
     assert.equal(starts, 1);
     assert.equal(db.prepare('SELECT status FROM villas WHERE id=?').get(id).status, 'PAUSED');
   } finally {
     if (previous === undefined) delete process.env.VF_RETRY_MIN_MS;
     else process.env.VF_RETRY_MIN_MS = previous;
     _resetScheduler();
+    t.mock.timers.reset();
   }
 });
 
