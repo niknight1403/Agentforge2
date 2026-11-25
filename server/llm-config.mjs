@@ -103,6 +103,14 @@ export function routeProvider(r) {
  if(host==='api.mistral.ai')return 'mistral';
  if(host==='router.huggingface.co')return 'huggingface';
  if(host==='api.x.ai')return 'xai';
+ if(host==='api.sambanova.ai')return 'sambanova';
+ if(host==='integrate.api.nvidia.com')return 'nvidia';
+ if(host==='open.bigmodel.cn')return 'zhipu';
+ if(host==='llm.chutes.ai')return 'chutes';
+ if(host==='api.hyperbolic.xyz')return 'hyperbolic';
+ if(host==='api.together.xyz')return 'together';
+ if(host==='fal.run')return 'fal';
+ if(host==='text.pollinations.ai')return 'pollinations';
  return declared||'openai-compatible';
 }
 /** Cost-safe default: unknown and credit-based cloud providers are opt-in. */
