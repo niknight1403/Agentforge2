@@ -26,6 +26,7 @@ CREATE INDEX IF NOT EXISTS idx_free_route_scans_time ON free_route_scans(scanned
 function freeOpenRouterModel(model) {
   const id = String(model?.id || '').trim();
   const pricing = model?.pricing || {};
+  if (![pricing.prompt, pricing.completion].every(value => (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')))) return false;
   const input = Number(pricing.prompt), output = Number(pricing.completion);
   return MODEL_ID.test(id) && !/^https?:\/\//i.test(id) && !/[?#]/.test(id) && id.toLowerCase().endsWith(':free')
     && Number.isFinite(input) && Number.isFinite(output) && input === 0 && output === 0;
@@ -65,8 +66,9 @@ export async function scanFreeRoutes({ fetchFn = fetch, clock = now } = {}) {
     });
     if (!response.ok) throw new Error(`OpenRouter models HTTP ${response.status}`);
     const body = await response.json();
-    const models = Array.isArray(body?.data) ? body.data.slice(0, MAX_MODELS_PER_SCAN) : [];
-    const freeModels = models.filter(freeOpenRouterModel);
+    if (!Array.isArray(body?.data)) throw new Error('Invalid OpenRouter model catalog');
+    const models = body.data;
+    const freeModels = models.filter(freeOpenRouterModel).slice(0, MAX_MODELS_PER_SCAN);
     const before = new Set(db.prepare("SELECT model_id FROM free_route_discoveries WHERE provider='openrouter'").all().map((row) => row.model_id));
     const addable = freeModels.slice(0, 100);
     for (const model of addable) addRoute(model, timestamp);
