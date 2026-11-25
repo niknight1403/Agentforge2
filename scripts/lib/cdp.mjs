@@ -8,6 +8,7 @@
  * die eingebaute WebSocket-Implementierung von Node (>= 22).
  */
 import { spawn } from 'node:child_process';
+import { request as httpRequest } from 'node:http';
 import { existsSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
@@ -25,6 +26,27 @@ const CANDIDATES = [
 ].filter(Boolean);
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Direkter HTTP-Zugriff auf den lokalen DevTools-Endpunkt, ohne Proxy-Konfiguration. */
+function requestJson(url, { method = 'GET', timeout = 1000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(url, { method, agent: false }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        let json = null;
+        if (body) {
+          try { json = JSON.parse(body); } catch (error) { reject(error); return; }
+        }
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json });
+      });
+    });
+    req.setTimeout(timeout, () => req.destroy(new Error(`HTTP timeout after ${timeout}ms`)));
+    req.once('error', reject);
+    req.end();
+  });
+}
 
 /** Liegt eine ausfuehrbare Datei dieses Namens im PATH? */
 function onPath(name) {
@@ -89,8 +111,8 @@ export async function launchChrome({ port = 0, width = 1440, height = 960, chrom
     if (proc.exitCode != null) throw new Error(`Chrome beendet (Code ${proc.exitCode}): ${stderr.slice(-400)}`);
     try {
       if(!base){await delay(120);continue;}
-      const res = await fetch(`${base}/json/version`,{signal:AbortSignal.timeout(1000)});
-      if (res.ok) { version = await res.json(); break; }
+      const res = await requestJson(`${base}/json/version`);
+      if (res.ok && res.json) { version = res.json; break; }
     } catch { /* noch nicht bereit */ }
     await delay(120);
   }
@@ -113,10 +135,11 @@ export async function launchChrome({ port = 0, width = 1440, height = 960, chrom
 
 /** Neuen Tab oeffnen und dessen Debug-URL liefern (PUT ab Chrome 111). */
 export async function newTarget(base, url = 'about:blank') {
-  let res = await fetch(`${base}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' });
-  if (!res.ok) res = await fetch(`${base}/json/new?${encodeURIComponent(url)}`);
+  const endpoint = `${base}/json/new?${encodeURIComponent(url)}`;
+  let res = await requestJson(endpoint, { method: 'PUT', timeout: 15_000 });
+  if (!res.ok) res = await requestJson(endpoint, { timeout: 15_000 });
   if (!res.ok) throw new Error(`Tab konnte nicht geoeffnet werden (HTTP ${res.status})`);
-  return res.json();
+  return res.json;
 }
 
 /** Eine bestehende Seite ueber ihre webSocketDebuggerUrl steuern. */

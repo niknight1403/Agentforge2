@@ -11,9 +11,10 @@ test('Missing Chrome executable fails in a controlled way instead of unhandled s
  await assert.rejects(launchChrome({chrome:'/not-existing-villaforge-chrome'}),/ENOENT/);
 });
 
-test('Chrome startup discovers the actual ephemeral DevTools port from its unique profile',async()=>{
+test('Chrome startup discovers the ephemeral DevTools port using direct loopback HTTP',async()=>{
  const {mkdtempSync,writeFileSync,chmodSync,rmSync}=await import('node:fs');const {join}=await import('node:path');const {tmpdir}=await import('node:os');
  const dir=mkdtempSync(join(tmpdir(),'vf-cdp-fixture-')),binary=join(dir,'chrome-fixture');
  writeFileSync(binary,`#!/usr/bin/env node\nconst fs=require('node:fs'),http=require('node:http');\nconst profile=process.argv.find(x=>x.startsWith('--user-data-dir=')).split('=').slice(1).join('=');\nconst s=http.createServer((q,r)=>r.end(JSON.stringify({Browser:'fixture-only'})));s.listen(0,'127.0.0.1',()=>fs.writeFileSync(profile+'/DevToolsActivePort',String(s.address().port)+'\\n/devtools/browser/fixture'));\nprocess.on('SIGTERM',()=>s.close(()=>process.exit(0)));\n`);chmodSync(binary,0o755);
- let chrome;try{chrome=await launchChrome({chrome:binary});assert.ok(chrome.port>0);assert.equal(chrome.version.Browser,'fixture-only');}finally{chrome?.stop();rmSync(dir,{recursive:true,force:true});}
+ const originalFetch=globalThis.fetch;globalThis.fetch=()=>{throw new Error('CDP must use direct loopback HTTP');};
+ let chrome;try{chrome=await launchChrome({chrome:binary});assert.ok(chrome.port>0);assert.equal(chrome.version.Browser,'fixture-only');}finally{globalThis.fetch=originalFetch;chrome?.stop();rmSync(dir,{recursive:true,force:true});}
 });
