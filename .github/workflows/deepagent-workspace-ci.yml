@@ -5,6 +5,8 @@ on:
     paths:
       - "server/**"
       - "app/**"
+      - "scripts/deepagent-emulator-smoke.py"
+      - "scripts/seed-deepagent-emulator.mjs"
       - ".github/workflows/deepagent-workspace-ci.yml"
   workflow_dispatch:
 
@@ -52,3 +54,77 @@ jobs:
           name: deepagent-workspace-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+  android-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      VF_TEST: '1'
+      VF_OPEN_MODE: '1'
+      VF_RESUME: '0'
+      VF_DB: /tmp/villaforge-android-e2e.sqlite
+      VF_WORKSPACE: /tmp/villaforge-android-workspace
+      DEEP_DIR: /tmp/villaforge-android-deep
+      E2E_ARTIFACTS: emulator-evidence
+      HOST: 127.0.0.1
+      PORT: '12222'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Prepare isolated Hub fixture
+        run: |
+          node scripts/seed-deepagent-emulator.mjs
+          nohup node server/server.mjs > "$RUNNER_TEMP/villaforge-android-hub.log" 2>&1 &
+          for i in {1..40}; do
+            if curl -fsS http://127.0.0.1:12222/api/health > /dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:12222/api/deep/projects/1/completion | node -e 'let s="";process.stdin.on("data",x=>s+=x).on("end",()=>{const r=JSON.parse(s);if(!r.liveViewAvailable||!r.villaLinked)process.exit(1);console.log("Preview and linked Villa: OK")})'
+          curl -fsS http://127.0.0.1:12222/api/deep/projects/1/preview/dist/index.html | grep -q 'LIVE VORSCHAU TEST'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.8.2'
+      - name: Build VillaForge debug APK
+        run: gradle :app:assembleDebug --no-daemon --console=plain
+      - name: Enable emulator acceleration
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Open and operate actual Android UI
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 29
+          target: default
+          arch: x86_64
+          profile: pixel_3a
+          script: |
+            set -euo pipefail
+            adb reverse tcp:12222 tcp:12222
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell run-as dev.villaforge.app mkdir -p shared_prefs
+            printf '%s\n' '<?xml version="1.0" encoding="utf-8" standalone="yes" ?><map><string name="base_url">http://127.0.0.1:12222</string></map>' > /tmp/vf_settings.xml
+            adb push /tmp/vf_settings.xml /data/local/tmp/vf_settings.xml
+            adb shell run-as dev.villaforge.app cp /data/local/tmp/vf_settings.xml shared_prefs/vf_settings.xml
+            adb shell am start -W -n dev.villaforge.app/.ui.MainActivity
+            python3 scripts/deepagent-emulator-smoke.py
+            curl -fsS http://127.0.0.1:12222/api/deep/projects/1 | grep -q 'E2E-Chatcheck-2026'
+      - name: Preserve screenshots and UI tree
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepagent-android-emulator-evidence
+          path: emulator-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Show isolated Hub log on failure
+        if: failure()
+        run: tail -100 "$RUNNER_TEMP/villaforge-android-hub.log"

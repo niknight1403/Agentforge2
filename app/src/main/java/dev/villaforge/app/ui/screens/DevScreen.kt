@@ -20,7 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,16 +54,16 @@ import dev.villaforge.app.ui.theme.TextMuted
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DevScreen(state: UiState, viewModel: MainViewModel, onOpenVilla: (Long) -> Unit = {}) {
+fun DevScreen(state: UiState, viewModel: MainViewModel, onOpenVilla: (Long) -> Unit = {}, startTab: Int = 0) {
     val detail = state.detail ?: return
-    var tab by remember { mutableStateOf(0) }
+    var tab by remember(detail.villa.id, startTab) { mutableStateOf(startTab) }
 
     Column(Modifier.fillMaxSize()) {
         state.error?.let { ErrorBanner(it) { viewModel.refreshAll() } }
         if (state.message.isNotBlank()) Text(state.message, color = Aqua, style = muted(), modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-        TabRow(selectedTabIndex = tab) {
+        ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
             listOf("Aktivität", "Chat", "Live-Ansicht", "Fertigstellung").forEachIndexed { i, label ->
-                Tab(selected = tab == i, onClick = { tab = i }, text = { Text(label) })
+                Tab(selected = tab == i, onClick = { tab = i }, text = { Text(label, maxLines = 1) })
             }
         }
         when (tab) {
@@ -182,6 +182,8 @@ private fun LiveTab(state: UiState, viewModel: MainViewModel) {
 private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Long) -> Unit = {}) {
     val detail = state.detail ?: return
     val active = detail.running || detail.villa.status == "RUNNING" || detail.villa.status == "STOPPING"
+    var showAlternatives by remember(detail.villa.id) { mutableStateOf(false) }
+    var showEvolution by remember(detail.villa.id) { mutableStateOf(false) }
 
     LaunchedEffect(detail.villa.id) {
         viewModel.refreshCouncil(detail.villa.id)
@@ -202,50 +204,58 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        BuildCard(state, viewModel)
+
         /* Analyse-Vorschlaege: bessere Alternativen mit klarer Begruendung. */
-        SectionHeader("Analyse-Vorschläge (bessere Alternativen)")
-        val props = state.proposals
-        if (props == null || props.length() == 0) {
-            Text("Noch keine Vorschläge. Der Scout analysiert alle 6 h - oder du forderst jetzt eine bessere Alternative an.",
-                style = muted(), color = TextMuted)
-        } else {
-            (0 until props.length()).forEach { i ->
-                val p = props.optJSONObject(i) ?: return@forEach
-                var showPrompt by remember(p.optLong("id")) { mutableStateOf(false) }
-                SectionCard(p.optString("title")) {
-                    Text("Projekt: " + p.optString("proposedName"), fontWeight = FontWeight.Bold, color = Aqua)
-                    Spacer(Modifier.height(4.dp))
-                    Text("Warum es sich lohnt:", style = muted(), color = TextMuted)
-                    Text(p.optString("whyBetter"), style = muted())
-                    val benefits = p.optJSONArray("benefits")
-                    if (benefits != null) {
-                        (0 until benefits.length()).forEach { b ->
-                            Text("· " + benefits.optString(b), style = muted())
-                        }
-                    }
-                    TextButton(onClick = { showPrompt = !showPrompt }) {
-                        Text(if (showPrompt) "Masterprompt verbergen" else "Masterprompt ansehen")
-                    }
-                    if (showPrompt) Text(p.optString("masterprompt"), style = muted(), color = TextMuted)
-                    if (p.optString("status") == "pending") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { viewModel.approveProposal(p.optLong("id")) { id -> onOpenVilla(id) } }, enabled = !state.busy) {
-                                Text("Bestätigen & Villa gründen")
-                            }
-                            OutlinedButton(onClick = { viewModel.rejectProposal(p.optLong("id")) }, enabled = !state.busy) {
-                                Text("Ablehnen")
+        TextButton(onClick = { showAlternatives = !showAlternatives }) {
+            Text(if (showAlternatives) "Alternativen ausblenden" else "Alternativen und Scout anzeigen")
+        }
+        if (showAlternatives) {
+            SectionHeader("Analyse-Vorschläge (bessere Alternativen)")
+            val props = state.proposals
+            if (props == null || props.length() == 0) {
+                Text("Noch keine Vorschläge. Der Scout analysiert alle 6 h - oder du forderst jetzt eine bessere Alternative an.",
+                    style = muted(), color = TextMuted)
+            } else {
+                (0 until props.length()).forEach { i ->
+                    val p = props.optJSONObject(i) ?: return@forEach
+                    var showPrompt by remember(p.optLong("id")) { mutableStateOf(false) }
+                    SectionCard(p.optString("title")) {
+                        Text("Projekt: " + p.optString("proposedName"), fontWeight = FontWeight.Bold, color = Aqua)
+                        Spacer(Modifier.height(4.dp))
+                        Text("Warum es sich lohnt:", style = muted(), color = TextMuted)
+                        Text(p.optString("whyBetter"), style = muted())
+                        val benefits = p.optJSONArray("benefits")
+                        if (benefits != null) {
+                            (0 until benefits.length()).forEach { b ->
+                                Text("· " + benefits.optString(b), style = muted())
                             }
                         }
-                    } else {
-                        val vid = p.optLong("villaId", -1)
-                        Text("Villa #$vid wurde gegründet.", style = muted(), color = dev.villaforge.app.ui.theme.Success)
-                        if (vid > 0) TextButton(onClick = { onOpenVilla(vid) }) { Text("Villa öffnen") }
+                        TextButton(onClick = { showPrompt = !showPrompt }) {
+                            Text(if (showPrompt) "Masterprompt verbergen" else "Masterprompt ansehen")
+                        }
+                        if (showPrompt) Text(p.optString("masterprompt"), style = muted(), color = TextMuted)
+                        if (p.optString("status") == "pending") {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { viewModel.approveProposal(p.optLong("id")) { id -> onOpenVilla(id) } }, enabled = !state.busy) {
+                                    Text("Bestätigen & Villa gründen")
+                                }
+                                OutlinedButton(onClick = { viewModel.rejectProposal(p.optLong("id")) }, enabled = !state.busy) {
+                                    Text("Ablehnen")
+                                }
+                            }
+                        } else {
+                            val vid = p.optLong("villaId", -1)
+                            Text("Villa #$vid wurde gegründet.", style = muted(), color = dev.villaforge.app.ui.theme.Success)
+                            if (vid > 0) TextButton(onClick = { onOpenVilla(vid) }) { Text("Villa öffnen") }
+                        }
                     }
                 }
             }
-        }
-        OutlinedButton(onClick = { viewModel.scanProposals() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
-            Text("Jetzt nach besserer Alternative suchen")
+            OutlinedButton(onClick = { viewModel.scanProposals() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                Text("Jetzt nach besserer Alternative suchen")
+            }
+            TextButton(onClick = { showAlternatives = false }) { Text("Alternativen ausblenden") }
         }
 
         SectionCard("Autonome Fertigstellung") {
@@ -265,98 +275,104 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
         }
 
         /* ---- Villa-Evolution: jede Villa schlaegt selbst vor, wie es weitergeht. ---- */
-        SectionHeader("Villa-Evolution (nächste Phasen · Perfektion · Marketplace)")
-        val evo = state.evolution
-        if (evo == null) {
-            Text("Status der Villa-Evolution wird geladen …", style = muted(), color = TextMuted)
-        } else {
-            val stage = evo.optString("stage")
-            val rounds = evo.optInt("phaseRounds", 0)
-            val done = evo.optInt("done", 0)
-            val open = evo.optInt("open", 0)
-            val stageText = when (stage) {
-                "DEVELOPING" -> "Die Villa arbeitet an ihren aktuellen Aufgaben ($open offen, $done erledigt). Ist alles erledigt, schlägt sie die nächsten Phasen vor."
-                "PLANNING_NEXT" -> "Alle Aufgaben sind erledigt ($done) — die Villa schlägt jetzt die nächsten Phasen vor (Runde ${rounds + 1})."
-                "PERFECTING" -> "Alle Phasen sind abgeschlossen (Runde $rounds bestätigt) — jetzt geht es um Perfektionierung, Optimierung und Marktreife."
-                else -> "Stufe $stage"
-            }
-            Text(stageText, style = muted(), color = TextMuted)
-            val etaMin = evo.optInt("etaMin", 0)
-            val etaCapped = evo.optBoolean("etaCapped", false)
-            val cur = evo.optJSONArray("currentTasks")
-            if (cur != null && cur.length() > 0) {
-                Text(
-                    "Jetzt: " + (0 until cur.length()).joinToString(" · ") { cur.optString(it) } +
-                        (if (etaMin > 0) "  —  Restdauer ${formatEta(etaMin, etaCapped)}" else ""),
-                    style = muted(), color = Aqua, fontSize = 12.sp
-                )
-            } else if (open > 0 && etaMin > 0) {
-                Text("$open offen — Restdauer ${formatEta(etaMin, etaCapped)}", style = muted(), color = TextMuted, fontSize = 12.sp)
-            }
-            if (evo.optBoolean("workspaceEmpty", false)) {
-                Text(
-                    "Achtung: Der Projektordner ist noch leer — erledigte Aufgaben haben bisher nur Berichte erzeugt. Neue Vorschläge fordern jetzt echten Code ein.",
-                    style = muted(), color = dev.villaforge.app.ui.theme.Warn
-                )
-            }
-            val evoProps = evo.optJSONArray("proposals")
-            if (evoProps != null && evoProps.length() > 0) {
-                (0 until evoProps.length()).forEach { i ->
-                    val pr = evoProps.optJSONObject(i) ?: return@forEach
-                    val kind = pr.optString("kind")
-                    val kindLabel = when (kind) {
-                        "PERFECT" -> "Perfektionierung"
-                        "MARKETPLACE" -> "AI Marketplace"
-                        "REVENUE" -> "Weg zum Umsatz"
-                        "BIG_IDEA" -> "Neue Idee (Umsatz-Pivot)"
-                        else -> "Nächste Phasen (Runde ${pr.optInt("round", 1)})"
-                    }
-                    val items = pr.optJSONArray("items")
-                    val avgTask = if (open > 0 && etaMin > 0) (etaMin / open).coerceAtLeast(1) else 3
-                    val sprintEta = (items?.length() ?: 0) * avgTask
-                    SectionCard(kindLabel + ": " + pr.optString("title") + "  ·  ≈ ${sprintEta} Min") {
-                        Text(pr.optString("summary"), style = muted())
-                        Spacer(Modifier.height(4.dp))
-                        (0 until (items?.length() ?: 0)).forEach { k ->
-                            val it = items?.optJSONObject(k)
-                            Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                                Text("· " + (it?.optString("title") ?: ""), fontWeight = FontWeight.SemiBold)
-                                Text((it?.optString("description") ?: "") + "  [" + (it?.optString("role") ?: "") + "]", style = muted(), color = TextMuted)
-                            }
-                        }
-                        if (pr.optString("status") == "pending") {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = { viewModel.approveEvolution(detail.villa.id, pr.optLong("id")) },
-                                    enabled = !state.busy
-                                ) { Text("Bestätigen & weiterentwickeln") }
-                                OutlinedButton(
-                                    onClick = { viewModel.rejectEvolution(detail.villa.id, pr.optLong("id")) },
-                                    enabled = !state.busy
-                                ) { Text("Ablehnen") }
-                            }
-                        } else {
-                            Text("Bestätigt — Aufgaben liegen an.", style = muted(), color = dev.villaforge.app.ui.theme.Success)
-                        }
-                    }
-                }
+        TextButton(onClick = { showEvolution = !showEvolution }) {
+            Text(if (showEvolution) "Phasenplanung ausblenden" else "Phasenplanung und Evolution anzeigen")
+        }
+        if (showEvolution) {
+            SectionHeader("Villa-Evolution (nächste Phasen · Perfektion · Marketplace)")
+            val evo = state.evolution
+            if (evo == null) {
+                Text("Status der Villa-Evolution wird geladen …", style = muted(), color = TextMuted)
             } else {
-                Text("Kein offener Vorschlag — du kannst die Villa jetzt einen erzeugen lassen.", style = muted(), color = TextMuted)
+                val stage = evo.optString("stage")
+                val rounds = evo.optInt("phaseRounds", 0)
+                val done = evo.optInt("done", 0)
+                val open = evo.optInt("open", 0)
+                val stageText = when (stage) {
+                    "DEVELOPING" -> "Die Villa arbeitet an ihren aktuellen Aufgaben ($open offen, $done erledigt). Ist alles erledigt, schlägt sie die nächsten Phasen vor."
+                    "PLANNING_NEXT" -> "Alle Aufgaben sind erledigt ($done) — die Villa schlägt jetzt die nächsten Phasen vor (Runde ${rounds + 1})."
+                    "PERFECTING" -> "Alle Phasen sind abgeschlossen (Runde $rounds bestätigt) — jetzt geht es um Perfektionierung, Optimierung und Marktreife."
+                    else -> "Stufe $stage"
+                }
+                Text(stageText, style = muted(), color = TextMuted)
+                val etaMin = evo.optInt("etaMin", 0)
+                val etaCapped = evo.optBoolean("etaCapped", false)
+                val cur = evo.optJSONArray("currentTasks")
+                if (cur != null && cur.length() > 0) {
+                    Text(
+                        "Jetzt: " + (0 until cur.length()).joinToString(" · ") { cur.optString(it) } +
+                            (if (etaMin > 0) "  —  Restdauer ${formatEta(etaMin, etaCapped)}" else ""),
+                        style = muted(), color = Aqua, fontSize = 12.sp
+                    )
+                } else if (open > 0 && etaMin > 0) {
+                    Text("$open offen — Restdauer ${formatEta(etaMin, etaCapped)}", style = muted(), color = TextMuted, fontSize = 12.sp)
+                }
+                if (evo.optBoolean("workspaceEmpty", false)) {
+                    Text(
+                        "Achtung: Der Projektordner ist noch leer — erledigte Aufgaben haben bisher nur Berichte erzeugt. Neue Vorschläge fordern jetzt echten Code ein.",
+                        style = muted(), color = dev.villaforge.app.ui.theme.Warn
+                    )
+                }
+                val evoProps = evo.optJSONArray("proposals")
+                if (evoProps != null && evoProps.length() > 0) {
+                    (0 until evoProps.length()).forEach { i ->
+                        val pr = evoProps.optJSONObject(i) ?: return@forEach
+                        val kind = pr.optString("kind")
+                        val kindLabel = when (kind) {
+                            "PERFECT" -> "Perfektionierung"
+                            "MARKETPLACE" -> "AI Marketplace"
+                            "REVENUE" -> "Weg zum Umsatz"
+                            "BIG_IDEA" -> "Neue Idee (Umsatz-Pivot)"
+                            else -> "Nächste Phasen (Runde ${pr.optInt("round", 1)})"
+                        }
+                        val items = pr.optJSONArray("items")
+                        val avgTask = if (open > 0 && etaMin > 0) (etaMin / open).coerceAtLeast(1) else 3
+                        val sprintEta = (items?.length() ?: 0) * avgTask
+                        SectionCard(kindLabel + ": " + pr.optString("title") + "  ·  ≈ ${sprintEta} Min") {
+                            Text(pr.optString("summary"), style = muted())
+                            Spacer(Modifier.height(4.dp))
+                            (0 until (items?.length() ?: 0)).forEach { k ->
+                                val it = items?.optJSONObject(k)
+                                Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                    Text("· " + (it?.optString("title") ?: ""), fontWeight = FontWeight.SemiBold)
+                                    Text((it?.optString("description") ?: "") + "  [" + (it?.optString("role") ?: "") + "]", style = muted(), color = TextMuted)
+                                }
+                            }
+                            if (pr.optString("status") == "pending") {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(
+                                        onClick = { viewModel.approveEvolution(detail.villa.id, pr.optLong("id")) },
+                                        enabled = !state.busy
+                                    ) { Text("Bestätigen & weiterentwickeln") }
+                                    OutlinedButton(
+                                        onClick = { viewModel.rejectEvolution(detail.villa.id, pr.optLong("id")) },
+                                        enabled = !state.busy
+                                    ) { Text("Ablehnen") }
+                                }
+                            } else {
+                                Text("Bestätigt — Aufgaben liegen an.", style = muted(), color = dev.villaforge.app.ui.theme.Success)
+                            }
+                        }
+                    }
+                } else {
+                    Text("Kein offener Vorschlag — du kannst die Villa jetzt einen erzeugen lassen.", style = muted(), color = TextMuted)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { viewModel.proposeEvolution(detail.villa.id, "NEXT_PHASES") },
+                        enabled = !state.busy
+                    ) { Text("Nächste Phasen vorschlagen") }
+                    OutlinedButton(
+                        onClick = { viewModel.proposeEvolution(detail.villa.id, "PERFECT") },
+                        enabled = !state.busy
+                    ) { Text("Perfektionierung") }
+                    OutlinedButton(
+                        onClick = { viewModel.proposeEvolution(detail.villa.id, "MARKETPLACE") },
+                        enabled = !state.busy
+                    ) { Text("AI Marketplace") }
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { viewModel.proposeEvolution(detail.villa.id, "NEXT_PHASES") },
-                    enabled = !state.busy
-                ) { Text("Nächste Phasen vorschlagen") }
-                OutlinedButton(
-                    onClick = { viewModel.proposeEvolution(detail.villa.id, "PERFECT") },
-                    enabled = !state.busy
-                ) { Text("Perfektionierung") }
-                OutlinedButton(
-                    onClick = { viewModel.proposeEvolution(detail.villa.id, "MARKETPLACE") },
-                    enabled = !state.busy
-                ) { Text("AI Marketplace") }
-            }
+            TextButton(onClick = { showEvolution = false }) { Text("Phasenplanung ausblenden") }
         }
 
         SectionHeader("Entwicklungsvorschläge")
@@ -410,7 +426,6 @@ private fun FinishTab(state: UiState, viewModel: MainViewModel, onOpenVilla: (Lo
             }
         }
 
-        BuildCard(state, viewModel)
     }
 }
 
