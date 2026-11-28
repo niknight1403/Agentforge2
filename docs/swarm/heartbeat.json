@@ -1,8 +1,8 @@
 {
   "ok": true,
-  "checked_at": "2026-11-27T18:05:39Z",
+  "checked_at": "2026-11-28T01:24:11Z",
   "provider": "openrouter",
   "model": "openai/gpt-4o-mini",
-  "latency_ms": 539,
+  "latency_ms": 582,
   "ok_count": 1
 }
